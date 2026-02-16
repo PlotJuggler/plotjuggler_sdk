@@ -81,7 +81,7 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
 
   // latest_at at midpoint: t = 2500 * 1000 = 2500000
   // Expected value at i=2500: 2500 * 0.5 = 1250.0
-  Timestamp midpoint_ts = 2500 * 1000;
+  Timestamp midpoint_ts = static_cast<Timestamp>(2500) * 1000;
   auto latest = reader.latest_at(
       QueryPoint{.topic_id = handle.topic_id, .t = midpoint_ts});
   ASSERT_TRUE(latest.found);
