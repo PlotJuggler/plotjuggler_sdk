@@ -1,5 +1,6 @@
 #include "pj/engine/writer.hpp"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -191,6 +192,22 @@ void DataWriter::set_float64(TopicId topic_id, std::size_t col_index,
   }
 }
 
+void DataWriter::set_int8(TopicId topic_id, std::size_t col_index,
+                          int8_t value) {
+  auto it = builders_.find(topic_id);
+  if (it != builders_.end()) {
+    it->second.set_int8(col_index, value);
+  }
+}
+
+void DataWriter::set_int16(TopicId topic_id, std::size_t col_index,
+                           int16_t value) {
+  auto it = builders_.find(topic_id);
+  if (it != builders_.end()) {
+    it->second.set_int16(col_index, value);
+  }
+}
+
 void DataWriter::set_int32(TopicId topic_id, std::size_t col_index,
                            int32_t value) {
   auto it = builders_.find(topic_id);
@@ -204,6 +221,38 @@ void DataWriter::set_int64(TopicId topic_id, std::size_t col_index,
   auto it = builders_.find(topic_id);
   if (it != builders_.end()) {
     it->second.set_int64(col_index, value);
+  }
+}
+
+void DataWriter::set_uint8(TopicId topic_id, std::size_t col_index,
+                           uint8_t value) {
+  auto it = builders_.find(topic_id);
+  if (it != builders_.end()) {
+    it->second.set_uint8(col_index, value);
+  }
+}
+
+void DataWriter::set_uint16(TopicId topic_id, std::size_t col_index,
+                            uint16_t value) {
+  auto it = builders_.find(topic_id);
+  if (it != builders_.end()) {
+    it->second.set_uint16(col_index, value);
+  }
+}
+
+void DataWriter::set_uint32(TopicId topic_id, std::size_t col_index,
+                            uint32_t value) {
+  auto it = builders_.find(topic_id);
+  if (it != builders_.end()) {
+    it->second.set_uint32(col_index, value);
+  }
+}
+
+void DataWriter::set_uint64(TopicId topic_id, std::size_t col_index,
+                            uint64_t value) {
+  auto it = builders_.find(topic_id);
+  if (it != builders_.end()) {
+    it->second.set_uint64(col_index, value);
   }
 }
 
@@ -258,9 +307,7 @@ absl::StatusOr<ScalarSeriesHandle> DataWriter::register_scalar_series(
   columns.push_back(std::move(col_desc));
   topic_columns_[topic_id] = std::move(columns);
 
-  ScalarSeriesHandle handle;
-  handle.topic_id = topic_id;
-  handle.value_field = 0;
+  ScalarSeriesHandle handle{topic_id, 0};
   return handle;
 }
 
@@ -371,6 +418,7 @@ TopicChunkBuilder& DataWriter::get_or_create_builder(TopicId topic_id) {
 
   // Look up the topic storage to get descriptor info
   const auto* storage = engine_.get_topic_storage(topic_id);
+  assert(storage != nullptr && "get_or_create_builder called with unknown topic_id");
 
   const auto& desc = storage->descriptor();
   SchemaId schema_id = desc.schema_id;

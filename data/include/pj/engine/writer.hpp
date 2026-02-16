@@ -59,8 +59,14 @@ class DataWriter {
   // ---- Set values for current row by column index ----
   void set_float32(TopicId topic_id, std::size_t col_index, float value);
   void set_float64(TopicId topic_id, std::size_t col_index, double value);
+  void set_int8(TopicId topic_id, std::size_t col_index, int8_t value);
+  void set_int16(TopicId topic_id, std::size_t col_index, int16_t value);
   void set_int32(TopicId topic_id, std::size_t col_index, int32_t value);
   void set_int64(TopicId topic_id, std::size_t col_index, int64_t value);
+  void set_uint8(TopicId topic_id, std::size_t col_index, uint8_t value);
+  void set_uint16(TopicId topic_id, std::size_t col_index, uint16_t value);
+  void set_uint32(TopicId topic_id, std::size_t col_index, uint32_t value);
+  void set_uint64(TopicId topic_id, std::size_t col_index, uint64_t value);
   void set_string(TopicId topic_id, std::size_t col_index,
                   std::string_view value);
   void set_bool(TopicId topic_id, std::size_t col_index, bool value);
