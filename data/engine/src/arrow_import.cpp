@@ -9,11 +9,14 @@
 #include <utility>
 #include <vector>
 
-#include <arrow/api.h>
+#include "nanoarrow/nanoarrow.h"
+#include "nanoarrow/nanoarrow.hpp"
+#include "nanoarrow/nanoarrow_ipc.h"
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
 
 #include "pj/base/type_tree.hpp"
 #include "pj/base/types.hpp"
@@ -21,195 +24,138 @@
 #include "pj/engine/writer.hpp"
 
 namespace pj::engine::arrow_import {
-
-// ---------------------------------------------------------------------------
-// arrow_type_to_primitive
-// ---------------------------------------------------------------------------
-
-std::optional<PrimitiveType> arrow_type_to_primitive(
-    const std::shared_ptr<arrow::DataType>& type) {
-  switch (type->id()) {
-    case arrow::Type::INT8:         return PrimitiveType::kInt8;
-    case arrow::Type::INT16:        return PrimitiveType::kInt16;
-    case arrow::Type::INT32:        return PrimitiveType::kInt32;
-    case arrow::Type::INT64:        return PrimitiveType::kInt64;
-    case arrow::Type::UINT8:        return PrimitiveType::kUint8;
-    case arrow::Type::UINT16:       return PrimitiveType::kUint16;
-    case arrow::Type::UINT32:       return PrimitiveType::kUint32;
-    case arrow::Type::UINT64:       return PrimitiveType::kUint64;
-    case arrow::Type::FLOAT:        return PrimitiveType::kFloat32;
-    case arrow::Type::DOUBLE:       return PrimitiveType::kFloat64;
-    case arrow::Type::BOOL:         return PrimitiveType::kBool;
-    case arrow::Type::STRING:
-    case arrow::Type::LARGE_STRING: return PrimitiveType::kString;
-    default:                        return std::nullopt;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// schema_from_arrow
-// ---------------------------------------------------------------------------
-
-absl::StatusOr<std::pair<
-    std::shared_ptr<pj::TypeTreeNode>,
-    std::vector<ArrowColumnMapping>>>
-schema_from_arrow(const arrow::Schema& schema) {
-  std::vector<ArrowColumnMapping> mappings;
-  std::vector<std::shared_ptr<pj::TypeTreeNode>> children;
-
-  for (int i = 0; i < schema.num_fields(); ++i) {
-    const auto& field = schema.field(i);
-    auto pj_type = arrow_type_to_primitive(field->type());
-    if (!pj_type.has_value()) {
-      continue;  // skip unsupported types
-    }
-
-    ArrowColumnMapping m;
-    m.arrow_column_index = i;
-    m.pj_column_index = mappings.size();
-    m.pj_type = *pj_type;
-    m.field_name = field->name();
-    mappings.push_back(std::move(m));
-
-    children.push_back(pj::make_primitive(field->name(), *pj_type));
-  }
-
-  if (mappings.empty()) {
-    return absl::InvalidArgumentError(
-        "No supported columns found in Arrow schema");
-  }
-
-  auto type_tree = pj::make_struct("arrow_row", std::move(children));
-  return std::make_pair(std::move(type_tree), std::move(mappings));
-}
-
-// ---------------------------------------------------------------------------
-// Helpers: extract raw data from Arrow arrays
-// ---------------------------------------------------------------------------
-
 namespace {
 
-/// Widen narrow integers to the PJ StorageKind width.
-/// Returns a vector of widened values.
-template <typename SrcT, typename DstT>
-std::vector<DstT> widen_array(const arrow::Array& array, int64_t length) {
-  const auto& typed =
-      static_cast<const arrow::NumericArray<
-          typename arrow::CTypeTraits<SrcT>::ArrowType>&>(array);
-  std::vector<DstT> result(static_cast<std::size_t>(length));
-  for (int64_t i = 0; i < length; ++i) {
-    result[static_cast<std::size_t>(i)] = static_cast<DstT>(typed.Value(i));
+// ---------------------------------------------------------------------------
+// Non-owning IPC input stream from absl::Span<const uint8_t>
+// ---------------------------------------------------------------------------
+
+struct SpanInputStreamData {
+  const uint8_t* data;
+  int64_t size;
+  int64_t offset;
+};
+
+ArrowErrorCode span_input_stream_read(
+    ArrowIpcInputStream* stream, uint8_t* buf,
+    int64_t buf_size_bytes, int64_t* size_read_out,
+    ArrowError* /*error*/) {
+  auto* s = static_cast<SpanInputStreamData*>(stream->private_data);
+  const int64_t available = s->size - s->offset;
+  const int64_t to_read = std::min(buf_size_bytes, available);
+  if (to_read > 0) {
+    std::memcpy(buf, s->data + s->offset, static_cast<std::size_t>(to_read));
+    s->offset += to_read;
   }
-  return result;
+  *size_read_out = to_read;
+  return NANOARROW_OK;
 }
 
-/// Extract timestamps from an Arrow column (int64).
-std::vector<Timestamp> extract_timestamps(const arrow::Array& array,
-                                          int64_t length) {
-  std::vector<Timestamp> result(static_cast<std::size_t>(length));
-
-  if (array.type_id() == arrow::Type::INT64) {
-    const auto& typed = static_cast<const arrow::Int64Array&>(array);
-    const auto* raw = typed.raw_values();
-    std::memcpy(result.data(), raw,
-                static_cast<std::size_t>(length) * sizeof(Timestamp));
-  } else if (array.type_id() == arrow::Type::INT32) {
-    const auto& typed = static_cast<const arrow::Int32Array&>(array);
-    for (int64_t i = 0; i < length; ++i) {
-      result[static_cast<std::size_t>(i)] =
-          static_cast<Timestamp>(typed.Value(i));
-    }
-  } else if (array.type_id() == arrow::Type::UINT64) {
-    const auto& typed = static_cast<const arrow::UInt64Array&>(array);
-    const auto* raw = typed.raw_values();
-    std::memcpy(result.data(), raw,
-                static_cast<std::size_t>(length) * sizeof(Timestamp));
-  } else {
-    // Fallback: try to read as int64 via cast
-    for (int64_t i = 0; i < length; ++i) {
-      result[static_cast<std::size_t>(i)] = i;
-    }
-  }
-
-  return result;
+void span_input_stream_release(ArrowIpcInputStream* stream) {
+  delete static_cast<SpanInputStreamData*>(stream->private_data);
+  stream->private_data = nullptr;
+  stream->release = nullptr;
 }
 
-/// Generate sequential timestamps [0, 1, 2, ..., n-1].
-std::vector<Timestamp> generate_sequential_timestamps(int64_t length) {
-  std::vector<Timestamp> result(static_cast<std::size_t>(length));
-  for (int64_t i = 0; i < length; ++i) {
-    result[static_cast<std::size_t>(i)] = i;
-  }
-  return result;
+void init_span_input_stream(ArrowIpcInputStream* stream,
+                            absl::Span<const uint8_t> span) {
+  stream->read = span_input_stream_read;
+  stream->release = span_input_stream_release;
+  stream->private_data = new SpanInputStreamData{
+      span.data(), static_cast<int64_t>(span.size()), 0};
 }
 
-/// Build a ColumnData from an Arrow array + mapping.
-/// May allocate a widening buffer for narrow integer types.
+// ---------------------------------------------------------------------------
+// nanoarrow ArrowType → PrimitiveType
+// ---------------------------------------------------------------------------
+
+std::optional<PrimitiveType> nanoarrow_type_to_primitive(ArrowType type) {
+  switch (type) {
+    case NANOARROW_TYPE_INT8:         return PrimitiveType::kInt8;
+    case NANOARROW_TYPE_INT16:        return PrimitiveType::kInt16;
+    case NANOARROW_TYPE_INT32:        return PrimitiveType::kInt32;
+    case NANOARROW_TYPE_INT64:        return PrimitiveType::kInt64;
+    case NANOARROW_TYPE_UINT8:        return PrimitiveType::kUint8;
+    case NANOARROW_TYPE_UINT16:       return PrimitiveType::kUint16;
+    case NANOARROW_TYPE_UINT32:       return PrimitiveType::kUint32;
+    case NANOARROW_TYPE_UINT64:       return PrimitiveType::kUint64;
+    case NANOARROW_TYPE_FLOAT:        return PrimitiveType::kFloat32;
+    case NANOARROW_TYPE_DOUBLE:       return PrimitiveType::kFloat64;
+    case NANOARROW_TYPE_BOOL:         return PrimitiveType::kBool;
+    case NANOARROW_TYPE_STRING:
+    case NANOARROW_TYPE_LARGE_STRING: return PrimitiveType::kString;
+    default:                          return std::nullopt;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers: extract raw data from nanoarrow ArrowArrayView children
+// ---------------------------------------------------------------------------
+
 struct ColumnDataWithBuffer {
   ColumnData col_data;
-  // Widening buffers (keep alive as long as col_data is used)
   std::vector<int64_t> int64_buf;
   std::vector<uint64_t> uint64_buf;
 };
 
-ColumnDataWithBuffer make_column_data(
-    const arrow::Array& array,
+ColumnDataWithBuffer make_column_data_nanoarrow(
+    const ArrowArrayView* child,
     const ArrowColumnMapping& mapping,
     int64_t length) {
   ColumnDataWithBuffer result;
   const auto sk = storage_kind_of(mapping.pj_type);
   const auto n = static_cast<std::size_t>(length);
 
-  // Extract validity bitmap info
+  // Validity bitmap
   const uint8_t* validity = nullptr;
   std::size_t validity_offset = 0;
-  if (array.null_count() > 0 && array.null_bitmap()) {
-    validity = array.null_bitmap_data();
-    validity_offset = static_cast<std::size_t>(array.offset());
+  if (child->null_count > 0 &&
+      child->buffer_views[0].data.as_uint8 != nullptr) {
+    validity = child->buffer_views[0].data.as_uint8;
+    validity_offset = static_cast<std::size_t>(child->offset);
   }
 
   switch (sk) {
     case StorageKind::kFloat32: {
-      const auto& typed = static_cast<const arrow::FloatArray&>(array);
       result.col_data = ColumnData::Float32(
-          mapping.pj_column_index, typed.raw_values(), n,
-          validity, validity_offset);
+          mapping.pj_column_index,
+          child->buffer_views[1].data.as_float + child->offset,
+          n, validity, validity_offset);
       break;
     }
     case StorageKind::kFloat64: {
-      const auto& typed = static_cast<const arrow::DoubleArray&>(array);
       result.col_data = ColumnData::Float64(
-          mapping.pj_column_index, typed.raw_values(), n,
-          validity, validity_offset);
+          mapping.pj_column_index,
+          child->buffer_views[1].data.as_double + child->offset,
+          n, validity, validity_offset);
       break;
     }
     case StorageKind::kInt32: {
-      const auto& typed = static_cast<const arrow::Int32Array&>(array);
       result.col_data = ColumnData::Int32(
-          mapping.pj_column_index, typed.raw_values(), n,
-          validity, validity_offset);
+          mapping.pj_column_index,
+          child->buffer_views[1].data.as_int32 + child->offset,
+          n, validity, validity_offset);
       break;
     }
     case StorageKind::kInt64: {
-      // May need widening from int8/int16
       switch (mapping.pj_type) {
         case PrimitiveType::kInt8:
-          result.int64_buf = widen_array<int8_t, int64_t>(array, length);
+        case PrimitiveType::kInt16: {
+          result.int64_buf.resize(n);
+          for (int64_t i = 0; i < length; ++i) {
+            result.int64_buf[static_cast<std::size_t>(i)] =
+                ArrowArrayViewGetIntUnsafe(child, i);
+          }
           result.col_data = ColumnData::Int64(
               mapping.pj_column_index, result.int64_buf.data(), n,
               validity, validity_offset);
           break;
-        case PrimitiveType::kInt16:
-          result.int64_buf = widen_array<int16_t, int64_t>(array, length);
-          result.col_data = ColumnData::Int64(
-              mapping.pj_column_index, result.int64_buf.data(), n,
-              validity, validity_offset);
-          break;
+        }
         case PrimitiveType::kInt64: {
-          const auto& typed = static_cast<const arrow::Int64Array&>(array);
           result.col_data = ColumnData::Int64(
-              mapping.pj_column_index, typed.raw_values(), n,
-              validity, validity_offset);
+              mapping.pj_column_index,
+              child->buffer_views[1].data.as_int64 + child->offset,
+              n, validity, validity_offset);
           break;
         }
         default:
@@ -218,31 +164,25 @@ ColumnDataWithBuffer make_column_data(
       break;
     }
     case StorageKind::kUint64: {
-      // May need widening from uint8/uint16/uint32
       switch (mapping.pj_type) {
         case PrimitiveType::kUint8:
-          result.uint64_buf = widen_array<uint8_t, uint64_t>(array, length);
-          result.col_data = ColumnData::Uint64(
-              mapping.pj_column_index, result.uint64_buf.data(), n,
-              validity, validity_offset);
-          break;
         case PrimitiveType::kUint16:
-          result.uint64_buf = widen_array<uint16_t, uint64_t>(array, length);
+        case PrimitiveType::kUint32: {
+          result.uint64_buf.resize(n);
+          for (int64_t i = 0; i < length; ++i) {
+            result.uint64_buf[static_cast<std::size_t>(i)] =
+                ArrowArrayViewGetUIntUnsafe(child, i);
+          }
           result.col_data = ColumnData::Uint64(
               mapping.pj_column_index, result.uint64_buf.data(), n,
               validity, validity_offset);
           break;
-        case PrimitiveType::kUint32:
-          result.uint64_buf = widen_array<uint32_t, uint64_t>(array, length);
-          result.col_data = ColumnData::Uint64(
-              mapping.pj_column_index, result.uint64_buf.data(), n,
-              validity, validity_offset);
-          break;
+        }
         case PrimitiveType::kUint64: {
-          const auto& typed = static_cast<const arrow::UInt64Array&>(array);
           result.col_data = ColumnData::Uint64(
-              mapping.pj_column_index, typed.raw_values(), n,
-              validity, validity_offset);
+              mapping.pj_column_index,
+              child->buffer_views[1].data.as_uint64 + child->offset,
+              n, validity, validity_offset);
           break;
         }
         default:
@@ -252,17 +192,15 @@ ColumnDataWithBuffer make_column_data(
     }
     case StorageKind::kBool: {
       // Arrow stores bools as packed bits; we need unpacked uint8_t.
-      // Use a temporary buffer.
-      const auto& typed = static_cast<const arrow::BooleanArray&>(array);
-      // Reuse uint64_buf for bool storage (cast to uint8_t*)
-      // Actually, just store as vector<uint64_t> sized appropriately
-      // and write uint8_t values.
       std::vector<uint8_t> bool_buf(n);
-      for (std::size_t i = 0; i < n; ++i) {
-        bool_buf[i] = typed.Value(static_cast<int64_t>(i)) ? 1 : 0;
+      for (int64_t i = 0; i < length; ++i) {
+        bool_buf[static_cast<std::size_t>(i)] =
+            ArrowArrayViewGetIntUnsafe(child, i) != 0 ? uint8_t{1}
+                                                      : uint8_t{0};
       }
-      // Store in uint64_buf as raw bytes (hack: reinterpret)
-      result.uint64_buf.resize((n + sizeof(uint64_t) - 1) / sizeof(uint64_t));
+      // Store in uint64_buf as raw bytes
+      result.uint64_buf.resize(
+          (n + sizeof(uint64_t) - 1) / sizeof(uint64_t));
       std::memcpy(result.uint64_buf.data(), bool_buf.data(), n);
       result.col_data = ColumnData::Bool(
           mapping.pj_column_index,
@@ -271,11 +209,13 @@ ColumnDataWithBuffer make_column_data(
       break;
     }
     case StorageKind::kString: {
-      const auto& typed = static_cast<const arrow::StringArray&>(array);
+      // STRING: int32_t offsets in buffer_views[1], char data in buffer_views[2]
+      const auto* offsets_ptr =
+          child->buffer_views[1].data.as_int32 + child->offset;
       result.col_data = ColumnData::String(
           mapping.pj_column_index,
-          reinterpret_cast<const uint32_t*>(typed.raw_value_offsets()),
-          reinterpret_cast<const char*>(typed.raw_data()),
+          reinterpret_cast<const uint32_t*>(offsets_ptr),
+          child->buffer_views[2].data.as_char,
           n, validity, validity_offset);
       break;
     }
@@ -284,100 +224,203 @@ ColumnDataWithBuffer make_column_data(
   return result;
 }
 
+/// Extract timestamps from an ArrowArrayView child column.
+std::vector<Timestamp> extract_timestamps_nanoarrow(
+    const ArrowArrayView* view, int64_t length) {
+  const auto n = static_cast<std::size_t>(length);
+  std::vector<Timestamp> result(n);
+
+  if (view->storage_type == NANOARROW_TYPE_INT64) {
+    const auto* raw = view->buffer_views[1].data.as_int64 + view->offset;
+    std::memcpy(result.data(), raw, n * sizeof(Timestamp));
+  } else if (view->storage_type == NANOARROW_TYPE_UINT64) {
+    const auto* raw = view->buffer_views[1].data.as_uint64 + view->offset;
+    std::memcpy(result.data(), raw, n * sizeof(Timestamp));
+  } else if (view->storage_type == NANOARROW_TYPE_INT32) {
+    const auto* raw = view->buffer_views[1].data.as_int32 + view->offset;
+    for (int64_t i = 0; i < length; ++i) {
+      result[static_cast<std::size_t>(i)] =
+          static_cast<Timestamp>(raw[i]);
+    }
+  } else {
+    for (int64_t i = 0; i < length; ++i) {
+      result[static_cast<std::size_t>(i)] = i;
+    }
+  }
+
+  return result;
+}
+
+std::vector<Timestamp> generate_sequential_timestamps(int64_t length) {
+  const auto n = static_cast<std::size_t>(length);
+  std::vector<Timestamp> result(n);
+  for (int64_t i = 0; i < length; ++i) {
+    result[static_cast<std::size_t>(i)] = i;
+  }
+  return result;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// import_record_batch
+// schema_from_ipc
 // ---------------------------------------------------------------------------
 
-absl::Status import_record_batch(
-    DataWriter& writer,
-    TopicId topic_id,
-    const arrow::RecordBatch& batch,
-    const std::vector<ArrowColumnMapping>& mappings,
-    int timestamp_column) {
-  const int64_t num_rows = batch.num_rows();
-  if (num_rows == 0) {
-    return absl::OkStatus();
+absl::StatusOr<std::pair<
+    std::shared_ptr<pj::TypeTreeNode>,
+    std::vector<ArrowColumnMapping>>>
+schema_from_ipc(absl::Span<const uint8_t> ipc_stream) {
+  ArrowIpcInputStream input;
+  init_span_input_stream(&input, ipc_stream);
+
+  nanoarrow::UniqueArrayStream stream;
+  int rc = ArrowIpcArrayStreamReaderInit(stream.get(), &input, nullptr);
+  if (rc != NANOARROW_OK) {
+    return absl::InternalError("Failed to initialize IPC stream reader");
   }
 
-  // Extract timestamps
-  std::vector<Timestamp> timestamps;
-  if (timestamp_column >= 0) {
-    if (timestamp_column >= batch.num_columns()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "timestamp_column ", timestamp_column,
-          " out of range (", batch.num_columns(), " columns)"));
+  nanoarrow::UniqueSchema schema;
+  rc = stream->get_schema(stream.get(), schema.get());
+  if (rc != NANOARROW_OK) {
+    return absl::InvalidArgumentError(
+        "Failed to read schema from IPC stream");
+  }
+
+  std::vector<ArrowColumnMapping> mappings;
+  std::vector<std::shared_ptr<pj::TypeTreeNode>> children;
+
+  for (int64_t i = 0; i < schema->n_children; ++i) {
+    ArrowSchemaView view;
+    ArrowError error;
+    rc = ArrowSchemaViewInit(&view, schema->children[i], &error);
+    if (rc != NANOARROW_OK) {
+      continue;  // skip unrecognized types
     }
-    timestamps = extract_timestamps(*batch.column(timestamp_column), num_rows);
-  } else {
-    timestamps = generate_sequential_timestamps(num_rows);
-  }
 
-  // Build ColumnData for each mapping
-  std::vector<ColumnDataWithBuffer> col_buffers;
-  col_buffers.reserve(mappings.size());
-  std::vector<ColumnData> col_data_vec;
-  col_data_vec.reserve(mappings.size());
-
-  for (const auto& mapping : mappings) {
-    if (mapping.arrow_column_index >= batch.num_columns()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Arrow column index ", mapping.arrow_column_index,
-          " out of range"));
+    auto pj_type = nanoarrow_type_to_primitive(view.type);
+    if (!pj_type.has_value()) {
+      continue;  // skip unsupported types
     }
-    col_buffers.push_back(make_column_data(
-        *batch.column(mapping.arrow_column_index), mapping, num_rows));
+
+    ArrowColumnMapping m;
+    m.arrow_column_index = static_cast<int>(i);
+    m.pj_column_index = mappings.size();
+    m.pj_type = *pj_type;
+    m.field_name = schema->children[i]->name != nullptr
+                       ? schema->children[i]->name
+                       : "";
+
+    children.push_back(pj::make_primitive(m.field_name, *pj_type));
+    mappings.push_back(std::move(m));
   }
 
-  for (auto& cb : col_buffers) {
-    col_data_vec.push_back(cb.col_data);
+  if (mappings.empty()) {
+    return absl::InvalidArgumentError(
+        "No supported columns found in Arrow IPC schema");
   }
 
-  return writer.append_columns(topic_id, timestamps, col_data_vec);
+  auto type_tree = pj::make_struct("arrow_row", std::move(children));
+  return std::make_pair(std::move(type_tree), std::move(mappings));
 }
 
 // ---------------------------------------------------------------------------
-// import_table
+// import_ipc_stream
 // ---------------------------------------------------------------------------
 
-absl::Status import_table(
+absl::Status import_ipc_stream(
     DataWriter& writer,
     TopicId topic_id,
-    const arrow::Table& table,
+    absl::Span<const uint8_t> ipc_stream,
     const std::vector<ArrowColumnMapping>& mappings,
-    int timestamp_column,
-    bool combine_chunks) {
-  std::shared_ptr<arrow::Table> working_table;
+    int timestamp_column) {
+  ArrowIpcInputStream input;
+  init_span_input_stream(&input, ipc_stream);
 
-  if (combine_chunks) {
-    auto result = table.CombineChunks(arrow::default_memory_pool());
-    if (!result.ok()) {
-      return absl::InternalError(absl::StrCat(
-          "CombineChunks failed: ", result.status().ToString()));
-    }
-    working_table = *result;
-  } else {
-    // Take a shared pointer that doesn't own the table
-    working_table = std::shared_ptr<arrow::Table>(
-        const_cast<arrow::Table*>(&table), [](arrow::Table*) {});
+  nanoarrow::UniqueArrayStream stream;
+  int rc = ArrowIpcArrayStreamReaderInit(stream.get(), &input, nullptr);
+  if (rc != NANOARROW_OK) {
+    return absl::InternalError("Failed to initialize IPC stream reader");
   }
 
-  // Convert table to record batches and import each
-  auto batch_reader = arrow::TableBatchReader(*working_table);
-  std::shared_ptr<arrow::RecordBatch> batch;
+  // Read schema (required by IPC stream format)
+  nanoarrow::UniqueSchema schema;
+  rc = stream->get_schema(stream.get(), schema.get());
+  if (rc != NANOARROW_OK) {
+    return absl::InvalidArgumentError(
+        "Failed to read schema from IPC stream");
+  }
 
+  // Initialize array view from schema for decoding batches
+  nanoarrow::UniqueArrayView array_view;
+  rc = ArrowArrayViewInitFromSchema(array_view.get(), schema.get(), nullptr);
+  if (rc != NANOARROW_OK) {
+    return absl::InternalError(
+        "Failed to initialize ArrowArrayView from schema");
+  }
+
+  // Iterate over record batches
+  nanoarrow::UniqueArray batch;
   while (true) {
-    auto st = batch_reader.ReadNext(&batch);
-    if (!st.ok()) {
-      return absl::InternalError(absl::StrCat(
-          "ReadNext failed: ", st.ToString()));
+    batch.reset();
+    rc = stream->get_next(stream.get(), batch.get());
+    if (rc != NANOARROW_OK) {
+      return absl::InternalError(
+          "Failed to read next batch from IPC stream");
     }
-    if (batch == nullptr) {
-      break;
+    if (batch->release == nullptr) {
+      break;  // end of stream
     }
-    auto status = import_record_batch(
-        writer, topic_id, *batch, mappings, timestamp_column);
+
+    const int64_t num_rows = batch->length;
+    if (num_rows == 0) {
+      continue;
+    }
+
+    // Set array data into the view for buffer access
+    rc = ArrowArrayViewSetArray(array_view.get(), batch.get(), nullptr);
+    if (rc != NANOARROW_OK) {
+      return absl::InternalError(
+          "Failed to set array on ArrowArrayView");
+    }
+
+    // Extract timestamps
+    std::vector<Timestamp> timestamps;
+    if (timestamp_column >= 0) {
+      if (timestamp_column >=
+          static_cast<int>(array_view->n_children)) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "timestamp_column ", timestamp_column,
+            " out of range (", array_view->n_children, " children)"));
+      }
+      timestamps = extract_timestamps_nanoarrow(
+          array_view->children[timestamp_column], num_rows);
+    } else {
+      timestamps = generate_sequential_timestamps(num_rows);
+    }
+
+    // Build ColumnData for each mapping
+    std::vector<ColumnDataWithBuffer> col_buffers;
+    col_buffers.reserve(mappings.size());
+    std::vector<ColumnData> col_data_vec;
+    col_data_vec.reserve(mappings.size());
+
+    for (const auto& mapping : mappings) {
+      if (mapping.arrow_column_index >=
+          static_cast<int>(array_view->n_children)) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Arrow column index ", mapping.arrow_column_index,
+            " out of range"));
+      }
+      col_buffers.push_back(make_column_data_nanoarrow(
+          array_view->children[mapping.arrow_column_index],
+          mapping, num_rows));
+    }
+
+    for (auto& cb : col_buffers) {
+      col_data_vec.push_back(cb.col_data);
+    }
+
+    auto status = writer.append_columns(topic_id, timestamps, col_data_vec);
     if (!status.ok()) {
       return status;
     }

@@ -2,12 +2,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include <arrow/api.h>
-#include <arrow/builder.h>
+#include "nanoarrow/nanoarrow.h"
+#include "nanoarrow/nanoarrow.hpp"
+#include "nanoarrow/nanoarrow_ipc.h"
 
 #include "pj/base/dataset.hpp"
 #include "pj/base/type_tree.hpp"
@@ -21,64 +23,148 @@
 namespace pj::engine::arrow_import {
 namespace {
 
-// Helper: create an Arrow RecordBatch with float32 columns
-std::shared_ptr<arrow::RecordBatch> make_float32_batch(
-    const std::vector<std::string>& col_names,
-    const std::vector<std::vector<float>>& col_data,
-    int64_t num_rows) {
-  std::vector<std::shared_ptr<arrow::Field>> fields;
-  std::vector<std::shared_ptr<arrow::Array>> arrays;
+// ---------------------------------------------------------------------------
+// Helper: serialize an ArrowArrayStream to IPC bytes using nanoarrow
+// ---------------------------------------------------------------------------
 
-  for (std::size_t i = 0; i < col_names.size(); ++i) {
-    fields.push_back(arrow::field(col_names[i], arrow::float32()));
-    arrow::FloatBuilder builder;
-    (void)builder.AppendValues(col_data[i]);
-    std::shared_ptr<arrow::Array> arr;
-    (void)builder.Finish(&arr);
-    arrays.push_back(arr);
+// Build an IPC byte buffer from a schema + array. The array must be a struct
+// array whose children are the column arrays.
+std::vector<uint8_t> serialize_to_ipc(ArrowSchema* schema,
+                                      ArrowArray* array) {
+  // Create output buffer
+  ArrowBuffer out_buf;
+  ArrowBufferInit(&out_buf);
+
+  // Create output stream backed by buffer
+  ArrowIpcOutputStream out_stream;
+  EXPECT_EQ(ArrowIpcOutputStreamInitBuffer(&out_stream, &out_buf),
+            NANOARROW_OK);
+
+  // Create writer
+  ArrowIpcWriter writer;
+  EXPECT_EQ(ArrowIpcWriterInit(&writer, &out_stream), NANOARROW_OK);
+
+  // Write schema
+  ArrowError error;
+  EXPECT_EQ(ArrowIpcWriterWriteSchema(&writer, schema, &error), NANOARROW_OK)
+      << error.message;
+
+  // Create array view from schema for writing
+  nanoarrow::UniqueArrayView view;
+  EXPECT_EQ(ArrowArrayViewInitFromSchema(view.get(), schema, nullptr),
+            NANOARROW_OK);
+  EXPECT_EQ(ArrowArrayViewSetArray(view.get(), array, nullptr), NANOARROW_OK);
+
+  // Write array as a record batch
+  EXPECT_EQ(ArrowIpcWriterWriteArrayView(&writer, view.get(), &error),
+            NANOARROW_OK)
+      << error.message;
+
+  // Write end-of-stream marker
+  EXPECT_EQ(ArrowIpcWriterWriteArrayView(&writer, nullptr, &error),
+            NANOARROW_OK);
+
+  ArrowIpcWriterReset(&writer);
+
+  // Copy bytes out
+  std::vector<uint8_t> result(static_cast<std::size_t>(out_buf.size_bytes));
+  std::memcpy(result.data(), out_buf.data, result.size());
+  ArrowBufferReset(&out_buf);
+
+  return result;
+}
+
+// Serialize multiple batches into a single IPC stream
+std::vector<uint8_t> serialize_batches_to_ipc(
+    ArrowSchema* schema,
+    std::vector<ArrowArray*> batches) {
+  ArrowBuffer out_buf;
+  ArrowBufferInit(&out_buf);
+
+  ArrowIpcOutputStream out_stream;
+  EXPECT_EQ(ArrowIpcOutputStreamInitBuffer(&out_stream, &out_buf),
+            NANOARROW_OK);
+
+  ArrowIpcWriter writer;
+  EXPECT_EQ(ArrowIpcWriterInit(&writer, &out_stream), NANOARROW_OK);
+
+  ArrowError error;
+  EXPECT_EQ(ArrowIpcWriterWriteSchema(&writer, schema, &error), NANOARROW_OK)
+      << error.message;
+
+  for (auto* batch : batches) {
+    nanoarrow::UniqueArrayView view;
+    EXPECT_EQ(ArrowArrayViewInitFromSchema(view.get(), schema, nullptr),
+              NANOARROW_OK);
+    EXPECT_EQ(ArrowArrayViewSetArray(view.get(), batch, nullptr),
+              NANOARROW_OK);
+    EXPECT_EQ(ArrowIpcWriterWriteArrayView(&writer, view.get(), &error),
+              NANOARROW_OK)
+        << error.message;
   }
 
-  auto schema = arrow::schema(fields);
-  return arrow::RecordBatch::Make(schema, num_rows, arrays);
+  EXPECT_EQ(ArrowIpcWriterWriteArrayView(&writer, nullptr, &error),
+            NANOARROW_OK);
+  ArrowIpcWriterReset(&writer);
+
+  std::vector<uint8_t> result(static_cast<std::size_t>(out_buf.size_bytes));
+  std::memcpy(result.data(), out_buf.data, result.size());
+  ArrowBufferReset(&out_buf);
+
+  return result;
 }
 
 // ===========================================================================
-// Test: arrow_type_to_primitive
+// Test: schema_from_ipc — mixed supported/unsupported types
 // ===========================================================================
 
-TEST(ArrowImportTest, ArrowTypeToPrimitive) {
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::int8()), PrimitiveType::kInt8);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::int16()), PrimitiveType::kInt16);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::int32()), PrimitiveType::kInt32);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::int64()), PrimitiveType::kInt64);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::uint8()), PrimitiveType::kUint8);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::uint16()), PrimitiveType::kUint16);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::uint32()), PrimitiveType::kUint32);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::uint64()), PrimitiveType::kUint64);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::float32()), PrimitiveType::kFloat32);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::float64()), PrimitiveType::kFloat64);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::boolean()), PrimitiveType::kBool);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::utf8()), PrimitiveType::kString);
-  EXPECT_EQ(*arrow_type_to_primitive(arrow::large_utf8()), PrimitiveType::kString);
+TEST(ArrowImportTest, SchemaFromIpc) {
+  // Build schema: float32 "x", float64 "y", utf8 "name", list<int32> (skip)
+  nanoarrow::UniqueSchema schema;
+  ASSERT_EQ(ArrowSchemaInitFromType(schema.get(), NANOARROW_TYPE_STRUCT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaAllocateChildren(schema.get(), 4), NANOARROW_OK);
 
-  // Unsupported types
-  EXPECT_FALSE(arrow_type_to_primitive(arrow::list(arrow::int32())).has_value());
-  EXPECT_FALSE(arrow_type_to_primitive(arrow::binary()).has_value());
-}
+  ArrowSchemaInit(schema->children[0]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_FLOAT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[0], "x"), NANOARROW_OK);
 
-// ===========================================================================
-// Test: schema_from_arrow
-// ===========================================================================
+  ArrowSchemaInit(schema->children[1]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[1], NANOARROW_TYPE_DOUBLE),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[1], "y"), NANOARROW_OK);
 
-TEST(ArrowImportTest, SchemaFromArrow) {
-  auto schema = arrow::schema({
-      arrow::field("x", arrow::float32()),
-      arrow::field("y", arrow::float64()),
-      arrow::field("name", arrow::utf8()),
-      arrow::field("unsupported", arrow::list(arrow::int32())),  // skipped
-  });
+  ArrowSchemaInit(schema->children[2]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[2], NANOARROW_TYPE_STRING),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[2], "name"), NANOARROW_OK);
 
-  auto result_or = schema_from_arrow(*schema);
+  // Unsupported type: list<int32>
+  // ArrowSchemaSetType for LIST auto-allocates one child
+  ArrowSchemaInit(schema->children[3]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[3], NANOARROW_TYPE_LIST),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[3], "unsupported"),
+            NANOARROW_OK);
+  ASSERT_EQ(
+      ArrowSchemaSetType(schema->children[3]->children[0], NANOARROW_TYPE_INT32),
+      NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[3]->children[0], "item"),
+            NANOARROW_OK);
+
+  // Build a minimal struct array with 0 rows just to serialize
+  nanoarrow::UniqueArray array;
+  ASSERT_EQ(ArrowArrayInitFromSchema(array.get(), schema.get(), nullptr),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayStartAppending(array.get()), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishBuildingDefault(array.get(), nullptr),
+            NANOARROW_OK);
+
+  auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
+
+  auto result_or = schema_from_ipc(
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   ASSERT_TRUE(result_or.ok()) << result_or.status();
 
   const auto& [type_tree, mappings] = *result_or;
@@ -94,7 +180,6 @@ TEST(ArrowImportTest, SchemaFromArrow) {
 
   EXPECT_EQ(mappings[2].field_name, "name");
   EXPECT_EQ(mappings[2].pj_type, PrimitiveType::kString);
-  // Arrow column 3 (list) is skipped, so name maps to Arrow index 2
   EXPECT_EQ(mappings[2].arrow_column_index, 2);
 
   EXPECT_EQ(type_tree->name, "arrow_row");
@@ -102,10 +187,10 @@ TEST(ArrowImportTest, SchemaFromArrow) {
 }
 
 // ===========================================================================
-// Test: import_record_batch float32 columns
+// Test: import float32 columns via IPC
 // ===========================================================================
 
-TEST(ArrowImportTest, ImportRecordBatchFloat32) {
+TEST(ArrowImportTest, ImportFloat32) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(
       DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
@@ -113,18 +198,51 @@ TEST(ArrowImportTest, ImportRecordBatchFloat32) {
 
   DataWriter writer = engine.create_writer();
 
-  // Create Arrow batch
+  // Build schema: struct { float32 "x", float32 "y" }
+  nanoarrow::UniqueSchema schema;
+  ASSERT_EQ(ArrowSchemaInitFromType(schema.get(), NANOARROW_TYPE_STRUCT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaAllocateChildren(schema.get(), 2), NANOARROW_OK);
+
+  ArrowSchemaInit(schema->children[0]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_FLOAT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[0], "x"), NANOARROW_OK);
+
+  ArrowSchemaInit(schema->children[1]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[1], NANOARROW_TYPE_FLOAT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[1], "y"), NANOARROW_OK);
+
+  // Build array with 100 rows
   constexpr int64_t N = 100;
+  nanoarrow::UniqueArray array;
+  ASSERT_EQ(ArrowArrayInitFromSchema(array.get(), schema.get(), nullptr),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayStartAppending(array.get()), NANOARROW_OK);
+
   std::vector<float> x_vals(N), y_vals(N);
   for (int64_t i = 0; i < N; ++i) {
     x_vals[static_cast<std::size_t>(i)] = static_cast<float>(i) * 0.1F;
     y_vals[static_cast<std::size_t>(i)] = static_cast<float>(i) * 0.2F;
+
+    ASSERT_EQ(ArrowArrayAppendDouble(array->children[0],
+                                     static_cast<double>(x_vals[static_cast<std::size_t>(i)])),
+              NANOARROW_OK);
+    ASSERT_EQ(ArrowArrayAppendDouble(array->children[1],
+                                     static_cast<double>(y_vals[static_cast<std::size_t>(i)])),
+              NANOARROW_OK);
+    ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
   }
 
-  auto batch = make_float32_batch({"x", "y"}, {x_vals, y_vals}, N);
+  ASSERT_EQ(ArrowArrayFinishBuildingDefault(array.get(), nullptr),
+            NANOARROW_OK);
 
-  // Convert schema and register
-  auto [type_tree, mappings] = *schema_from_arrow(*batch->schema());
+  auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
+
+  // Parse schema and register
+  auto [type_tree, mappings] = *schema_from_ipc(
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto schema_id = *writer.register_schema("test_schema", type_tree);
 
   TopicDescriptor desc;
@@ -132,8 +250,11 @@ TEST(ArrowImportTest, ImportRecordBatchFloat32) {
   desc.schema_id = schema_id;
   auto topic_id = *writer.register_topic(*ds_or, desc);
 
-  // Import (using sequential timestamps)
-  auto status = import_record_batch(writer, topic_id, *batch, mappings);
+  // Import
+  auto status = import_ipc_stream(
+      writer, topic_id,
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()),
+      mappings);
   ASSERT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();
@@ -146,7 +267,8 @@ TEST(ArrowImportTest, ImportRecordBatchFloat32) {
       QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = N - 1});
   ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
   cursor_or->for_each([&](const SampleRow& row) {
-    auto x = static_cast<float>(row.chunk->read_numeric_as_double(0, row.row_index));
+    auto x = static_cast<float>(
+        row.chunk->read_numeric_as_double(0, row.row_index));
     EXPECT_FLOAT_EQ(x, x_vals[count]);
     ++count;
   });
@@ -154,7 +276,7 @@ TEST(ArrowImportTest, ImportRecordBatchFloat32) {
 }
 
 // ===========================================================================
-// Test: import_record_batch with timestamp column
+// Test: import with explicit timestamp column
 // ===========================================================================
 
 TEST(ArrowImportTest, ImportWithTimestampColumn) {
@@ -165,24 +287,41 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
 
   DataWriter writer = engine.create_writer();
 
-  // Build batch: int64 timestamps + float64 values
+  // Build schema: struct { int64 "timestamp", float64 "value" }
+  nanoarrow::UniqueSchema schema;
+  ASSERT_EQ(ArrowSchemaInitFromType(schema.get(), NANOARROW_TYPE_STRUCT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaAllocateChildren(schema.get(), 2), NANOARROW_OK);
+
+  ArrowSchemaInit(schema->children[0]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_INT64),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[0], "timestamp"), NANOARROW_OK);
+
+  ArrowSchemaInit(schema->children[1]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[1], NANOARROW_TYPE_DOUBLE),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[1], "value"), NANOARROW_OK);
+
   constexpr int64_t N = 50;
-  arrow::Int64Builder ts_builder;
-  arrow::DoubleBuilder val_builder;
+  nanoarrow::UniqueArray array;
+  ASSERT_EQ(ArrowArrayInitFromSchema(array.get(), schema.get(), nullptr),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayStartAppending(array.get()), NANOARROW_OK);
+
   for (int64_t i = 0; i < N; ++i) {
-    (void)ts_builder.Append(i * 1000);
-    (void)val_builder.Append(static_cast<double>(i) * 0.5);
+    ASSERT_EQ(ArrowArrayAppendInt(array->children[0], i * 1000),
+              NANOARROW_OK);
+    ASSERT_EQ(ArrowArrayAppendDouble(array->children[1],
+                                     static_cast<double>(i) * 0.5),
+              NANOARROW_OK);
+    ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
   }
 
-  std::shared_ptr<arrow::Array> ts_arr, val_arr;
-  (void)ts_builder.Finish(&ts_arr);
-  (void)val_builder.Finish(&val_arr);
+  ASSERT_EQ(ArrowArrayFinishBuildingDefault(array.get(), nullptr),
+            NANOARROW_OK);
 
-  auto schema = arrow::schema({
-      arrow::field("timestamp", arrow::int64()),
-      arrow::field("value", arrow::float64()),
-  });
-  auto batch = arrow::RecordBatch::Make(schema, N, {ts_arr, val_arr});
+  auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
   // Only map "value" column (not timestamp)
   std::vector<ArrowColumnMapping> mappings = {{
@@ -200,7 +339,10 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
   auto tid = *writer.register_topic(*ds_or, desc);
 
   // Import with timestamp_column=0
-  auto status = import_record_batch(writer, tid, *batch, mappings, 0);
+  auto status = import_ipc_stream(
+      writer, tid,
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()),
+      mappings, 0);
   ASSERT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();
@@ -219,7 +361,7 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
 }
 
 // ===========================================================================
-// Test: import_record_batch with string columns
+// Test: import string columns
 // ===========================================================================
 
 TEST(ArrowImportTest, ImportStrings) {
@@ -230,26 +372,53 @@ TEST(ArrowImportTest, ImportStrings) {
 
   DataWriter writer = engine.create_writer();
 
-  // Build batch with string column
-  arrow::StringBuilder str_builder;
-  (void)str_builder.Append("alpha");
-  (void)str_builder.Append("bravo");
-  (void)str_builder.Append("charlie");
+  // Build schema: struct { utf8 "name" }
+  nanoarrow::UniqueSchema schema;
+  ASSERT_EQ(ArrowSchemaInitFromType(schema.get(), NANOARROW_TYPE_STRUCT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaAllocateChildren(schema.get(), 1), NANOARROW_OK);
 
-  std::shared_ptr<arrow::Array> str_arr;
-  (void)str_builder.Finish(&str_arr);
+  ArrowSchemaInit(schema->children[0]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_STRING),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[0], "name"), NANOARROW_OK);
 
-  auto schema = arrow::schema({arrow::field("name", arrow::utf8())});
-  auto batch = arrow::RecordBatch::Make(schema, 3, {str_arr});
+  nanoarrow::UniqueArray array;
+  ASSERT_EQ(ArrowArrayInitFromSchema(array.get(), schema.get(), nullptr),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayStartAppending(array.get()), NANOARROW_OK);
 
-  auto [type_tree, mappings] = *schema_from_arrow(*batch->schema());
+  ArrowStringView sv;
+
+  sv = ArrowCharView("alpha");
+  ASSERT_EQ(ArrowArrayAppendString(array->children[0], sv), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  sv = ArrowCharView("bravo");
+  ASSERT_EQ(ArrowArrayAppendString(array->children[0], sv), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  sv = ArrowCharView("charlie");
+  ASSERT_EQ(ArrowArrayAppendString(array->children[0], sv), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  ASSERT_EQ(ArrowArrayFinishBuildingDefault(array.get(), nullptr),
+            NANOARROW_OK);
+
+  auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
+
+  auto [type_tree, mappings] = *schema_from_ipc(
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("str_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "str_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_record_batch(writer, tid, *batch, mappings);
+  auto status = import_ipc_stream(
+      writer, tid,
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()),
+      mappings);
   ASSERT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();
@@ -271,7 +440,7 @@ TEST(ArrowImportTest, ImportStrings) {
 }
 
 // ===========================================================================
-// Test: import with narrow integer widening (int8 -> int64)
+// Test: narrow integer widening (int8 → int64)
 // ===========================================================================
 
 TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
@@ -282,26 +451,46 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
 
   DataWriter writer = engine.create_writer();
 
-  // Build batch with int8 column
-  arrow::Int8Builder i8_builder;
-  (void)i8_builder.Append(10);
-  (void)i8_builder.Append(-20);
-  (void)i8_builder.Append(127);
+  // Build schema: struct { int8 "val" }
+  nanoarrow::UniqueSchema schema;
+  ASSERT_EQ(ArrowSchemaInitFromType(schema.get(), NANOARROW_TYPE_STRUCT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaAllocateChildren(schema.get(), 1), NANOARROW_OK);
 
-  std::shared_ptr<arrow::Array> i8_arr;
-  (void)i8_builder.Finish(&i8_arr);
+  ArrowSchemaInit(schema->children[0]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_INT8),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[0], "val"), NANOARROW_OK);
 
-  auto schema = arrow::schema({arrow::field("val", arrow::int8())});
-  auto batch = arrow::RecordBatch::Make(schema, 3, {i8_arr});
+  nanoarrow::UniqueArray array;
+  ASSERT_EQ(ArrowArrayInitFromSchema(array.get(), schema.get(), nullptr),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayStartAppending(array.get()), NANOARROW_OK);
 
-  auto [type_tree, mappings] = *schema_from_arrow(*batch->schema());
+  ASSERT_EQ(ArrowArrayAppendInt(array->children[0], 10), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayAppendInt(array->children[0], -20), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayAppendInt(array->children[0], 127), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  ASSERT_EQ(ArrowArrayFinishBuildingDefault(array.get(), nullptr),
+            NANOARROW_OK);
+
+  auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
+
+  auto [type_tree, mappings] = *schema_from_ipc(
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("i8_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "i8_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_record_batch(writer, tid, *batch, mappings);
+  auto status = import_ipc_stream(
+      writer, tid,
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()),
+      mappings);
   ASSERT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();
@@ -322,10 +511,10 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
 }
 
 // ===========================================================================
-// Test: import_table
+// Test: large dataset (500+ rows, multiple chunks)
 // ===========================================================================
 
-TEST(ArrowImportTest, ImportTable) {
+TEST(ArrowImportTest, ImportLargeDataset) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(
       DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
@@ -333,19 +522,37 @@ TEST(ArrowImportTest, ImportTable) {
 
   DataWriter writer = engine.create_writer();
 
-  // Build an Arrow Table with float64 column
+  // Build schema: struct { float64 "value" }
+  nanoarrow::UniqueSchema schema;
+  ASSERT_EQ(ArrowSchemaInitFromType(schema.get(), NANOARROW_TYPE_STRUCT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaAllocateChildren(schema.get(), 1), NANOARROW_OK);
+
+  ArrowSchemaInit(schema->children[0]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_DOUBLE),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[0], "value"), NANOARROW_OK);
+
   constexpr int64_t N = 500;
-  arrow::DoubleBuilder val_builder;
+  nanoarrow::UniqueArray array;
+  ASSERT_EQ(ArrowArrayInitFromSchema(array.get(), schema.get(), nullptr),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayStartAppending(array.get()), NANOARROW_OK);
+
   for (int64_t i = 0; i < N; ++i) {
-    (void)val_builder.Append(static_cast<double>(i));
+    ASSERT_EQ(ArrowArrayAppendDouble(array->children[0],
+                                     static_cast<double>(i)),
+              NANOARROW_OK);
+    ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
   }
-  std::shared_ptr<arrow::Array> val_arr;
-  (void)val_builder.Finish(&val_arr);
 
-  auto schema = arrow::schema({arrow::field("value", arrow::float64())});
-  auto table = arrow::Table::Make(schema, {val_arr});
+  ASSERT_EQ(ArrowArrayFinishBuildingDefault(array.get(), nullptr),
+            NANOARROW_OK);
 
-  auto [type_tree, mappings] = *schema_from_arrow(*schema);
+  auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
+
+  auto [type_tree, mappings] = *schema_from_ipc(
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("tbl_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "tbl_topic";
@@ -353,7 +560,10 @@ TEST(ArrowImportTest, ImportTable) {
   desc.max_chunk_rows = 128;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_table(writer, tid, *table, mappings);
+  auto status = import_ipc_stream(
+      writer, tid,
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()),
+      mappings);
   ASSERT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();
@@ -380,27 +590,51 @@ TEST(ArrowImportTest, ImportWithNulls) {
 
   DataWriter writer = engine.create_writer();
 
-  // Build batch with nulls
-  arrow::FloatBuilder builder;
-  (void)builder.Append(1.0F);
-  (void)builder.AppendNull();
-  (void)builder.Append(3.0F);
-  (void)builder.AppendNull();
+  // Build schema: struct { float32 "val" }
+  nanoarrow::UniqueSchema schema;
+  ASSERT_EQ(ArrowSchemaInitFromType(schema.get(), NANOARROW_TYPE_STRUCT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaAllocateChildren(schema.get(), 1), NANOARROW_OK);
 
-  std::shared_ptr<arrow::Array> arr;
-  (void)builder.Finish(&arr);
+  ArrowSchemaInit(schema->children[0]);
+  ASSERT_EQ(ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_FLOAT),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowSchemaSetName(schema->children[0], "val"), NANOARROW_OK);
 
-  auto schema = arrow::schema({arrow::field("val", arrow::float32())});
-  auto batch = arrow::RecordBatch::Make(schema, 4, {arr});
+  nanoarrow::UniqueArray array;
+  ASSERT_EQ(ArrowArrayInitFromSchema(array.get(), schema.get(), nullptr),
+            NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayStartAppending(array.get()), NANOARROW_OK);
 
-  auto [type_tree, mappings] = *schema_from_arrow(*batch->schema());
+  ASSERT_EQ(ArrowArrayAppendDouble(array->children[0], 1.0), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  ASSERT_EQ(ArrowArrayAppendNull(array->children[0], 1), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  ASSERT_EQ(ArrowArrayAppendDouble(array->children[0], 3.0), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  ASSERT_EQ(ArrowArrayAppendNull(array->children[0], 1), NANOARROW_OK);
+  ASSERT_EQ(ArrowArrayFinishElement(array.get()), NANOARROW_OK);
+
+  ASSERT_EQ(ArrowArrayFinishBuildingDefault(array.get(), nullptr),
+            NANOARROW_OK);
+
+  auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
+
+  auto [type_tree, mappings] = *schema_from_ipc(
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("null_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "null_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_record_batch(writer, tid, *batch, mappings);
+  auto status = import_ipc_stream(
+      writer, tid,
+      absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()),
+      mappings);
   ASSERT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();

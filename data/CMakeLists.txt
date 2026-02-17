@@ -9,6 +9,11 @@ find_package(GTest REQUIRED)
 find_package(benchmark CONFIG REQUIRED)
 
 option(PJ_ASSERT_THROWS "Use exceptions instead of assert() for PJ_ASSERT" OFF)
+option(
+  PJ_BUILD_PARQUET_IMPORT_EXAMPLE
+  "Build parquet_import example (requires full Arrow C++ and Parquet)"
+  OFF
+)
 
 # Sanitizers for Debug builds (opt-in via PJ_ENABLE_SANITIZERS)
 # Note: ASAN/UBSan have compatibility issues with abseil on GCC 11.
@@ -42,7 +47,75 @@ endif()
 # plotjuggler_engine — storage engine, depends on base + abseil
 # ---------------------------------------------------------------------------
 
-find_package(Arrow REQUIRED)
+find_package(nanoarrow CONFIG QUIET)
+
+set(PJ_NANOARROW_TARGET "")
+if(TARGET nanoarrow::nanoarrow)
+  set(PJ_NANOARROW_TARGET nanoarrow::nanoarrow)
+elseif(TARGET nanoarrow::nanoarrow_static)
+  set(PJ_NANOARROW_TARGET nanoarrow::nanoarrow_static)
+elseif(TARGET nanoarrow::nanoarrow_shared)
+  set(PJ_NANOARROW_TARGET nanoarrow::nanoarrow_shared)
+else()
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(NANOARROW QUIET nanoarrow)
+    if(NANOARROW_FOUND)
+      add_library(pj_nanoarrow INTERFACE)
+      target_include_directories(pj_nanoarrow INTERFACE
+        ${NANOARROW_INCLUDE_DIRS}
+      )
+      target_link_libraries(pj_nanoarrow INTERFACE ${NANOARROW_LIBRARIES})
+      set(PJ_NANOARROW_TARGET pj_nanoarrow)
+    endif()
+  endif()
+endif()
+
+if(PJ_NANOARROW_TARGET STREQUAL "")
+  message(FATAL_ERROR
+    "nanoarrow is required for plotjuggler_engine. "
+    "Install nanoarrow and expose a CMake target "
+    "(nanoarrow::nanoarrow / nanoarrow::nanoarrow_static / nanoarrow::nanoarrow_shared) "
+    "or provide a pkg-config entry named 'nanoarrow'."
+  )
+endif()
+
+# nanoarrow IPC target detection (same pattern as core nanoarrow)
+set(PJ_NANOARROW_IPC_TARGET "")
+if(TARGET nanoarrow::nanoarrow_ipc)
+  set(PJ_NANOARROW_IPC_TARGET nanoarrow::nanoarrow_ipc)
+elseif(TARGET nanoarrow::nanoarrow_ipc_static)
+  set(PJ_NANOARROW_IPC_TARGET nanoarrow::nanoarrow_ipc_static)
+elseif(TARGET nanoarrow::nanoarrow_ipc_shared)
+  set(PJ_NANOARROW_IPC_TARGET nanoarrow::nanoarrow_ipc_shared)
+else()
+  if(PkgConfig_FOUND)
+    pkg_check_modules(NANOARROW_IPC QUIET nanoarrow_ipc)
+    if(NANOARROW_IPC_FOUND)
+      add_library(pj_nanoarrow_ipc INTERFACE)
+      target_include_directories(pj_nanoarrow_ipc INTERFACE
+        ${NANOARROW_IPC_INCLUDE_DIRS}
+      )
+      target_link_libraries(pj_nanoarrow_ipc INTERFACE ${NANOARROW_IPC_LIBRARIES})
+      set(PJ_NANOARROW_IPC_TARGET pj_nanoarrow_ipc)
+    endif()
+  endif()
+endif()
+
+if(PJ_NANOARROW_IPC_TARGET STREQUAL "")
+  message(FATAL_ERROR
+    "nanoarrow IPC is required for plotjuggler_engine. "
+    "Install nanoarrow with IPC support and expose a CMake target "
+    "(nanoarrow::nanoarrow_ipc / nanoarrow::nanoarrow_ipc_static / nanoarrow::nanoarrow_ipc_shared) "
+    "or provide a pkg-config entry named 'nanoarrow_ipc'."
+  )
+endif()
+
+# nanoarrow IPC internally depends on the flatcc runtime (libflatccrt).
+# Some package managers (e.g. Conan) bundle it alongside the IPC library
+# but don't declare it as a transitive link dependency. Since the IPC target
+# already sets INTERFACE_LINK_DIRECTORIES, linking by name suffices.
+target_link_libraries(${PJ_NANOARROW_IPC_TARGET} INTERFACE flatccrt)
 
 add_library(plotjuggler_engine STATIC
   engine/src/buffer.cpp
@@ -83,11 +156,9 @@ target_link_libraries(plotjuggler_engine
     absl::time
     absl::function_ref
   PRIVATE
-    Arrow::arrow_static
+    ${PJ_NANOARROW_TARGET}
+    ${PJ_NANOARROW_IPC_TARGET}
 )
-# Arrow headers needed by public header pj/engine/arrow_import.hpp
-get_target_property(_arrow_inc Arrow::arrow_static INTERFACE_INCLUDE_DIRECTORIES)
-target_include_directories(plotjuggler_engine PUBLIC ${_arrow_inc})
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -99,6 +170,8 @@ enable_testing()
 set(BASE_TEST_SOURCES
   tests/types_test.cpp
   tests/type_tree_test.cpp
+  tests/span_test.cpp
+  tests/expected_test.cpp
 )
 
 foreach(test_src ${BASE_TEST_SOURCES})
@@ -127,10 +200,13 @@ foreach(test_src ${ENGINE_TEST_SOURCES})
   add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
 
-# Arrow import test (needs Arrow explicitly since engine links it PRIVATE)
+# Arrow import test (needs nanoarrow explicitly for building test IPC data)
 add_executable(arrow_import_test tests/arrow_import_test.cpp)
 target_link_libraries(arrow_import_test PRIVATE
-  plotjuggler_engine Arrow::arrow_static GTest::gtest_main)
+  plotjuggler_engine
+  ${PJ_NANOARROW_TARGET}
+  ${PJ_NANOARROW_IPC_TARGET}
+  GTest::gtest_main)
 add_test(NAME arrow_import_test COMMAND arrow_import_test)
 
 # ---------------------------------------------------------------------------
@@ -147,7 +223,15 @@ target_link_libraries(ingest_benchmark PRIVATE plotjuggler_engine benchmark::ben
 # Examples
 # ---------------------------------------------------------------------------
 
-add_executable(parquet_import examples/parquet_import.cpp)
-target_link_libraries(parquet_import PRIVATE
-  plotjuggler_engine Arrow::arrow_static Parquet::parquet_static
-)
+if(PJ_BUILD_PARQUET_IMPORT_EXAMPLE)
+  if(NOT TARGET Arrow::arrow_static)
+    find_package(Arrow REQUIRED)
+  endif()
+  if(NOT TARGET Parquet::parquet_static)
+    find_package(Parquet REQUIRED)
+  endif()
+  add_executable(parquet_import examples/parquet_import.cpp)
+  target_link_libraries(parquet_import PRIVATE
+    plotjuggler_engine Arrow::arrow_static Parquet::parquet_static
+  )
+endif()

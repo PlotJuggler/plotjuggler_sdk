@@ -15,7 +15,11 @@
 
 #include <arrow/api.h>
 #include <arrow/io/file.h>
+#include <arrow/io/memory.h>
+#include <arrow/ipc/writer.h>
 #include <parquet/arrow/reader.h>
+
+#include "absl/types/span.h"
 
 #include "pj/base/types.hpp"
 #include "pj/engine/arrow_import.hpp"
@@ -75,7 +79,7 @@ std::size_t encoded_column_bytes(const TopicChunk& chunk, std::size_t col) {
 
     case EncodingType::kConstant: {
       const auto& c = std::get<pj::engine::encoding::ConstantEncoded>(data);
-      return c.value.size();
+      return c.value_size;
     }
     case EncodingType::kFrameOfReference: {
       const auto& f =
@@ -278,10 +282,53 @@ int main(int argc, char* argv[]) {
   std::cout << "Loaded " << path << ": " << table->num_rows() << " rows, "
             << table->num_columns() << " columns\n";
 
-  // ── 2. Map Arrow schema → TypeTreeNode via arrow_import ──────────────────
+  // ── 2. Serialize Arrow Table to IPC stream bytes ─────────────────────────
+
+  auto sink_result = arrow::io::BufferOutputStream::Create();
+  if (!sink_result.ok()) {
+    std::cerr << "Failed to create buffer output stream: "
+              << sink_result.status().ToString() << "\n";
+    return 1;
+  }
+  auto sink = *sink_result;
+
+  auto ipc_writer_result =
+      arrow::ipc::MakeStreamWriter(sink, table->schema());
+  if (!ipc_writer_result.ok()) {
+    std::cerr << "Failed to create IPC writer: "
+              << ipc_writer_result.status().ToString() << "\n";
+    return 1;
+  }
+  auto ipc_writer = *ipc_writer_result;
+
+  st = ipc_writer->WriteTable(*table);
+  if (!st.ok()) {
+    std::cerr << "IPC WriteTable failed: " << st.ToString() << "\n";
+    return 1;
+  }
+  st = ipc_writer->Close();
+  if (!st.ok()) {
+    std::cerr << "IPC writer Close failed: " << st.ToString() << "\n";
+    return 1;
+  }
+
+  auto ipc_buf_result = sink->Finish();
+  if (!ipc_buf_result.ok()) {
+    std::cerr << "Failed to finish IPC buffer: "
+              << ipc_buf_result.status().ToString() << "\n";
+    return 1;
+  }
+  auto ipc_buffer = *ipc_buf_result;
+
+  absl::Span<const uint8_t> ipc_bytes(
+      ipc_buffer->data(), static_cast<std::size_t>(ipc_buffer->size()));
+
+  std::cout << "Serialized to IPC: " << ipc_buffer->size() << " bytes\n";
+
+  // ── 3. Map IPC schema → TypeTreeNode via arrow_import ──────────────────
 
   auto schema_result =
-      pj::engine::arrow_import::schema_from_arrow(*table->schema());
+      pj::engine::arrow_import::schema_from_ipc(ipc_bytes);
   if (!schema_result.ok()) {
     std::cerr << "Schema conversion failed: "
               << schema_result.status().ToString() << "\n";
@@ -301,7 +348,7 @@ int main(int argc, char* argv[]) {
     mappings.push_back(std::move(m));
   }
 
-  // ── 3. Create DataEngine, dataset, schema, topic ──────────────────────────
+  // ── 4. Create DataEngine, dataset, schema, topic ──────────────────────────
 
   DataEngine engine;
 
@@ -346,15 +393,14 @@ int main(int argc, char* argv[]) {
   }
   auto topic_id = *topic_or;
 
-  // ── 4. Bulk ingest via Arrow import API ─────────────────────────────────
+  // ── 5. Bulk ingest via IPC import API ────────────────────────────────────
 
   auto t_start = std::chrono::steady_clock::now();
 
-  auto import_st = pj::engine::arrow_import::import_table(
-      writer, topic_id, *table, arrow_mappings,
-      /*timestamp_column=*/-1, /*combine_chunks=*/true);
+  auto import_st = pj::engine::arrow_import::import_ipc_stream(
+      writer, topic_id, ipc_bytes, arrow_mappings);
   if (!import_st.ok()) {
-    std::cerr << "import_table failed: " << import_st.ToString() << "\n";
+    std::cerr << "import_ipc_stream failed: " << import_st.ToString() << "\n";
     return 1;
   }
 
@@ -366,7 +412,7 @@ int main(int argc, char* argv[]) {
   double ingest_seconds =
       std::chrono::duration<double>(t_end - t_start).count();
 
-  // ── 5. Memory report ─────────────────────────────────────────────────────
+  // ── 6. Memory report ─────────────────────────────────────────────────────
 
   const auto* storage = engine.get_topic_storage(topic_id);
   if (storage == nullptr) {
