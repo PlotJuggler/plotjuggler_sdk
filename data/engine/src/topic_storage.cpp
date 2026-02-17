@@ -69,7 +69,7 @@ TopicMetadata TopicStorage::metadata() const {
         } else if constexpr (std::is_same_v<T, encoding::PackedBools>) {
           meta.total_byte_size += v.bits.size();
         } else if constexpr (std::is_same_v<T, encoding::ConstantEncoded>) {
-          meta.total_byte_size += v.value.size();
+          meta.total_byte_size += v.value_size;
         } else if constexpr (std::is_same_v<T, encoding::FrameOfReferenceEncoded>) {
           meta.total_byte_size += v.offsets.size();
         }

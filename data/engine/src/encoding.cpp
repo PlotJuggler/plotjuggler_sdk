@@ -63,15 +63,15 @@ ConstantEncoded constant_encode(const uint8_t* data, StorageKind kind,
   result.count = count;
 
   const std::size_t esize = storage_kind_size(kind);
-  result.value.resize(esize);
+  result.value_size = static_cast<uint8_t>(esize);
   if (esize > 0 && count > 0) {
-    std::memcpy(result.value.mutable_data(), data, esize);
+    std::memcpy(result.value_bytes.data(), data, esize);
   }
   return result;
 }
 
 double constant_decode_as_double(const ConstantEncoded& enc) {
-  const uint8_t* ptr = enc.value.data();
+  const uint8_t* ptr = enc.value_bytes.data();
 
   auto load = [&]<typename T>(const T* /*tag*/) -> double {
     T v{};

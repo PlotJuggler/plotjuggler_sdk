@@ -598,7 +598,7 @@ bool TopicChunk::read_bool(std::size_t col_index, std::size_t row) const {
     const auto& enc = std::get<encoding::ConstantEncoded>(
         encoding_data[col_index]);
     uint8_t v = 0;
-    std::memcpy(&v, enc.value.data(), sizeof(v));
+    std::memcpy(&v, enc.value_bytes.data(), sizeof(v));
     return v != 0;
   }
   return encoding::unpack_bool(

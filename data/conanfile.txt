@@ -3,10 +3,12 @@ abseil/20240722.0
 gtest/1.15.0
 benchmark/1.8.3
 arrow/18.1.0
+nanoarrow/0.7.0
 
 [options]
 arrow/*:parquet=True
 arrow/*:with_snappy=True
+nanoarrow/*:with_ipc=True
 boost/*:without_test=True
 
 [generators]

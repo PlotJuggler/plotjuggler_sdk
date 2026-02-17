@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -14,8 +15,9 @@ namespace pj::engine::encoding {
 // Constant encoding — stores a single repeated value
 // ---------------------------------------------------------------------------
 struct ConstantEncoded {
-  RawBuffer value;           // Single value in storage-kind bytes
+  std::array<uint8_t, 8> value_bytes{};  // Single value (max StorageKind size)
   StorageKind value_kind;
+  uint8_t value_size = 0;
   std::size_t count = 0;
 };
 

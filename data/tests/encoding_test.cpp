@@ -163,7 +163,7 @@ TEST(ConstantEncoding, Float64) {
   auto enc = constant_encode(buf.data(), StorageKind::kFloat64, count);
   EXPECT_EQ(enc.count, count);
   EXPECT_EQ(enc.value_kind, StorageKind::kFloat64);
-  EXPECT_EQ(enc.value.size(), sizeof(double));
+  EXPECT_EQ(enc.value_size, sizeof(double));
 
   EXPECT_DOUBLE_EQ(constant_decode_as_double(enc), 3.14);
 }
