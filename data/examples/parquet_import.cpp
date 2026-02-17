@@ -117,7 +117,7 @@ std::vector<ColumnMemory> measure_memory(
   for (const auto& chunk : chunks) {
     for (std::size_t col = 0; col < num_columns; ++col) {
       result[col].actual_bytes += encoded_column_bytes(chunk, col);
-      result[col].actual_bytes += chunk.validity_bitmaps[col].size();
+      result[col].actual_bytes += chunk.validity_bitmaps[col].size_bytes();
       enc_counts[col][static_cast<uint8_t>(chunk.column_encodings[col])]++;
     }
   }

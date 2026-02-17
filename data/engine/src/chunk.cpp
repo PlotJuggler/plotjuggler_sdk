@@ -532,7 +532,9 @@ TopicChunk TopicChunkBuilder::seal() {
 
     // Copy validity bitmap if the column has nulls
     if (col.has_nulls()) {
-      chunk.validity_bitmaps[i].append(col.validity_buffer().data(), col.validity_buffer().size());
+      chunk.validity_bitmaps[i].assign_bytes(
+          Span<const uint8_t>(col.validity_buffer().data(), col.validity_buffer().size_bytes()),
+          col.validity_buffer().size_bits());
     }
   }
 
@@ -585,7 +587,7 @@ bool TopicChunk::is_null(std::size_t col_index, std::size_t row) const {
   if (validity_bitmaps[col_index].empty()) {
     return false;
   }
-  return !validity_bitmap::is_valid(validity_bitmaps[col_index], row);
+  return !validity_bitmaps[col_index].is_valid(row);
 }
 
 void TopicChunk::read_column_as_doubles(std::size_t col_index, Span<double> out, std::size_t row_start) const {

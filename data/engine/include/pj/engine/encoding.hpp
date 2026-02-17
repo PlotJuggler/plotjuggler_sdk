@@ -77,6 +77,7 @@ struct PackedBools {
 // Pack bool values (stored as uint8_t 0/1) into a bitfield
 /// Pack bool bytes into a compact bitfield.
 [[nodiscard]] PackedBools pack_bools(pj::Span<const uint8_t> values);
+
 /// Read one bool from a packed bitfield.
 [[nodiscard]] bool unpack_bool(const PackedBools& packed, std::size_t index);
 
@@ -92,6 +93,7 @@ using ColumnEncodingData = std::variant<
 // ---------------------------------------------------------------------------
 /// Build constant encoding from one repeated storage-kind value.
 [[nodiscard]] ConstantEncoded constant_encode(pj::Span<const uint8_t> data, StorageKind kind, std::size_t count);
+
 /// Decode constant numeric value as double.
 [[nodiscard]] double constant_decode_as_double(const ConstantEncoded& enc);
 
@@ -104,6 +106,7 @@ using ColumnEncodingData = std::variant<
     pj::Span<const uint8_t> data, StorageKind kind, std::size_t count, int64_t min_val, int64_t max_val);
 /// Decode one FOR value as double.
 [[nodiscard]] double for_decode_one_as_double(const FrameOfReferenceEncoded& enc, std::size_t row);
+
 /// Decode a contiguous FOR range into `out`.
 void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc, pj::Span<double> out, std::size_t row_start);
 

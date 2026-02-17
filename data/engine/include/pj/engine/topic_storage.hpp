@@ -54,22 +54,28 @@ class TopicStorage {
 
   /// Append a sealed chunk; rejects out-of-order chunk timestamps.
   [[nodiscard]] absl::Status append_sealed_chunk(TopicChunk chunk);
+
   /// Remove chunks whose max time is strictly before `t_keep_min`.
   void evict_before(Timestamp t_keep_min);
 
   /// Access retained sealed chunks in commit order.
   [[nodiscard]] const std::deque<TopicChunk>& sealed_chunks() const noexcept;
+
   /// Compute aggregated metadata for current retained chunks.
   [[nodiscard]] TopicMetadata metadata() const;
+
   /// Access topic descriptor.
   [[nodiscard]] const TopicDescriptor& descriptor() const noexcept;
+
   /// Topic identifier.
   [[nodiscard]] TopicId topic_id() const noexcept;
+
   /// True if no chunks are retained.
   [[nodiscard]] bool empty() const noexcept;
 
   /// Minimum timestamp of retained chunks (0 if empty).
   [[nodiscard]] Timestamp time_min() const noexcept;
+
   /// Maximum timestamp of retained chunks (0 if empty).
   [[nodiscard]] Timestamp time_max() const noexcept;
 

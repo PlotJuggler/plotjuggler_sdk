@@ -53,7 +53,7 @@ TopicMetadata TopicStorage::metadata() const {
       meta.total_byte_size += col_buf.size();
     }
     for (const auto& validity_buf : chunk.validity_bitmaps) {
-      meta.total_byte_size += validity_buf.size();
+      meta.total_byte_size += validity_buf.size_bytes();
     }
     for (const auto& enc : chunk.encoding_data) {
       std::visit(

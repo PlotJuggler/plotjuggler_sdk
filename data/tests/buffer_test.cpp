@@ -79,87 +79,100 @@ TEST(RawBufferTest, Reserve) {
 }
 
 // ===========================================================================
-// Validity bitmap tests
+// BitVector tests
 // ===========================================================================
 
-TEST(ValidityBitmapTest, BytesForBits) {
-  EXPECT_EQ(validity_bitmap::bytes_for_bits(0), 0u);
-  EXPECT_EQ(validity_bitmap::bytes_for_bits(1), 1u);
-  EXPECT_EQ(validity_bitmap::bytes_for_bits(7), 1u);
-  EXPECT_EQ(validity_bitmap::bytes_for_bits(8), 1u);
-  EXPECT_EQ(validity_bitmap::bytes_for_bits(9), 2u);
-  EXPECT_EQ(validity_bitmap::bytes_for_bits(16), 2u);
-  EXPECT_EQ(validity_bitmap::bytes_for_bits(17), 3u);
+TEST(BitVectorTest, BytesForBits) {
+  EXPECT_EQ(BitVector::bytes_for_bits(0), 0u);
+  EXPECT_EQ(BitVector::bytes_for_bits(1), 1u);
+  EXPECT_EQ(BitVector::bytes_for_bits(7), 1u);
+  EXPECT_EQ(BitVector::bytes_for_bits(8), 1u);
+  EXPECT_EQ(BitVector::bytes_for_bits(9), 2u);
+  EXPECT_EQ(BitVector::bytes_for_bits(16), 2u);
+  EXPECT_EQ(BitVector::bytes_for_bits(17), 3u);
 }
 
-TEST(ValidityBitmapTest, InitAllValid) {
-  RawBuffer buf;
-  validity_bitmap::init(buf, 16);
+TEST(BitVectorTest, InitAllValid) {
+  BitVector bits;
+  bits.init_valid(16);
 
-  EXPECT_EQ(buf.size(), 2u);
+  EXPECT_EQ(bits.size_bytes(), 2u);
   for (std::size_t i = 0; i < 16; ++i) {
-    EXPECT_TRUE(validity_bitmap::is_valid(buf, i)) << "bit " << i << " should be valid after init";
+    EXPECT_TRUE(bits.is_valid(i)) << "bit " << i << " should be valid after init";
   }
 }
 
-TEST(ValidityBitmapTest, SetNull) {
-  RawBuffer buf;
-  validity_bitmap::init(buf, 16);
+TEST(BitVectorTest, SetNull) {
+  BitVector bits;
+  bits.init_valid(16);
 
-  validity_bitmap::set_null(buf, 5);
-  EXPECT_FALSE(validity_bitmap::is_valid(buf, 5));
+  bits.set_null(5);
+  EXPECT_FALSE(bits.is_valid(5));
 
   // All other bits should remain valid.
   for (std::size_t i = 0; i < 16; ++i) {
     if (i == 5) {
       continue;
     }
-    EXPECT_TRUE(validity_bitmap::is_valid(buf, i)) << "bit " << i << " should still be valid";
+    EXPECT_TRUE(bits.is_valid(i)) << "bit " << i << " should still be valid";
   }
 }
 
-TEST(ValidityBitmapTest, SetValidAfterNull) {
-  RawBuffer buf;
-  validity_bitmap::init(buf, 16);
+TEST(BitVectorTest, SetValidAfterNull) {
+  BitVector bits;
+  bits.init_valid(16);
 
-  validity_bitmap::set_null(buf, 5);
-  EXPECT_FALSE(validity_bitmap::is_valid(buf, 5));
+  bits.set_null(5);
+  EXPECT_FALSE(bits.is_valid(5));
 
-  validity_bitmap::set_valid(buf, 5);
-  EXPECT_TRUE(validity_bitmap::is_valid(buf, 5));
+  bits.set_valid(5);
+  EXPECT_TRUE(bits.is_valid(5));
 }
 
-TEST(ValidityBitmapTest, CountNulls) {
-  RawBuffer buf;
-  validity_bitmap::init(buf, 16);
+TEST(BitVectorTest, CountNulls) {
+  BitVector bits;
+  bits.init_valid(16);
 
-  validity_bitmap::set_null(buf, 3);
-  validity_bitmap::set_null(buf, 7);
-  validity_bitmap::set_null(buf, 15);
+  bits.set_null(3);
+  bits.set_null(7);
+  bits.set_null(15);
 
-  EXPECT_EQ(validity_bitmap::count_nulls(buf, 16), 3u);
+  EXPECT_EQ(bits.count_nulls(16), 3u);
 }
 
-TEST(ValidityBitmapTest, ByteBoundary) {
-  RawBuffer buf;
-  validity_bitmap::init(buf, 16);
+TEST(BitVectorTest, ByteBoundary) {
+  BitVector bits;
+  bits.init_valid(16);
 
   // Bit 7 is the last bit in byte 0; bit 8 is the first bit in byte 1.
-  validity_bitmap::set_null(buf, 7);
-  validity_bitmap::set_null(buf, 8);
+  bits.set_null(7);
+  bits.set_null(8);
 
-  EXPECT_FALSE(validity_bitmap::is_valid(buf, 7));
-  EXPECT_FALSE(validity_bitmap::is_valid(buf, 8));
+  EXPECT_FALSE(bits.is_valid(7));
+  EXPECT_FALSE(bits.is_valid(8));
 
   // Neighbours should be unaffected.
-  EXPECT_TRUE(validity_bitmap::is_valid(buf, 6));
-  EXPECT_TRUE(validity_bitmap::is_valid(buf, 9));
+  EXPECT_TRUE(bits.is_valid(6));
+  EXPECT_TRUE(bits.is_valid(9));
 }
 
-TEST(ValidityBitmapTest, CountNullsWithNoNulls) {
-  RawBuffer buf;
-  validity_bitmap::init(buf, 32);
-  EXPECT_EQ(validity_bitmap::count_nulls(buf, 32), 0u);
+TEST(BitVectorTest, CountNullsWithNoNulls) {
+  BitVector bits;
+  bits.init_valid(32);
+  EXPECT_EQ(bits.count_nulls(32), 0u);
+}
+
+TEST(BitVectorTest, BitSpanView) {
+  BitVector bits;
+  bits.init_valid(8);
+  bits.set_null(1);
+  bits.set_null(6);
+
+  const BitSpan view = bits.bit_span();
+  EXPECT_EQ(view.size_bits(), 8u);
+  EXPECT_TRUE(view.test(0));
+  EXPECT_FALSE(view.test(1));
+  EXPECT_FALSE(view.test(6));
 }
 
 }  // namespace

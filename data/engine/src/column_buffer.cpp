@@ -34,7 +34,7 @@ bool TypedColumnBuffer::is_valid(std::size_t row) const noexcept {
   if (!validity_initialized_) {
     return true;
   }
-  return validity_bitmap::is_valid(validity_, row);
+  return validity_.is_valid(row);
 }
 
 // ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ const RawBuffer& TypedColumnBuffer::value_buffer() const noexcept {
   return values_;
 }
 
-const RawBuffer& TypedColumnBuffer::validity_buffer() const noexcept {
+const BitVector& TypedColumnBuffer::validity_buffer() const noexcept {
   return validity_;
 }
 
@@ -62,7 +62,7 @@ void TypedColumnBuffer::ensure_validity_initialized() {
     return;
   }
   // Initialize bitmap with all existing rows marked valid.
-  validity_bitmap::init(validity_, row_count_);
+  validity_.init_valid(row_count_);
   validity_initialized_ = true;
 }
 
@@ -75,11 +75,8 @@ void TypedColumnBuffer::append_fixed(T value) {
   values_.append(&value, sizeof(T));
   if (validity_initialized_) {
     // Ensure bitmap has room for this row, then mark valid.
-    const std::size_t needed = validity_bitmap::bytes_for_bits(row_count_ + 1);
-    if (validity_.size() < needed) {
-      validity_.resize(needed);
-    }
-    validity_bitmap::set_valid(validity_, row_count_);
+    validity_.ensure_size(row_count_ + 1);
+    validity_.set_valid(row_count_);
   }
   ++row_count_;
 }
@@ -143,11 +140,8 @@ void TypedColumnBuffer::append_string(std::string_view value) {
 
   // Update validity if initialized.
   if (validity_initialized_) {
-    const std::size_t needed = validity_bitmap::bytes_for_bits(row_count_ + 1);
-    if (validity_.size() < needed) {
-      validity_.resize(needed);
-    }
-    validity_bitmap::set_valid(validity_, row_count_);
+    validity_.ensure_size(row_count_ + 1);
+    validity_.set_valid(row_count_);
   }
 
   ++row_count_;
@@ -157,11 +151,8 @@ void TypedColumnBuffer::append_null() {
   ensure_validity_initialized();
 
   // Ensure bitmap has room for this row.
-  const std::size_t needed = validity_bitmap::bytes_for_bits(row_count_ + 1);
-  if (validity_.size() < needed) {
-    validity_.resize(needed);
-  }
-  validity_bitmap::set_null(validity_, row_count_);
+  validity_.ensure_size(row_count_ + 1);
+  validity_.set_null(row_count_);
 
   // Append zero bytes for the value slot.
   const StorageKind kind = storage_kind_of(descriptor_.logical_type);
@@ -199,12 +190,9 @@ void TypedColumnBuffer::append_fixed_bulk(Span<const T> data) {
   values_.append(data.data(), count * sizeof(T));
   if (validity_initialized_) {
     const std::size_t new_total = row_count_ + count;
-    const std::size_t needed = validity_bitmap::bytes_for_bits(new_total);
-    if (validity_.size() < needed) {
-      validity_.resize(needed);
-    }
+    validity_.ensure_size(new_total);
     for (std::size_t i = row_count_; i < new_total; ++i) {
-      validity_bitmap::set_valid(validity_, i);
+      validity_.set_valid(i);
     }
   }
   row_count_ += count;
@@ -279,12 +267,9 @@ void TypedColumnBuffer::append_strings_bulk(Span<const uint32_t> offsets, Span<c
   // Update validity if initialized
   if (validity_initialized_) {
     const std::size_t new_total = row_count_ + count;
-    const std::size_t needed = validity_bitmap::bytes_for_bits(new_total);
-    if (validity_.size() < needed) {
-      validity_.resize(needed);
-    }
+    validity_.ensure_size(new_total);
     for (std::size_t i = row_count_; i < new_total; ++i) {
-      validity_bitmap::set_valid(validity_, i);
+      validity_.set_valid(i);
     }
   }
 
@@ -302,17 +287,14 @@ void TypedColumnBuffer::append_validity_bulk(BitSpan validity) {
   // row_count_ already includes them, so the range is
   // [row_count_ - count, row_count_).
   const std::size_t start_row = row_count_ - count;
-  const std::size_t needed = validity_bitmap::bytes_for_bits(row_count_);
-  if (validity_.size() < needed) {
-    validity_.resize(needed);
-  }
+  validity_.ensure_size(row_count_);
 
   for (std::size_t i = 0; i < count; ++i) {
     const bool valid = validity.test(i);
     if (valid) {
-      validity_bitmap::set_valid(validity_, start_row + i);
+      validity_.set_valid(start_row + i);
     } else {
-      validity_bitmap::set_null(validity_, start_row + i);
+      validity_.set_null(start_row + i);
       ++null_count_;
     }
   }
@@ -358,7 +340,7 @@ bool TypedColumnBuffer::is_null(std::size_t row) const {
   if (!validity_initialized_) {
     return false;
   }
-  return !validity_bitmap::is_valid(validity_, row);
+  return !validity_.is_valid(row);
 }
 
 // ---------------------------------------------------------------------------

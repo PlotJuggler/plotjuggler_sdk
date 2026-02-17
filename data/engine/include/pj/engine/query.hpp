@@ -57,8 +57,10 @@ class RangeCursor {
   RangeCursor(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max);
 
   [[nodiscard]] bool valid() const noexcept;
+
   /// Advance to next matching row.
   void advance();
+
   /// Return current row descriptor.
   [[nodiscard]] SampleRow current() const;
 
@@ -76,6 +78,7 @@ class RangeCursor {
   std::size_t row_index_ = 0;
 
   void find_first_valid();
+
   void skip_to_valid();
 };
 

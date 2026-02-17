@@ -32,46 +32,55 @@ class DataEngine {
   // Dataset management
   /// Create and register a dataset.
   [[nodiscard]] absl::StatusOr<DatasetId> create_dataset(DatasetDescriptor descriptor);
+
   /// Lookup dataset by id (nullptr if missing).
   [[nodiscard]] const DatasetInfo* get_dataset(DatasetId id) const;
 
   // Topic management (called by DataWriter)
   /// Create a topic under a dataset.
   [[nodiscard]] absl::StatusOr<TopicId> create_topic(DatasetId dataset_id, TopicDescriptor descriptor);
+
   /// Mutable topic storage lookup (nullptr if missing).
   [[nodiscard]] TopicStorage* get_topic_storage(TopicId id);
+
   /// Const topic storage lookup (nullptr if missing).
   [[nodiscard]] const TopicStorage* get_topic_storage(TopicId id) const;
 
   // Schema registry access
   /// Mutable schema registry access.
   [[nodiscard]] TypeRegistry& type_registry();
+
   /// Const schema registry access.
   [[nodiscard]] const TypeRegistry& type_registry() const;
 
   // Time domains
   /// Create a new time domain.
   [[nodiscard]] absl::StatusOr<TimeDomainId> create_time_domain(std::string name);
+
   /// Lookup time domain by id (nullptr if missing).
   [[nodiscard]] const TimeDomain* get_time_domain(TimeDomainId id) const;
+
   /// Update display offset for one time domain.
   void set_display_offset(TimeDomainId id, Timestamp offset);
 
   // Commit cycle: commit sealed chunks, enforce retention
   /// Commit flushed chunks into topic storage.
   void commit_chunks(std::vector<std::pair<TopicId, TopicChunk>> chunks);
+
   /// Evict old chunks outside retention window.
   void enforce_retention(Timestamp retention_window_ns);
 
   // Writer/Reader factories
   /// Create a writer bound to this engine.
   [[nodiscard]] DataWriter create_writer();
+
   /// Create a reader bound to this engine.
   [[nodiscard]] DataReader create_reader() const;
 
   // Topic listing by dataset
   /// List all dataset ids.
   [[nodiscard]] std::vector<DatasetId> list_datasets() const;
+
   /// List topic ids for a dataset.
   [[nodiscard]] std::vector<TopicId> list_topics(DatasetId dataset_id) const;
 

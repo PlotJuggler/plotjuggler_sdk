@@ -51,31 +51,42 @@ bool RawBuffer::empty() const noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// Validity bitmap
+// BitVector
 // ---------------------------------------------------------------------------
 
-namespace validity_bitmap {
-
-void init(RawBuffer& buf, std::size_t num_bits) {
-  buf.resize(bytes_for_bits(num_bits));
-  std::memset(buf.mutable_data(), 0xFF, buf.size());
+void BitVector::init_valid(std::size_t num_bits) {
+  bit_count_ = num_bits;
+  bytes_.resize(bytes_for_bits(num_bits));
+  if (!bytes_.empty()) {
+    std::memset(bytes_.data(), 0xFF, bytes_.size());
+  }
 }
 
-void set_valid(RawBuffer& buf, std::size_t bit_index) {
-  buf.mutable_data()[bit_index / 8] |= static_cast<uint8_t>(1u << (bit_index % 8));
+void BitVector::ensure_size(std::size_t num_bits) {
+  if (num_bits > bit_count_) {
+    bit_count_ = num_bits;
+  }
+  const std::size_t needed = bytes_for_bits(num_bits);
+  if (bytes_.size() < needed) {
+    bytes_.resize(needed);
+  }
 }
 
-void set_null(RawBuffer& buf, std::size_t bit_index) {
-  buf.mutable_data()[bit_index / 8] &= static_cast<uint8_t>(~(1u << (bit_index % 8)));
+void BitVector::set_valid(std::size_t bit_index) {
+  bytes_[bit_index / 8] |= static_cast<uint8_t>(1u << (bit_index % 8));
 }
 
-bool is_valid(const RawBuffer& buf, std::size_t bit_index) {
-  return (buf.data()[bit_index / 8] & (1u << (bit_index % 8))) != 0;
+void BitVector::set_null(std::size_t bit_index) {
+  bytes_[bit_index / 8] &= static_cast<uint8_t>(~(1u << (bit_index % 8)));
 }
 
-std::size_t count_nulls(const RawBuffer& buf, std::size_t num_bits) {
+bool BitVector::is_valid(std::size_t bit_index) const {
+  return (bytes_[bit_index / 8] & (1u << (bit_index % 8))) != 0;
+}
+
+std::size_t BitVector::count_nulls(std::size_t num_bits) const {
   const std::size_t num_bytes = bytes_for_bits(num_bits);
-  const uint8_t* ptr = buf.data();
+  const uint8_t* ptr = bytes_.data();
 
   std::size_t total_set_bits = 0;
 
@@ -95,6 +106,38 @@ std::size_t count_nulls(const RawBuffer& buf, std::size_t num_bits) {
   return num_bits - total_set_bits;
 }
 
-}  // namespace validity_bitmap
+void BitVector::assign_bytes(Span<const uint8_t> bytes, std::size_t bit_count) {
+  bytes_.assign(bytes.begin(), bytes.end());
+  bit_count_ = bit_count;
+}
+
+void BitVector::clear() {
+  bytes_.clear();
+  bit_count_ = 0;
+}
+
+pj::BitSpan BitVector::bit_span() const noexcept {
+  return pj::BitSpan{pj::Span<const uint8_t>(bytes_.data(), bytes_.size()), 0, bit_count_};
+}
+
+const uint8_t* BitVector::data() const noexcept {
+  return bytes_.data();
+}
+
+uint8_t* BitVector::mutable_data() noexcept {
+  return bytes_.data();
+}
+
+std::size_t BitVector::size_bytes() const noexcept {
+  return bytes_.size();
+}
+
+std::size_t BitVector::size_bits() const noexcept {
+  return bit_count_;
+}
+
+bool BitVector::empty() const noexcept {
+  return bit_count_ == 0;
+}
 
 }  // namespace pj::engine

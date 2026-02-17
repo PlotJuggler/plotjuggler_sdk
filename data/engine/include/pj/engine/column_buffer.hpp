@@ -18,6 +18,7 @@ using pj::PrimitiveType;
 using pj::Span;
 
 // Physical storage category. Narrow integers (int8, int16) widen to int64;
+
 // int32 is kept as a dedicated storage kind because it's extremely common.
 // Narrow unsigned integers (uint8..uint32) widen to uint64.
 // FOR compression recovers further byte savings at seal time.
@@ -105,46 +106,63 @@ class TypedColumnBuffer {
 
   /// Descriptor metadata used by this buffer.
   [[nodiscard]] const ColumnDescriptor& descriptor() const noexcept;
+
   /// Number of appended rows.
   [[nodiscard]] std::size_t row_count() const noexcept;
+
   /// True if at least one row is null.
   [[nodiscard]] bool has_nulls() const noexcept;
+
   /// True if row is valid (non-null).
   [[nodiscard]] bool is_valid(std::size_t row) const noexcept;
 
   // Append typed values (7 storage types)
   /// Append one float32 value.
   void append_float32(float value);
+
   /// Append one float64 value.
   void append_float64(double value);
+
   /// Append one int32 value.
   void append_int32(int32_t value);
+
   /// Append one int64 value.
   void append_int64(int64_t value);
+
   /// Append one uint64 value.
   void append_uint64(uint64_t value);
+
   /// Append one bool value (stored as uint8 0/1).
   void append_bool(bool value);
+
   /// Append one UTF-8 string.
   void append_string(std::string_view value);
+
   /// Append a null row (value slot is zero-filled).
   void append_null();
 
   // Read typed values (7 storage types)
   /// Read one float32 value.
   [[nodiscard]] float read_float32(std::size_t row) const;
+
   /// Read one float64 value.
   [[nodiscard]] double read_float64(std::size_t row) const;
+
   /// Read one int32 value.
   [[nodiscard]] int32_t read_int32(std::size_t row) const;
+
   /// Read one int64 value.
   [[nodiscard]] int64_t read_int64(std::size_t row) const;
+
   /// Read one uint64 value.
   [[nodiscard]] uint64_t read_uint64(std::size_t row) const;
+
   /// Read one bool value.
   [[nodiscard]] bool read_bool(std::size_t row) const;
+
   /// Read one string view.
   [[nodiscard]] std::string_view read_string(std::size_t row) const;
+
   /// Return true if row is null.
   [[nodiscard]] bool is_null(std::size_t row) const;
 
@@ -155,14 +173,19 @@ class TypedColumnBuffer {
   // ---- Bulk append (contiguous memcpy-based) ----
   /// Append contiguous float32 values.
   void append_float32_bulk(Span<const float> data);
+
   /// Append contiguous float64 values.
   void append_float64_bulk(Span<const double> data);
+
   /// Append contiguous int32 values.
   void append_int32_bulk(Span<const int32_t> data);
+
   /// Append contiguous int64 values.
   void append_int64_bulk(Span<const int64_t> data);
+
   /// Append contiguous uint64 values.
   void append_uint64_bulk(Span<const uint64_t> data);
+
   /// Append contiguous bool bytes (0/1).
   void append_bool_bulk(Span<const uint8_t> data);
 
@@ -177,8 +200,10 @@ class TypedColumnBuffer {
   // Access underlying buffers (for encoding at seal time)
   /// Raw value bytes.
   [[nodiscard]] const RawBuffer& value_buffer() const noexcept;
-  /// Packed validity bitmap bytes.
-  [[nodiscard]] const RawBuffer& validity_buffer() const noexcept;
+
+  /// Packed validity bitmap.
+  [[nodiscard]] const BitVector& validity_buffer() const noexcept;
+
   /// String offsets bytes (uint32 array).
   [[nodiscard]] const RawBuffer& offsets_buffer() const noexcept;  // strings only
 
@@ -188,7 +213,7 @@ class TypedColumnBuffer {
   /// Raw value payload.
   RawBuffer values_;
   /// Packed validity bits.
-  RawBuffer validity_;
+  BitVector validity_;
   /// String offset buffer.
   RawBuffer offsets_;  // For string: offset array (uint32_t per entry + 1 sentinel)
   /// Number of rows currently stored.

@@ -57,9 +57,10 @@ physically it is four float32 columns sharing a delta-encoded timestamp column.
 > **Implementation note:** The planned five-module split was simplified into
 > two libraries: `plotjuggler_base` (types, type tree, dataset metadata --
 > zero dependencies) and `plotjuggler_engine` (everything else -- depends on
-> Abseil). This is a pragmatic consolidation; the logical separation between
-> layers is preserved within the code. The `engine-derived`, `engine-time`,
-> and `engine-bridge-legacy` modules are not yet implemented.
+> Abseil and nanoarrow). This is a pragmatic consolidation; the logical
+> separation between layers is preserved within the code. The
+> `engine-derived`, `engine-time`, and `engine-bridge-legacy` modules are
+> not yet implemented.
 
 Five concrete modules, each independently testable:
 
@@ -1141,7 +1142,7 @@ Explicitly deferred items that should not block v1:
 | Library | Path | Dependencies |
 |---|---|---|
 | `plotjuggler_base` | `data/base/` | None (zero deps) |
-| `plotjuggler_engine` | `data/engine/` | Abseil (absl::status, absl::flat_hash_map) |
+| `plotjuggler_engine` | `data/engine/` | Abseil (absl::status, absl::flat_hash_map, ...), nanoarrow + nanoarrow_ipc (PRIVATE) |
 
 ### Headers
 
@@ -1150,6 +1151,9 @@ Explicitly deferred items that should not block v1:
 | `base/include/pj/base/types.hpp` | Section 11: ID types, Timestamp, NumericType/NumericValue |
 | `base/include/pj/base/type_tree.hpp` | Section 4.2: TypeTreeNode, PrimitiveType, EnumMapping |
 | `base/include/pj/base/dataset.hpp` | Section 3/8: DatasetDescriptor, DatasetInfo, TimeDomain |
+| `base/include/pj/base/assert.hpp` | PJ_ASSERT macro (exceptions or assert per PJ_ASSERT_THROWS) |
+| `base/include/pj/base/span.hpp` | Minimal non-owning contiguous view (like std::span) |
+| `base/include/pj/base/expected.hpp` | Value-or-error container (like Rust Result) |
 | `engine/include/pj/engine/buffer.hpp` | Section 11: RawBuffer, validity bitmaps |
 | `engine/include/pj/engine/column_buffer.hpp` | Section 11: TypedColumnBuffer (ColumnBuffer in plan) |
 | `engine/include/pj/engine/encoding.hpp` | Section 6: Dictionary, PackedBools, Constant, FOR encodings |
@@ -1160,7 +1164,7 @@ Explicitly deferred items that should not block v1:
 | `engine/include/pj/engine/reader.hpp` | Section 9.2: DataReader (IDataReader in plan) |
 | `engine/include/pj/engine/writer.hpp` | Section 9.2: DataWriter (IDataWriter in plan) |
 | `engine/include/pj/engine/engine.hpp` | Section 2: DataEngine (coordinator) |
-| `engine/include/pj/engine/arrow_import.hpp` | Section 17: Arrow-to-engine adapter utilities |
+| `engine/include/pj/engine/arrow_import.hpp` | Section 17: nanoarrow IPC import adapter utilities |
 
 ### Tests
 
@@ -1168,6 +1172,8 @@ Explicitly deferred items that should not block v1:
 |---|---|
 | `tests/types_test.cpp` | NumericType sizes, variant indexing, conversion |
 | `tests/type_tree_test.cpp` | Factory functions, flattening, semantic tags |
+| `tests/span_test.cpp` | Span<T> construction, element access, subviews |
+| `tests/expected_test.cpp` | Expected<T,E> value/error construction, accessors |
 | `tests/buffer_test.cpp` | RawBuffer, validity bitmap operations |
 | `tests/column_buffer_test.cpp` | All 7 storage types, nulls, read_as_double, bulk append |
 | `tests/encoding_test.cpp` | Dictionary encoding, packed bools |
@@ -1176,7 +1182,7 @@ Explicitly deferred items that should not block v1:
 | `tests/type_registry_test.cpp` | Register, lookup, duplicate detection, schema evolution |
 | `tests/query_test.cpp` | Range queries, latest_at, multi-chunk, boundaries |
 | `tests/engine_integration_test.cpp` | End-to-end: scalar + structured write/read, bulk ingest |
-| `tests/arrow_import_test.cpp` | Arrow schema/RecordBatch/Table import, type widening |
+| `tests/arrow_import_test.cpp` | nanoarrow IPC stream import, schema parsing, type widening |
 
 ### Benchmarks
 
@@ -1196,7 +1202,7 @@ Explicitly deferred items that should not block v1:
 | File | Notes |
 |---|---|
 | `data/CMakeLists.txt` | C++20, two library targets, tests, benchmarks, examples |
-| `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3, arrow/18.1.0 |
+| `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3, arrow/18.1.0, nanoarrow/0.7.0 |
 
 ---
 
@@ -1222,9 +1228,9 @@ deferring stats to a single pass over the column buffer.
 
 ```
 Arrow IPC bytes (ABI-safe serialization boundary)
-        |  deserialize
+        |  deserialize via nanoarrow IPC
         v
-Arrow RecordBatch (in adapter layer, depends on Arrow C++)
+nanoarrow ArrowArrayView (in adapter layer, depends on nanoarrow)
         |  extract raw pointers (arrow_import.hpp)
         v
 DataWriter::append_columns(timestamps, columns)   <-- ENGINE API
@@ -1233,9 +1239,10 @@ DataWriter::append_columns(timestamps, columns)   <-- ENGINE API
 TopicChunkBuilder → seal() → commit_chunks()
 ```
 
-The engine core (`plotjuggler_engine`) remains Arrow-free. Arrow is
-linked PRIVATE only for the import adapter. Raw-pointer bulk APIs
-accept any columnar source.
+The engine core uses nanoarrow (a lightweight, ABI-stable Arrow C
+library) as a PRIVATE dependency for the import adapter. The bulk API
+accepts raw pointers (`const float*`, `const int64_t*`, etc.), making
+it usable from any columnar source without an Arrow dependency.
 
 ### 17.3 API Surface
 
@@ -1270,16 +1277,15 @@ plus `append_column_validity()` and `finish_bulk_append()`. Stats are
 computed in `finish_bulk_append()` after both data and validity are set.
 
 **Arrow import adapter** (`pj/engine/arrow_import.hpp`): Higher-level
-utilities for importing Arrow data:
+utilities for importing Arrow IPC data via nanoarrow:
 
 ```cpp
-// Map Arrow schema → PJ type tree + column mappings
+// Parse schema from Arrow IPC stream bytes → PJ type tree + column mappings
 StatusOr<pair<shared_ptr<TypeTreeNode>, vector<ArrowColumnMapping>>>
-    schema_from_arrow(const arrow::Schema& schema);
+    schema_from_ipc(Span<const uint8_t> ipc_stream);
 
-// Import RecordBatch or Table into a topic
-Status import_record_batch(writer, topic_id, batch, mappings, ts_col);
-Status import_table(writer, topic_id, table, mappings, ts_col);
+// Import all record batches from Arrow IPC stream into a topic
+Status import_ipc_stream(writer, topic_id, ipc_stream, mappings, ts_col);
 ```
 
 Handles type widening (int8/int16 → int64, uint8-32 → uint64), bool
@@ -1333,10 +1339,12 @@ eliminates per-field timestamp duplication.
 
 ### 17.7 Design Decisions
 
-1. **Engine stays Arrow-free**: Arrow is a PRIVATE dependency of
+1. **Engine uses nanoarrow, not full Arrow C++**: nanoarrow (a
+   lightweight, ABI-stable Arrow C library) is a PRIVATE dependency of
    `plotjuggler_engine` for the import adapter only. The bulk API
    accepts raw pointers (`const float*`, `const int64_t*`, etc.),
-   making it usable from any columnar source.
+   making it usable from any columnar source. Full Arrow C++ is only
+   required for the optional Parquet import example.
 
 2. **Bools as uint8_t**: The bulk API accepts bools as one-byte-per-value
    `uint8_t` arrays (not packed bits). The Arrow adapter unpacks

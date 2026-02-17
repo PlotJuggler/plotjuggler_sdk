@@ -81,6 +81,7 @@ struct ColumnData {
 
   /// Derive row count from the active variant alternative.
   [[nodiscard]] std::size_t row_count() const;
+
   /// Derive StorageKind from the active variant alternative.
   [[nodiscard]] StorageKind kind() const;
 
@@ -134,24 +135,32 @@ class DataWriter {
   // ---- Row-at-a-time append ----
   /// Begin one row at timestamp `t`.
   [[nodiscard]] absl::Status begin_row(TopicId topic_id, Timestamp t);
+
   /// Finalize current row for `topic_id`.
   void finish_row(TopicId topic_id);
 
   // ---- Set values for current row by column index (7 storage types) ----
   /// Set float32 value in current row.
   void set_float32(TopicId topic_id, std::size_t col_index, float value);
+
   /// Set float64 value in current row.
   void set_float64(TopicId topic_id, std::size_t col_index, double value);
+
   /// Set int32 value in current row.
   void set_int32(TopicId topic_id, std::size_t col_index, int32_t value);
+
   /// Set int64 value in current row.
   void set_int64(TopicId topic_id, std::size_t col_index, int64_t value);
+
   /// Set uint64 value in current row.
   void set_uint64(TopicId topic_id, std::size_t col_index, uint64_t value);
+
   /// Set string value in current row.
   void set_string(TopicId topic_id, std::size_t col_index, std::string_view value);
+
   /// Set bool value in current row.
   void set_bool(TopicId topic_id, std::size_t col_index, bool value);
+
   /// Mark current row value as null.
   void set_null(TopicId topic_id, std::size_t col_index);
 
@@ -170,6 +179,7 @@ class DataWriter {
   // ---- Flush ----
   /// Seal and return pending chunks for one topic.
   [[nodiscard]] std::vector<TopicChunk> flush(TopicId topic_id);
+
   /// Seal and return all pending chunks for all topics.
   [[nodiscard]] std::vector<std::pair<TopicId, TopicChunk>> flush_all();
 

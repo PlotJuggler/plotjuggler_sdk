@@ -68,7 +68,7 @@ struct TopicChunk {
   /// Encoding kind for each column.
   std::vector<EncodingType> column_encodings;  // What encoding each column uses
   /// Validity bitmaps per column (empty means all valid).
-  std::vector<RawBuffer> validity_bitmaps;  // Per-column (empty if no nulls)
+  std::vector<BitVector> validity_bitmaps;  // Per-column (empty if no nulls)
   /// Column descriptors aligned with encoded columns.
   std::vector<ColumnDescriptor> column_descriptors;  // Metadata about each column
 
@@ -79,14 +79,19 @@ struct TopicChunk {
   // Decode helpers
   /// Read timestamp at row index.
   [[nodiscard]] Timestamp read_timestamp(std::size_t row) const;
+
   /// Bulk-read timestamps into `out` starting at `row_start`.
   void read_timestamps(Span<Timestamp> out, std::size_t row_start) const;
+
   /// Read numeric value at `col_index,row` as double.
   [[nodiscard]] double read_numeric_as_double(std::size_t col_index, std::size_t row) const;
+
   /// Read string value at `col_index,row`.
   [[nodiscard]] std::string_view read_string(std::size_t col_index, std::size_t row) const;
+
   /// Read boolean value at `col_index,row`.
   [[nodiscard]] bool read_bool(std::size_t col_index, std::size_t row) const;
+
   /// Return true if value at `col_index,row` is null.
   [[nodiscard]] bool is_null(std::size_t col_index, std::size_t row) const;
 
@@ -109,18 +114,25 @@ class TopicChunkBuilder {
   // Set values for the current row (by column index) — 7 storage types
   /// Set float32 value for current row.
   void set_float32(std::size_t col_index, float value);
+
   /// Set float64 value for current row.
   void set_float64(std::size_t col_index, double value);
+
   /// Set int32 value for current row.
   void set_int32(std::size_t col_index, int32_t value);
+
   /// Set int64 value for current row.
   void set_int64(std::size_t col_index, int64_t value);
+
   /// Set uint64 value for current row.
   void set_uint64(std::size_t col_index, uint64_t value);
+
   /// Set bool value for current row.
   void set_bool(std::size_t col_index, bool value);
+
   /// Set string value for current row.
   void set_string(std::size_t col_index, std::string_view value);
+
   /// Mark value as null for current row.
   void set_null(std::size_t col_index);
 
@@ -134,33 +146,46 @@ class TopicChunkBuilder {
   // Stats are computed in finish_bulk_append using the column's validity bitmap.
   /// Append a contiguous timestamp batch.
   void append_timestamps(Span<const Timestamp> timestamps);
+
   /// Append one float32 column batch.
   void append_column_float32(std::size_t col_index, Span<const float> data);
+
   /// Append one float64 column batch.
   void append_column_float64(std::size_t col_index, Span<const double> data);
+
   /// Append one int32 column batch.
   void append_column_int32(std::size_t col_index, Span<const int32_t> data);
+
   /// Append one int64 column batch.
   void append_column_int64(std::size_t col_index, Span<const int64_t> data);
+
   /// Append one uint64 column batch.
   void append_column_uint64(std::size_t col_index, Span<const uint64_t> data);
+
   /// Append one bool-byte (0/1) column batch.
   void append_column_bool(std::size_t col_index, Span<const uint8_t> data);
+
   /// Append one string column batch from offsets+data views.
   void append_column_strings(std::size_t col_index, Span<const uint32_t> offsets, Span<const char> data);
+
   /// Append validity bits for last appended rows of this column.
   void append_column_validity(std::size_t col_index, BitSpan validity);
+
   /// Finalize pending bulk append and compute stats.
   void finish_bulk_append();
 
   /// Remaining row capacity before auto-seal.
   [[nodiscard]] uint32_t remaining_capacity() const noexcept;
+
   /// True if no more rows can be appended.
   [[nodiscard]] bool is_full() const noexcept;
+
   /// Number of finalized rows.
   [[nodiscard]] uint32_t row_count() const noexcept;
+
   /// Current chunk statistics.
   [[nodiscard]] const ChunkStats& stats() const noexcept;
+
   /// Last appended timestamp.
   [[nodiscard]] Timestamp last_timestamp() const noexcept;
 
@@ -193,6 +218,7 @@ class TopicChunkBuilder {
   // Called by finish_bulk_append() after both data and validity are set.
   // Reads from column buffer and skips null positions via validity bitmap.
   void compute_bulk_numeric_stats(std::size_t col_index, StorageKind kind, std::size_t first_row, std::size_t count);
+
   void compute_bulk_string_stats(std::size_t col_index, std::size_t first_row, std::size_t count);
 };
 
