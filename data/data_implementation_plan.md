@@ -50,7 +50,7 @@ The engine is organized in four layers:
 Inspired by Vortex and Arrow, the **logical layer** (type tree, schemas,
 topic hierarchy) is completely decoupled from the **physical layer** (how
 bytes are stored, which encoding is used). A `Quaternion` is a logical type;
-physically it is four float32 columns sharing a delta-encoded timestamp column.
+physically it is four float32 columns sharing a raw int64 timestamp column.
 
 ### Module Boundaries
 
@@ -404,7 +404,7 @@ When a chunk is sealed, per-column statistics guide encoding selection:
 
 | Data type | Encoding | Condition | Status |
 |---|---|---|---|
-| **Timestamps** | Delta encoding | Always (monotonic, near-zero decode cost). | ❌ **Not implemented.** Timestamps are stored as raw `int64_t` vectors. |
+| **Timestamps** | Raw `int64_t` | Always. Delta encoding deferred indefinitely. | ✅ Implemented. |
 | **float32 / float64** | Raw typed storage | Always. Preserve original width. | ✅ Implemented. |
 | **int8/16/32/64, uint*** | Raw typed storage | Always. Preserve original width. | ⚠️ Narrow integers (int8, int16, uint8-32) are **widened** to int64/uint64 at the `StorageKind` level. See deviation note below. |
 | **bool** | Packed bitfield | Always. 1 bit per value. | ✅ Implemented. Constant encoding used when all values are equal; packed bitfield otherwise. |
@@ -421,11 +421,10 @@ When a chunk is sealed, per-column statistics guide encoding selection:
 > overhead for narrow integer columns. The plan's `int8/16` raw storage
 > target is not met.
 >
-> **Deviation: timestamps not delta-encoded.** The plan lists delta encoding
-> for timestamps as a Phase 1 baseline encoding. The implementation stores
-> timestamps as plain `std::vector<int64_t>` in `TopicChunk`. The delta
-> encoding infrastructure exists in `encoding.hpp` (used for Frame of
-> Reference encoding on integer columns), but is not applied to timestamps.
+> **Decision: timestamps not delta-encoded.** Timestamps are stored as plain
+> `std::vector<int64_t>` in `TopicChunk`. Delta encoding for timestamps is
+> deferred indefinitely — the memory savings (~6 B/sample) do not justify
+> the added decode complexity for v1.
 >
 > **Addition: Frame of Reference encoding.** The implementation adds
 > Frame-of-Reference (FOR) encoding for signed integer columns: stores the
@@ -468,17 +467,15 @@ compared to the current `std::deque<std::pair<double, double>>` approach:
 
 | Cost per sample | Current | New (estimated) |
 |---|---|---|
-| Timestamps | 8 x 8 bytes = 64 B | 1 x ~2 B (delta) |
+| Timestamps | 8 x 8 bytes = 64 B | 1 x 8 B (raw int64) |
 | Values | 8 x 8 bytes = 64 B | 7 x 4 B (f32) + ~4 B (dict) = ~32 B |
 | Container overhead | ~16 B/elem x 8 = ~128 B | Columnar, amortized ~0 B |
 | **Total per sample** | **~256 B** | **~34 B** |
 
-> **Implementation reality check:** Because timestamps are not yet
-> delta-encoded (stored as raw int64 = 8 B per sample), the actual per-sample
-> cost for timestamps is ~8 B, not ~2 B. The current implementation achieves
-> approximately **~40 B per sample** for this data shape (8 B timestamp +
-> 28 B float32 values + ~4 B dictionary string). The delta encoding gap
-> accounts for ~6 B/sample of unrealized savings.
+> **Implementation reality check:** Timestamps are stored as raw int64 (8 B
+> per sample). The current implementation achieves approximately **~40 B per
+> sample** for this data shape (8 B timestamp + 28 B float32 values + ~4 B
+> dictionary string).
 
 **This is a hypothesis, not a guarantee.** Actual savings depend on data
 shape, string cardinality, and sparsity. These estimates must be validated
@@ -488,14 +485,14 @@ claiming specific ratios.
 **Phase breakdown of estimated savings:**
 - **Phase 1** delivers: shared timestamps (64 B -> 8 B raw int64), type
   preservation (64 B -> 28 B for f32 fields), columnar layout (~128 B ->
-  ~0 B container overhead), delta-encoded timestamps (8 B -> ~2 B),
-  dictionary-encoded strings. Estimated ~256 B -> ~38 B per sample.
+  ~0 B container overhead), dictionary-encoded strings.
+  Estimated ~256 B -> ~40 B per sample.
 - **Phase 4** adds: RLE for constant/low-cardinality columns (further
   reduces value storage for enum-like fields). Marginal improvement
   on top of Phase 1 for this data shape; larger impact on topics with
   many constant or enum fields.
 
-The ~34 B estimate in the table above reflects full Phase 1 + Phase 4.
+The ~40 B estimate in the table above reflects the v1 target.
 Phase 1 alone is expected to achieve the majority of the savings.
 
 ---
@@ -1002,7 +999,7 @@ Notes:
 
 ## 13. Implementation Phases
 
-### Phase 1: Core model + typed chunk store (engine-core, engine-storage) -- ⚠️ MOSTLY COMPLETE
+### Phase 1: Core model + typed chunk store (engine-core, engine-storage) -- ✅ COMPLETE
 
 - ✅ Dataset / topic / field metadata
 - ✅ Type tree registry with hybrid discovery
@@ -1014,17 +1011,11 @@ Notes:
 - ✅ Bulk columnar ingest API (`DataWriter::append_columns()`)
 - ✅ Arrow import utilities (`arrow_import.hpp`)
 - **Baseline encodings** (locked v1 decisions, not deferred):
-  - ❌ Delta encoding for timestamp columns
   - ✅ Dictionary encoding for string columns
   - ✅ Packed bitfields for bool columns
   - ✅ Validity bitmaps for nullable/sparse columns
   - ⚠️ Raw typed storage for all numeric types (preserving original width)
     *Narrow integers widened to int64/uint64.*
-
-**Remaining Phase 1 work:**
-1. Delta encoding for timestamps
-2. Optionally: preserve narrow integer widths (int8, int16, uint8-32) instead
-   of widening
 
 ### Phase 2: Derived DAG engine (engine-derived) -- ❌ NOT STARTED
 
@@ -1049,8 +1040,9 @@ Notes:
   implemented.*
 - ❌ Benchmark-driven evaluation of further compression on representative
   datasets
-- Note: delta (timestamps), dictionary (strings), packed bitfields (bools),
-  and validity bitmaps are Phase 1 baseline encodings, not deferred here.
+- Note: dictionary (strings), packed bitfields (bools), and validity bitmaps
+  are Phase 1 baseline encodings, not deferred here. Timestamp delta encoding
+  is deferred indefinitely.
 
 **Bonus (not in plan):**
 - ✅ Frame of Reference (FOR) encoding for integer columns
