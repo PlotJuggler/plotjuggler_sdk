@@ -619,14 +619,14 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
   // Row 1: set only x (columns y and z should be auto-null-filled)
   ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
   writer.set_float32(topic_id, 0, 1.0F);
-  writer.finish_row(topic_id);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
 
   // Row 2: set all 3 columns (no nulls)
   ASSERT_TRUE(writer.begin_row(topic_id, 2000).has_value());
   writer.set_float32(topic_id, 0, 2.0F);
   writer.set_float32(topic_id, 1, 3.0F);
   writer.set_float32(topic_id, 2, 4.0F);
-  writer.finish_row(topic_id);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
 
   auto flushed = writer.flush_all();
   ASSERT_FALSE(flushed.empty());
@@ -751,7 +751,7 @@ TEST(EngineIntegrationTest, BeginRowRejectsOutOfOrderTimestamp) {
   // First row at t=200 succeeds
   ASSERT_TRUE(writer.begin_row(topic_id, 200).has_value());
   writer.set_float64(topic_id, 0, 1.0);
-  writer.finish_row(topic_id);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
 
   // Second row at t=100 (out of order) should fail
   auto status = writer.begin_row(topic_id, 100);
@@ -777,16 +777,16 @@ TEST(EngineIntegrationTest, EqualTimestampsAllowed) {
   // Two rows at t=100 should both succeed
   ASSERT_TRUE(writer.begin_row(topic_id, 100).has_value());
   writer.set_float64(topic_id, 0, 1.0);
-  writer.finish_row(topic_id);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
 
   ASSERT_TRUE(writer.begin_row(topic_id, 100).has_value());
   writer.set_float64(topic_id, 0, 2.0);
-  writer.finish_row(topic_id);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
 
   // Third row at higher timestamp also succeeds
   ASSERT_TRUE(writer.begin_row(topic_id, 200).has_value());
   writer.set_float64(topic_id, 0, 3.0);
-  writer.finish_row(topic_id);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
 
   auto flushed = writer.flush_all();
   engine.commit_chunks(std::move(flushed));
