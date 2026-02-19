@@ -1,5 +1,6 @@
 #include "pj/engine/engine.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "absl/strings/str_cat.h"
@@ -130,16 +131,24 @@ void DataEngine::set_display_offset(TimeDomainId id, Timestamp offset) {
 // Commit cycle
 // ---------------------------------------------------------------------------
 
-void DataEngine::commit_chunks(
+std::vector<TopicId> DataEngine::commit_chunks(
     std::vector<std::pair<TopicId, TopicChunk>> chunks) {  // NOLINT(performance-unnecessary-value-param)
+  std::vector<TopicId> changed;
   for (auto& [topic_id, chunk] : chunks) {
     auto* storage = get_topic_storage(topic_id);
     if (storage != nullptr) {
       auto status = storage->append_sealed_chunk(std::move(chunk));
       PJ_ASSERT(status.has_value(), "out-of-order chunk from writer — writer bug");
       (void)status;  // suppress unused-variable warning in release builds
+      if (changed.empty() || changed.back() != topic_id) {
+        changed.push_back(topic_id);
+      }
     }
   }
+  // Deduplicate (flush_all() may emit multiple chunks for one topic).
+  std::sort(changed.begin(), changed.end());
+  changed.erase(std::unique(changed.begin(), changed.end()), changed.end());
+  return changed;
 }
 
 void DataEngine::enforce_retention(Timestamp retention_window_ns) {

@@ -56,7 +56,10 @@ class DataEngine {
 
   // Commit cycle: commit sealed chunks, enforce retention
   /// Commit flushed chunks into topic storage.
-  void commit_chunks(std::vector<std::pair<pj::TopicId, TopicChunk>> chunks);
+  /// Returns the deduplicated set of topic IDs that received at least one new chunk.
+  /// Pass the return value directly to DerivedEngine::on_source_committed():
+  ///   derived.on_source_committed(engine.commit_chunks(writer.flush_all()));
+  std::vector<pj::TopicId> commit_chunks(std::vector<std::pair<pj::TopicId, TopicChunk>> chunks);
 
   /// Evict old chunks outside retention window.
   void enforce_retention(pj::Timestamp retention_window_ns);

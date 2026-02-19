@@ -59,8 +59,8 @@ physically it is four float32 columns sharing a raw int64 timestamp column.
 > zero dependencies) and `plotjuggler_engine` (everything else -- depends on
 > Abseil and nanoarrow). This is a pragmatic consolidation; the logical
 > separation between layers is preserved within the code. The
-> `engine-derived`, `engine-time`, and `engine-bridge-legacy` modules are
-> not yet implemented.
+> `engine-derived` is implemented. `engine-time` is partially implemented.
+> `engine-bridge-legacy` is removed from scope.
 
 Five concrete modules, each independently testable:
 
@@ -82,9 +82,6 @@ Five concrete modules, each independently testable:
    *Time domain creation and display offset are implemented in `DataEngine`.
    Visual alignment controls and automatic t0 alignment are not yet
    implemented.*
-5. ❌ **engine-bridge-legacy**: Adapter from old PlotJuggler data interfaces
-   to new APIs. Enables incremental migration without breaking existing
-   plugins.
 
 ---
 
@@ -1061,11 +1058,10 @@ Notes:
 - ✅ Frame of Reference (FOR) encoding for integer columns
 - ✅ Constant encoding for any column type
 
-### Phase 5: Migration and parity (engine-bridge-legacy) -- ❌ NOT STARTED
+### Phase 5: Migration and parity (engine-bridge-legacy) -- ⛔ REMOVED FROM SCOPE
 
-- Adapter from legacy PlotJuggler interfaces
-- Side-by-side validation on representative data
-- Remove legacy paths after parity criteria are met
+The legacy bridge adapter is out of scope. The new engine will be integrated
+directly into PlotJuggler without a compatibility shim.
 
 ---
 
@@ -1075,7 +1071,7 @@ Notes:
 |---|---|
 | Overly complex first release | Defer advanced compression and non-essential features. Fixed row-count chunks. No partial updates. |
 | Incremental DAG bugs | Always keep batch recompute as reference path and parity oracle. |
-| Plugin breakage during migration | Strict interface boundaries. engine-bridge-legacy adapter layer. Side-by-side validation. |
+| Plugin breakage during migration | Direct integration without shim; strict interface boundaries and side-by-side validation. |
 | Column explosion from variable-length arrays | Configurable max expansion limit per field. |
 | Memory estimates not realized in practice | Present estimates as hypotheses. Require benchmark gates before claiming ratios. |
 

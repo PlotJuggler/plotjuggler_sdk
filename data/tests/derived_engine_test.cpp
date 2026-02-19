@@ -44,6 +44,7 @@ static pj::TopicId make_linear_topic(
     double v = slope * (static_cast<double>(i) * static_cast<double>(step_ns) * 1e-9);
     writer.append_scalar(*handle_or, ts, v);
   }
+  // commit_chunks returns the changed topic IDs — pass directly to on_source_committed.
   engine.commit_chunks(writer.flush_all());
   return tid;
 }
@@ -495,6 +496,47 @@ TEST(DerivedEngineTest, Parity_ThreeChunks) {
   for (std::size_t i = 0; i < batch.size(); ++i) {
     EXPECT_NEAR(incremental[i], batch[i], 1e-9) << "mismatch at row " << i;
   }
+}
+
+// commit_chunks returns deduplicated changed topic IDs usable directly with
+// on_source_committed — the streaming frame-loop pattern.
+TEST(DerivedEngineTest, CommitCycle_ReturnValueDrivesNotify) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  DataWriter writer = engine.create_writer();
+  auto handle = *writer.register_scalar_series(ds, "sig", pj::NumericType::kFloat64);
+  pj::TopicId src = handle.topic_id;
+
+  pj::NodeId node = *derived.add_siso_transform(src, "d_sig", ds, std::make_unique<DerivativeTransform>());
+  pj::TopicId out = derived.output_topics(node)[0];
+
+  // Frame 1: write 5 samples and use the one-liner pattern.
+  for (int i = 0; i < 5; ++i) {
+    writer.append_scalar(handle, static_cast<pj::Timestamp>(i) * 1'000'000'000LL, static_cast<double>(i));
+  }
+  derived.on_source_committed(engine.commit_chunks(writer.flush_all()));
+  ASSERT_TRUE(derived.schedule().has_value());
+  auto after_frame1 = collect_values(engine, out).size();
+  EXPECT_GT(after_frame1, 0u);
+
+  // Frame 2: write 5 more samples.
+  for (int i = 5; i < 10; ++i) {
+    writer.append_scalar(handle, static_cast<pj::Timestamp>(i) * 1'000'000'000LL, static_cast<double>(i));
+  }
+  derived.on_source_committed(engine.commit_chunks(writer.flush_all()));
+  ASSERT_TRUE(derived.schedule().has_value());
+  auto after_frame2 = collect_values(engine, out).size();
+  EXPECT_GT(after_frame2, after_frame1);
+
+  // Verify return value: single topic flushed → exactly one ID returned.
+  for (int i = 10; i < 13; ++i) {
+    writer.append_scalar(handle, static_cast<pj::Timestamp>(i) * 1'000'000'000LL, static_cast<double>(i));
+  }
+  auto changed = engine.commit_chunks(writer.flush_all());
+  ASSERT_EQ(changed.size(), 1u);
+  EXPECT_EQ(changed[0], src);
 }
 
 // Regression: add_siso_transform must work on a series created via
