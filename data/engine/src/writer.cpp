@@ -569,7 +569,10 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
   // Track the largest observed array length for metadata
   storage->update_max_observed_array_length(new_length);
 
-  // Get current expansion for this field
+  // Get current expansion for this field.
+  // expanded_arrays_ is per-DataWriter-instance and may be stale (zero) if topic_columns_
+  // was pre-populated from storage by get_or_create_builder (e.g. after bind_topic_writer).
+  // After loading cols below we reconcile with the actual stored column state.
   auto& topic_exp = expanded_arrays_[topic_id];
   std::string path_key(array_field_path);
   uint32_t current = 0;
@@ -577,18 +580,10 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
     current = it->second;
   }
 
-  // No-op if already expanded enough
+  // Fast no-op: if expanded_arrays_ already shows we're at or beyond new_length
   if (new_length <= current) return current;
 
-  // Apply expansion limit (clamp and record truncation)
-  uint32_t limit = storage->descriptor().array_expansion_limit;
-  uint32_t actual = std::min(new_length, limit);
-  if (new_length > limit) {
-    storage->increment_truncated_sample_count();
-  }
-  if (actual <= current) return current;
-
-  // Find the array node in the type tree
+  // Validate array field before loading cols (avoids unnecessary work on errors)
   SchemaId schema_id = storage->descriptor().schema_id;
   const TypeTreeNode* type_tree = engine_.type_registry().lookup(schema_id);
   if (!type_tree) {
@@ -607,13 +602,53 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
         absl::StrCat("expand_array: field '", array_field_path, "' is fixed-size; use schema declaration"));
   }
 
-  // Get or build current column descriptor list for this topic
+  // Get or build current column descriptor list for this topic.
+  // Prefer storage->column_descriptors() over a fresh type-tree rebuild so that a
+  // second DataWriter picks up any prior expansion done by another writer instance.
   auto& cols = topic_columns_[topic_id];
   if (cols.empty()) {
-    if (type_tree) {
+    const auto& stored = storage->column_descriptors();
+    if (!stored.empty()) {
+      cols = stored;
+    } else if (type_tree) {
       cols = build_column_descriptors(*type_tree);
     }
   }
+
+  // Reconcile current with what is actually in cols for this field.
+  // expanded_arrays_ is per-DataWriter-instance and may show 0 even though cols already
+  // has element columns (loaded from storage by a prior get_or_create_builder call).
+  // Derive the real element count by scanning cols for paths "<field>[<n>]" or "<field>[<n>].child".
+  // The highest index found + 1 gives the element count for both primitive and struct elements.
+  if (current == 0 && !cols.empty()) {
+    std::string idx_prefix = absl::StrCat(array_field_path, "[");
+    uint32_t max_idx_plus_one = 0;
+    for (const auto& col : cols) {
+      if (!col.field_path.starts_with(idx_prefix)) continue;
+      const auto open = array_field_path.size();  // index of '['
+      const auto close = col.field_path.find(']', open);
+      if (close == std::string::npos) continue;
+      const uint32_t idx =
+          static_cast<uint32_t>(std::stoul(col.field_path.substr(open + 1, close - open - 1)));
+      if (idx + 1 > max_idx_plus_one) max_idx_plus_one = idx + 1;
+    }
+    if (max_idx_plus_one > 0) {
+      current = max_idx_plus_one;
+      topic_exp[path_key] = current;  // sync cache
+    }
+  }
+
+  // Re-check after reconciliation (current may now reflect prior expansions)
+  if (new_length <= current) return current;
+
+  // Apply expansion limit (clamp and record truncation) — done after reconciliation
+  // so we don't falsely count truncations for calls that are no-ops after sync.
+  uint32_t limit = storage->descriptor().array_expansion_limit;
+  uint32_t actual = std::min(new_length, limit);
+  if (new_length > limit) {
+    storage->increment_truncated_sample_count();
+  }
+  if (actual <= current) return current;
 
   // Reject expansion if a row is currently in progress (between begin_row and finish_row).
   // Silently erasing the builder would discard the incomplete row's data; return an error

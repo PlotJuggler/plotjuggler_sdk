@@ -657,6 +657,59 @@ TEST(ArrayExpansionTest, ExpandArray_WhileRowInProgress_ReturnsError) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Bug 3: Cross-writer re-expansion of the same array field can
+// duplicate existing indices.
+//
+// Root cause: expand_array() tracks current expansion in
+// DataWriter::expanded_arrays_, which is per-writer state. A fresh
+// DataWriter sees the persisted expanded columns via TopicStorage, but
+// its expanded_arrays_ entry starts at 0. Expanding "data" from 3 to 5
+// can incorrectly append data[0], data[1], data[2] again, producing
+// 8 columns instead of 5.
+// ─────────────────────────────────────────────────────────────────
+
+TEST(ArrayExpansionTest, SecondWriter_ReExpandSameField_DoesNotDuplicateColumns) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+
+  // Writer A creates topic and expands data[] to 3.
+  DataWriter writerA = engine.create_writer();
+  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
+  auto root = pj::make_struct("msg", {data_arr});
+  auto sid = *writerA.register_schema("reexpand_schema", root);
+
+  TopicDescriptor desc;
+  desc.name = "reexpand_topic";
+  desc.schema_id = sid;
+  auto topic_id = *writerA.register_topic(ds, desc);
+
+  auto r1 = writerA.expand_array(topic_id, "data", 3u);
+  ASSERT_TRUE(r1.has_value()) << r1.error();
+  ASSERT_EQ(*r1, 3u);
+
+  // Writer B starts fresh, then expands the same field to 5.
+  DataWriter writerB = engine.create_writer();
+  auto before = writerB.bind_topic_writer(topic_id);
+  ASSERT_TRUE(before.has_value()) << before.error();
+  ASSERT_EQ(before->field_ids.size(), 3u);
+
+  auto r2 = writerB.expand_array(topic_id, "data", 5u);
+  ASSERT_TRUE(r2.has_value()) << r2.error();
+  EXPECT_EQ(*r2, 5u);
+
+  // Expected layout is exactly data[0..4] => 5 columns total.
+  auto after = writerB.bind_topic_writer(topic_id);
+  ASSERT_TRUE(after.has_value()) << after.error();
+  EXPECT_EQ(after->field_ids.size(), 5u)
+      << "Re-expanding in a new writer must append only new indices [3..4], not duplicate [0..2]";
+  EXPECT_EQ(*writerB.resolve_field(topic_id, "data[0]"), 0u);
+  EXPECT_EQ(*writerB.resolve_field(topic_id, "data[1]"), 1u);
+  EXPECT_EQ(*writerB.resolve_field(topic_id, "data[2]"), 2u);
+  EXPECT_EQ(*writerB.resolve_field(topic_id, "data[3]"), 3u);
+  EXPECT_EQ(*writerB.resolve_field(topic_id, "data[4]"), 4u);
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Correctness lock-in: mixed-schema topic (scalar + variable-length
 // array) — verify column ordering and field IDs after expansion.
 //
