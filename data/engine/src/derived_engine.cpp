@@ -770,12 +770,25 @@ static pj::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
     }
   }
 
+  // 2b. Deduplicate joined_ts: if topic[0] has two rows at the same timestamp,
+  //     that timestamp appears twice in joined_ts. We must process it exactly once
+  //     (joined_ts is already sorted because per_topic[0] preserves chunk order).
+  {
+    auto new_end = std::unique(joined_ts.begin(), joined_ts.end());
+    joined_ts.erase(new_end, joined_ts.end());
+  }
+  if (joined_ts.empty()) {
+    return pj::ok_status();
+  }
+
   // 3. Build per-topic lookup: timestamp → (chunk*, row_index).
+  //    insert_or_assign gives last-write-wins semantics for duplicate timestamps
+  //    within a topic, producing a well-defined and consistent result.
   std::vector<absl::flat_hash_map<pj::Timestamp, std::pair<const TopicChunk*, uint32_t>>> lookups(num_inputs);
   for (std::size_t i = 0; i < num_inputs; ++i) {
     lookups[i].reserve(per_topic[i].size());
     for (const auto& s : per_topic[i]) {
-      lookups[i].emplace(s.ts, std::make_pair(s.chunk, s.row));
+      lookups[i].insert_or_assign(s.ts, std::make_pair(s.chunk, s.row));
     }
   }
 
