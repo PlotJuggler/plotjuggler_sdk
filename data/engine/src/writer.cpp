@@ -615,9 +615,18 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
     }
   }
 
+  // Reject expansion if a row is currently in progress (between begin_row and finish_row).
+  // Silently erasing the builder would discard the incomplete row's data; return an error
+  // so the caller can finish or abandon the row before expanding.
+  auto builder_it = builders_.find(topic_id);
+  if (builder_it != builders_.end() && builder_it->second.is_row_in_progress()) {
+    return pj::unexpected(absl::StrCat(
+        "expand_array: topic ", topic_id,
+        " has a row in progress; call finish_row() or abandon the row before calling expand_array()"));
+  }
+
   // Seal and stage the current builder (if any) before changing the column layout.
   // Use pending_chunks_ directly — NOT the public flush() — to keep staged chunks.
-  auto builder_it = builders_.find(topic_id);
   if (builder_it != builders_.end()) {
     if (builder_it->second.row_count() > 0) {
       pending_chunks_[topic_id].push_back(builder_it->second.seal());
@@ -658,19 +667,21 @@ TopicChunkBuilder& DataWriter::get_or_create_builder(TopicId topic_id) {
   auto col_it = topic_columns_.find(topic_id);
   if (col_it == topic_columns_.end()) {
     const auto* type_tree = engine_.type_registry().lookup(schema_id);
-    if (type_tree != nullptr) {
+    // Always prefer the layout persisted in TopicStorage when it is non-empty.
+    // expand_array() calls storage->set_column_descriptors() to record the
+    // current (potentially grown) column layout. A second DataWriter created
+    // after an expansion must see the expanded layout, not a stale rebuild
+    // from the type tree which would yield 0 columns for variable-length arrays.
+    const auto& stored = storage->column_descriptors();
+    if (!stored.empty()) {
+      topic_columns_[topic_id] = stored;
+    } else if (type_tree != nullptr) {
       topic_columns_[topic_id] = build_column_descriptors(*type_tree);
     } else {
       // schema_id == 0 (inline layout, e.g. topics created via register_scalar_series).
-      // Prefer the layout stored in TopicStorage at registration time; fall back to the
-      // first committed chunk only if no stored layout is present.
-      const auto& stored = storage->column_descriptors();
-      if (!stored.empty()) {
-        topic_columns_[topic_id] = stored;
-      } else {
-        const auto& chunks = storage->sealed_chunks();
-        topic_columns_[topic_id] = chunks.empty() ? std::vector<ColumnDescriptor>{} : chunks[0].column_descriptors;
-      }
+      // No stored layout yet: fall back to the first committed chunk.
+      const auto& chunks = storage->sealed_chunks();
+      topic_columns_[topic_id] = chunks.empty() ? std::vector<ColumnDescriptor>{} : chunks[0].column_descriptors;
     }
     col_it = topic_columns_.find(topic_id);
   }

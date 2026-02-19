@@ -184,6 +184,9 @@ class TopicChunkBuilder {
   /// Number of finalized rows.
   [[nodiscard]] uint32_t row_count() const noexcept;
 
+  /// True if begin_row() has been called but finish_row() has not yet been called.
+  [[nodiscard]] bool is_row_in_progress() const noexcept;
+
   /// Current chunk statistics.
   [[nodiscard]] const ChunkStats& stats() const noexcept;
 

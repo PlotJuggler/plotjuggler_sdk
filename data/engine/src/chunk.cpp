@@ -406,6 +406,10 @@ uint32_t TopicChunkBuilder::row_count() const noexcept {
   return stats_.row_count;
 }
 
+bool TopicChunkBuilder::is_row_in_progress() const noexcept {
+  return row_in_progress_;
+}
+
 const ChunkStats& TopicChunkBuilder::stats() const noexcept {
   return stats_;
 }
