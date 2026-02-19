@@ -185,6 +185,7 @@ set(ENGINE_TEST_SOURCES
   tests/query_test.cpp
   tests/engine_integration_test.cpp
   tests/derived_engine_test.cpp
+  tests/array_expansion_test.cpp
 )
 
 foreach(test_src ${ENGINE_TEST_SOURCES})

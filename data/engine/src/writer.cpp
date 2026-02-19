@@ -82,10 +82,31 @@ constexpr PrimitiveType numeric_to_primitive(NumericType nt) noexcept {
   return PrimitiveType::kFloat64;  // unreachable
 }
 
+// Forward declarations — flatten_columns_impl and flatten_array_element_impl are mutually recursive.
+void flatten_columns_impl(const TypeTreeNode& node, std::string_view prefix, FieldId& next_field_id,
+                          std::vector<ColumnDescriptor>& out);
+
+// Expand one array element (at path `element_path`, e.g., "poses[0]") into ColumnDescriptors.
+// Handles: struct element (recurse into children), primitive/enum element (single column).
+void flatten_array_element_impl(const TypeTreeNode& element_type, std::string_view element_path,
+                                FieldId& next_field_id, std::vector<ColumnDescriptor>& out) {
+  if (element_type.kind == TypeKind::kStruct) {
+    for (const auto& child : element_type.children) {
+      flatten_columns_impl(*child, element_path, next_field_id, out);
+    }
+  } else {
+    ColumnDescriptor desc;
+    desc.field_id = next_field_id++;
+    desc.field_path = std::string(element_path);
+    desc.logical_type = element_type.primitive_type.value_or(PrimitiveType::kFloat64);
+    out.push_back(std::move(desc));
+  }
+}
+
 /// Recursively flatten a type tree into ColumnDescriptors, collecting both
 /// field paths and PrimitiveTypes for each leaf node.
-void flatten_columns_impl(
-    const TypeTreeNode& node, std::string_view prefix, FieldId& next_field_id, std::vector<ColumnDescriptor>& out) {
+void flatten_columns_impl(const TypeTreeNode& node, std::string_view prefix, FieldId& next_field_id,
+                          std::vector<ColumnDescriptor>& out) {
   std::string current_path = prefix.empty() ? node.name : absl::StrCat(prefix, ".", node.name);
 
   if (node.kind == TypeKind::kStruct) {
@@ -95,19 +116,59 @@ void flatten_columns_impl(
     return;
   }
 
-  // Leaf node (primitive, enum, array) -- produce a column descriptor
+  if (node.kind == TypeKind::kArray) {
+    if (node.fixed_array_size.has_value()) {
+      // Fixed-size: expand all elements now at schema registration time
+      for (uint32_t i = 0; i < *node.fixed_array_size; ++i) {
+        std::string elem_path = absl::StrCat(current_path, "[", i, "]");
+        flatten_array_element_impl(*node.element_type, elem_path, next_field_id, out);
+      }
+    }
+    // Variable-length: 0 columns initially — caller uses expand_array() to grow dynamically
+    return;
+  }
+
+  // Leaf node (primitive or enum) -- produce a column descriptor
   ColumnDescriptor desc;
   desc.field_id = next_field_id++;
   desc.field_path = std::move(current_path);
-
-  if (node.primitive_type.has_value()) {
-    desc.logical_type = *node.primitive_type;
-  } else {
-    // Default to float64 for types without an explicit primitive
-    desc.logical_type = PrimitiveType::kFloat64;
-  }
-
+  desc.logical_type = node.primitive_type.value_or(PrimitiveType::kFloat64);
   out.push_back(std::move(desc));
+}
+
+// Generate ColumnDescriptors for array element indices [from_idx, to_idx).
+// Continues from `next_field_id`. For struct elements, each child field becomes a column.
+void generate_array_element_columns(const TypeTreeNode& element_type, std::string_view array_path,
+                                    uint32_t from_idx, uint32_t to_idx, FieldId& next_field_id,
+                                    std::vector<ColumnDescriptor>& out) {
+  for (uint32_t i = from_idx; i < to_idx; ++i) {
+    std::string elem_path = absl::StrCat(array_path, "[", i, "]");
+    flatten_array_element_impl(element_type, elem_path, next_field_id, out);
+  }
+}
+
+// Find a TypeTreeNode child by dotted path relative to root's children.
+// E.g., find_child_at_path(root, "body.poses") returns the "poses" node inside "body".
+// Returns nullptr if any segment is not found or path passes through a non-struct.
+const TypeTreeNode* find_child_at_path(const TypeTreeNode& root, std::string_view path) {
+  std::string_view remaining = path;
+  const TypeTreeNode* cur = &root;
+  while (!remaining.empty()) {
+    size_t dot = remaining.find('.');
+    std::string_view segment = remaining.substr(0, dot);
+    remaining = (dot == std::string_view::npos) ? std::string_view{} : remaining.substr(dot + 1);
+    if (cur->kind != TypeKind::kStruct) return nullptr;
+    const TypeTreeNode* found = nullptr;
+    for (const auto& child : cur->children) {
+      if (child->name == segment) {
+        found = child.get();
+        break;
+      }
+    }
+    if (!found) return nullptr;
+    cur = found;
+  }
+  return cur;
 }
 
 }  // namespace
@@ -491,6 +552,89 @@ std::vector<std::pair<TopicId, TopicChunk>> DataWriter::flush_all() {
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Variable-length array expansion
+// ---------------------------------------------------------------------------
+
+pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::string_view array_field_path,
+                                                  uint32_t new_length) {
+  // Validate topic exists
+  TopicStorage* storage = engine_.get_topic_storage(topic_id);
+  if (!storage) {
+    return pj::unexpected(absl::StrCat("expand_array: topic ", topic_id, " not found"));
+  }
+
+  // Track the largest observed array length for metadata
+  storage->update_max_observed_array_length(new_length);
+
+  // Get current expansion for this field
+  auto& topic_exp = expanded_arrays_[topic_id];
+  std::string path_key(array_field_path);
+  uint32_t current = 0;
+  if (auto it = topic_exp.find(path_key); it != topic_exp.end()) {
+    current = it->second;
+  }
+
+  // No-op if already expanded enough
+  if (new_length <= current) return current;
+
+  // Apply expansion limit (clamp and record truncation)
+  uint32_t limit = storage->descriptor().array_expansion_limit;
+  uint32_t actual = std::min(new_length, limit);
+  if (new_length > limit) {
+    storage->increment_truncated_sample_count();
+  }
+  if (actual <= current) return current;
+
+  // Find the array node in the type tree
+  SchemaId schema_id = storage->descriptor().schema_id;
+  const TypeTreeNode* type_tree = engine_.type_registry().lookup(schema_id);
+  if (!type_tree) {
+    return pj::unexpected(absl::StrCat("expand_array: schema_id=", schema_id,
+                                        " not found (schema_id=0 topics not supported for array expansion)"));
+  }
+  const TypeTreeNode* array_node = find_child_at_path(*type_tree, array_field_path);
+  if (!array_node) {
+    return pj::unexpected(absl::StrCat("expand_array: field '", array_field_path, "' not found in schema"));
+  }
+  if (array_node->kind != TypeKind::kArray) {
+    return pj::unexpected(absl::StrCat("expand_array: field '", array_field_path, "' is not an array node"));
+  }
+  if (array_node->fixed_array_size.has_value()) {
+    return pj::unexpected(
+        absl::StrCat("expand_array: field '", array_field_path, "' is fixed-size; use schema declaration"));
+  }
+
+  // Get or build current column descriptor list for this topic
+  auto& cols = topic_columns_[topic_id];
+  if (cols.empty()) {
+    if (type_tree) {
+      cols = build_column_descriptors(*type_tree);
+    }
+  }
+
+  // Seal and stage the current builder (if any) before changing the column layout.
+  // Use pending_chunks_ directly — NOT the public flush() — to keep staged chunks.
+  auto builder_it = builders_.find(topic_id);
+  if (builder_it != builders_.end()) {
+    if (builder_it->second.row_count() > 0) {
+      pending_chunks_[topic_id].push_back(builder_it->second.seal());
+    }
+    builders_.erase(builder_it);
+  }
+
+  // Append new element columns starting from current expansion
+  FieldId next_field_id = static_cast<FieldId>(cols.size());
+  generate_array_element_columns(*array_node->element_type, array_field_path, current, actual, next_field_id, cols);
+
+  // Persist updated layout in TopicStorage (survives across DataWriter instances)
+  storage->set_column_descriptors(cols);
+
+  // Record new expansion count
+  topic_exp[path_key] = actual;
+  return actual;
 }
 
 // ---------------------------------------------------------------------------
