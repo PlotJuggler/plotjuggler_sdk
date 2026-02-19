@@ -143,4 +143,13 @@ uint32_t TopicStorage::truncated_sample_count() const noexcept {
   return truncated_sample_count_;
 }
 
+uint32_t TopicStorage::array_expansion_count(const std::string& field_path) const noexcept {
+  auto it = array_expansion_counts_.find(field_path);
+  return it != array_expansion_counts_.end() ? it->second : 0;
+}
+
+void TopicStorage::set_array_expansion_count(const std::string& field_path, uint32_t count) {
+  array_expansion_counts_[field_path] = count;
+}
+
 }  // namespace pj::engine

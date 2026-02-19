@@ -187,10 +187,6 @@ class DataWriter {
   // Column descriptors cached per topic (needed to recreate builders)
   absl::flat_hash_map<pj::TopicId, std::vector<ColumnDescriptor>> topic_columns_;
 
-  // Per-topic, per-array-field current expansion count.
-  // Key: topic_id → (field_path_string → current_element_count).
-  absl::flat_hash_map<pj::TopicId, absl::flat_hash_map<std::string, uint32_t>> expanded_arrays_;
-
   TopicChunkBuilder& get_or_create_builder(pj::TopicId topic_id);
 
   // Build column descriptors from a type tree

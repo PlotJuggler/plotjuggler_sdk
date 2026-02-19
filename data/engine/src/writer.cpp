@@ -569,21 +569,14 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
   // Track the largest observed array length for metadata
   storage->update_max_observed_array_length(new_length);
 
-  // Get current expansion for this field.
-  // expanded_arrays_ is per-DataWriter-instance and may be stale (zero) if topic_columns_
-  // was pre-populated from storage by get_or_create_builder (e.g. after bind_topic_writer).
-  // After loading cols below we reconcile with the actual stored column state.
-  auto& topic_exp = expanded_arrays_[topic_id];
+  // Read authoritative expansion count from TopicStorage — shared across all DataWriter instances.
   std::string path_key(array_field_path);
-  uint32_t current = 0;
-  if (auto it = topic_exp.find(path_key); it != topic_exp.end()) {
-    current = it->second;
-  }
+  const uint32_t current = storage->array_expansion_count(path_key);
 
-  // Fast no-op: if expanded_arrays_ already shows we're at or beyond new_length
+  // Fast no-op
   if (new_length <= current) return current;
 
-  // Validate array field before loading cols (avoids unnecessary work on errors)
+  // Validate array field
   SchemaId schema_id = storage->descriptor().schema_id;
   const TypeTreeNode* type_tree = engine_.type_registry().lookup(schema_id);
   if (!type_tree) {
@@ -602,47 +595,7 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
         absl::StrCat("expand_array: field '", array_field_path, "' is fixed-size; use schema declaration"));
   }
 
-  // Get or build current column descriptor list for this topic.
-  // Prefer storage->column_descriptors() over a fresh type-tree rebuild so that a
-  // second DataWriter picks up any prior expansion done by another writer instance.
-  auto& cols = topic_columns_[topic_id];
-  if (cols.empty()) {
-    const auto& stored = storage->column_descriptors();
-    if (!stored.empty()) {
-      cols = stored;
-    } else if (type_tree) {
-      cols = build_column_descriptors(*type_tree);
-    }
-  }
-
-  // Reconcile current with what is actually in cols for this field.
-  // expanded_arrays_ is per-DataWriter-instance and may show 0 even though cols already
-  // has element columns (loaded from storage by a prior get_or_create_builder call).
-  // Derive the real element count by scanning cols for paths "<field>[<n>]" or "<field>[<n>].child".
-  // The highest index found + 1 gives the element count for both primitive and struct elements.
-  if (current == 0 && !cols.empty()) {
-    std::string idx_prefix = absl::StrCat(array_field_path, "[");
-    uint32_t max_idx_plus_one = 0;
-    for (const auto& col : cols) {
-      if (!col.field_path.starts_with(idx_prefix)) continue;
-      const auto open = array_field_path.size();  // index of '['
-      const auto close = col.field_path.find(']', open);
-      if (close == std::string::npos) continue;
-      const uint32_t idx =
-          static_cast<uint32_t>(std::stoul(col.field_path.substr(open + 1, close - open - 1)));
-      if (idx + 1 > max_idx_plus_one) max_idx_plus_one = idx + 1;
-    }
-    if (max_idx_plus_one > 0) {
-      current = max_idx_plus_one;
-      topic_exp[path_key] = current;  // sync cache
-    }
-  }
-
-  // Re-check after reconciliation (current may now reflect prior expansions)
-  if (new_length <= current) return current;
-
-  // Apply expansion limit (clamp and record truncation) — done after reconciliation
-  // so we don't falsely count truncations for calls that are no-ops after sync.
+  // Apply expansion limit (clamp and record truncation)
   uint32_t limit = storage->descriptor().array_expansion_limit;
   uint32_t actual = std::min(new_length, limit);
   if (new_length > limit) {
@@ -651,8 +604,6 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
   if (actual <= current) return current;
 
   // Reject expansion if a row is currently in progress (between begin_row and finish_row).
-  // Silently erasing the builder would discard the incomplete row's data; return an error
-  // so the caller can finish or abandon the row before expanding.
   auto builder_it = builders_.find(topic_id);
   if (builder_it != builders_.end() && builder_it->second.is_row_in_progress()) {
     return pj::unexpected(absl::StrCat(
@@ -661,7 +612,6 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
   }
 
   // Seal and stage the current builder (if any) before changing the column layout.
-  // Use pending_chunks_ directly — NOT the public flush() — to keep staged chunks.
   if (builder_it != builders_.end()) {
     if (builder_it->second.row_count() > 0) {
       pending_chunks_[topic_id].push_back(builder_it->second.seal());
@@ -669,15 +619,26 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
     builders_.erase(builder_it);
   }
 
-  // Append new element columns starting from current expansion
+  // Get or build current column descriptor list for this topic.
+  // Prefer storage->column_descriptors() so second writers pick up prior expansions.
+  auto& cols = topic_columns_[topic_id];
+  if (cols.empty()) {
+    const auto& stored = storage->column_descriptors();
+    if (!stored.empty()) {
+      cols = stored;
+    } else {
+      cols = build_column_descriptors(*type_tree);
+    }
+  }
+
+  // Append new element columns from [current, actual)
   FieldId next_field_id = static_cast<FieldId>(cols.size());
   generate_array_element_columns(*array_node->element_type, array_field_path, current, actual, next_field_id, cols);
 
-  // Persist updated layout in TopicStorage (survives across DataWriter instances)
+  // Persist updated layout and expansion count in TopicStorage
   storage->set_column_descriptors(cols);
+  storage->set_array_expansion_count(path_key, actual);
 
-  // Record new expansion count
-  topic_exp[path_key] = actual;
   return actual;
 }
 

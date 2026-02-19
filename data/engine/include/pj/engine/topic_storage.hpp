@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <deque>
 #include <string>
+#include <unordered_map>
 
 #include "pj/base/expected.hpp"
 #include "pj/base/types.hpp"
@@ -111,6 +112,13 @@ class TopicStorage {
   /// Number of times expand_array() clamped due to array_expansion_limit.
   [[nodiscard]] uint32_t truncated_sample_count() const noexcept;
 
+  /// Return the current expansion count for a variable-length array field.
+  /// Returns 0 if the field has not been expanded yet.
+  [[nodiscard]] uint32_t array_expansion_count(const std::string& field_path) const noexcept;
+
+  /// Update the expansion count for a variable-length array field.
+  void set_array_expansion_count(const std::string& field_path, uint32_t count);
+
  private:
   TopicId topic_id_;
   TopicDescriptor descriptor_;
@@ -118,6 +126,9 @@ class TopicStorage {
   std::vector<ColumnDescriptor> column_descriptors_;  // for schema_id==0 topics
   uint32_t max_observed_array_length_ = 0;
   uint32_t truncated_sample_count_ = 0;
+  // Authoritative expansion count per variable-length array field path.
+  // Shared across all DataWriter instances writing to this topic.
+  std::unordered_map<std::string, uint32_t> array_expansion_counts_;
 };
 
 }  // namespace pj::engine
