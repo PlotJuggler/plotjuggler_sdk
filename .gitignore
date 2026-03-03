@@ -7,3 +7,4 @@ pj_datastore/benchmark_reports/
 pj_plugins/dialog_protocol/build*
 .vscode/
 .worktrees/
+.cache/
