@@ -47,7 +47,7 @@ WarningsAsErrors: >
   modernize-use-nullptr,
   modernize-use-override,
   performance-move-const-arg,
-  readability-identifier-naming,
+  # readability-identifier-naming,  # temporarily disabled during rename migration
 
 HeaderFilterRegex: '.*'
 

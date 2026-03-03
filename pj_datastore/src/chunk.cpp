@@ -12,33 +12,43 @@ namespace PJ {
 
 namespace {
 
+// Dispatch a callable with the correct numeric type tag.
+// Returns true if kind is numeric (kFloat32..kUint64), false for kBool/kString.
+template <typename F>
+bool dispatch_numeric_kind(StorageKind kind, F&& fn) {
+  switch (kind) {
+    case StorageKind::kFloat32:
+      fn(static_cast<const float*>(nullptr));
+      return true;
+    case StorageKind::kFloat64:
+      fn(static_cast<const double*>(nullptr));
+      return true;
+    case StorageKind::kInt32:
+      fn(static_cast<const int32_t*>(nullptr));
+      return true;
+    case StorageKind::kInt64:
+      fn(static_cast<const int64_t*>(nullptr));
+      return true;
+    case StorageKind::kUint64:
+      fn(static_cast<const uint64_t*>(nullptr));
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Read a raw numeric value from a buffer as double, dispatching on StorageKind.
 [[nodiscard]] double read_raw_as_double(const RawBuffer& buf, StorageKind kind, std::size_t row) {
   const std::size_t elem_size = storage_kind_size(kind);
   const uint8_t* ptr = buf.data() + row * elem_size;
 
-  auto load = [&]<typename T>(const T* /*tag*/) -> double {
+  double result = 0.0;
+  dispatch_numeric_kind(kind, [&]<typename T>(const T* /*tag*/) {
     T v{};
     std::memcpy(&v, ptr, sizeof(v));
-    return static_cast<double>(v);
-  };
-
-  switch (kind) {
-    case StorageKind::kFloat32:
-      return load(static_cast<const float*>(nullptr));
-    case StorageKind::kFloat64:
-      return load(static_cast<const double*>(nullptr));
-    case StorageKind::kInt32:
-      return load(static_cast<const int32_t*>(nullptr));
-    case StorageKind::kInt64:
-      return load(static_cast<const int64_t*>(nullptr));
-    case StorageKind::kUint64:
-      return load(static_cast<const uint64_t*>(nullptr));
-    case StorageKind::kBool:
-    case StorageKind::kString:
-      break;
-  }
-  return 0.0;  // unreachable for numeric types
+    result = static_cast<double>(v);
+  });
+  return result;
 }
 
 }  // namespace
@@ -304,23 +314,9 @@ void TopicChunkBuilder::compute_bulk_numeric_stats(
     last_column_values_[col_index] = prev;
   };
 
-  switch (kind) {
-    case StorageKind::kFloat32:
-      process(static_cast<const float*>(nullptr));
-      break;
-    case StorageKind::kFloat64:
-      process(static_cast<const double*>(nullptr));
-      break;
-    case StorageKind::kInt32:
-      process(static_cast<const int32_t*>(nullptr));
-      break;
-    case StorageKind::kInt64:
-      process(static_cast<const int64_t*>(nullptr));
-      break;
-    case StorageKind::kUint64:
-      process(static_cast<const uint64_t*>(nullptr));
-      break;
-    case StorageKind::kBool: {
+  if (!dispatch_numeric_kind(kind, process)) {
+    // kBool special case: values stored as uint8_t, convert to 0.0/1.0.
+    if (kind == StorageKind::kBool) {
       const auto* buf = col.value_buffer().data();
       double prev = last_column_values_[col_index];
       double local_min = cs.min_value.value_or(std::numeric_limits<double>::max());
@@ -353,10 +349,8 @@ void TopicChunkBuilder::compute_bulk_numeric_stats(
         cs.max_value = local_max;
       }
       last_column_values_[col_index] = prev;
-      break;
     }
-    case StorageKind::kString:
-      break;  // handled by compute_bulk_string_stats
+    // kString: handled by compute_bulk_string_stats
   }
 }
 
@@ -369,32 +363,36 @@ void TopicChunkBuilder::compute_bulk_string_stats(std::size_t col_index, std::si
   const auto& col = columns_[col_index];
   const bool has_validity = col.has_nulls();
 
+  // Cache the last valid string to avoid O(n*m) backward scans with many nulls.
+  // string_view is safe here: it points into the column buffer's stable storage
+  // which is not modified during stats computation.
+  std::optional<std::string_view> last_valid;
+
+  // Seed cache from rows before first_row if prior valid strings exist.
+  if (first_row > 0 && cs.run_count > 0) {
+    for (std::size_t j = first_row; j > 0; --j) {
+      if (!has_validity || col.is_valid(j - 1)) {
+        last_valid = col.read_string(j - 1);
+        break;
+      }
+    }
+  }
+
   for (std::size_t i = 0; i < count; ++i) {
     const std::size_t row = first_row + i;
     if (has_validity && !col.is_valid(row)) {
       cs.null_count++;
       continue;
     }
-    if (cs.run_count == 0) {
+
+    std::string_view current = col.read_string(row);
+    if (!last_valid.has_value()) {
       cs.run_count = 1;
-    } else {
-      std::string_view current = col.read_string(row);
-      // Find previous non-null row to compare
-      bool found_prev = false;
-      for (std::size_t j = row; j > 0; --j) {
-        if (!has_validity || col.is_valid(j - 1)) {
-          if (current != col.read_string(j - 1)) {
-            cs.is_constant = false;
-            cs.run_count++;
-          }
-          found_prev = true;
-          break;
-        }
-      }
-      if (!found_prev) {
-        cs.run_count = 1;
-      }
+    } else if (current != *last_valid) {
+      cs.is_constant = false;
+      cs.run_count++;
     }
+    last_valid = current;
   }
 }
 
@@ -631,24 +629,10 @@ void TopicChunk::read_column_as_doubles(std::size_t col_index, Span<double> out,
     }
   };
 
-  switch (kind) {
-    case StorageKind::kFloat32:
-      return convert(static_cast<const float*>(nullptr));
-    case StorageKind::kFloat64:
-      return convert(static_cast<const double*>(nullptr));
-    case StorageKind::kInt32:
-      return convert(static_cast<const int32_t*>(nullptr));
-    case StorageKind::kInt64:
-      return convert(static_cast<const int64_t*>(nullptr));
-    case StorageKind::kUint64:
-      return convert(static_cast<const uint64_t*>(nullptr));
-    case StorageKind::kBool:
-    case StorageKind::kString: {
-      const double nan = std::numeric_limits<double>::quiet_NaN();
-      for (std::size_t i = 0; i < count; ++i) {
-        out[i] = nan;
-      }
-      return;
+  if (!dispatch_numeric_kind(kind, convert)) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    for (std::size_t i = 0; i < count; ++i) {
+      out[i] = nan;
     }
   }
 }
