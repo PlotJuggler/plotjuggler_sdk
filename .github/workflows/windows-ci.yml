@@ -1,0 +1,37 @@
+name: Windows CI
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: conan-io/setup-conan@v1
+        with:
+          cache_packages: true
+
+      - name: Conan install
+        run: >
+          conan install . --output-folder=build --build=missing
+          -s build_type=Release -s compiler.cppstd=20
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+          -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure

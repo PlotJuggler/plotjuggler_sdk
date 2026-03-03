@@ -1,0 +1,47 @@
+name: Linux CI
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: conan-io/setup-conan@v1
+        with:
+          cache_packages: true
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Test
+        run: ./test.sh
+
+  build-qt:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: conan-io/setup-conan@v1
+        with:
+          cache_packages: true
+
+      - name: Install Qt 6.8.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          cache: 'true'
+
+      - name: Build (with Qt)
+        run: ./build.sh
+
+      - name: Test (with Qt)
+        run: ./test.sh
