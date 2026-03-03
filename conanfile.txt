@@ -11,7 +11,7 @@ arrow/*:parquet=True
 arrow/*:with_snappy=True
 nanoarrow/*:with_ipc=True
 boost/*:without_test=True
-boost/*:with_cobalt=False
+boost/*:without_cobalt=True
 
 [generators]
 CMakeDeps
