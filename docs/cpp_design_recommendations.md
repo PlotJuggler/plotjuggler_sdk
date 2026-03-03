@@ -161,7 +161,7 @@ Design types that behave like `int`: copied, moved, and destroyed automatically.
 Make ownership explicit. The reader should never have to guess who owns what.
 
 - Use RAII for all resource management -- never require callers to call `cleanup()`
-- Pass `std::string_view` / `std::span` / `pj::Span` for read-only input when lifetime is bounded by the call
+- Pass `std::string_view` / `std::span` / `PJ::Span` for read-only input when lifetime is bounded by the call
 - Never store a non-owning view beyond its source's guaranteed lifetime
 - Never return references to internal data that subsequent operations may invalidate
 
@@ -175,7 +175,7 @@ Pick one strategy per API layer. Never mix exceptions, error codes, and global e
 
 | Layer | Mechanism |
 |---|---|
-| **Public API headers (`.hpp`)** | `pj::Expected<T>` (value or string error), `pj::Status` (no-value error), `pj::Span<T>` (non-owning view) |
+| **Public API headers (`.hpp`)** | `PJ::Expected<T>` (value or string error), `PJ::Status` (no-value error), `PJ::Span<T>` (non-owning view) |
 | **Implementation files (`.cpp`)** | `absl::StatusOr<T>`, `absl::Status`, `absl::StrCat`, `absl::flat_hash_map`, etc. — all OK |
 
 Public headers must not expose `absl::` types at API boundaries. This keeps the `plotjuggler_base` library dependency-free and avoids leaking Abseil into downstream consumers.
@@ -184,20 +184,20 @@ Public headers must not expose `absl::` types at API boundaries. This keeps the 
 
 | Situation | Mechanism |
 |---|---|
-| Recoverable failure with return value | `pj::Expected<T>` in headers; `absl::StatusOr<T>` in .cpp internals |
-| Recoverable failure, no return value | `pj::Status` in headers; `absl::Status` in .cpp internals |
+| Recoverable failure with return value | `PJ::Expected<T>` in headers; `absl::StatusOr<T>` in .cpp internals |
+| Recoverable failure, no return value | `PJ::Status` in headers; `absl::Status` in .cpp internals |
 | Truly exceptional (contract violation, OOM) | Exceptions |
 | Simple absence, no error detail needed | `std::optional<T>` |
 
 ```cpp
 // Public header: no absl types
-[[nodiscard]] pj::Expected<Config> load_config(std::string_view path);
-[[nodiscard]] pj::Status save_config(const Config& cfg, std::string_view path);
+[[nodiscard]] PJ::Expected<Config> load_config(std::string_view path);
+[[nodiscard]] PJ::Status save_config(const Config& cfg, std::string_view path);
 
 // Implementation: absl types are fine
-pj::Expected<Config> load_config(std::string_view path) {
+PJ::Expected<Config> load_config(std::string_view path) {
   if (!std::filesystem::exists(path))
-    return pj::unexpected(absl::StrCat("file not found: ", path));
+    return PJ::unexpected(absl::StrCat("file not found: ", path));
   // ...
   return config;
 }
@@ -206,7 +206,7 @@ pj::Expected<Config> load_config(std::string_view path) {
 - Mark every fallible function `[[nodiscard]]`
 - Check `.has_value()` before accessing the value in `Expected<T>`
 - Use `.error()` to access the error message string
-- Success: `pj::ok_status()`. Error: `pj::unexpected(msg_string)`.
+- Success: `PJ::ok_status()`. Error: `PJ::unexpected(msg_string)`.
 - Propagate errors upward rather than logging at low levels
 
 ---
@@ -287,9 +287,9 @@ Abseil is a project dependency. Prefer `absl::` types where they outperform or e
 
 | Pattern | Public API (`.hpp`) | Implementation (`.cpp`) |
 |---|---|---|
-| Function returns value or fails | `pj::Expected<T>` | `absl::StatusOr<T>` OK internally |
-| Function can fail, no return value | `pj::Status` | `absl::Status` OK internally |
-| Non-owning span parameter | `pj::Span<T>` | `absl::Span<T>` OK internally |
+| Function returns value or fails | `PJ::Expected<T>` | `absl::StatusOr<T>` OK internally |
+| Function can fail, no return value | `PJ::Status` | `absl::Status` OK internally |
+| Non-owning span parameter | `PJ::Span<T>` | `absl::Span<T>` OK internally |
 
 See [Section 9](#9-error-handling) for the full two-layer policy and examples.
 
@@ -385,7 +385,7 @@ Based on [Abseil Tip #234](https://abseil.io/tips/234):
 |---|---|
 | Single value | Return by value |
 | Multiple values | Return named struct |
-| Fallible | Return `pj::Expected<T>` (public API) / `absl::StatusOr<T>` (internal .cpp) |
+| Fallible | Return `PJ::Expected<T>` (public API) / `absl::StatusOr<T>` (internal .cpp) |
 
 Never pass `std::shared_ptr` unless the callee genuinely shares ownership. If it just reads the pointee, dereference and pass `const&`.
 
@@ -397,7 +397,7 @@ From the [Abseil Tips of the Week](https://abseil.io/tips/):
 
 - **No sentinel values** -- Don't use `-1`, `INT_MAX`, etc. to signal absence. Use `std::optional`. ([Tip #171](https://abseil.io/tips/171))
 
-- **Factory functions over two-phase init** -- Prefer returning `pj::Expected<T>` (public API) or `std::unique_ptr<T>` from a factory over constructor + `Init()` method. Objects should be fully valid after construction. ([Tip #42](https://abseil.io/tips/42))
+- **Factory functions over two-phase init** -- Prefer returning `PJ::Expected<T>` (public API) or `std::unique_ptr<T>` from a factory over constructor + `Init()` method. Objects should be fully valid after construction. ([Tip #42](https://abseil.io/tips/42))
 
 - **Option structs for many parameters** -- Wrap functions with > 3 parameters in a struct with defaulted members. Use C++20 designated initializers at the callsite:
   ```cpp
@@ -405,7 +405,7 @@ From the [Abseil Tips of the Week](https://abseil.io/tips/):
   ```
   ([Tip #173](https://abseil.io/tips/173))
 
-- **No `vector.at()`** -- Use `operator[]` when the index is known valid. Perform explicit bounds checking with early return or `pj::Status` (public API) / `absl::Status` (.cpp internals) when it is not. ([Tip #224](https://abseil.io/tips/224))
+- **No `vector.at()`** -- Use `operator[]` when the index is known valid. Perform explicit bounds checking with early return or `PJ::Status` (public API) / `absl::Status` (.cpp internals) when it is not. ([Tip #224](https://abseil.io/tips/224))
 
 - **Tag types** -- Use empty structs to disambiguate overloads when factory functions or enums are insufficient. ([Tip #198](https://abseil.io/tips/198))
 

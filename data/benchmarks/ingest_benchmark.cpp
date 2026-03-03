@@ -6,15 +6,15 @@
 #include <vector>
 
 #include "benchmark/benchmark.h"
-#include "pj/base/dataset.hpp"
-#include "pj/base/type_tree.hpp"
-#include "pj/base/types.hpp"
-#include "pj/engine/chunk.hpp"
-#include "pj/engine/column_buffer.hpp"
-#include "pj/engine/engine.hpp"
-#include "pj/engine/writer.hpp"
+#include "PJ/base/dataset.hpp"
+#include "PJ/base/type_tree.hpp"
+#include "PJ/base/types.hpp"
+#include "PJ/engine/chunk.hpp"
+#include "PJ/engine/column_buffer.hpp"
+#include "PJ/engine/engine.hpp"
+#include "PJ/engine/writer.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 constexpr int kRowCount = 100'000;
@@ -254,6 +254,6 @@ BENCHMARK(BM_Writer_RowAtATime_Float32);
 BENCHMARK(BM_Writer_AppendColumns_Float32);
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine
 
 BENCHMARK_MAIN();

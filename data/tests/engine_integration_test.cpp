@@ -7,19 +7,19 @@
 #include <variant>
 #include <vector>
 
-#include "pj/base/dataset.hpp"
-#include "pj/base/type_tree.hpp"
-#include "pj/base/types.hpp"
-#include "pj/engine/chunk.hpp"
-#include "pj/engine/column_buffer.hpp"
-#include "pj/engine/engine.hpp"
-#include "pj/engine/query.hpp"
-#include "pj/engine/reader.hpp"
-#include "pj/engine/topic_storage.hpp"
-#include "pj/engine/type_registry.hpp"
-#include "pj/engine/writer.hpp"
+#include "PJ/base/dataset.hpp"
+#include "PJ/base/type_tree.hpp"
+#include "PJ/base/types.hpp"
+#include "PJ/engine/chunk.hpp"
+#include "PJ/engine/column_buffer.hpp"
+#include "PJ/engine/engine.hpp"
+#include "PJ/engine/query.hpp"
+#include "PJ/engine/reader.hpp"
+#include "PJ/engine/topic_storage.hpp"
+#include "PJ/engine/type_registry.hpp"
+#include "PJ/engine/writer.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 // ===========================================================================
@@ -950,4 +950,4 @@ TEST(EngineIntegrationTest, BulkAppendEmpty) {
 }
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine

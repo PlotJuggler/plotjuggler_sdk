@@ -69,14 +69,14 @@ The data model hierarchy is:
 - Chunk
 - Column
 
-Core IDs and timestamp alias are defined in `data/base/include/pj/base/types.hpp`:
+Core IDs and timestamp alias are defined in `data/base/include/PJ/base/types.hpp`:
 
 - `DatasetId`, `TopicId`, `FieldId`, `ChunkId`, `SchemaId`, `TimeDomainId`, `NodeId`
 - `Timestamp = int64_t` (nanoseconds)
 
 ### Dataset
 
-Defined in `data/base/include/pj/base/dataset.hpp`.
+Defined in `data/base/include/PJ/base/dataset.hpp`.
 
 Contains:
 
@@ -86,7 +86,7 @@ Contains:
 
 ### Topic
 
-Defined through `TopicDescriptor` and `TopicStorage` in `data/engine/include/pj/engine/topic_storage.hpp`.
+Defined through `TopicDescriptor` and `TopicStorage` in `data/engine/include/PJ/engine/topic_storage.hpp`.
 
 Contains:
 
@@ -98,7 +98,7 @@ Contains:
 
 ### Schema/type tree
 
-Defined in `data/base/include/pj/base/type_tree.hpp` and managed by `TypeRegistry`:
+Defined in `data/base/include/PJ/base/type_tree.hpp` and managed by `TypeRegistry`:
 
 - primitives, structs, arrays, enums
 - semantic tags on type nodes
@@ -107,7 +107,7 @@ Defined in `data/base/include/pj/base/type_tree.hpp` and managed by `TypeRegistr
 
 ### Chunk and columns
 
-Chunk types are defined in `data/engine/include/pj/engine/chunk.hpp`:
+Chunk types are defined in `data/engine/include/PJ/engine/chunk.hpp`:
 
 - `TopicChunkBuilder` for mutable ingestion
 - `TopicChunk` for sealed immutable storage
@@ -119,7 +119,7 @@ Chunk types are defined in `data/engine/include/pj/engine/chunk.hpp`:
 
 ## 5.1 `DataEngine`
 
-File: `data/engine/include/pj/engine/engine.hpp`, implementation in `data/engine/src/engine.cpp`.
+File: `data/engine/include/PJ/engine/engine.hpp`, implementation in `data/engine/src/engine.cpp`.
 
 Responsibilities:
 
@@ -135,7 +135,7 @@ Important behavior:
 
 ## 5.2 `DataWriter`
 
-File: `data/engine/include/pj/engine/writer.hpp`, implementation in `data/engine/src/writer.cpp`.
+File: `data/engine/include/PJ/engine/writer.hpp`, implementation in `data/engine/src/writer.cpp`.
 
 Responsibilities:
 
@@ -384,7 +384,7 @@ Notable gaps relative to the broader plan documents:
 Recommended order:
 
 1. Read `data/data_implementation_plan.md`.
-2. Read public headers in `data/base/include/pj/base/` and `data/engine/include/pj/engine/`.
+2. Read public headers in `data/base/include/PJ/base/` and `data/engine/include/PJ/engine/`.
 3. Trace `writer.cpp` -> `chunk.cpp` -> `topic_storage.cpp`.
 4. Trace `reader.cpp` -> `query.cpp`.
 5. Trace `derived_engine.cpp`.

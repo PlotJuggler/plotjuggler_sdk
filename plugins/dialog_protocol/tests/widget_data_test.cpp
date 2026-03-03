@@ -1,9 +1,9 @@
-#include <pj/sdk/widget_data.hpp>
+#include <PJ/sdk/widget_data.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
-using pj::sdk::WidgetData;
+using PJ::sdk::WidgetData;
 using json = nlohmann::json;
 
 static json parse(const WidgetData& wd) { return json::parse(wd.to_json()); }

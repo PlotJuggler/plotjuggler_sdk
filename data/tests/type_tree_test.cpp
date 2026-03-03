@@ -1,4 +1,4 @@
-#include "pj/base/type_tree.hpp"
+#include "PJ/base/type_tree.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace pj {
+namespace PJ {
 namespace {
 
 // Helper: build the canonical robot_pose type tree used in multiple tests.
@@ -223,4 +223,4 @@ TEST(TypeTreeTest, DeeplyNestedStruct) {
 }
 
 }  // namespace
-}  // namespace pj
+}  // namespace PJ

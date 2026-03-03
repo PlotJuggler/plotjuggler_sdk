@@ -1,6 +1,6 @@
-#include "pj/engine/builtin_transforms.hpp"
+#include "PJ/engine/builtin_transforms.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 
 // ---------------------------------------------------------------------------
 // DerivativeTransform
@@ -17,7 +17,7 @@ StorageKind DerivativeTransform::output_kind(StorageKind /*input_kind*/) const {
 }
 
 bool DerivativeTransform::calculate(
-    pj::Timestamp time, const VarValue& input, pj::Timestamp& out_time, VarValue& out_value) {
+    PJ::Timestamp time, const VarValue& input, PJ::Timestamp& out_time, VarValue& out_value) {
   // Input is decoded as VarValue{double} because output_kind() → kFloat64 and
   // the engine widens all numeric inputs to double for float64 output columns.
   double v = std::visit(
@@ -47,4 +47,4 @@ bool DerivativeTransform::calculate(
   return true;
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

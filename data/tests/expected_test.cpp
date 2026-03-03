@@ -1,10 +1,10 @@
-#include "pj/base/expected.hpp"
+#include "PJ/base/expected.hpp"
 
 #include <gtest/gtest.h>
 
 #include <string>
 
-namespace pj {
+namespace PJ {
 namespace {
 
 TEST(ExpectedTest, HoldsValue) {
@@ -40,4 +40,4 @@ TEST(ExpectedTest, MutableAccessToError) {
 }
 
 }  // namespace
-}  // namespace pj
+}  // namespace PJ

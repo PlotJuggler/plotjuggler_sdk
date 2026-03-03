@@ -1,4 +1,4 @@
-#include <pj/host/dialog_handle.hpp>
+#include <PJ/host/dialog_handle.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -6,25 +6,25 @@
 #include <string>
 
 // Defined in mock_streamer.cpp, linked statically
-extern "C" const pj_dialog_vtable_t* pj_get_dialog_vtable();
+extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
 
 class DialogHandleTest : public ::testing::Test {
  protected:
-  const pj_dialog_vtable_t* vt_ = pj_get_dialog_vtable();
+  const PJ_dialog_vtable_t* vt_ = PJ_get_dialog_vtable();
 };
 
 // --- Construction / Destruction (RAII lifecycle) ---
 
 TEST_F(DialogHandleTest, ConstructAndDestroy) {
   // Should not crash — RAII creates and destroys context
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   EXPECT_NE(h.vtable(), nullptr);
   EXPECT_NE(h.context(), nullptr);
 }
 
 TEST_F(DialogHandleTest, NullVtable) {
   // Null vtable should be safe — no crash
-  pj::host::DialogHandle h(nullptr);
+  PJ::host::DialogHandle h(nullptr);
   EXPECT_EQ(h.vtable(), nullptr);
   EXPECT_EQ(h.context(), nullptr);
 }
@@ -32,10 +32,10 @@ TEST_F(DialogHandleTest, NullVtable) {
 // --- Move semantics ---
 
 TEST_F(DialogHandleTest, MoveConstruct) {
-  pj::host::DialogHandle h1(vt_);
+  PJ::host::DialogHandle h1(vt_);
   void* ctx = h1.context();
 
-  pj::host::DialogHandle h2(std::move(h1));
+  PJ::host::DialogHandle h2(std::move(h1));
   EXPECT_EQ(h2.context(), ctx);
   EXPECT_EQ(h2.vtable(), vt_);
 
@@ -45,8 +45,8 @@ TEST_F(DialogHandleTest, MoveConstruct) {
 }
 
 TEST_F(DialogHandleTest, MoveAssign) {
-  pj::host::DialogHandle h1(vt_);
-  pj::host::DialogHandle h2(vt_);
+  PJ::host::DialogHandle h1(vt_);
+  PJ::host::DialogHandle h2(vt_);
   void* ctx1 = h1.context();
   void* ctx2 = h2.context();
 
@@ -59,7 +59,7 @@ TEST_F(DialogHandleTest, MoveAssign) {
 }
 
 TEST_F(DialogHandleTest, SelfMoveAssign) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   void* ctx = h.context();
 
   // Self-move should be safe
@@ -70,7 +70,7 @@ TEST_F(DialogHandleTest, SelfMoveAssign) {
 // --- Queries ---
 
 TEST_F(DialogHandleTest, ManifestIsValidJson) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   std::string manifest = h.manifest();
   auto j = nlohmann::json::parse(manifest, nullptr, false);
   EXPECT_FALSE(j.is_discarded());
@@ -79,14 +79,14 @@ TEST_F(DialogHandleTest, ManifestIsValidJson) {
 }
 
 TEST_F(DialogHandleTest, UiContentIsNonEmpty) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   std::string ui = h.ui_content();
   EXPECT_FALSE(ui.empty());
   EXPECT_NE(ui.find("<ui"), std::string::npos);
 }
 
 TEST_F(DialogHandleTest, WidgetDataIsValidJson) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   std::string wd = h.widget_data();
   auto j = nlohmann::json::parse(wd, nullptr, false);
   EXPECT_FALSE(j.is_discarded());
@@ -98,7 +98,7 @@ TEST_F(DialogHandleTest, WidgetDataIsValidJson) {
 // --- Events ---
 
 TEST_F(DialogHandleTest, SendEventUpdatesState) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   bool refresh = h.send_event("host_input", R"({"text": "10.0.0.1"})");
   EXPECT_TRUE(refresh);
 
@@ -107,7 +107,7 @@ TEST_F(DialogHandleTest, SendEventUpdatesState) {
 }
 
 TEST_F(DialogHandleTest, SendEventUnknownWidget) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   bool refresh = h.send_event("nonexistent", R"({"text": "x"})");
   EXPECT_FALSE(refresh);
 }
@@ -115,12 +115,12 @@ TEST_F(DialogHandleTest, SendEventUnknownWidget) {
 // --- Tick ---
 
 TEST_F(DialogHandleTest, TickInitiallyFalse) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   EXPECT_FALSE(h.tick());
 }
 
 TEST_F(DialogHandleTest, TickDiscoverTopics) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   // Connect
   (void)h.send_event("connect_btn", R"({"clicked": true})");
 
@@ -139,7 +139,7 @@ TEST_F(DialogHandleTest, TickDiscoverTopics) {
 // --- Config persistence ---
 
 TEST_F(DialogHandleTest, SaveLoadConfigRoundTrip) {
-  pj::host::DialogHandle h1(vt_);
+  PJ::host::DialogHandle h1(vt_);
   (void)h1.send_event("host_input", R"({"text": "saved-host"})");
   (void)h1.send_event("port_input", R"({"value": 5555})");
 
@@ -149,7 +149,7 @@ TEST_F(DialogHandleTest, SaveLoadConfigRoundTrip) {
   EXPECT_EQ(cfg["port"], 5555);
 
   // Load into a new handle
-  pj::host::DialogHandle h2(vt_);
+  PJ::host::DialogHandle h2(vt_);
   bool loaded = h2.load_config(config);
   EXPECT_TRUE(loaded);
 
@@ -159,19 +159,19 @@ TEST_F(DialogHandleTest, SaveLoadConfigRoundTrip) {
 }
 
 TEST_F(DialogHandleTest, LoadConfigInvalidJson) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   EXPECT_FALSE(h.load_config("not json"));
 }
 
 // --- Error reporting ---
 
 TEST_F(DialogHandleTest, NoErrorInitially) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   EXPECT_EQ(h.last_error(), "");
 }
 
 TEST_F(DialogHandleTest, ErrorAfterTrigger) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   // Clear host, then try to connect — triggers "Host cannot be empty"
   (void)h.send_event("host_input", R"({"text": ""})");
   (void)h.send_event("connect_btn", R"({"clicked": true})");
@@ -186,19 +186,19 @@ TEST_F(DialogHandleTest, ErrorAfterTrigger) {
 // --- Accept / Reject ---
 
 TEST_F(DialogHandleTest, AcceptDoesNotCrash) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   h.accept(R"({"done": true})");
 }
 
 TEST_F(DialogHandleTest, RejectDoesNotCrash) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   h.reject();
 }
 
 // --- Escape hatch ---
 
 TEST_F(DialogHandleTest, VtableAndContextAccessors) {
-  pj::host::DialogHandle h(vt_);
+  PJ::host::DialogHandle h(vt_);
   EXPECT_EQ(h.vtable(), vt_);
   EXPECT_NE(h.context(), nullptr);
 

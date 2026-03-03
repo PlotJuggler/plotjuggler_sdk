@@ -1,8 +1,8 @@
-#include "pj/engine/query.hpp"
+#include "PJ/engine/query.hpp"
 
 #include <cassert>
 
-namespace pj::engine {
+namespace PJ::engine {
 
 // ===========================================================================
 // RangeCursor
@@ -159,4 +159,4 @@ RangeCursor range_query(const std::deque<TopicChunk>& chunks, Timestamp t_min, T
   return RangeCursor(chunks, t_min, t_max);
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

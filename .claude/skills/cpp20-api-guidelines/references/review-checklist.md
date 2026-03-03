@@ -8,7 +8,7 @@ Run this checklist before returning recommendations or code.
 3. Is mutation explicit and const applied by default?
 4. Could a free function replace a class without losing invariants?
 5. Are side effects isolated from pure logic?
-6. Is error handling consistent for this layer (pj::Expected<T> / pj::Status in headers, absl::StatusOr in .cpp internals, std::optional when no error detail needed)?
+6. Is error handling consistent for this layer (PJ::Expected<T> / PJ::Status in headers, absl::StatusOr in .cpp internals, std::optional when no error detail needed)?
 7. Are out-parameters used only when allocation/copy costs justify them?
 8. Is duplicated business logic removed without premature abstraction?
 
@@ -25,7 +25,7 @@ Run this checklist before returning recommendations or code.
 16. Are ordered containers using `absl::btree_map`/`set` instead of `std::map`/`set`?
 17. Are string operations using `absl::StrCat`/`StrJoin`/`StrSplit`/`StrFormat` where appropriate?
 18. Are time values using `absl::Duration` / `absl::Time` instead of raw integers?
-19. Are public API headers using `pj::Expected<T>` / `pj::Status` (not `absl::StatusOr` / `absl::Status`)?
+19. Are public API headers using `PJ::Expected<T>` / `PJ::Status` (not `absl::StatusOr` / `absl::Status`)?
 20. Is `.has_value()` checked before accessing `Expected<T>` values (not `.ok()`)?
 21. Are custom types hashable via `AbslHashValue` if used as hash keys?
 

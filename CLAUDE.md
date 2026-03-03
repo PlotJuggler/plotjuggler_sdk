@@ -40,9 +40,9 @@ cd build && ./ingest_benchmark
 ```
 data/
 ├── base/          # Vocabulary types (zero dependencies)
-│   └── include/pj/base/   types.hpp, type_tree.hpp, dataset.hpp, span.hpp, expected.hpp, assert.hpp
+│   └── include/PJ/base/   types.hpp, type_tree.hpp, dataset.hpp, span.hpp, expected.hpp, assert.hpp
 ├── engine/        # Storage engine (depends on Abseil, nanoarrow)
-│   ├── include/pj/engine/ — public headers
+│   ├── include/PJ/engine/ — public headers
 │   └── src/               — implementations
 ├── tests/         # GoogleTest suite (13 test executables)
 ├── benchmarks/    # Google Benchmark files
@@ -66,7 +66,7 @@ data/
 
 - **Formatting:** Google style via `.clang-format` — 2-space indent, 120-char column limit, attached braces
 - **Naming:** `CamelCase` classes, `lower_case` functions/variables, `lower_case_` members, `kCamelCase` constants
-- **Namespaces:** `pj::base`, `pj::engine`
+- **Namespaces:** `PJ::base`, `PJ::engine`
 - **Error handling:** `absl::StatusOr<T>` for fallible operations, `PJ_ASSERT(cond, msg)` for invariants
 - **Modern C++:** `[[nodiscard]]`, `noexcept`, `constexpr`, `explicit` constructors, `const` by default
 - **Pre-commit hooks:** clang-format (v17) enforced via `.pre-commit-config.yaml`

@@ -1,8 +1,8 @@
-#include <pj/sdk/widget_event.hpp>
+#include <PJ/sdk/widget_event.hpp>
 
 #include <gtest/gtest.h>
 
-using pj::sdk::WidgetEvent;
+using PJ::sdk::WidgetEvent;
 
 // --- Text ---
 

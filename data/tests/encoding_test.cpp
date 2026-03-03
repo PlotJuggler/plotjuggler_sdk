@@ -1,4 +1,4 @@
-#include "pj/engine/encoding.hpp"
+#include "PJ/engine/encoding.hpp"
 
 #include <gtest/gtest.h>
 
@@ -8,12 +8,12 @@
 #include <string_view>
 #include <vector>
 
-#include "pj/base/type_tree.hpp"  // PrimitiveType
+#include "PJ/base/type_tree.hpp"  // PrimitiveType
 
-namespace pj::engine::encoding {
+namespace PJ::engine::encoding {
 namespace {
 
-using pj::Span;
+using PJ::Span;
 
 // ==========================================================================
 // Helper: build offsets + values buffers from a vector of strings, mimicking
@@ -350,4 +350,4 @@ TEST(ByteWidthHelpers, OffsetBytesFor) {
 }
 
 }  // namespace
-}  // namespace pj::engine::encoding
+}  // namespace PJ::engine::encoding

@@ -1,4 +1,4 @@
-#include "pj/base/span.hpp"
+#include "PJ/base/span.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace pj {
+namespace PJ {
 namespace {
 
 TEST(SpanTest, ConstructFromPointerAndSize) {
@@ -68,4 +68,4 @@ TEST(SpanTest, IterationWorks) {
 }
 
 }  // namespace
-}  // namespace pj
+}  // namespace PJ

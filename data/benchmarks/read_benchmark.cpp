@@ -7,13 +7,13 @@
 #include <vector>
 
 #include "benchmark/benchmark.h"
-#include "pj/base/type_tree.hpp"
-#include "pj/base/types.hpp"
-#include "pj/engine/chunk.hpp"
-#include "pj/engine/column_buffer.hpp"
-#include "pj/engine/query.hpp"
+#include "PJ/base/type_tree.hpp"
+#include "PJ/base/types.hpp"
+#include "PJ/engine/chunk.hpp"
+#include "PJ/engine/column_buffer.hpp"
+#include "PJ/engine/query.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 constexpr int kPointCount = 100'000;
@@ -514,6 +514,6 @@ BENCHMARK(BM_Deque_ReadInt64);
 BENCHMARK(BM_Deque_ReadString);
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine
 
 BENCHMARK_MAIN();

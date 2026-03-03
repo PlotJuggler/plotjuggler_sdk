@@ -1,12 +1,12 @@
-#include "pj/engine/encoding.hpp"
+#include "PJ/engine/encoding.hpp"
 
 #include <cstring>
 
 #include "absl/container/flat_hash_map.h"
 
-namespace pj::engine::encoding {
+namespace PJ::engine::encoding {
 
-using pj::Span;
+using PJ::Span;
 
 namespace {
 
@@ -302,4 +302,4 @@ bool unpack_bool(const PackedBools& packed, std::size_t index) {
   return (byte_val & (1u << bit_idx)) != 0;
 }
 
-}  // namespace pj::engine::encoding
+}  // namespace PJ::engine::encoding

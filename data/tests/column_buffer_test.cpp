@@ -1,4 +1,4 @@
-#include "pj/engine/column_buffer.hpp"
+#include "PJ/engine/column_buffer.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 // Helper: create a ColumnDescriptor for a given PrimitiveType.
@@ -479,4 +479,4 @@ TEST(TypedColumnBufferTest, BulkValidityWithBitOffset) {
 }
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine

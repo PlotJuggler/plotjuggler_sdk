@@ -1,8 +1,8 @@
-#include <pj/host_qt/dialog_engine.hpp>
+#include <PJ/host_qt/dialog_engine.hpp>
 
-#include <pj/host/widget_data_view.hpp>
-#include <pj/host/widget_event_builder.hpp>
-#include <pj/host_qt/widget_binding.hpp>
+#include <PJ/host/widget_data_view.hpp>
+#include <PJ/host/widget_event_builder.hpp>
+#include <PJ/host_qt/widget_binding.hpp>
 
 #include <QBuffer>
 #include <QDialog>
@@ -12,9 +12,9 @@
 #include <QUiLoader>
 #include <QVBoxLayout>
 
-namespace pj::host_qt {
+namespace PJ::host_qt {
 
-DialogEngine::DialogEngine(pj::host::DialogHandle handle, DialogEngineConfig config)
+DialogEngine::DialogEngine(PJ::host::DialogHandle handle, DialogEngineConfig config)
     : handle_(std::move(handle)), config_(config) {}
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ static nlohmann::json compute_diff(const nlohmann::json& old_data,
 // apply_and_diff: re-read widget data, apply (diffed or full), update prev
 // ---------------------------------------------------------------------------
 
-static void apply_and_diff(QWidget* root, pj::host::DialogHandle& handle,
+static void apply_and_diff(QWidget* root, PJ::host::DialogHandle& handle,
                            nlohmann::json& prev_data, bool enable_diff,
                            int& diff_apply_count) {
   std::string raw = handle.widget_data();
@@ -46,12 +46,12 @@ static void apply_and_diff(QWidget* root, pj::host::DialogHandle& handle,
   if (enable_diff) {
     nlohmann::json diff = compute_diff(prev_data, new_data);
     if (!diff.empty()) {
-      pj::host::WidgetDataView view(diff.dump());
+      PJ::host::WidgetDataView view(diff.dump());
       apply_widget_data(root, view);
       ++diff_apply_count;
     }
   } else {
-    pj::host::WidgetDataView view(raw);
+    PJ::host::WidgetDataView view(raw);
     apply_widget_data(root, view);
   }
   prev_data = std::move(new_data);
@@ -97,14 +97,14 @@ DialogResult DialogEngine::show_dialog(QWidget* parent) {
   nlohmann::json prev_data = nlohmann::json::parse(initial_raw, nullptr, false);
   if (prev_data.is_discarded()) prev_data = nlohmann::json::object();
   {
-    pj::host::WidgetDataView view(initial_raw);
+    PJ::host::WidgetDataView view(initial_raw);
     apply_widget_data(binding_root, view);
   }
 
   // 4. Handle file picker actions
   auto maybe_show_file_picker = [&](const std::string& widget_name) {
     if (!config_.enable_file_picker) return;
-    pj::host::WidgetDataView view(handle_.widget_data());
+    PJ::host::WidgetDataView view(handle_.widget_data());
     if (!view.is_file_picker(widget_name)) return;
     auto filter = view.file_picker_filter(widget_name).value_or("");
     auto title = view.file_picker_title(widget_name).value_or("Select File");
@@ -113,7 +113,7 @@ DialogResult DialogEngine::show_dialog(QWidget* parent) {
         QString::fromStdString(filter));
     if (!path.isEmpty()) {
       if (handle_.send_event(widget_name,
-                             pj::host::WidgetEventBuilder::file_selected(path.toStdString()))) {
+                             PJ::host::WidgetEventBuilder::file_selected(path.toStdString()))) {
         apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff,
                        stats_.diff_apply_count);
       }
@@ -171,4 +171,4 @@ std::string DialogEngine::run_headless(int max_ticks) {
   return handle_.widget_data();
 }
 
-}  // namespace pj::host_qt
+}  // namespace PJ::host_qt

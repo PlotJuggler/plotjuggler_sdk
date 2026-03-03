@@ -1,8 +1,8 @@
-#include "pj/base/types.hpp"
+#include "PJ/base/types.hpp"
 
 #include <gtest/gtest.h>
 
-namespace pj {
+namespace PJ {
 namespace {
 
 // ---------- numeric_type_size ----------
@@ -158,4 +158,4 @@ TEST(Constants, InvalidChunkIdIsZero) {
 }
 
 }  // namespace
-}  // namespace pj
+}  // namespace PJ

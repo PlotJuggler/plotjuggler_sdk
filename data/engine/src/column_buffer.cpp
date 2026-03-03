@@ -1,4 +1,4 @@
-#include "pj/engine/column_buffer.hpp"
+#include "PJ/engine/column_buffer.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -6,7 +6,7 @@
 #include <limits>
 #include <utility>
 
-namespace pj::engine {
+namespace PJ::engine {
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -367,4 +367,4 @@ double TypedColumnBuffer::read_as_double(std::size_t row) const {
   return std::numeric_limits<double>::quiet_NaN();  // unreachable
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

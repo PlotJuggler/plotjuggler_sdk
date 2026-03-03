@@ -1,4 +1,4 @@
-#include "pj/engine/arrow_import.hpp"
+#include "PJ/engine/arrow_import.hpp"
 
 #include <gtest/gtest.h>
 
@@ -12,16 +12,16 @@
 #include "nanoarrow/nanoarrow.h"
 #include "nanoarrow/nanoarrow.hpp"
 #include "nanoarrow/nanoarrow_ipc.h"
-#include "pj/base/dataset.hpp"
-#include "pj/base/span.hpp"
-#include "pj/base/type_tree.hpp"
-#include "pj/base/types.hpp"
-#include "pj/engine/engine.hpp"
-#include "pj/engine/query.hpp"
-#include "pj/engine/reader.hpp"
-#include "pj/engine/writer.hpp"
+#include "PJ/base/dataset.hpp"
+#include "PJ/base/span.hpp"
+#include "PJ/base/type_tree.hpp"
+#include "PJ/base/types.hpp"
+#include "PJ/engine/engine.hpp"
+#include "PJ/engine/query.hpp"
+#include "PJ/engine/reader.hpp"
+#include "PJ/engine/writer.hpp"
 
-namespace pj::engine::arrow_import {
+namespace PJ::engine::arrow_import {
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ TEST(ArrowImportTest, SchemaFromIpc) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto result_or = schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto result_or = schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   ASSERT_TRUE(result_or.has_value()) << result_or.error();
 
   const auto& [type_tree, mappings] = *result_or;
@@ -208,7 +208,7 @@ TEST(ArrowImportTest, ImportFloat32) {
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
   // Parse schema and register
-  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto schema_id = *writer.register_schema("test_schema", type_tree);
 
   TopicDescriptor desc;
@@ -218,7 +218,7 @@ TEST(ArrowImportTest, ImportFloat32) {
 
   // Import
   auto status =
-      import_ipc_stream(writer, topic_id, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+      import_ipc_stream(writer, topic_id, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
@@ -293,7 +293,7 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
 
   // Import with timestamp_column=0
   auto status =
-      import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
+      import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
@@ -350,14 +350,14 @@ TEST(ArrowImportTest, ImportStrings) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("str_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "str_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
@@ -411,14 +411,14 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("i8_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "i8_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
@@ -470,7 +470,7 @@ TEST(ArrowImportTest, ImportLargeDataset) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("tbl_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "tbl_topic";
@@ -478,7 +478,7 @@ TEST(ArrowImportTest, ImportLargeDataset) {
   desc.max_chunk_rows = 128;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
@@ -532,14 +532,14 @@ TEST(ArrowImportTest, ImportWithNulls) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("null_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "null_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
@@ -567,4 +567,4 @@ TEST(ArrowImportTest, ImportWithNulls) {
 }
 
 }  // namespace
-}  // namespace pj::engine::arrow_import
+}  // namespace PJ::engine::arrow_import

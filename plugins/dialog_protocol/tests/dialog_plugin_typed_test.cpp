@@ -1,5 +1,5 @@
-#include <pj/sdk/dialog_plugin_typed.hpp>
-#include <pj/sdk/widget_data.hpp>
+#include <PJ/sdk/dialog_plugin_typed.hpp>
+#include <PJ/sdk/widget_data.hpp>
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 namespace {
 
 /// A recording subclass that tracks which typed handler was called and with what value.
-class RecordingPlugin : public pj::sdk::DialogPluginTyped {
+class RecordingPlugin : public PJ::sdk::DialogPluginTyped {
  public:
   std::string manifest() const override { return R"({"name":"test"})"; }
   std::string ui_content() const override { return "<ui/>"; }
@@ -102,7 +102,7 @@ class RecordingPlugin : public pj::sdk::DialogPluginTyped {
 
 // Helper: call the base class on_widget_event through the public interface.
 // DialogPluginTyped::on_widget_event is final, but we access it via DialogPluginBase ref.
-bool dispatch(pj::sdk::DialogPluginBase& plugin, std::string_view widget, std::string_view json) {
+bool dispatch(PJ::sdk::DialogPluginBase& plugin, std::string_view widget, std::string_view json) {
   return plugin.on_widget_event(widget, json);
 }
 

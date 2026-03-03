@@ -1,6 +1,6 @@
 ---
 name: cpp20-api-guidelines
-description: "Generate and review C++20 code with Abseil in a simplicity-first style. Use when tasks involve API design, code reviews, refactors, or coding standards where correctness and usability matter: const-by-default, stateless-first interfaces, minimal abstraction (avoid SOLID-for-its-own-sake), DRY with restraint, testability by design, explicit ownership/lifetimes, pj::Expected<T>/pj::Status error handling in public API headers, and Swiss Table containers."
+description: "Generate and review C++20 code with Abseil in a simplicity-first style. Use when tasks involve API design, code reviews, refactors, or coding standards where correctness and usability matter: const-by-default, stateless-first interfaces, minimal abstraction (avoid SOLID-for-its-own-sake), DRY with restraint, testability by design, explicit ownership/lifetimes, PJ::Expected<T>/PJ::Status error handling in public API headers, and Swiss Table containers."
 ---
 
 # C++20 API Guidelines (with Abseil)
@@ -25,10 +25,10 @@ description: "Generate and review C++20 code with Abseil in a simplicity-first s
 - Prefer free functions over classes unless state/invariants/lifecycle require a class.
 - Keep ownership, lifetime, side effects, and error semantics explicit.
 - **Error handling — two-layer policy:**
-  - Public API headers (`.hpp`): use `pj::Expected<T>` (recoverable error with value), `pj::Status`
-    (recoverable error, no return value), `pj::Span<T>` (non-owning view). NO absl types in headers.
+  - Public API headers (`.hpp`): use `PJ::Expected<T>` (recoverable error with value), `PJ::Status`
+    (recoverable error, no return value), `PJ::Span<T>` (non-owning view). NO absl types in headers.
   - Implementation files (`.cpp`): absl types are always OK — `absl::StrCat`, `absl::flat_hash_map`, etc.
-  - Success: `pj::ok_status()`. Error: `pj::unexpected(msg)`. Check: `.has_value()`.
+  - Success: `PJ::ok_status()`. Error: `PJ::unexpected(msg)`. Check: `.has_value()`.
 - Use `absl::flat_hash_map` for hash containers, `absl::Duration`/`Time` for time,
   `absl::StrCat`/`StrFormat` for string operations (in .cpp files).
 - Include minimal code examples only when they clarify contracts or misuse prevention.

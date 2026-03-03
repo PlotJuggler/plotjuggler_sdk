@@ -1,6 +1,6 @@
-#include <pj/host_qt/widget_binding.hpp>
+#include <PJ/host_qt/widget_binding.hpp>
 
-#include <pj/host/widget_event_builder.hpp>
+#include <PJ/host/widget_event_builder.hpp>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -18,14 +18,14 @@
 
 #include <set>
 
-namespace pj::host_qt {
+namespace PJ::host_qt {
 
 // ---------------------------------------------------------------------------
 // apply_widget_data — push WidgetDataView values into Qt widgets
 // ---------------------------------------------------------------------------
 
 static void apply_to_widget(QWidget* w, std::string_view name,
-                            const pj::host::WidgetDataView& view) {
+                            const PJ::host::WidgetDataView& view) {
   const QSignalBlocker blocker(w);
 
   // --- Generic properties (any widget) ---
@@ -144,7 +144,7 @@ static void apply_to_widget(QWidget* w, std::string_view name,
   // Containers (QFrame, QGroupBox, QWidget) — only generic properties applied above.
 }
 
-void apply_widget_data(QWidget* root, const pj::host::WidgetDataView& view) {
+void apply_widget_data(QWidget* root, const PJ::host::WidgetDataView& view) {
   for (const auto& name : view.widget_names()) {
     auto* w = root->findChild<QWidget*>(QString::fromStdString(name));
     if (!w) continue;
@@ -161,7 +161,7 @@ static bool is_internal_widget_name(const QString& name) {
 }
 
 void connect_widget_signals(QWidget* root, WidgetEventCallback callback) {
-  using pj::host::WidgetEventBuilder;
+  using PJ::host::WidgetEventBuilder;
 
   for (auto* w : root->findChildren<QWidget*>()) {
     QString qname = w->objectName();
@@ -241,4 +241,4 @@ void connect_widget_signals(QWidget* root, WidgetEventCallback callback) {
   }
 }
 
-}  // namespace pj::host_qt
+}  // namespace PJ::host_qt

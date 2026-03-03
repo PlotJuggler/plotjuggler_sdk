@@ -1,4 +1,4 @@
-#include "pj/engine/chunk.hpp"
+#include "PJ/engine/chunk.hpp"
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 #include <variant>
 #include <vector>
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -1035,4 +1035,4 @@ TEST(ChunkDeathTest, OutOfOrderTimestampAsserts) {
 #endif  // !defined(NDEBUG) || defined(PJ_ASSERT_THROWS)
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine

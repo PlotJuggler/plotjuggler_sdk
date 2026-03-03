@@ -1,11 +1,11 @@
-#include "pj/base/type_tree.hpp"
+#include "PJ/base/type_tree.hpp"
 
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-namespace pj {
+namespace PJ {
 namespace {
 
 void flatten_impl(const TypeTreeNode& node, std::string_view prefix, std::vector<std::string>& out) {
@@ -85,4 +85,4 @@ std::size_t count_leaf_fields(const TypeTreeNode& root) {
   return count_leaf_fields_impl(root);
 }
 
-}  // namespace pj
+}  // namespace PJ

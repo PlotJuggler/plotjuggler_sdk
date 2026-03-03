@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
-#include "pj/base/dataset.hpp"
-#include "pj/base/type_tree.hpp"
-#include "pj/engine/engine.hpp"
-#include "pj/engine/query.hpp"
-#include "pj/engine/reader.hpp"
-#include "pj/engine/writer.hpp"
+#include "PJ/base/dataset.hpp"
+#include "PJ/base/type_tree.hpp"
+#include "PJ/engine/engine.hpp"
+#include "PJ/engine/query.hpp"
+#include "PJ/engine/reader.hpp"
+#include "PJ/engine/writer.hpp"
 
-using namespace pj::engine;
+using namespace PJ::engine;
 
 namespace {
 
@@ -19,11 +19,11 @@ TEST(ArrayExpansionTest, FixedSizeArray_Primitive_ProducesNColumns) {
   // Schema: struct msg { float32[3] accel }
   // Expected: 3 columns named accel[0], accel[1], accel[2]
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto accel = pj::make_array("accel", pj::make_primitive("", pj::PrimitiveType::kFloat32), 3u);
-  auto root = pj::make_struct("msg", {accel});
+  auto accel = PJ::make_array("accel", PJ::make_primitive("", PJ::PrimitiveType::kFloat32), 3u);
+  auto root = PJ::make_struct("msg", {accel});
   auto sid = *writer.register_schema("msg_fixed", root);
 
   TopicDescriptor desc;
@@ -43,17 +43,17 @@ TEST(ArrayExpansionTest, FixedSizeArray_StructElement_ProducesNxMColumns) {
   // Schema: struct msg { Pose[2] poses } where Pose = struct { float32 x, y, z }
   // Expected: 6 columns: poses[0].x, poses[0].y, poses[0].z, poses[1].x, poses[1].y, poses[1].z
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   // Element type: anonymous struct with x, y, z
-  auto pose_elem = pj::make_struct("", {
-      pj::make_primitive("x", pj::PrimitiveType::kFloat32),
-      pj::make_primitive("y", pj::PrimitiveType::kFloat32),
-      pj::make_primitive("z", pj::PrimitiveType::kFloat32),
+  auto pose_elem = PJ::make_struct("", {
+      PJ::make_primitive("x", PJ::PrimitiveType::kFloat32),
+      PJ::make_primitive("y", PJ::PrimitiveType::kFloat32),
+      PJ::make_primitive("z", PJ::PrimitiveType::kFloat32),
   });
-  auto poses = pj::make_array("poses", pose_elem, 2u);
-  auto root = pj::make_struct("msg", {poses});
+  auto poses = PJ::make_array("poses", pose_elem, 2u);
+  auto root = PJ::make_struct("msg", {poses});
   auto sid = *writer.register_schema("msg_struct_arr", root);
 
   TopicDescriptor desc;
@@ -76,11 +76,11 @@ TEST(ArrayExpansionTest, VarLenArray_InitiallyZeroColumns) {
   // Schema: struct msg { float64[] data }
   // Variable-length: no fixed_size → 0 columns until expand_array() is called
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("msg_varlen", root);
 
   TopicDescriptor desc;
@@ -96,11 +96,11 @@ TEST(ArrayExpansionTest, FixedSizeArray_WriteAndRead) {
   // Schema: struct msg { float32[3] accel }
   // Write 4 rows. Read back all values via range_query.
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto accel = pj::make_array("accel", pj::make_primitive("", pj::PrimitiveType::kFloat32), 3u);
-  auto root = pj::make_struct("msg", {accel});
+  auto accel = PJ::make_array("accel", PJ::make_primitive("", PJ::PrimitiveType::kFloat32), 3u);
+  auto root = PJ::make_struct("msg", {accel});
   auto sid = *writer.register_schema("msg_wr", root);
 
   TopicDescriptor desc;
@@ -109,7 +109,7 @@ TEST(ArrayExpansionTest, FixedSizeArray_WriteAndRead) {
   auto topic_id = *writer.register_topic(ds, desc);
 
   for (int i = 0; i < 4; ++i) {
-    ASSERT_TRUE(writer.begin_row(topic_id, pj::Timestamp(i) * 1000).has_value());
+    ASSERT_TRUE(writer.begin_row(topic_id, PJ::Timestamp(i) * 1000).has_value());
     writer.set_float32(topic_id, 0, static_cast<float>(i) * 1.0f);
     writer.set_float32(topic_id, 1, static_cast<float>(i) * 2.0f);
     writer.set_float32(topic_id, 2, static_cast<float>(i) * 3.0f);
@@ -136,11 +136,11 @@ TEST(ArrayExpansionTest, FixedSizeArray_WriteAndRead) {
 TEST(ArrayExpansionTest, VarLenArray_ExpandArray_AddsColumns) {
   // expand_array("data", 3) on a float64[] topic → 3 columns: data[0], data[1], data[2]
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("exp_test", root);
 
   TopicDescriptor desc;
@@ -167,11 +167,11 @@ TEST(ArrayExpansionTest, VarLenArray_ExpandArray_AddsColumns) {
 TEST(ArrayExpansionTest, VarLenArray_ExpandIsIdempotent_ShrinkIsNoop) {
   // expand(3) then expand(2) → no-op; still 3 columns
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("idem_test", root);
   TopicDescriptor desc;
   desc.name = "idem_topic";
@@ -191,11 +191,11 @@ TEST(ArrayExpansionTest, VarLenArray_ExpandIsIdempotent_ShrinkIsNoop) {
 TEST(ArrayExpansionTest, VarLenArray_WriteAndRead_BasicValues) {
   // expand(3), write 4 rows with all 3 elements, read back values
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("varlen_wr", root);
   TopicDescriptor desc;
   desc.name = "varlen_wr";
@@ -205,7 +205,7 @@ TEST(ArrayExpansionTest, VarLenArray_WriteAndRead_BasicValues) {
   *writer.expand_array(topic_id, "data", 3u);
 
   for (int i = 0; i < 4; ++i) {
-    ASSERT_TRUE(writer.begin_row(topic_id, pj::Timestamp(i) * 1000).has_value());
+    ASSERT_TRUE(writer.begin_row(topic_id, PJ::Timestamp(i) * 1000).has_value());
     writer.set_float64(topic_id, 0, i * 1.0);
     writer.set_float64(topic_id, 1, i * 2.0);
     writer.set_float64(topic_id, 2, i * 3.0);
@@ -235,10 +235,10 @@ TEST(ArrayExpansionTest, VarLenArray_ExpandUnknownTopic_ReturnsError) {
 TEST(ArrayExpansionTest, VarLenArray_ExpandNonArrayField_ReturnsError) {
   // Schema: struct { float64 value } — "value" is not an array
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto root = pj::make_struct("msg", {pj::make_primitive("value", pj::PrimitiveType::kFloat64)});
+  auto root = PJ::make_struct("msg", {PJ::make_primitive("value", PJ::PrimitiveType::kFloat64)});
   auto sid = *writer.register_schema("non_arr", root);
   TopicDescriptor desc;
   desc.name = "non_arr_topic";
@@ -256,11 +256,11 @@ TEST(ArrayExpansionTest, VarLenArray_ExpandNonArrayField_ReturnsError) {
 TEST(ArrayExpansionTest, ExpansionLimit_ClampsColumns) {
   // array_expansion_limit = 4; expand to 10 → actual = 4
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("limit_test", root);
 
   TopicDescriptor desc;
@@ -278,11 +278,11 @@ TEST(ArrayExpansionTest, ExpansionLimit_ClampsColumns) {
 
 TEST(ArrayExpansionTest, MaxObservedArrayLength_TrackedInMetadata) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("obs_test", root);
   TopicDescriptor desc;
   desc.name = "observed";
@@ -306,11 +306,11 @@ TEST(ArrayExpansionTest, MaxObservedArrayLength_TrackedInMetadata) {
 TEST(ArrayExpansionTest, TruncatedSampleCount_TrackedOnClamping) {
   // array_expansion_limit = 3. expand(10) → 1 truncation. expand(2) → no truncation.
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("trunc_test", root);
   TopicDescriptor desc;
   desc.name = "truncated";
@@ -335,11 +335,11 @@ TEST(ArrayExpansionTest, TruncatedSampleCount_TrackedOnClamping) {
 
 TEST(ArrayExpansionTest, Metadata_ExposedViaTopicMetadata) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("meta_test", root);
   TopicDescriptor desc;
   desc.name = "meta_topic";
@@ -370,11 +370,11 @@ TEST(ArrayExpansionTest, Metadata_ExposedViaTopicMetadata) {
 
 TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("cross_chunk", root);
   TopicDescriptor desc;
   desc.name = "cc";
@@ -385,7 +385,7 @@ TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
   // Phase 1: expand to 2, write 10 rows (8 auto-sealed + 2 in builder)
   *writer.expand_array(topic_id, "data", 2u);
   for (int i = 0; i < 10; ++i) {
-    ASSERT_TRUE(writer.begin_row(topic_id, pj::Timestamp(i) * 1000).has_value());
+    ASSERT_TRUE(writer.begin_row(topic_id, PJ::Timestamp(i) * 1000).has_value());
     writer.set_float64(topic_id, 0, i * 1.0);
     writer.set_float64(topic_id, 1, i * 2.0);
     ASSERT_TRUE(writer.finish_row(topic_id).has_value());
@@ -396,7 +396,7 @@ TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
 
   // Write 5 more rows with all 4 elements
   for (int i = 10; i < 15; ++i) {
-    ASSERT_TRUE(writer.begin_row(topic_id, pj::Timestamp(i) * 1000).has_value());
+    ASSERT_TRUE(writer.begin_row(topic_id, PJ::Timestamp(i) * 1000).has_value());
     writer.set_float64(topic_id, 0, i * 1.0);
     writer.set_float64(topic_id, 1, i * 2.0);
     writer.set_float64(topic_id, 2, i * 3.0);
@@ -409,7 +409,7 @@ TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
   const TopicStorage* storage = engine.get_topic_storage(topic_id);
   ASSERT_NE(storage, nullptr);
   for (const auto& chunk : storage->sealed_chunks()) {
-    if (chunk.stats.t_max < pj::Timestamp(10) * 1000) {
+    if (chunk.stats.t_max < PJ::Timestamp(10) * 1000) {
       EXPECT_EQ(chunk.column_descriptors.size(), 2u) << "pre-expansion chunk must have 2 columns";
     } else {
       EXPECT_EQ(chunk.column_descriptors.size(), 4u) << "post-expansion chunk must have 4 columns";
@@ -437,11 +437,11 @@ TEST(ArrayExpansionTest, UnsetElementsAutoNullFilled) {
   // expand(4), write rows setting only elements [0] and [1].
   // Elements [2] and [3] must be null (auto-filled by finish_row).
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("partial_set", root);
   TopicDescriptor desc;
   desc.name = "partial";
@@ -475,15 +475,15 @@ TEST(ArrayExpansionTest, VarLenStructArray_ExpandAndWrite) {
   // Schema: struct msg { Pose[] poses } where Pose = struct { float32 x, y }
   // expand_array("poses", 2) → 4 columns: poses[0].x, poses[0].y, poses[1].x, poses[1].y
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto pose_elem = pj::make_struct("", {
-      pj::make_primitive("x", pj::PrimitiveType::kFloat32),
-      pj::make_primitive("y", pj::PrimitiveType::kFloat32),
+  auto pose_elem = PJ::make_struct("", {
+      PJ::make_primitive("x", PJ::PrimitiveType::kFloat32),
+      PJ::make_primitive("y", PJ::PrimitiveType::kFloat32),
   });
-  auto poses_arr = pj::make_array("poses", pose_elem, std::nullopt);
-  auto root = pj::make_struct("msg", {poses_arr});
+  auto poses_arr = PJ::make_array("poses", pose_elem, std::nullopt);
+  auto root = PJ::make_struct("msg", {poses_arr});
   auto sid = *writer.register_schema("struct_arr_var", root);
 
   TopicDescriptor desc;
@@ -545,12 +545,12 @@ TEST(ArrayExpansionTest, SecondWriter_PicksUpExpandedLayout) {
   // Writer B is created fresh for the same engine/topic.
   // Writer B must see 3 columns — not 0.
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
 
   // Writer A: register schema + topic, expand and write
   DataWriter writerA = engine.create_writer();
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writerA.register_schema("second_writer_schema", root);
 
   TopicDescriptor desc;
@@ -607,11 +607,11 @@ TEST(ArrayExpansionTest, ExpandArray_WhileRowInProgress_ReturnsError) {
   // The expand_array call must fail with an error (row in progress).
   // The two previously completed rows must still be accessible after flush.
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("in_progress_schema", root);
 
   TopicDescriptor desc;
@@ -670,12 +670,12 @@ TEST(ArrayExpansionTest, ExpandArray_WhileRowInProgress_ReturnsError) {
 
 TEST(ArrayExpansionTest, SecondWriter_ReExpandSameField_DoesNotDuplicateColumns) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
 
   // Writer A creates topic and expands data[] to 3.
   DataWriter writerA = engine.create_writer();
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writerA.register_schema("reexpand_schema", root);
 
   TopicDescriptor desc;
@@ -728,12 +728,12 @@ TEST(ArrayExpansionTest, MixedSchema_ScalarPlusVarLenArray_CorrectColumnOrder) {
   //   col 2 → values[1]      (field_id 2)
   //   col 3 → values[2]      (field_id 3)
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto ts_field = pj::make_primitive("timestamp_sec", pj::PrimitiveType::kFloat64);
-  auto values_arr = pj::make_array("values", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {ts_field, values_arr});
+  auto ts_field = PJ::make_primitive("timestamp_sec", PJ::PrimitiveType::kFloat64);
+  auto values_arr = PJ::make_array("values", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {ts_field, values_arr});
   auto sid = *writer.register_schema("mixed_schema", root);
 
   TopicDescriptor desc;
@@ -799,12 +799,12 @@ TEST(ArrayExpansionTest, TwoDistinctArrayFields_ExpandBoth_CorrectLayout) {
   //   positions[0] (id 0), positions[1] (id 1),
   //   velocities[0] (id 2), velocities[1] (id 3), velocities[2] (id 4)
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto pos_arr = pj::make_array("positions", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto vel_arr = pj::make_array("velocities", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {pos_arr, vel_arr});
+  auto pos_arr = PJ::make_array("positions", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto vel_arr = PJ::make_array("velocities", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {pos_arr, vel_arr});
   auto sid = *writer.register_schema("two_arrays_schema", root);
 
   TopicDescriptor desc;
@@ -864,7 +864,7 @@ TEST(ArrayExpansionTest, TwoDistinctArrayFields_ExpandBoth_CorrectLayout) {
 
 TEST(ArrayExpansionTest, Schemaless_EnsureColumn_AddsColumn) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -872,7 +872,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_AddsColumn) {
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  auto fid = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat64);
+  auto fid = writer.ensure_column(topic_id, "value", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid.has_value()) << fid.error();
   EXPECT_EQ(*fid, 0u);
 
@@ -896,7 +896,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_AddsColumn) {
 
 TEST(ArrayExpansionTest, Schemaless_EnsureColumn_Idempotent) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -904,11 +904,11 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_Idempotent) {
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  auto fid1 = writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64);
+  auto fid1 = writer.ensure_column(topic_id, "x", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid1.has_value());
   EXPECT_EQ(*fid1, 0u);
 
-  auto fid2 = writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64);
+  auto fid2 = writer.ensure_column(topic_id, "x", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid2.has_value());
   EXPECT_EQ(*fid2, 0u);  // same field id — idempotent
 
@@ -918,7 +918,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_Idempotent) {
 
 TEST(ArrayExpansionTest, Schemaless_EnsureColumn_MultipleColumns_WriteAndRead) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -926,9 +926,9 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_MultipleColumns_WriteAndRead) {
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  EXPECT_EQ(*writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64), 0u);
-  EXPECT_EQ(*writer.ensure_column(topic_id, "y", pj::PrimitiveType::kFloat64), 1u);
-  EXPECT_EQ(*writer.ensure_column(topic_id, "z", pj::PrimitiveType::kFloat32), 2u);
+  EXPECT_EQ(*writer.ensure_column(topic_id, "x", PJ::PrimitiveType::kFloat64), 0u);
+  EXPECT_EQ(*writer.ensure_column(topic_id, "y", PJ::PrimitiveType::kFloat64), 1u);
+  EXPECT_EQ(*writer.ensure_column(topic_id, "z", PJ::PrimitiveType::kFloat32), 2u);
 
   auto handle = *writer.bind_topic_writer(topic_id);
   ASSERT_EQ(handle.field_ids.size(), 3u);
@@ -954,7 +954,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_MultipleColumns_WriteAndRead) {
 
 TEST(ArrayExpansionTest, Schemaless_EnsureColumn_SecondWriter_PicksUpLayout) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writerA = engine.create_writer();
 
   TopicDescriptor desc;
@@ -962,7 +962,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_SecondWriter_PicksUpLayout) {
   desc.schema_id = 0;
   auto topic_id = *writerA.register_topic(ds, desc);
 
-  ASSERT_TRUE(writerA.ensure_column(topic_id, "v", pj::PrimitiveType::kFloat64).has_value());
+  ASSERT_TRUE(writerA.ensure_column(topic_id, "v", PJ::PrimitiveType::kFloat64).has_value());
   ASSERT_TRUE(writerA.begin_row(topic_id, 1000).has_value());
   writerA.set_float64(topic_id, 0, 99.0);
   ASSERT_TRUE(writerA.finish_row(topic_id).has_value());
@@ -977,7 +977,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_SecondWriter_PicksUpLayout) {
 
 TEST(ArrayExpansionTest, Schemaless_EnsureColumn_WhileRowInProgress_ReturnsError) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -985,16 +985,16 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_WhileRowInProgress_ReturnsError
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  ASSERT_TRUE(writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64).has_value());
+  ASSERT_TRUE(writer.ensure_column(topic_id, "x", PJ::PrimitiveType::kFloat64).has_value());
   ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
 
-  auto result = writer.ensure_column(topic_id, "y", pj::PrimitiveType::kFloat64);
+  auto result = writer.ensure_column(topic_id, "y", PJ::PrimitiveType::kFloat64);
   EXPECT_FALSE(result.has_value()) << "ensure_column must fail while a row is in progress";
 
   ASSERT_TRUE(writer.finish_row(topic_id).has_value());
 
   // After finishing the row, ensure_column should succeed
-  auto result2 = writer.ensure_column(topic_id, "y", pj::PrimitiveType::kFloat64);
+  auto result2 = writer.ensure_column(topic_id, "y", PJ::PrimitiveType::kFloat64);
   EXPECT_TRUE(result2.has_value());
 }
 
@@ -1004,7 +1004,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_WhileRowInProgress_ReturnsError
 
 TEST(ArrayExpansionTest, Schemaless_ExpandArray_AddsColumns) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -1012,7 +1012,7 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_AddsColumns) {
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  auto result = writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64);
+  auto result = writer.expand_array(topic_id, "data", 3u, PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(result.has_value()) << result.error();
   EXPECT_EQ(*result, 3u);
 
@@ -1025,7 +1025,7 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_AddsColumns) {
 
 TEST(ArrayExpansionTest, Schemaless_ExpandArray_IncrementalExpansion) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -1033,7 +1033,7 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_IncrementalExpansion) {
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  auto r1 = writer.expand_array(topic_id, "data", 2u, pj::PrimitiveType::kFloat64);
+  auto r1 = writer.expand_array(topic_id, "data", 2u, PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(r1.has_value()) << r1.error();
   EXPECT_EQ(*r1, 2u);
 
@@ -1043,7 +1043,7 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_IncrementalExpansion) {
   ASSERT_TRUE(writer.finish_row(topic_id).has_value());
   engine.commit_chunks(writer.flush_all());
 
-  auto r2 = writer.expand_array(topic_id, "data", 5u, pj::PrimitiveType::kFloat64);
+  auto r2 = writer.expand_array(topic_id, "data", 5u, PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(r2.has_value()) << r2.error();
   EXPECT_EQ(*r2, 5u);
 
@@ -1064,7 +1064,7 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_IncrementalExpansion) {
 
 TEST(ArrayExpansionTest, Schemaless_ExpandArray_Idempotent_ShrinkIsNoop) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -1072,16 +1072,16 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_Idempotent_ShrinkIsNoop) {
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  EXPECT_EQ(*writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64), 3u);
-  EXPECT_EQ(*writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64), 3u);
-  EXPECT_EQ(*writer.expand_array(topic_id, "data", 1u, pj::PrimitiveType::kFloat64), 3u);
+  EXPECT_EQ(*writer.expand_array(topic_id, "data", 3u, PJ::PrimitiveType::kFloat64), 3u);
+  EXPECT_EQ(*writer.expand_array(topic_id, "data", 3u, PJ::PrimitiveType::kFloat64), 3u);
+  EXPECT_EQ(*writer.expand_array(topic_id, "data", 1u, PJ::PrimitiveType::kFloat64), 3u);
 
   EXPECT_EQ(writer.bind_topic_writer(topic_id)->field_ids.size(), 3u);
 }
 
 TEST(ArrayExpansionTest, Schemaless_ExpandArray_DefaultType_IsFloat64) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -1097,8 +1097,8 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_DefaultType_IsFloat64) {
   ASSERT_NE(storage, nullptr);
   const auto& cols = storage->column_descriptors();
   ASSERT_EQ(cols.size(), 2u);
-  EXPECT_EQ(cols[0].logical_type, pj::PrimitiveType::kFloat64);
-  EXPECT_EQ(cols[1].logical_type, pj::PrimitiveType::kFloat64);
+  EXPECT_EQ(cols[0].logical_type, PJ::PrimitiveType::kFloat64);
+  EXPECT_EQ(cols[1].logical_type, PJ::PrimitiveType::kFloat64);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1107,7 +1107,7 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_DefaultType_IsFloat64) {
 
 TEST(ArrayExpansionTest, Mixed_EnsureColumnThenExpandArray_NoConflict) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -1116,12 +1116,12 @@ TEST(ArrayExpansionTest, Mixed_EnsureColumnThenExpandArray_NoConflict) {
   auto topic_id = *writer.register_topic(ds, desc);
 
   // Pre-add data[0] via ensure_column
-  auto fid0 = writer.ensure_column(topic_id, "data[0]", pj::PrimitiveType::kFloat64);
+  auto fid0 = writer.ensure_column(topic_id, "data[0]", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid0.has_value());
   EXPECT_EQ(*fid0, 0u);
 
   // expand_array sees data[0] already exists, adds data[1] and data[2]
-  auto result = writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64);
+  auto result = writer.expand_array(topic_id, "data", 3u, PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(result.has_value()) << result.error();
   EXPECT_EQ(*result, 3u);
 
@@ -1134,7 +1134,7 @@ TEST(ArrayExpansionTest, Mixed_EnsureColumnThenExpandArray_NoConflict) {
 
 TEST(ArrayExpansionTest, Mixed_ExpandArrayThenEnsureColumn_NoConflict) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -1142,17 +1142,17 @@ TEST(ArrayExpansionTest, Mixed_ExpandArrayThenEnsureColumn_NoConflict) {
   desc.schema_id = 0;
   auto topic_id = *writer.register_topic(ds, desc);
 
-  auto r = writer.expand_array(topic_id, "data", 2u, pj::PrimitiveType::kFloat64);
+  auto r = writer.expand_array(topic_id, "data", 2u, PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(r.has_value()) << r.error();
   EXPECT_EQ(*r, 2u);
 
   // data[0] already exists — should be no-op, returns existing field id
-  auto fid0 = writer.ensure_column(topic_id, "data[0]", pj::PrimitiveType::kFloat64);
+  auto fid0 = writer.ensure_column(topic_id, "data[0]", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid0.has_value());
   EXPECT_EQ(*fid0, 0u);
 
   // extra column not part of array
-  auto fid_extra = writer.ensure_column(topic_id, "extra", pj::PrimitiveType::kFloat32);
+  auto fid_extra = writer.ensure_column(topic_id, "extra", PJ::PrimitiveType::kFloat32);
   ASSERT_TRUE(fid_extra.has_value());
   EXPECT_EQ(*fid_extra, 2u);  // new column at index 2
 
@@ -1168,11 +1168,11 @@ TEST(ArrayExpansionTest, Mixed_ExpandArrayThenEnsureColumn_NoConflict) {
 // ensure_column had already added an array-indexed path.
 TEST(ArrayExpansionTest, Typed_EnsureColumnThenExpandArray_NoDuplicateColumns) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
-  auto root = pj::make_struct("msg", {data_arr});
+  auto data_arr = PJ::make_array("data", PJ::make_primitive("", PJ::PrimitiveType::kFloat64), std::nullopt);
+  auto root = PJ::make_struct("msg", {data_arr});
   auto sid = *writer.register_schema("typed_ec_ea_dedup", root);
 
   TopicDescriptor desc;
@@ -1181,7 +1181,7 @@ TEST(ArrayExpansionTest, Typed_EnsureColumnThenExpandArray_NoDuplicateColumns) {
   auto topic_id = *writer.register_topic(ds, desc);
 
   // Manually add data[0] via ensure_column (does not update array_expansion_count)
-  auto fid0 = writer.ensure_column(topic_id, "data[0]", pj::PrimitiveType::kFloat64);
+  auto fid0 = writer.ensure_column(topic_id, "data[0]", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid0.has_value()) << fid0.error();
   EXPECT_EQ(*fid0, 0u);
 
@@ -1201,7 +1201,7 @@ TEST(ArrayExpansionTest, Typed_EnsureColumnThenExpandArray_NoDuplicateColumns) {
 // with a different type instead of silently accepting the mismatch.
 TEST(ArrayExpansionTest, EnsureColumn_TypeMismatch_ReturnsError) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
   TopicDescriptor desc;
@@ -1210,16 +1210,16 @@ TEST(ArrayExpansionTest, EnsureColumn_TypeMismatch_ReturnsError) {
   auto topic_id = *writer.register_topic(ds, desc);
 
   // Register as float64
-  auto fid = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat64);
+  auto fid = writer.ensure_column(topic_id, "value", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid.has_value());
   EXPECT_EQ(*fid, 0u);
 
   // Re-register same path with float32: must fail
-  auto mismatch = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat32);
+  auto mismatch = writer.ensure_column(topic_id, "value", PJ::PrimitiveType::kFloat32);
   EXPECT_FALSE(mismatch.has_value()) << "Type mismatch must return error, not silent success";
 
   // Re-register same path with same type: must succeed (idempotent)
-  auto same_type = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat64);
+  auto same_type = writer.ensure_column(topic_id, "value", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(same_type.has_value());
   EXPECT_EQ(*same_type, 0u);  // same field id
 }
@@ -1230,10 +1230,10 @@ TEST(ArrayExpansionTest, EnsureColumn_TypeMismatch_ReturnsError) {
 
 TEST(ArrayExpansionTest, Typed_EnsureColumn_AddsColumnOutsideSchema) {
   DataEngine engine;
-  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DatasetId ds = *engine.create_dataset(PJ::DatasetDescriptor{.source_name = "t"});
   DataWriter writer = engine.create_writer();
 
-  auto root = pj::make_struct("msg", {pj::make_primitive("x", pj::PrimitiveType::kFloat64)});
+  auto root = PJ::make_struct("msg", {PJ::make_primitive("x", PJ::PrimitiveType::kFloat64)});
   auto sid = *writer.register_schema("typed_ensure", root);
 
   TopicDescriptor desc;
@@ -1245,7 +1245,7 @@ TEST(ArrayExpansionTest, Typed_EnsureColumn_AddsColumnOutsideSchema) {
   EXPECT_EQ(*writer.resolve_field(topic_id, "x"), 0u);
 
   // Add an extra column outside the schema
-  auto fid = writer.ensure_column(topic_id, "debug_extra", pj::PrimitiveType::kFloat64);
+  auto fid = writer.ensure_column(topic_id, "debug_extra", PJ::PrimitiveType::kFloat64);
   ASSERT_TRUE(fid.has_value()) << fid.error();
   EXPECT_EQ(*fid, 1u);
 

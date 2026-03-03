@@ -1,4 +1,4 @@
-#include "pj/engine/chunk.hpp"
+#include "PJ/engine/chunk.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -6,9 +6,9 @@
 #include <utility>
 #include <variant>
 
-#include "pj/base/assert.hpp"
+#include "PJ/base/assert.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 
 namespace {
 
@@ -653,4 +653,4 @@ void TopicChunk::read_column_as_doubles(std::size_t col_index, Span<double> out,
   }
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

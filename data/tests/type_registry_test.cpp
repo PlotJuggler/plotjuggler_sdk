@@ -1,15 +1,15 @@
-#include "pj/engine/type_registry.hpp"
+#include "PJ/engine/type_registry.hpp"
 
 #include <gtest/gtest.h>
 
 #include <memory>
 #include <string>
 
-#include "pj/base/expected.hpp"
-#include "pj/base/type_tree.hpp"
-#include "pj/base/types.hpp"
+#include "PJ/base/expected.hpp"
+#include "PJ/base/type_tree.hpp"
+#include "PJ/base/types.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 // Helper: build a simple struct with two float64 fields (x, y)
@@ -132,7 +132,7 @@ TEST(TypeRegistryTest, EvolveSchemaAdditiveChange) {
   // Evolve: add a z field
   auto evolved = make_point3d_schema();
   auto* evolved_ptr = evolved.get();
-  pj::Status status = registry.evolve_schema(id, evolved);
+  PJ::Status status = registry.evolve_schema(id, evolved);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   // lookup should now return the evolved tree
@@ -153,7 +153,7 @@ TEST(TypeRegistryTest, EvolveSchemaRemovedFieldFails) {
 
   // Try to evolve to 2 fields (removing z)
   auto reduced = make_point_schema();
-  pj::Status status = registry.evolve_schema(*result, reduced);
+  PJ::Status status = registry.evolve_schema(*result, reduced);
   ASSERT_FALSE(status.has_value());
 }
 
@@ -172,7 +172,7 @@ TEST(TypeRegistryTest, EvolveSchemaTypeChangeFails) {
                    make_primitive("y", PrimitiveType::kFloat64),
                    make_primitive("z", PrimitiveType::kFloat64),
                });
-  pj::Status status = registry.evolve_schema(*result, changed);
+  PJ::Status status = registry.evolve_schema(*result, changed);
   ASSERT_FALSE(status.has_value());
 }
 
@@ -180,7 +180,7 @@ TEST(TypeRegistryTest, EvolveSchemaTypeChangeFails) {
 TEST(TypeRegistryTest, EvolveSchemaUnknownIdFails) {
   TypeRegistry registry;
 
-  pj::Status status = registry.evolve_schema(999, make_point_schema());
+  PJ::Status status = registry.evolve_schema(999, make_point_schema());
   ASSERT_FALSE(status.has_value());
 }
 
@@ -237,4 +237,4 @@ TEST(TypeRegistryTest, MultipleSchemas) {
 }
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine

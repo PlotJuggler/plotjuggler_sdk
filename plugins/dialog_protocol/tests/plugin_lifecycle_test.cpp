@@ -1,5 +1,5 @@
-#include <pj/dialog_protocol.h>
-#include <pj/sdk/widget_data.hpp>
+#include <PJ/dialog_protocol.h>
+#include <PJ/sdk/widget_data.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -8,12 +8,12 @@
 #include <string>
 
 // Defined in mock_streamer.cpp, linked statically
-extern "C" const pj_dialog_vtable_t* pj_get_dialog_vtable();
+extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
 
 class PluginLifecycleTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    vt_ = pj_get_dialog_vtable();
+    vt_ = PJ_get_dialog_vtable();
     ASSERT_NE(vt_, nullptr);
     ctx_ = vt_->create();
     ASSERT_NE(ctx_, nullptr);
@@ -26,7 +26,7 @@ class PluginLifecycleTest : public ::testing::Test {
     }
   }
 
-  const pj_dialog_vtable_t* vt_ = nullptr;
+  const PJ_dialog_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
 };
 
@@ -37,7 +37,7 @@ TEST_F(PluginLifecycleTest, ProtocolVersion) {
 }
 
 TEST_F(PluginLifecycleTest, StructSize) {
-  EXPECT_EQ(vt_->struct_size, sizeof(pj_dialog_vtable_t));
+  EXPECT_EQ(vt_->struct_size, sizeof(PJ_dialog_vtable_t));
 }
 
 TEST_F(PluginLifecycleTest, AllFunctionPointersNonNull) {
@@ -232,7 +232,7 @@ TEST_F(PluginLifecycleTest, MultipleCreateDestroy) {
 // --- VTable pointer is stable ---
 
 TEST(PluginVTableTest, VtablePointerStable) {
-  const pj_dialog_vtable_t* vt1 = pj_get_dialog_vtable();
-  const pj_dialog_vtable_t* vt2 = pj_get_dialog_vtable();
+  const PJ_dialog_vtable_t* vt1 = PJ_get_dialog_vtable();
+  const PJ_dialog_vtable_t* vt2 = PJ_get_dialog_vtable();
   EXPECT_EQ(vt1, vt2);
 }

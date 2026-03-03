@@ -1,23 +1,23 @@
-#include "pj/engine/topic_storage.hpp"
+#include "PJ/engine/topic_storage.hpp"
 
 #include <utility>
 #include <variant>
 
 #include "absl/strings/str_cat.h"
-#include "pj/base/expected.hpp"
+#include "PJ/base/expected.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 
 TopicStorage::TopicStorage(TopicId topic_id, TopicDescriptor descriptor)
     : topic_id_(topic_id), descriptor_(std::move(descriptor)) {}
 
-pj::Status TopicStorage::append_sealed_chunk(TopicChunk chunk) {
+PJ::Status TopicStorage::append_sealed_chunk(TopicChunk chunk) {
   if (!sealed_chunks_.empty() && chunk.stats.t_min < sealed_chunks_.back().stats.t_min) {
-    return pj::unexpected(absl::StrCat(
+    return PJ::unexpected(absl::StrCat(
         "Out-of-order chunk: new t_min=", chunk.stats.t_min, " < last t_min=", sealed_chunks_.back().stats.t_min));
   }
   sealed_chunks_.push_back(std::move(chunk));
-  return pj::ok_status();
+  return PJ::ok_status();
 }
 
 void TopicStorage::evict_before(Timestamp t_keep_min) {
@@ -152,4 +152,4 @@ void TopicStorage::set_array_expansion_count(const std::string& field_path, uint
   array_expansion_counts_[field_path] = count;
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

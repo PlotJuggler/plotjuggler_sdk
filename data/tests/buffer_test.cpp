@@ -1,11 +1,11 @@
-#include "pj/engine/buffer.hpp"
+#include "PJ/engine/buffer.hpp"
 
 #include <gtest/gtest.h>
 
 #include <array>
 #include <cstdint>
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 // ===========================================================================
@@ -176,4 +176,4 @@ TEST(BitVectorTest, BitSpanView) {
 }
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine

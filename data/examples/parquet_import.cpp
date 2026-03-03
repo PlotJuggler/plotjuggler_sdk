@@ -19,20 +19,20 @@
 #include <variant>
 #include <vector>
 
-#include "pj/base/span.hpp"
-#include "pj/base/types.hpp"
-#include "pj/engine/arrow_import.hpp"
-#include "pj/engine/chunk.hpp"
-#include "pj/engine/encoding.hpp"
-#include "pj/engine/engine.hpp"
-#include "pj/engine/topic_storage.hpp"
+#include "PJ/base/span.hpp"
+#include "PJ/base/types.hpp"
+#include "PJ/engine/arrow_import.hpp"
+#include "PJ/engine/chunk.hpp"
+#include "PJ/engine/encoding.hpp"
+#include "PJ/engine/engine.hpp"
+#include "PJ/engine/topic_storage.hpp"
 
 namespace {
 
-using pj::PrimitiveType;
-using pj::engine::DataEngine;
-using pj::engine::EncodingType;
-using pj::engine::TopicChunk;
+using PJ::PrimitiveType;
+using PJ::engine::DataEngine;
+using PJ::engine::EncodingType;
+using PJ::engine::TopicChunk;
 
 // ── Local column mapping for report formatting ──────────────────────────────
 
@@ -83,15 +83,15 @@ std::size_t encoded_column_bytes(const TopicChunk& chunk, std::size_t col) {
       return chunk.encoded_columns[col].size();
 
     case EncodingType::kConstant: {
-      const auto& c = std::get<pj::engine::encoding::ConstantEncoded>(data);
+      const auto& c = std::get<PJ::engine::encoding::ConstantEncoded>(data);
       return c.value_size;
     }
     case EncodingType::kFrameOfReference: {
-      const auto& f = std::get<pj::engine::encoding::FrameOfReferenceEncoded>(data);
+      const auto& f = std::get<PJ::engine::encoding::FrameOfReferenceEncoded>(data);
       return f.offsets.size();
     }
     case EncodingType::kDictionary: {
-      const auto& d = std::get<pj::engine::encoding::DictionaryEncoded>(data);
+      const auto& d = std::get<PJ::engine::encoding::DictionaryEncoded>(data);
       std::size_t dict_bytes = 0;
       for (const auto& s : d.dictionary) {
         dict_bytes += s.size();
@@ -99,7 +99,7 @@ std::size_t encoded_column_bytes(const TopicChunk& chunk, std::size_t col) {
       return d.indices.size() + dict_bytes;
     }
     case EncodingType::kPackedBool: {
-      const auto& p = std::get<pj::engine::encoding::PackedBools>(data);
+      const auto& p = std::get<PJ::engine::encoding::PackedBools>(data);
       return p.bits.size();
     }
   }
@@ -297,13 +297,13 @@ int main(int argc, char* argv[]) {
   }
   auto ipc_buffer = *ipc_buf_result;
 
-  pj::Span<const uint8_t> ipc_bytes(ipc_buffer->data(), static_cast<std::size_t>(ipc_buffer->size()));
+  PJ::Span<const uint8_t> ipc_bytes(ipc_buffer->data(), static_cast<std::size_t>(ipc_buffer->size()));
 
   std::cout << "Serialized to IPC: " << ipc_buffer->size() << " bytes\n";
 
   // ── 3. Map IPC schema → TypeTreeNode via arrow_import ──────────────────
 
-  auto schema_result = pj::engine::arrow_import::schema_from_ipc(ipc_bytes);
+  auto schema_result = PJ::engine::arrow_import::schema_from_ipc(ipc_bytes);
   if (!schema_result.has_value()) {
     std::cerr << "Schema conversion failed: " << schema_result.error() << "\n";
     return 1;
@@ -332,7 +332,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  pj::DatasetDescriptor ds_desc;
+  PJ::DatasetDescriptor ds_desc;
   ds_desc.source_name = path;
   ds_desc.time_domain_id = *td_or;
   auto ds_or = engine.create_dataset(std::move(ds_desc));
@@ -350,7 +350,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  pj::engine::TopicDescriptor topic_desc;
+  PJ::engine::TopicDescriptor topic_desc;
   topic_desc.name = "parquet_data";
   topic_desc.schema_id = *schema_or;
   topic_desc.dataset_id = dataset_id;
@@ -367,7 +367,7 @@ int main(int argc, char* argv[]) {
 
   auto t_start = std::chrono::steady_clock::now();
 
-  auto import_st = pj::engine::arrow_import::import_ipc_stream(writer, topic_id, ipc_bytes, arrow_mappings);
+  auto import_st = PJ::engine::arrow_import::import_ipc_stream(writer, topic_id, ipc_bytes, arrow_mappings);
   if (!import_st.has_value()) {
     std::cerr << "import_ipc_stream failed: " << import_st.error() << "\n";
     return 1;

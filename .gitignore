@@ -5,3 +5,4 @@ data/test_data/
 data/benchmark_reports/
 .vscode/
 .worktrees/
+/plugins/dialog_protocol/build*

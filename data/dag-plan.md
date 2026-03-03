@@ -108,7 +108,7 @@ topics. Multi-column primary/secondary is Phase 3.
 ### 2.5  Absl in `.cpp` only
 
 Public headers use `std::vector`, `std::unordered_map`, `std::unordered_set`,
-`pj::Expected`, `pj::Status`, `pj::Span`. Implementation files use
+`PJ::Expected`, `PJ::Status`, `PJ::Span`. Implementation files use
 `absl::flat_hash_map`, `absl::flat_hash_set`, `absl::StrCat`, etc.
 
 ---
@@ -118,7 +118,7 @@ Public headers use `std::vector`, `std::unordered_map`, `std::unordered_set`,
 ### 3.0  `VarValue` — the universal column value type
 
 ```cpp
-// engine/include/pj/engine/derived_engine.hpp
+// engine/include/PJ/engine/derived_engine.hpp
 
 /// Universal value type for transform I/O.
 /// Engine storage kinds map as follows:
@@ -173,8 +173,8 @@ class ISISOTransform {
   /// out_time MAY differ from `time` — time-offset transforms and interpolation
   /// may produce output on a different time grid than their input.
   /// When true is returned, out_time must be >= all previously returned out_times.
-  virtual bool calculate(pj::Timestamp time, const VarValue& input,
-                         pj::Timestamp& out_time, VarValue& out_value) = 0;
+  virtual bool calculate(PJ::Timestamp time, const VarValue& input,
+                         PJ::Timestamp& out_time, VarValue& out_value) = 0;
 };
 ```
 
@@ -212,7 +212,7 @@ class IMIMOTransform {
   /// Called once at registration with the input kinds (one per input topic).
   /// Return one StorageKind per output topic name passed to add_mimo_transform.
   virtual std::vector<StorageKind> output_kinds(
-      pj::Span<const StorageKind> input_kinds) const = 0;
+      PJ::Span<const StorageKind> input_kinds) const = 0;
 
   /// Process one joined sample. Called in strictly ascending timestamp order,
   /// only when ALL input topics have a sample at exactly `time`.
@@ -224,8 +224,8 @@ class IMIMOTransform {
   /// Returns true to emit a row; false to suppress.
   /// out_time MAY differ from `time`. When true is returned, out_time must be
   /// >= all previously returned out_times. All M output topics share this timestamp.
-  virtual bool calculate(pj::Timestamp time, pj::Span<const VarValue> inputs,
-                         pj::Timestamp& out_time, std::vector<VarValue>& output) = 0;
+  virtual bool calculate(PJ::Timestamp time, PJ::Span<const VarValue> inputs,
+                         PJ::Timestamp& out_time, std::vector<VarValue>& output) = 0;
 };
 ```
 
@@ -246,10 +246,10 @@ class DerivedEngine {
   //   - input topic has more than one column
   //   - output_topic_name already registered within output_dataset_id
   //     (DerivedEngine enforces uniqueness via Impl name index; DataEngine does not)
-  [[nodiscard]] pj::Expected<pj::NodeId> add_siso_transform(
-      pj::TopicId input_topic_id,
+  [[nodiscard]] PJ::Expected<PJ::NodeId> add_siso_transform(
+      PJ::TopicId input_topic_id,
       std::string output_topic_name,
-      pj::DatasetId output_dataset_id,
+      PJ::DatasetId output_dataset_id,
       std::unique_ptr<ISISOTransform> op);
 
   // ---- MIMO (Phase 3) ----
@@ -258,41 +258,41 @@ class DerivedEngine {
   // Creates output_topic_names.size() new topics (kinds from op->output_kinds()).
   // Returns error if any input topic has more than one column, or if any
   // output name is already registered within output_dataset_id.
-  [[nodiscard]] pj::Expected<pj::NodeId> add_mimo_transform(
-      std::vector<pj::TopicId> input_topic_ids,   // flat list; no primary/secondary
+  [[nodiscard]] PJ::Expected<PJ::NodeId> add_mimo_transform(
+      std::vector<PJ::TopicId> input_topic_ids,   // flat list; no primary/secondary
       std::vector<std::string> output_topic_names,
-      pj::DatasetId output_dataset_id,
+      PJ::DatasetId output_dataset_id,
       std::unique_ptr<IMIMOTransform> op);
 
   // ---- DAG management ----
-  pj::Status remove_node(pj::NodeId id);
-  [[nodiscard]] bool has_node(pj::NodeId id) const noexcept;
+  PJ::Status remove_node(PJ::NodeId id);
+  [[nodiscard]] bool has_node(PJ::NodeId id) const noexcept;
 
   // Returns output topic IDs: 1 for SISO, M for MIMO.
-  [[nodiscard]] std::vector<pj::TopicId> output_topics(pj::NodeId id) const;
+  [[nodiscard]] std::vector<PJ::TopicId> output_topics(PJ::NodeId id) const;
 
   // Kahn's topological order (upstream → downstream).
-  [[nodiscard]] std::vector<pj::NodeId> topological_order() const;
+  [[nodiscard]] std::vector<PJ::NodeId> topological_order() const;
 
   // ---- Commit-cycle hook ----
   // Call after DataEngine::commit_chunks() with the set of changed topic IDs.
   // Marks directly dependent nodes dirty.
-  void on_source_committed(pj::Span<const pj::TopicId> changed_topics);
+  void on_source_committed(PJ::Span<const PJ::TopicId> changed_topics);
 
   // ---- Scheduling ----
   // Process all dirty nodes in topological order (incremental path).
   // If active_nodes is non-empty, only nodes in that set (plus their transitive
   // dependencies) are considered.
-  pj::Status schedule(const std::unordered_set<pj::NodeId>& active_nodes = {});
+  PJ::Status schedule(const std::unordered_set<PJ::NodeId>& active_nodes = {});
 
   // Full history recompute: clear output, reset transform, replay all input.
   // Use after parameter changes or to verify incremental correctness.
-  pj::Status recompute_batch(pj::NodeId node_id);
+  PJ::Status recompute_batch(PJ::NodeId node_id);
 
  private:
   struct Impl;           // absl containers — defined in .cpp
   DataEngine& engine_;
-  pj::NodeId next_node_id_ = 1;
+  PJ::NodeId next_node_id_ = 1;
   std::unique_ptr<Impl> impl_;
 };
 ```
@@ -307,23 +307,23 @@ All types in this section live in `derived_engine.cpp` and are not exposed in he
 // In derived_engine.cpp
 
 struct DerivedNode {
-  pj::NodeId id = pj::kInvalidNodeId;
+  PJ::NodeId id = PJ::kInvalidNodeId;
   bool is_mimo = false;
 
   // SISO fields
-  pj::TopicId siso_input_topic_id = 0;
+  PJ::TopicId siso_input_topic_id = 0;
   StorageKind siso_input_kind = StorageKind::kFloat64;   // cached at registration
   std::unique_ptr<ISISOTransform> siso_op;
 
   // MIMO fields (flat list; no primary/secondary distinction)
-  std::vector<pj::TopicId> mimo_input_topic_ids;
+  std::vector<PJ::TopicId> mimo_input_topic_ids;
   std::vector<StorageKind> mimo_input_kinds;             // cached at registration
   std::unique_ptr<IMIMOTransform> mimo_op;
 
   // Common
-  std::vector<pj::TopicId> output_topic_ids;   // 1 for SISO, M for MIMO
+  std::vector<PJ::TopicId> output_topic_ids;   // 1 for SISO, M for MIMO
   bool dirty = true;
-  pj::ChunkId last_processed_chunk_id = 0;     // 0 = never run
+  PJ::ChunkId last_processed_chunk_id = 0;     // 0 = never run
 
   // Reusable decode buffers (avoid per-row allocation)
   VarValue in_val_buf;                          // SISO input
@@ -332,26 +332,26 @@ struct DerivedNode {
   std::vector<VarValue> mimo_out_buf;           // MIMO outputs (one per output topic)
 
   // Helper: returns all input topic IDs
-  const std::vector<pj::TopicId>& all_input_topics() const;
+  const std::vector<PJ::TopicId>& all_input_topics() const;
 };
 
 struct DerivedEngine::Impl {
-  absl::flat_hash_map<pj::NodeId, DerivedNode> nodes;
+  absl::flat_hash_map<PJ::NodeId, DerivedNode> nodes;
 
   // For topological sort and dirty propagation:
   //   downstream_of[N] = list of nodes whose inputs include an output of N
-  absl::flat_hash_map<pj::NodeId, std::vector<pj::NodeId>> downstream_of;
+  absl::flat_hash_map<PJ::NodeId, std::vector<PJ::NodeId>> downstream_of;
 
   //   topic_to_nodes[T] = list of nodes that use T as an input
-  absl::flat_hash_map<pj::TopicId, std::vector<pj::NodeId>> topic_to_nodes;
+  absl::flat_hash_map<PJ::TopicId, std::vector<PJ::NodeId>> topic_to_nodes;
 
   //   output_topic_to_node[T] = node that produces T (for cycle detection)
-  absl::flat_hash_map<pj::TopicId, pj::NodeId> output_topic_to_node;
+  absl::flat_hash_map<PJ::TopicId, PJ::NodeId> output_topic_to_node;
 
   // Name uniqueness guard (DataEngine::create_topic has no name index).
   // Scope: within dataset. Key = (dataset_id, topic_name) → topic_id.
   // Populated on add_*_transform; checked before calling create_topic.
-  absl::flat_hash_map<std::pair<pj::DatasetId, std::string>, pj::TopicId>
+  absl::flat_hash_map<std::pair<PJ::DatasetId, std::string>, PJ::TopicId>
       registered_output_names;
 };
 ```
@@ -424,7 +424,7 @@ input topic of N, if that topic is produced by node M, add N to `downstream_of[M
 4. writer = engine.create_writer()
 
 5a. SISO path:
-    pj::Timestamp out_ts; VarValue out_val;
+    PJ::Timestamp out_ts; VarValue out_val;
     For each chunk C in new_chunks:
       For each row i in [0, C.stats.row_count):
         ts = C.timestamps[i]
@@ -454,7 +454,7 @@ input topic of N, if that topic is produced by node M, add N to `downstream_of[M
             all_matched = false; break
           mimo_in_buf[j] = decode_as_varvalue(sample, col=0, mimo_input_kinds[j])
         if !all_matched: continue   // skip row — inputs not co-sampled at ts
-        pj::Timestamp out_ts;
+        PJ::Timestamp out_ts;
         if mimo_op->calculate(ts, mimo_in_buf, out_ts, mimo_out_buf):
           For k in [0, num_outputs):
             writer.begin_row(output_topic_ids[k], out_ts)
@@ -479,7 +479,7 @@ recompute_batch(node_id):
 1. node = impl_->nodes.at(node_id)
 2. Clear each output topic:
      engine.get_topic_storage(out_id)->evict_before(
-         std::numeric_limits<pj::Timestamp>::max())
+         std::numeric_limits<PJ::Timestamp>::max())
      — evicts all chunks with t_max < INT64_MAX (i.e. all of them)
 3. if SISO: node.siso_op->reset()
    if MIMO: node.mimo_op->reset()
@@ -499,7 +499,7 @@ Skips the first row (no previous sample). Required for correctness parity testin
 
 ```cpp
 class DerivativeTransform : public ISISOTransform {
-  pj::Timestamp prev_time_ = 0;
+  PJ::Timestamp prev_time_ = 0;
   double prev_value_ = 0.0;
   bool has_prev_ = false;
 
@@ -508,8 +508,8 @@ class DerivativeTransform : public ISISOTransform {
 
   // output_kind() returns kFloat64 (default) — derivative is always float.
 
-  bool calculate(pj::Timestamp time, const VarValue& input,
-                 pj::Timestamp& out_time, VarValue& out_value) override {
+  bool calculate(PJ::Timestamp time, const VarValue& input,
+                 PJ::Timestamp& out_time, VarValue& out_value) override {
     double v = std::get<double>(input);  // engine widens to double per output_kind()
     if (!has_prev_) {
       prev_time_ = time;
@@ -573,9 +573,9 @@ end
 
 | File | Contents |
 |---|---|
-| `engine/include/pj/engine/derived_engine.hpp` | `ISISOTransform`, `IMIMOTransform`, `MIMORow`, `DerivedEngine` |
+| `engine/include/PJ/engine/derived_engine.hpp` | `ISISOTransform`, `IMIMOTransform`, `MIMORow`, `DerivedEngine` |
 | `engine/src/derived_engine.cpp` | `DerivedEngine` implementation (`Impl` with absl) |
-| `engine/include/pj/engine/builtin_transforms.hpp` | `DerivativeTransform`, `MovingAverageTransform` |
+| `engine/include/PJ/engine/builtin_transforms.hpp` | `DerivativeTransform`, `MovingAverageTransform` |
 | `engine/src/builtin_transforms.cpp` | Implementations |
 | `tests/derived_engine_test.cpp` | Full test suite |
 
@@ -583,7 +583,7 @@ end
 
 | File | Change |
 |---|---|
-| `base/include/pj/base/types.hpp` | Add `NodeId = uint32_t`, `kInvalidNodeId = 0` |
+| `base/include/PJ/base/types.hpp` | Add `NodeId = uint32_t`, `kInvalidNodeId = 0` |
 | `CMakeLists.txt` | Add `derived_engine.cpp`, `builtin_transforms.cpp` to `plotjuggler_engine`; add `derived_engine_test` target |
 
 ### NOT modified
@@ -688,7 +688,7 @@ machinery — just call `calculate()` in a loop with hand-crafted samples.
 ```cpp
 // DerivativeTransform: y = 2*t (slope=2, dt=1s)
 DerivativeTransform op;
-pj::Timestamp out_time;
+PJ::Timestamp out_time;
 VarValue out_val;
 
 // First sample: suppressed (no previous point yet)
@@ -717,7 +717,7 @@ sequence, resetting, then running the same sequence again and comparing outputs.
 
 ```cpp
 DerivativeTransform op;
-pj::Timestamp t; VarValue v;
+PJ::Timestamp t; VarValue v;
 
 // First pass
 op.calculate(0,              VarValue{0.0}, t, v);
@@ -739,8 +739,8 @@ Define these in `derived_engine_test.cpp` at file scope to avoid boilerplate in 
 ```cpp
 // Build a single-column float64 topic and write `n` rows with value = slope * t_seconds.
 // Commits the chunk. Returns the topic_id.
-static pj::TopicId make_linear_topic(DataEngine& engine, double slope, int n,
-                                     pj::Timestamp step_ns = 100'000'000LL /*10Hz*/) {
+static PJ::TopicId make_linear_topic(DataEngine& engine, double slope, int n,
+                                     PJ::Timestamp step_ns = 100'000'000LL /*10Hz*/) {
   // 1. register schema: one float64 column "value"
   // 2. create dataset + topic
   // 3. writer.begin_row / set_float64 / finish_row for each row
@@ -749,9 +749,9 @@ static pj::TopicId make_linear_topic(DataEngine& engine, double slope, int n,
 }
 
 // Collect all float64 values from a topic's output into a flat vector.
-static std::vector<double> collect_values(const DataEngine& engine, pj::TopicId topic_id) {
+static std::vector<double> collect_values(const DataEngine& engine, PJ::TopicId topic_id) {
   auto reader = engine.create_reader();
-  auto cursor = *reader.range_query({topic_id, 0, std::numeric_limits<pj::Timestamp>::max()});
+  auto cursor = *reader.range_query({topic_id, 0, std::numeric_limits<PJ::Timestamp>::max()});
   std::vector<double> out;
   cursor.for_each([&](const SampleRow& row) {
     out.push_back(row.chunk->read_numeric_as_double(0, row.row_index));
@@ -760,8 +760,8 @@ static std::vector<double> collect_values(const DataEngine& engine, pj::TopicId 
 }
 
 // Collect (timestamp, value) pairs.
-static std::vector<std::pair<pj::Timestamp, double>>
-collect_rows(const DataEngine& engine, pj::TopicId topic_id) { ... }
+static std::vector<std::pair<PJ::Timestamp, double>>
+collect_rows(const DataEngine& engine, PJ::TopicId topic_id) { ... }
 ```
 
 ### 10.4  Engine integration test pattern
@@ -772,7 +772,7 @@ TEST(DerivedEngineTest, Schedule_ProducesCorrectDerivative) {
   DerivedEngine derived(engine);
 
   // slope=2.0, 10Hz, 11 rows → 10 derivative rows (first suppressed)
-  pj::TopicId src = make_linear_topic(engine, /*slope=*/2.0, /*n=*/11);
+  PJ::TopicId src = make_linear_topic(engine, /*slope=*/2.0, /*n=*/11);
 
   auto node = *derived.add_siso_transform(
       src, "d_linear", dataset_id,
@@ -797,7 +797,7 @@ of `recompute_batch()`.
 ```cpp
 // Helper: run incremental chunk-by-chunk, return collected output.
 static std::vector<double> run_incremental(DataEngine& engine, DerivedEngine& derived,
-                                            pj::TopicId src, pj::NodeId node,
+                                            PJ::TopicId src, PJ::NodeId node,
                                             /* source chunks written in caller */) {
   derived.on_source_committed({src});
   EXPECT_TRUE(derived.schedule().has_value());
@@ -809,8 +809,8 @@ TEST(DerivedEngineTest, Parity_TwoChunks_CrossBoundary) {
   DerivedEngine derived(engine);
 
   // Write chunk 1 (rows 0..19), commit, run incremental
-  pj::TopicId src = make_linear_topic(engine, 3.0, 20);  // rows 0-19
-  pj::NodeId node = *derived.add_siso_transform(src, "deriv", ds,
+  PJ::TopicId src = make_linear_topic(engine, 3.0, 20);  // rows 0-19
+  PJ::NodeId node = *derived.add_siso_transform(src, "deriv", ds,
                         std::make_unique<DerivativeTransform>());
   derived.on_source_committed({src});
   ASSERT_TRUE(derived.schedule().has_value());
@@ -849,8 +849,8 @@ class ClampTransform : public ISISOTransform {
  public:
   ClampTransform(double lo, double hi) : lo_(lo), hi_(hi) {}
 
-  bool calculate(pj::Timestamp time, const VarValue& input,
-                 pj::Timestamp& out_time, VarValue& out_value) override {
+  bool calculate(PJ::Timestamp time, const VarValue& input,
+                 PJ::Timestamp& out_time, VarValue& out_value) override {
     double v = std::clamp(std::get<double>(input), lo_, hi_);
     out_time = time;
     out_value = v;
@@ -868,8 +868,8 @@ class EMATransform : public ISISOTransform {
 
   void reset() override { has_prev_ = false; }
 
-  bool calculate(pj::Timestamp time, const VarValue& input,
-                 pj::Timestamp& out_time, VarValue& out_value) override {
+  bool calculate(PJ::Timestamp time, const VarValue& input,
+                 PJ::Timestamp& out_time, VarValue& out_value) override {
     double v = std::get<double>(input);
     ema_ = has_prev_ ? alpha_ * v + (1.0 - alpha_) * ema_ : v;
     has_prev_ = true;
@@ -885,11 +885,11 @@ The isolation test for `EMATransform`:
 ```cpp
 TEST(EMATransformTest, ConvergesOnConstantInput) {
   EMATransform op(0.1);
-  pj::Timestamp t; VarValue v;
+  PJ::Timestamp t; VarValue v;
   // Feed constant value 10.0; EMA must converge toward 10.0
   double prev = 0.0;
   for (int i = 0; i < 100; ++i) {
-    bool ok = op.calculate(static_cast<pj::Timestamp>(i) * 1'000'000LL,
+    bool ok = op.calculate(static_cast<PJ::Timestamp>(i) * 1'000'000LL,
                            VarValue{10.0}, t, v);
     ASSERT_TRUE(ok);
     double cur = std::get<double>(v);

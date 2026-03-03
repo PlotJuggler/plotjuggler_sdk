@@ -1,5 +1,5 @@
-#include <pj/sdk/dialog_plugin_typed.hpp>
-#include <pj/sdk/widget_data.hpp>
+#include <PJ/sdk/dialog_plugin_typed.hpp>
+#include <PJ/sdk/widget_data.hpp>
 
 #include <sstream>
 #include <string>
@@ -76,7 +76,7 @@ const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 
 }  // namespace
 
-class MockStreamer : public pj::sdk::DialogPluginTyped {
+class MockStreamer : public PJ::sdk::DialogPluginTyped {
  public:
   std::string manifest() const override {
     return R"({
@@ -90,7 +90,7 @@ class MockStreamer : public pj::sdk::DialogPluginTyped {
   std::string ui_content() const override { return kUiContent; }
 
   std::string widget_data() override {
-    pj::sdk::WidgetData wd;
+    PJ::sdk::WidgetData wd;
 
     wd.set_text("host_input", host_);
     wd.set_placeholder("host_input", "e.g. localhost");

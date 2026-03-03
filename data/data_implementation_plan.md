@@ -171,7 +171,7 @@ This tree is stored in the registry as a recursive structure. Each node has:
   schema (e.g., Protobuf annotations, ROS message type names).
 
 **Implementation:** All of the above is implemented in `TypeTreeNode`
-(`pj/base/type_tree.hpp`) with factory functions `make_primitive()`,
+(`PJ/base/type_tree.hpp`) with factory functions `make_primitive()`,
 `make_struct()`, `make_array()`, `make_enum()`. Helper functions
 `flatten_field_paths()` and `count_leaf_fields()` are implemented for
 converting the tree to flat column lists.
@@ -233,7 +233,7 @@ Chunk sizing: **fixed row-count** in v1 (simpler, predictable). Byte-based
 adaptive chunking is deferred.
 
 **Implementation:** `TopicChunk` (sealed, immutable) and `TopicChunkBuilder`
-(mutable, building) in `pj/engine/chunk.hpp`. The builder uses
+(mutable, building) in `PJ/engine/chunk.hpp`. The builder uses
 `TypedColumnBuffer` instances for accumulation, with two ingestion APIs:
 - **Row-at-a-time**: `begin_row`, `set_*`, `finish_row` -- stats are
   computed incrementally per value.
@@ -395,7 +395,7 @@ are maintained because they are essentially free (a few comparisons per
 append) and enable encoding selection heuristics at seal time.
 
 **Implementation:** All six statistics are implemented in `ColumnStats` and
-`ChunkStats` (`pj/engine/chunk.hpp`). They are tracked incrementally during
+`ChunkStats` (`PJ/engine/chunk.hpp`). They are tracked incrementally during
 `TopicChunkBuilder` append operations and finalized at seal time. Tested
 in `chunk_test.cpp`.
 
@@ -579,7 +579,7 @@ Batch recompute serves as the **correctness oracle** for incremental mode.
 ### 7.3 Transform Interface
 
 **Implementation:** Two separate interfaces are provided in
-`pj/engine/derived_engine.hpp`:
+`PJ/engine/derived_engine.hpp`:
 
 ```cpp
 // Single-input / single-output transform.
@@ -590,8 +590,8 @@ class ISISOTransform {
 public:
     virtual StorageKind output_kind(StorageKind input_kind) const;  // default kFloat64
     virtual void reset() {}
-    virtual bool calculate(pj::Timestamp time, const VarValue& input,
-                           pj::Timestamp& out_time, VarValue& out_value) = 0;
+    virtual bool calculate(PJ::Timestamp time, const VarValue& input,
+                           PJ::Timestamp& out_time, VarValue& out_value) = 0;
 };
 
 // Multi-input / multi-output transform. Inner join on exact timestamps.
@@ -599,8 +599,8 @@ class IMIMOTransform {
 public:
     virtual std::vector<StorageKind> output_kinds(Span<const StorageKind> input_kinds) const = 0;
     virtual void reset() {}
-    virtual bool calculate(pj::Timestamp time, Span<const VarValue> inputs,
-                           pj::Timestamp& out_time, std::vector<VarValue>& output) = 0;
+    virtual bool calculate(PJ::Timestamp time, Span<const VarValue> inputs,
+                           PJ::Timestamp& out_time, std::vector<VarValue>& output) = 0;
 };
 ```
 
@@ -620,7 +620,7 @@ when ALL input topics have a sample at the exact same timestamp (inner join
 semantics). Duplicate timestamps within one input topic use last-write-wins
 and are deduplicated before joining.
 
-Built-in transforms: `DerivativeTransform` (in `pj/engine/builtin_transforms.hpp`).
+Built-in transforms: `DerivativeTransform` (in `PJ/engine/builtin_transforms.hpp`).
 - Computes `(v[i] - v[i-1]) / dt` where dt is in seconds.
 - Suppresses the first row (no previous sample).
 - Guards against zero dt (emits 0.0).
@@ -1171,25 +1171,25 @@ Explicitly deferred items that should not block v1:
 
 | File | Plan Concept |
 |---|---|
-| `base/include/pj/base/types.hpp` | Section 11: ID types, Timestamp, NumericType/NumericValue |
-| `base/include/pj/base/type_tree.hpp` | Section 4.2: TypeTreeNode, PrimitiveType, EnumMapping |
-| `base/include/pj/base/dataset.hpp` | Section 3/8: DatasetDescriptor, DatasetInfo, TimeDomain |
-| `base/include/pj/base/assert.hpp` | PJ_ASSERT macro (exceptions or assert per PJ_ASSERT_THROWS) |
-| `base/include/pj/base/span.hpp` | Minimal non-owning contiguous view (like std::span) |
-| `base/include/pj/base/expected.hpp` | Value-or-error container (like Rust Result) |
-| `engine/include/pj/engine/buffer.hpp` | Section 11: RawBuffer, validity bitmaps |
-| `engine/include/pj/engine/column_buffer.hpp` | Section 11: TypedColumnBuffer (ColumnBuffer in plan) |
-| `engine/include/pj/engine/encoding.hpp` | Section 6: Dictionary, PackedBools, Constant, FOR encodings |
-| `engine/include/pj/engine/chunk.hpp` | Section 5.1/5.6: TopicChunk, TopicChunkBuilder, ChunkStats |
-| `engine/include/pj/engine/topic_storage.hpp` | Section 5/11: TopicStorage, TopicDescriptor, TopicMetadata |
-| `engine/include/pj/engine/type_registry.hpp` | Section 4.1/4.3: TypeRegistry |
-| `engine/include/pj/engine/query.hpp` | Section 9.2: RangeCursor, LatestAtResult, QueryRange, QueryPoint |
-| `engine/include/pj/engine/reader.hpp` | Section 9.2: DataReader (IDataReader in plan) |
-| `engine/include/pj/engine/writer.hpp` | Section 9.2: DataWriter (IDataWriter in plan) |
-| `engine/include/pj/engine/engine.hpp` | Section 2: DataEngine (coordinator) |
-| `engine/include/pj/engine/arrow_import.hpp` | Section 17: nanoarrow IPC import adapter utilities |
-| `engine/include/pj/engine/derived_engine.hpp` | Section 7: `VarValue`, `ISISOTransform`, `IMIMOTransform`, `DerivedEngine` |
-| `engine/include/pj/engine/builtin_transforms.hpp` | Section 7.3: `DerivativeTransform` built-in SISO |
+| `base/include/PJ/base/types.hpp` | Section 11: ID types, Timestamp, NumericType/NumericValue |
+| `base/include/PJ/base/type_tree.hpp` | Section 4.2: TypeTreeNode, PrimitiveType, EnumMapping |
+| `base/include/PJ/base/dataset.hpp` | Section 3/8: DatasetDescriptor, DatasetInfo, TimeDomain |
+| `base/include/PJ/base/assert.hpp` | PJ_ASSERT macro (exceptions or assert per PJ_ASSERT_THROWS) |
+| `base/include/PJ/base/span.hpp` | Minimal non-owning contiguous view (like std::span) |
+| `base/include/PJ/base/expected.hpp` | Value-or-error container (like Rust Result) |
+| `engine/include/PJ/engine/buffer.hpp` | Section 11: RawBuffer, validity bitmaps |
+| `engine/include/PJ/engine/column_buffer.hpp` | Section 11: TypedColumnBuffer (ColumnBuffer in plan) |
+| `engine/include/PJ/engine/encoding.hpp` | Section 6: Dictionary, PackedBools, Constant, FOR encodings |
+| `engine/include/PJ/engine/chunk.hpp` | Section 5.1/5.6: TopicChunk, TopicChunkBuilder, ChunkStats |
+| `engine/include/PJ/engine/topic_storage.hpp` | Section 5/11: TopicStorage, TopicDescriptor, TopicMetadata |
+| `engine/include/PJ/engine/type_registry.hpp` | Section 4.1/4.3: TypeRegistry |
+| `engine/include/PJ/engine/query.hpp` | Section 9.2: RangeCursor, LatestAtResult, QueryRange, QueryPoint |
+| `engine/include/PJ/engine/reader.hpp` | Section 9.2: DataReader (IDataReader in plan) |
+| `engine/include/PJ/engine/writer.hpp` | Section 9.2: DataWriter (IDataWriter in plan) |
+| `engine/include/PJ/engine/engine.hpp` | Section 2: DataEngine (coordinator) |
+| `engine/include/PJ/engine/arrow_import.hpp` | Section 17: nanoarrow IPC import adapter utilities |
+| `engine/include/PJ/engine/derived_engine.hpp` | Section 7: `VarValue`, `ISISOTransform`, `IMIMOTransform`, `DerivedEngine` |
+| `engine/include/PJ/engine/builtin_transforms.hpp` | Section 7.3: `DerivativeTransform` built-in SISO |
 
 ### Tests
 
@@ -1235,10 +1235,10 @@ Explicitly deferred items that should not block v1:
 |---|---|
 | `engine/src/derived_engine.cpp` | `DerivedEngine` implementation (DAG, scheduling, recompute) |
 | `engine/src/builtin_transforms.cpp` | `DerivativeTransform` implementation |
-| `engine/include/pj/engine/topic_storage.hpp` | Added `set_column_descriptors()` / `column_descriptors()` / `clear_chunks()` |
+| `engine/include/PJ/engine/topic_storage.hpp` | Added `set_column_descriptors()` / `column_descriptors()` / `clear_chunks()` |
 | `engine/src/topic_storage.cpp` | Implementations of the above |
 | `engine/src/writer.cpp` | `register_scalar_series` now propagates column layout to `TopicStorage`; `get_or_create_builder` checks stored layout before sealed chunks |
-| `engine/include/pj/engine/writer.hpp` | Added `ensure_column()`; added `element_type` param to `expand_array()`; added private `ensure_cols_loaded()` helper |
+| `engine/include/PJ/engine/writer.hpp` | Added `ensure_column()`; added `element_type` param to `expand_array()`; added private `ensure_cols_loaded()` helper |
 | `engine/src/writer.cpp` | Extracted `ensure_cols_loaded()` private helper shared by all three column-layout methods; implemented `ensure_column()`; added schemaless branch to `expand_array()` |
 | `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3, arrow/18.1.0, nanoarrow/0.7.0 |
 
@@ -1284,7 +1284,7 @@ it usable from any columnar source without an Arrow dependency.
 
 ### 17.3 API Surface
 
-**`ColumnData` struct** (`pj/engine/writer.hpp`): Describes one column's
+**`ColumnData` struct** (`PJ/engine/writer.hpp`): Describes one column's
 data for bulk append. Supports all 7 storage kinds via typed factory
 methods: `Float32()`, `Float64()`, `Int32()`, `Int64()`, `Uint64()`,
 `Bool()`, `String()`. Each accepts optional validity bitmap.
@@ -1314,7 +1314,7 @@ append methods (`append_timestamps()`, `append_column_float32()`, etc.)
 plus `append_column_validity()` and `finish_bulk_append()`. Stats are
 computed in `finish_bulk_append()` after both data and validity are set.
 
-**Arrow import adapter** (`pj/engine/arrow_import.hpp`): Higher-level
+**Arrow import adapter** (`PJ/engine/arrow_import.hpp`): Higher-level
 utilities for importing Arrow IPC data via nanoarrow:
 
 ```cpp

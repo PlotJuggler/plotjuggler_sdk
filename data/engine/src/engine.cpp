@@ -1,15 +1,15 @@
-#include "pj/engine/engine.hpp"
+#include "PJ/engine/engine.hpp"
 
 #include <algorithm>
 #include <utility>
 
 #include "absl/strings/str_cat.h"
-#include "pj/base/assert.hpp"
-#include "pj/base/expected.hpp"
-#include "pj/engine/reader.hpp"
-#include "pj/engine/writer.hpp"
+#include "PJ/base/assert.hpp"
+#include "PJ/base/expected.hpp"
+#include "PJ/engine/reader.hpp"
+#include "PJ/engine/writer.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 
 DataEngine::DataEngine() = default;
 
@@ -24,7 +24,7 @@ Expected<DatasetId> DataEngine::create_dataset(DatasetDescriptor descriptor) {
   if (descriptor.time_domain_id != 0) {
     auto it = time_domains_.find(descriptor.time_domain_id);
     if (it == time_domains_.end()) {
-      return pj::unexpected(absl::StrCat("Time domain ", descriptor.time_domain_id, " not found"));
+      return PJ::unexpected(absl::StrCat("Time domain ", descriptor.time_domain_id, " not found"));
     }
   }
 
@@ -53,13 +53,13 @@ const DatasetInfo* DataEngine::get_dataset(DatasetId id) const {
 Expected<TopicId> DataEngine::create_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
   auto it = datasets_.find(dataset_id);
   if (it == datasets_.end()) {
-    return pj::unexpected(absl::StrCat("Dataset ", dataset_id, " not found"));
+    return PJ::unexpected(absl::StrCat("Dataset ", dataset_id, " not found"));
   }
 
   // Validate schema_id if non-zero (zero means inline columns, e.g. scalar series)
   if (descriptor.schema_id != 0) {
     if (type_registry_.lookup(descriptor.schema_id) == nullptr) {
-      return pj::unexpected(absl::StrCat("Schema ", descriptor.schema_id, " not found"));
+      return PJ::unexpected(absl::StrCat("Schema ", descriptor.schema_id, " not found"));
     }
   }
 
@@ -193,4 +193,4 @@ DataReader DataEngine::create_reader() const {
   return DataReader(*this);
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

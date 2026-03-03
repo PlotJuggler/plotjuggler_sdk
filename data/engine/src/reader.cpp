@@ -1,18 +1,18 @@
-#include "pj/engine/reader.hpp"
+#include "PJ/engine/reader.hpp"
 
 #include <deque>
 #include <optional>
 #include <vector>
 
 #include "absl/strings/str_cat.h"
-#include "pj/base/expected.hpp"
-#include "pj/engine/chunk.hpp"
-#include "pj/engine/engine.hpp"
-#include "pj/engine/query.hpp"
-#include "pj/engine/topic_storage.hpp"
-#include "pj/engine/type_registry.hpp"
+#include "PJ/base/expected.hpp"
+#include "PJ/engine/chunk.hpp"
+#include "PJ/engine/engine.hpp"
+#include "PJ/engine/query.hpp"
+#include "PJ/engine/topic_storage.hpp"
+#include "PJ/engine/type_registry.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 
 DataReader::DataReader(const DataEngine& engine) : engine_(engine) {}
 
@@ -44,17 +44,17 @@ std::optional<TopicMetadata> DataReader::get_metadata(TopicId topic_id) const {
 Expected<RangeCursor> DataReader::range_query(const QueryRange& range) const {
   const TopicStorage* storage = engine_.get_topic_storage(range.topic_id);
   if (storage == nullptr) {
-    return pj::unexpected(absl::StrCat("Topic ", range.topic_id, " not found"));
+    return PJ::unexpected(absl::StrCat("Topic ", range.topic_id, " not found"));
   }
-  return pj::engine::range_query(storage->sealed_chunks(), range.t_min, range.t_max);
+  return PJ::engine::range_query(storage->sealed_chunks(), range.t_min, range.t_max);
 }
 
-pj::Expected<std::optional<SampleRow>> DataReader::latest_at(const QueryPoint& point) const {
+PJ::Expected<std::optional<SampleRow>> DataReader::latest_at(const QueryPoint& point) const {
   const TopicStorage* storage = engine_.get_topic_storage(point.topic_id);
   if (storage == nullptr) {
-    return pj::unexpected(absl::StrCat("Topic ", point.topic_id, " not found"));
+    return PJ::unexpected(absl::StrCat("Topic ", point.topic_id, " not found"));
   }
-  return pj::engine::latest_at(storage->sealed_chunks(), point.t);
+  return PJ::engine::latest_at(storage->sealed_chunks(), point.t);
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

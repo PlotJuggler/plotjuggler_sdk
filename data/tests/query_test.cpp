@@ -1,4 +1,4 @@
-#include "pj/engine/query.hpp"
+#include "PJ/engine/query.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,10 +6,10 @@
 #include <deque>
 #include <vector>
 
-#include "pj/base/types.hpp"
-#include "pj/engine/chunk.hpp"
+#include "PJ/base/types.hpp"
+#include "PJ/engine/chunk.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 // Helper: build a test chunk with sequential timestamps.
@@ -225,4 +225,4 @@ TEST(QueryTest, ForEachChunkNoResults) {
 }
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine

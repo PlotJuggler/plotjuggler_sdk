@@ -1,9 +1,9 @@
-#include "pj/engine/buffer.hpp"
+#include "PJ/engine/buffer.hpp"
 
 #include <bit>
 #include <cstring>
 
-namespace pj::engine {
+namespace PJ::engine {
 
 // ---------------------------------------------------------------------------
 // RawBuffer
@@ -116,8 +116,8 @@ void BitVector::clear() {
   bit_count_ = 0;
 }
 
-pj::BitSpan BitVector::bit_span() const noexcept {
-  return pj::BitSpan{pj::Span<const uint8_t>(bytes_.data(), bytes_.size()), 0, bit_count_};
+PJ::BitSpan BitVector::bit_span() const noexcept {
+  return PJ::BitSpan{PJ::Span<const uint8_t>(bytes_.data(), bytes_.size()), 0, bit_count_};
 }
 
 const uint8_t* BitVector::data() const noexcept {
@@ -140,4 +140,4 @@ bool BitVector::empty() const noexcept {
   return bit_count_ == 0;
 }
 
-}  // namespace pj::engine
+}  // namespace PJ::engine

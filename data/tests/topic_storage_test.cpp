@@ -1,4 +1,4 @@
-#include "pj/engine/topic_storage.hpp"
+#include "PJ/engine/topic_storage.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,10 +6,10 @@
 #include <string>
 #include <vector>
 
-#include "pj/base/expected.hpp"
-#include "pj/engine/chunk.hpp"
+#include "PJ/base/expected.hpp"
+#include "PJ/engine/chunk.hpp"
 
-namespace pj::engine {
+namespace PJ::engine {
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -255,4 +255,4 @@ TEST(TopicStorageTest, EqualTMinChunksAllowed) {
 }
 
 }  // namespace
-}  // namespace pj::engine
+}  // namespace PJ::engine
