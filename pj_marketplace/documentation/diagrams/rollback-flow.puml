@@ -1,0 +1,22 @@
+@startuml
+skinparam backgroundColor white
+title Rollback Flow
+
+start
+:PlotJuggler starts;
+:Load plugins;
+while (More plugins?) is (yes)
+  :Load next plugin;
+  if (Load OK?) then (yes)
+    :Plugin active;
+  else (no)
+    if (Backup exists?) then (yes)
+      :Restore backup;
+    else (no)
+      :Disable extension;
+    endif
+  endif
+endwhile (no)
+:System ready;
+stop
+@enduml

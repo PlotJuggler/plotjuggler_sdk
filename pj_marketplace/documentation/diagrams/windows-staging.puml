@@ -1,0 +1,25 @@
+@startuml
+skinparam backgroundColor white
+
+title Windows Staging Flow
+
+start
+:Download ZIP;
+:Extract to .pending/{id}/;
+note right: Staging folder
+:Notify "Restart required";
+stop
+
+start
+:PlotJuggler restarts;
+:Move .pending/{id}/ to extensions/{id}/;
+note right: Previous backup in\n.backup/{id}-{ver}/
+:Load plugin;
+if (Load successful?) then (yes)
+  :Plugin active;
+else (no)
+  :Restore from backup;
+  :Notify rollback;
+endif
+stop
+@enduml
