@@ -1,0 +1,28 @@
+@startuml
+skinparam backgroundColor white
+title CI Release Flow
+
+start
+:Developer pushes tag;
+:GitHub Actions triggered;
+fork
+  :Build Linux;
+fork again
+  :Build Windows;
+fork again
+  :Build macOS;
+end fork
+:Generate ZIP artifacts;
+:Compute SHA256 checksums;
+:Create GitHub Release;
+:Attach artifacts to Release;
+:Generate PR to Registry repo;
+:Schema validation;
+if (Valid?) then (yes)
+  :Merge PR;
+  :Registry updated;
+else (no)
+  :PR rejected;
+endif
+stop
+@enduml
