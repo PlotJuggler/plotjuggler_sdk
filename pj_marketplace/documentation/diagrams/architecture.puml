@@ -1,0 +1,23 @@
+@startuml
+skinparam backgroundColor white
+
+title PlotJuggler Marketplace Architecture
+
+rectangle "GitHub" {
+  database "Registry\nregistry.json" as reg
+  rectangle "Extension Repos" as ext
+  ext -right-> reg : Automatic PR
+}
+
+rectangle "PlotJuggler" {
+  component "Marketplace UI" as ui
+  component "Extension Manager" as em
+  database "installed.json" as local
+  ui --> em
+  em --> local
+}
+
+reg ..> ui : HTTPS fetch
+ext ..> em : Download ZIP
+
+@enduml

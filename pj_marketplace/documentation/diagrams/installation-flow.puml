@@ -1,0 +1,22 @@
+@startuml
+skinparam backgroundColor white
+title Installation Flow
+
+start
+:Click Install;
+:Detect platform;
+:Download ZIP;
+:Verify SHA256;
+if (Checksum OK?) then (yes)
+  :Extract to temp;
+  :Validate manifest;
+  if (Is update?) then (yes)
+    :Backup current;
+  endif
+  :Move to extensions/;
+  :Update installed.json;
+else (no)
+  :Error: invalid checksum;
+endif
+stop
+@enduml
