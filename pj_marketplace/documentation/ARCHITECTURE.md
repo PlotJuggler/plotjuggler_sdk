@@ -1,0 +1,635 @@
+# PlotJuggler Marketplace — Architecture
+
+> **Version:** 1.0.0
+> **Last Updated:** 2026-03-04
+> **Purpose:** Document HOW the system is designed and built
+
+---
+
+## 1. System Overview
+
+### 1.1 High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           PLOTJUGGLER                                    │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    MARKETPLACE MODULE                            │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │   │
+│  │  │ Registry     │  │ Extension    │  │ Download     │          │   │
+│  │  │ Manager      │  │ Manager      │  │ Manager      │          │   │
+│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │   │
+│  │         │                 │                 │                   │   │
+│  │         └─────────────────┼─────────────────┘                   │   │
+│  │                           │                                      │   │
+│  │  ┌────────────────────────┴────────────────────────────────┐   │   │
+│  │  │                    UI LAYER                              │   │   │
+│  │  │  MarketplaceWindow │ ExtensionList │ ExtensionDetail    │   │   │
+│  │  └─────────────────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+         │                           │                           │
+         ▼                           ▼                           ▼
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│ GitHub Registry │      │ GitHub Releases │      │ Local Storage   │
+│ (JSON file)     │      │ (ZIP artifacts) │      │ (installed.json)│
+└─────────────────┘      └─────────────────┘      └─────────────────┘
+```
+
+### 1.2 Design Principles
+
+| Principle | Rationale | Implementation |
+|-----------|-----------|----------------|
+| **Serverless** | Zero infrastructure costs | GitHub hosts everything |
+| **CI-first** | Lower barrier for developers | Template with automated release |
+| **Cross-platform** | PlotJuggler runs everywhere | Matrix build in CI |
+| **Static linking** | Avoid dependency hell | Single .so/.dll per plugin |
+| **Zero Qt in plugins** | ABI stability | Plugins use abstract SDK |
+| **Dogfooding** | Ensure process works | Official plugins use same template |
+
+---
+
+## 2. Component Design
+
+### 2.1 Core Components
+
+```
+marketplace/
+├── CMakeLists.txt
+├── main.cpp
+├── src/
+│   ├── models/
+│   │   ├── Extension.h           # Extension metadata struct
+│   │   ├── InstalledExtension.h  # Local installation info
+│   │   ├── Registry.h            # Full registry model
+│   │   └── LocalState.h          # installed.json model
+│   ├── core/
+│   │   ├── RegistryManager.h/cpp # Fetch, parse, cache registry
+│   │   ├── ExtensionManager.h/cpp # Install, uninstall, update
+│   │   ├── DownloadManager.h/cpp  # HTTP download with progress
+│   │   └── PlatformUtils.h/cpp    # OS detection, paths
+│   ├── ui/
+│   │   ├── MarketplaceWindow.h/cpp      # Main window/dialog
+│   │   ├── ExtensionListWidget.h/cpp    # Sidebar list
+│   │   ├── ExtensionCardDelegate.h/cpp  # Custom card rendering
+│   │   ├── ExtensionDetailWidget.h/cpp  # Detail panel
+│   │   └── StatusBarManager.h/cpp       # Progress/status
+│   └── utils/
+│       ├── ChecksumVerifier.h/cpp # SHA256 verification
+│       └── ZipExtractor.h/cpp     # ZIP decompression
+└── resources/
+    ├── icons/
+    └── marketplace.qrc
+```
+
+### 2.2 Data Models
+
+#### Extension.h
+```cpp
+struct Extension {
+    QString id;
+    QString name;
+    QString description;
+    QString author;
+    QString publisher;
+    QString license;
+    QString category;        // data_loader, data_streamer, parser, toolbox
+    QStringList tags;
+    QString version;
+    QString min_plotjuggler_version;
+
+    struct Platform {
+        QString url;
+        QString checksum;     // sha256:...
+        qint64 size_bytes;
+    };
+    QMap<QString, Platform> platforms;  // linux-x86_64, windows-x86_64, etc.
+
+    QMap<QString, QString> changelog;   // version -> description
+};
+```
+
+#### InstalledExtension.h
+```cpp
+struct InstalledExtension {
+    QString id;
+    QString version;
+    QDateTime install_date;
+    QString path;
+    bool enabled;
+    QString backup_path;      // Optional
+};
+```
+
+### 2.3 Component Responsibilities
+
+| Component | Responsibility | Dependencies |
+|-----------|---------------|--------------|
+| **RegistryManager** | Fetch JSON, parse, cache with TTL | QNetworkAccessManager |
+| **ExtensionManager** | Install, uninstall, update, rollback | DownloadManager, ZipExtractor |
+| **DownloadManager** | HTTP GET with progress signals | QNetworkAccessManager |
+| **ChecksumVerifier** | SHA256 verification | QCryptographicHash |
+| **ZipExtractor** | Extract ZIP to directory | QuaZip/minizip |
+| **PlatformUtils** | Detect OS, get paths | Qt platform macros |
+
+---
+
+## 3. Key Flows
+
+### 3.1 Installation Flow
+
+```
+┌────────────┐     ┌────────────────┐     ┌─────────────────┐
+│ User clicks│     │ DownloadManager│     │ ExtensionManager│
+│  "Install" │     │                │     │                 │
+└─────┬──────┘     └───────┬────────┘     └────────┬────────┘
+      │                    │                       │
+      │ install(id)        │                       │
+      │───────────────────────────────────────────>│
+      │                    │                       │
+      │                    │  download(url)        │
+      │                    │<──────────────────────│
+      │                    │                       │
+      │                    │  progress(%)          │
+      │<───────────────────│                       │
+      │                    │                       │
+      │                    │  completed(data)      │
+      │                    │──────────────────────>│
+      │                    │                       │
+      │                    │         verifyChecksum(data, sha256)
+      │                    │                       │
+      │                    │         extract(data, path)
+      │                    │                       │
+      │                    │         updateLocalState()
+      │                    │                       │
+      │ installed(success) │                       │
+      │<───────────────────────────────────────────│
+```
+
+### 3.2 Windows Staging Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    INSTALL/UPDATE REQUEST                            │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │ Is Windows?     │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │ YES                         │ NO
+              ▼                             ▼
+    ┌─────────────────┐           ┌─────────────────┐
+    │ Download to     │           │ Download and    │
+    │ .pending/       │           │ install directly│
+    └────────┬────────┘           └─────────────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │ Show "Restart   │
+    │ required"       │
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                    ON NEXT STARTUP                               │
+    └─────────────────────────────────────────────────────────────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │ Check .pending/ │
+    │ for updates     │
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │ Backup current  │
+    │ to .backup/     │
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │ Move .pending/  │
+    │ to extensions/  │
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │ Load plugin     │
+    └────────┬────────┘
+             │
+    ┌────────┴────────┐
+    │ Success?        │
+    └────────┬────────┘
+             │
+    ┌────────┴────────┐
+    │ YES        NO   │
+    ▼                 ▼
+  Done         ┌─────────────────┐
+               │ Restore from    │
+               │ .backup/        │
+               └─────────────────┘
+```
+
+### 3.3 Rollback Flow
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  PlotJuggler    │     │ ExtensionManager│     │  Plugin Loader  │
+│    Startup      │     │                 │     │                 │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         │ loadExtensions()      │                       │
+         │──────────────────────>│                       │
+         │                       │                       │
+         │                       │  loadPlugin(path)     │
+         │                       │──────────────────────>│
+         │                       │                       │
+         │                       │  CRASH/FAIL           │
+         │                       │<──────────────────────│
+         │                       │                       │
+         │                       │  hasBackup(id)?       │
+         │                       │                       │
+         │                       │  YES: restore(backup) │
+         │                       │  NO: disable(id)      │
+         │                       │                       │
+         │ rollbackNotification  │                       │
+         │<──────────────────────│                       │
+```
+
+---
+
+## 4. Directory Structure
+
+### 4.1 Installation Directories
+
+```
+~/.plotjuggler/
+├── extensions/              # Active plugins
+│   ├── ros2-streaming/
+│   │   ├── manifest.json
+│   │   ├── libros2_streaming.so
+│   │   └── ros2_streaming.ui
+│   └── csv-loader/
+│       ├── manifest.json
+│       └── libcsv_loader.so
+├── .pending/                # Staging area (Windows)
+│   └── ros2-streaming/      # Ready to install on restart
+├── .backup/                 # Rollback backups
+│   ├── ros2-streaming-1.2.2/
+│   └── csv-loader-0.9.0/
+├── .cache/                  # Registry cache
+│   └── registry.json
+└── installed.json           # Local state
+```
+
+### 4.2 Extension ZIP Structure
+
+```
+ros2-streaming-linux-x86_64.zip
+├── manifest.json              # Required: extension metadata
+├── libros2_streaming.so       # Required: compiled plugin(s)
+├── ros2_streaming.ui          # Optional: Qt Creator UI file
+├── README.md                  # Optional: description
+└── LICENSE                    # Required: license file
+```
+
+---
+
+## 5. ABI Compatibility Strategy
+
+### 5.1 The Problem
+
+Binary compatibility (ABI) is the biggest technical challenge:
+
+1. User installs plugin compiled with Qt 5.15.2
+2. User updates PlotJuggler to Qt 6.2
+3. Plugin crashes due to Qt internal structure changes
+
+### 5.2 The Solution: Zero Qt in Plugins
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         PLOTJUGGLER                                  │
+│                                                                      │
+│  ┌────────────────┐         ┌────────────────┐                      │
+│  │   Qt Widgets   │         │  Plugin SDK    │                      │
+│  │   (Qt 6.x)     │◄───────►│  (Abstract)    │                      │
+│  └────────────────┘         └───────┬────────┘                      │
+│                                     │                                │
+│  ┌────────────────┐                 │                                │
+│  │  .ui file      │─────────────────┤                                │
+│  │  (pure XML)    │                 │                                │
+│  └────────────────┘                 │                                │
+└─────────────────────────────────────┼────────────────────────────────┘
+                                      │
+                                      │ SDK Interface (stable)
+                                      │
+┌─────────────────────────────────────┼────────────────────────────────┐
+│                         PLUGIN                                       │
+│                                     │                                │
+│  ┌────────────────┐         ┌───────┴────────┐                      │
+│  │  Plugin Code   │◄───────►│  SDK Headers   │                      │
+│  │  (C++17)       │         │  (No Qt!)      │                      │
+│  └────────────────┘         └────────────────┘                      │
+│                                                                      │
+│  NO Qt dependency = NO ABI breaks when PJ updates Qt                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 5.3 Compatibility Policy
+
+- Each plugin declares `min_plotjuggler_version` in manifest
+- If SDK changes incompatibly, PlotJuggler provides internal adapter
+- **Existing plugins are never broken by PlotJuggler updates**
+- Stability target: Qt LTS 6.8 (support until 2028)
+
+---
+
+## 6. Build System
+
+### 6.1 CMakeLists.txt (Marketplace)
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(pj_marketplace VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
+find_package(QuaZip-Qt6 REQUIRED)  # Or alternative ZIP library
+
+add_library(pj_marketplace SHARED
+    src/models/Extension.cpp
+    src/models/LocalState.cpp
+    src/core/RegistryManager.cpp
+    src/core/ExtensionManager.cpp
+    src/core/DownloadManager.cpp
+    src/core/PlatformUtils.cpp
+    src/ui/MarketplaceWindow.cpp
+    src/ui/ExtensionListWidget.cpp
+    src/ui/ExtensionCardDelegate.cpp
+    src/ui/ExtensionDetailWidget.cpp
+    src/utils/ChecksumVerifier.cpp
+    src/utils/ZipExtractor.cpp
+    resources/marketplace.qrc
+)
+
+target_link_libraries(pj_marketplace PRIVATE
+    Qt6::Widgets
+    Qt6::Network
+    QuaZip::QuaZip
+)
+
+target_include_directories(pj_marketplace PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+```
+
+### 6.2 Plugin Template CMakeLists.txt
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(my_extension VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(plotjuggler_sdk REQUIRED)
+
+add_library(my_plugin SHARED
+    src/my_plugin.cpp
+)
+
+target_link_libraries(my_plugin PRIVATE
+    plotjuggler::sdk
+)
+
+set_target_properties(my_plugin PROPERTIES
+    PREFIX ""
+    POSITION_INDEPENDENT_CODE ON
+)
+
+install(TARGETS my_plugin DESTINATION .)
+install(FILES my_dialog.ui DESTINATION .)
+install(FILES manifest.json DESTINATION .)
+install(FILES README.md LICENSE DESTINATION .)
+```
+
+---
+
+## 7. CI/CD Architecture
+
+### 7.1 Release Workflow
+
+```yaml
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+          - os: windows-2022
+            platform: windows-x86_64
+          - os: macos-14
+            platform: macos-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          conan install . --profile profiles/${{ matrix.platform }}
+          cmake --preset release
+          cmake --build --preset release
+
+      - name: Package
+        run: |
+          cmake --install build --prefix dist
+          cd dist && zip -r ../${{ github.event.repository.name }}-${{ matrix.platform }}.zip .
+
+      - name: Checksum
+        run: sha256sum *.zip > checksums.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: |
+            *.zip
+            checksums.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            **/*.zip
+            **/checksums.txt
+
+  update-registry:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate registry entry
+        run: |
+          # Generate JSON snippet with URLs and checksums
+          # Create PR to registry repository
+```
+
+### 7.2 Registry Validation Workflow
+
+```yaml
+name: Validate Registry
+
+on:
+  pull_request:
+    paths: ['registry.json']
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON schema
+        run: |
+          # Validate against schema
+
+      - name: Verify URLs
+        run: |
+          # Check all download URLs are reachable
+
+      - name: Verify checksums
+        run: |
+          # Download and verify SHA256 for each artifact
+```
+
+---
+
+## 8. UI Layout
+
+### 8.1 Main Window Structure
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  [Toolbar]  ← Back │ Forward →  │  Search...  │  ⚙ Settings    │
+├────────────────────┬─────────────────────────────────────────────┤
+│                    │                                             │
+│   SIDEBAR          │         DETAIL PANEL                       │
+│   (QListView)      │         (QWidget stack)                    │
+│                    │                                             │
+│  ┌──────────────┐  │  ┌─────────────────────────────────────┐   │
+│  │ QLineEdit    │  │  │  Icon + Name + Version              │   │
+│  │ QComboBox    │  │  │  by Publisher                       │   │
+│  ├──────────────┤  │  │                                     │   │
+│  │ INSTALLED    │  │  │  [Install] [Disable] [Uninstall]   │   │
+│  │  Card A      │  │  ├─────────────────────────────────────┤   │
+│  │  Card B      │  │  │  [Details] [Changelog]              │   │
+│  ├──────────────┤  │  │                                     │   │
+│  │ AVAILABLE    │  │  │  QTextBrowser (README)              │   │
+│  │  Card C      │  │  │                                     │   │
+│  │  Card D      │  │  └─────────────────────────────────────┘   │
+│  └──────────────┘  │                                             │
+├────────────────────┴─────────────────────────────────────────────┤
+│  QStatusBar: "3 updates available" │ QProgressBar              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Qt Widget Hierarchy
+
+```
+MarketplaceWindow (QMainWindow or QDialog)
+├── QToolBar
+│   ├── QAction (Back)
+│   ├── QAction (Forward)
+│   ├── QLineEdit (Search)
+│   └── QAction (Settings)
+├── QSplitter (Central Widget)
+│   ├── ExtensionListWidget (QWidget)
+│   │   ├── QLineEdit (Search filter)
+│   │   ├── QComboBox (Category filter)
+│   │   └── QListView (with ExtensionCardDelegate)
+│   └── ExtensionDetailWidget (QStackedWidget)
+│       ├── EmptyStateWidget
+│       └── DetailWidget
+│           ├── HeaderWidget (icon, name, buttons)
+│           ├── QTabWidget
+│           │   ├── DetailsTab (QTextBrowser)
+│           │   └── ChangelogTab (QTextBrowser)
+└── QStatusBar
+    ├── QLabel (Status message)
+    └── QProgressBar (Download progress)
+```
+
+---
+
+## 9. Technology Decisions
+
+| Decision | Choice | Alternatives Considered | Rationale |
+|----------|--------|------------------------|-----------|
+| GUI Framework | Qt 6 Widgets | QML | Consistency with PlotJuggler |
+| HTTP Client | QNetworkAccessManager | libcurl | Already in Qt, no extra deps |
+| JSON Parsing | QJsonDocument | nlohmann/json | Already in Qt |
+| ZIP Library | QuaZip | minizip, libzip | Qt integration, well maintained |
+| Checksum | QCryptographicHash | OpenSSL | Already in Qt |
+| Build System | CMake + Conan | Meson, Bazel | Industry standard, team experience |
+
+---
+
+## 10. Integration with PlotJuggler
+
+### 10.1 Entry Point
+
+```cpp
+// In PlotJuggler main menu
+void MainWindow::openMarketplace() {
+    MarketplaceDialog dialog(this);
+    dialog.exec();
+
+    // After dialog closes, reload plugins if needed
+    if (dialog.installationsChanged()) {
+        reloadPlugins();
+    }
+}
+```
+
+### 10.2 Menu Integration
+
+```cpp
+// plugins_menu.cpp
+QAction* marketplaceAction = new QAction("Open Marketplace...", this);
+connect(marketplaceAction, &QAction::triggered, this, &MainWindow::openMarketplace);
+pluginsMenu->addAction(marketplaceAction);
+```
+
+---
+
+## Document Maintenance
+
+This file should be updated when:
+- Architecture decisions change
+- New components are added
+- Flows are modified
+- Technology choices change
+
+**Review regularly** to ensure it matches the actual implementation.
