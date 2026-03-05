@@ -24,6 +24,16 @@ ibrobotics/internal_main    →    plotjuggler/development
 
 - **`development`** (remote `plotjuggler`): Rama principal del cliente. Todo el código debe estar limpio, bien documentado y sin referencias internas.
 
+### 1.2 Contenido Exclusivo del Repositorio Interno
+
+Los siguientes archivos y carpetas **solo existen en el repositorio interno** (`ibrobotics`). Este contenido no forma parte de las features que se envían al cliente, por lo que nunca aparece en PRs ni en el historial del repositorio público.
+
+| Ruta | Descripción |
+|------|-------------|
+| `docs/internal/` | Documentación interna del equipo (incluye este documento) |
+
+Este contenido permanece únicamente en `ibrobotics/internal_main` y no se propaga al hacer squash merge de features específicas.
+
 ---
 
 ## 2. Reglas para Pull Requests al Cliente
