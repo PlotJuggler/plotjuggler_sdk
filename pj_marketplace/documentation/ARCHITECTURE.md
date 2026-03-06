@@ -55,9 +55,64 @@ ext ..> em : Download ZIP
 
 ---
 
-## 2. Component Design
+## 2. Design Decisions
 
-### 2.1 Core Components
+### 2.1 PlotJuggler Integration
+
+Two approaches were considered: create an external plugin management tool (like `pip` or `npm`) or integrate it directly into PlotJuggler. The decision was clear: **native integration**.
+
+The reasoning is that the typical PlotJuggler user doesn't want to leave the application to install plugins. They want to open a window inside PlotJuggler, search for what they need, install it, and keep working. It's the VSCode experience, not managing packages from a terminal.
+
+That said, development will begin with a **standalone prototype**. This allows rapid iteration without touching PlotJuggler's code, and validates that the concept works before committing to the architecture. Once validated, it will integrate as native functionality in PlotJuggler 4.
+
+### 2.2 Plugin Template as Product
+
+A key insight is that **the barrier to creating plugins is too high**. Configuring CMake, Conan, cross-platform CI... that's days of work before writing a single line of plugin code.
+
+The solution is a **GitHub Template** that developers use as a starting point. They click "Use this template", clone the repo, and have:
+
+- Preconfigured CI that compiles for Linux, Windows, and macOS
+- Working Conan build system
+- Project structure with examples
+- Release workflow: creating a `v1.0.0` tag automatically triggers compilation, packaging, and publishing
+
+The goal is that a developer with C++ experience can have their first plugin published in the marketplace **in a day**, not a week.
+
+### 2.3 Build System: Conan, Pixi, and the Future
+
+The C++ ecosystem has multiple dependency managers, and PlotJuggler has used several over time:
+
+| Tool       | Status            | Context                                                                                                    |
+| ---------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| **CMake**  | Stable            | It's the de facto standard. No reason to change it.                                                        |
+| **Conan**  | Active            | Works well, has good commercial support (JFrog), and the team has experience.                              |
+| **Pixi**   | Under observation | It's gaining traction in the ROS community. Offers reproducible environments similar to conda but lighter. |
+| **Colcon** | Abandoned         | Was necessary for ROS 1/2 integration, but added unnecessary complexity outside that context.              |
+
+The current decision is to **use Conan for the plugin template**, but design the system so that generated artifacts are independent of the build tool. A ZIP with a `.so` and a `manifest.json` works the same whether it was generated with Conan, Pixi, or manual compilation.
+
+**Pixi timeline:**
+1. **Short term:** Template uses Conan (already works, already tested)
+2. **Medium term:** Add Pixi support as an alternative in the template
+3. **Long term:** Evaluate if Pixi can replace Conan based on community adoption
+
+The important thing is that this decision **doesn't affect marketplace users**. They just see plugins that install with one click.
+
+### 2.4 Sizing
+
+The system is designed for a modest catalog:
+
+- **Current plugins:** ~20
+- **Expected short-term:** ~30
+- **Maximum estimate:** 40-50
+
+This means a simple JSON file is more than sufficient as a registry. We don't need a database, we don't need sophisticated search. A JSON with 50 entries loads in milliseconds.
+
+---
+
+## 3. Component Design
+
+### 3.1 Core Components
 
 ```
 marketplace/
@@ -68,7 +123,7 @@ marketplace/
 │   │   ├── Extension.h           # Extension metadata struct
 │   │   ├── InstalledExtension.h  # Local installation info
 │   │   ├── Registry.h            # Full registry model
-│   │   └── LocalState.h          # installed.json model
+│   │   └── ExtensionState.h          # installed.json model
 │   ├── core/
 │   │   ├── RegistryManager.h/cpp # Fetch, parse, cache registry
 │   │   ├── ExtensionManager.h/cpp # Install, uninstall, update
@@ -88,7 +143,7 @@ marketplace/
     └── marketplace.qrc
 ```
 
-### 2.2 Data Models
+### 3.2 Data Models
 
 #### Extension.h
 ```cpp
@@ -126,22 +181,41 @@ struct InstalledExtension {
 };
 ```
 
-### 2.3 Component Responsibilities
+### 3.3 Component Responsibilities
 
 | Component | Responsibility | Dependencies |
 |-----------|---------------|--------------|
 | **RegistryManager** | Fetch JSON, parse, cache with TTL | QNetworkAccessManager |
-| **ExtensionManager** | Install, uninstall, update, rollback | DownloadManager, ZipExtractor |
+| **ExtensionManager** | Install, uninstall, update, rollback | DownloadManager, ZipExtractor, ExtensionState, PlatformUtils |
 | **DownloadManager** | HTTP GET with progress signals | QNetworkAccessManager |
 | **ChecksumVerifier** | SHA256 verification | QCryptographicHash |
 | **ZipExtractor** | Extract ZIP to directory | QuaZip/minizip |
 | **PlatformUtils** | Detect OS, get paths | Qt platform macros |
 
+#### ExtensionManager — Constructor Design
+
+All dependencies are injected via constructor. The extensions directory defaults to
+`PlatformUtils::extensionsDir()`, allowing tests to point to a temp directory without
+mocking `PlatformUtils`:
+
+```cpp
+ExtensionManager(DownloadManager* downloader,
+                 ZipExtractor* extractor,
+                 ExtensionState* state,
+                 const QString& extensions_dir = PlatformUtils::extensionsDir(),
+                 QObject* parent = nullptr);
+```
+
+**Design decisions:**
+- No `setExtensionsDir()` public setter — directory is fixed at construction time
+- No `detectPlatform()` private method — delegated to `PlatformUtils::currentPlatform()`
+- `ZipExtractor` is an explicit constructor dependency, not created internally
+
 ---
 
-## 3. Key Flows
+## 4. Key Flows
 
-### 3.1 Installation Flow
+### 4.1 Installation Flow
 
 ![Installation Flow](diagrams/installation-flow.png)
 
@@ -174,7 +248,7 @@ stop
 ```
 </details>
 
-### 3.2 Windows Staging Flow
+### 4.2 Windows Staging Flow
 
 ![Windows Staging Flow](diagrams/windows-staging.png)
 
@@ -210,7 +284,7 @@ stop
 ```
 </details>
 
-### 3.3 Rollback Flow
+### 4.3 Rollback Flow
 
 ![Rollback Flow](diagrams/rollback-flow.png)
 
@@ -245,9 +319,9 @@ stop
 
 ---
 
-## 4. Directory Structure
+## 5. Directory Structure
 
-### 4.1 Installation Directories
+### 5.1 Installation Directories
 
 ```
 ~/.plotjuggler/
@@ -269,7 +343,7 @@ stop
 └── installed.json           # Local state
 ```
 
-### 4.2 Extension ZIP Structure
+### 5.2 Extension ZIP Structure
 
 ```
 ros2-streaming-linux-x86_64.zip
@@ -282,9 +356,9 @@ ros2-streaming-linux-x86_64.zip
 
 ---
 
-## 5. ABI Compatibility Strategy
+## 6. ABI Compatibility Strategy
 
-### 5.1 The Problem
+### 6.1 The Problem
 
 Binary compatibility (ABI) is the biggest technical challenge:
 
@@ -292,7 +366,7 @@ Binary compatibility (ABI) is the biggest technical challenge:
 2. User updates PlotJuggler to Qt 6.2
 3. Plugin crashes due to Qt internal structure changes
 
-### 5.2 The Solution: Zero Qt in Plugins
+### 6.2 The Solution: Zero Qt in Plugins
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -323,7 +397,7 @@ Binary compatibility (ABI) is the biggest technical challenge:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.3 Compatibility Policy
+### 6.3 Compatibility Policy
 
 - Each plugin declares `min_plotjuggler_version` in manifest
 - If SDK changes incompatibly, PlotJuggler provides internal adapter
@@ -332,9 +406,9 @@ Binary compatibility (ABI) is the biggest technical challenge:
 
 ---
 
-## 6. Build System
+## 7. Build System
 
-### 6.1 CMakeLists.txt (Marketplace)
+### 7.1 CMakeLists.txt (Marketplace)
 
 ```cmake
 cmake_minimum_required(VERSION 3.16)
@@ -351,7 +425,7 @@ find_package(QuaZip-Qt6 REQUIRED)  # Or alternative ZIP library
 
 add_library(pj_marketplace SHARED
     src/models/Extension.cpp
-    src/models/LocalState.cpp
+    src/models/ExtensionState.cpp
     src/core/RegistryManager.cpp
     src/core/ExtensionManager.cpp
     src/core/DownloadManager.cpp
@@ -376,7 +450,7 @@ target_include_directories(pj_marketplace PUBLIC
 )
 ```
 
-### 6.2 Dummy Plugin CMakeLists.txt (POC)
+### 7.2 Dummy Plugin CMakeLists.txt (POC)
 
 For the POC phase, dummy plugins are extremely simple — no Qt, no SDK, just pure C++:
 
@@ -415,7 +489,7 @@ extern "C" {
 
 > **Note:** Each dummy extension folder is an independent C++ project with its own CMakeLists.txt. No Qt dependency means trivial cross-platform compilation.
 
-### 6.3 Real Plugin Template CMakeLists.txt (Post-POC)
+### 7.3 Real Plugin Template CMakeLists.txt (Post-POC)
 
 For real plugins that use the PlotJuggler SDK:
 
@@ -447,11 +521,146 @@ install(FILES manifest.json DESTINATION .)
 install(FILES README.md LICENSE DESTINATION .)
 ```
 
+### 7.4 conanfile.py (Plugin Template)
+
+```python
+from conan import ConanFile
+from conan.tools.cmake import CMake, cmake_layout
+
+class MyExtensionConan(ConanFile):
+    name = "my-extension"
+    version = "1.0.0"
+    settings = "os", "compiler", "build_type", "arch"
+    generators = "CMakeToolchain", "CMakeDeps"
+
+    def requirements(self):
+        self.requires("plotjuggler_sdk/4.0.0")
+
+    def build(self):
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.build()
+
+    def layout(self):
+        cmake_layout(self)
+```
+
+### 7.5 Conan Profile for Static Linking
+
+```ini
+[settings]
+os=Linux
+compiler=gcc
+compiler.version=13
+compiler.libcxx=libstdc++11
+build_type=Release
+arch=x86_64
+
+[options]
+*:shared=False
+*:fPIC=True
+```
+
+### 7.6 pixi.toml (Future Alternative)
+
+```toml
+[project]
+name = "my-extension"
+version = "1.0.0"
+channels = ["conda-forge", "plotjuggler"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
+
+[dependencies]
+plotjuggler-sdk = ">=4.0"
+cmake = ">=3.16"
+ninja = "*"
+
+[tasks]
+build = "cmake --preset release && cmake --build --preset release"
+test = "ctest --preset release"
+package = "cmake --install build/release --prefix dist && cd dist && zip -r ../artifact.zip ."
+```
+
 ---
 
-## 7. CI/CD Architecture
+## 8. GitHub Template for Developers
 
-### 7.0 Repository Strategy
+### 8.0 Template Structure
+
+```
+plotjuggler/extension-template/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                  # Build + test on each push/PR
+│       └── release.yml             # Build + publish on tag
+├── src/
+│   ├── my_plugin.h
+│   └── my_plugin.cpp
+├── ui/
+│   └── my_dialog.ui
+├── test/
+│   └── test_my_plugin.cpp
+├── CMakeLists.txt
+├── conanfile.py
+├── pixi.toml                       # Future alternative
+├── manifest.json.in
+├── conan_profiles/
+│   ├── linux_static
+│   ├── windows_static
+│   └── macos_static
+├── README.md
+├── LICENSE
+└── CLAUDE.md
+```
+
+### 8.1 CI Workflow (ci.yml)
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            profile: linux_static
+          - os: windows-2022
+            profile: windows_static
+          - os: macos-14
+            profile: macos_static
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Conan
+        run: pip install conan
+      - name: Configure Conan
+        run: |
+          conan profile detect
+          conan remote add plotjuggler https://conan.plotjuggler.io
+      - name: Install dependencies
+        run: conan install . --profile conan_profiles/${{ matrix.profile }} --build=missing
+      - name: Build
+        run: |
+          cmake --preset conan-release
+          cmake --build --preset conan-release
+      - name: Test
+        run: ctest --preset conan-release --output-on-failure
+```
+
+---
+
+## 9. CI/CD Architecture
+
+### 9.0 Repository Strategy
 
 Extensions can be organized in two ways:
 
@@ -465,7 +674,7 @@ Extensions can be organized in two ways:
 
 > **Note:** The registry doesn't care which approach is used — it only needs direct URLs to the ZIP artifacts. Both approaches work.
 
-### 7.1 Release Workflow
+### 9.1 Release Workflow
 
 ```yaml
 name: Release
@@ -535,7 +744,7 @@ jobs:
           # Create PR to registry repository
 ```
 
-### 7.2 Registry Validation Workflow
+### 9.2 Registry Validation Workflow
 
 ```yaml
 name: Validate Registry
@@ -565,11 +774,11 @@ jobs:
 
 ---
 
-## 8. UI Layout
+## 10. UI Layout
 
 > **Note (2026-03-05 meeting):** Two UI approaches were discussed. For the POC, the simpler approach (Approach A) is recommended. The VS Code-style panel layout (Approach B) can be implemented in future iterations if needed.
 
-### 8.1 Approach A: Simple List + Dialog (POC)
+### 10.1 Approach A: Simple List + Dialog (POC)
 
 This is the approach shown by Davide in the March 5th meeting mockup. It prioritizes simplicity and fast implementation.
 
@@ -640,7 +849,7 @@ MarketplaceWindow (QDialog)
     └── QDialogButtonBox
 ```
 
-### 8.2 Approach B: VS Code-Style Panel (Future)
+### 10.2 Approach B: VS Code-Style Panel (Future)
 
 This more elaborate approach can be implemented after the POC if a richer UX is desired.
 
@@ -697,7 +906,7 @@ MarketplaceWindow (QMainWindow or QDialog)
 
 ---
 
-## 9. Technology Decisions
+## 11. Technology Decisions
 
 | Decision | Choice | Alternatives Considered | Rationale |
 |----------|--------|------------------------|-----------|
@@ -710,9 +919,9 @@ MarketplaceWindow (QMainWindow or QDialog)
 
 ---
 
-## 10. Integration with PlotJuggler
+## 12. Integration with PlotJuggler
 
-### 10.1 Entry Point
+### 12.1 Entry Point
 
 ```cpp
 // In PlotJuggler main menu
@@ -727,7 +936,7 @@ void MainWindow::openMarketplace() {
 }
 ```
 
-### 10.2 Menu Integration
+### 12.2 Menu Integration
 
 ```cpp
 // plugins_menu.cpp

@@ -19,8 +19,7 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ WEEK 1 (5-11 March): Standalone POC                                     │
 │ Deliverable: Qt app with dummy plugins, works on Linux AND Windows     │
-│ Note: Dummy plugins only have getMetadata() function (no Qt, no SDK)   │
-│ CI Reference: Foxglove MCAP (mono-repo with per-component releases)    │
+│ Note: Dummy plugins only have getMetadata() function                   │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -120,7 +119,9 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 - [ ] Implement progress signals
 - [ ] Create ChecksumVerifier (SHA256)
 - [ ] Create ZipExtractor (QuaZip)
-- [ ] Create LocalState (installed.json)
+- [ ] Create ExtensionManager — inject DownloadManager, ZipExtractor via constructor; installed state managed internally via private loadState()/saveState()
+- [ ] Use PlatformUtils::extensionsDir() as default extensions directory (no setExtensionsDir setter)
+- [ ] Delegate platform detection to PlatformUtils::currentPlatform() (no private detectPlatform())
 - [ ] Implement install flow
 - [ ] Implement uninstall flow
 - [ ] Create dummy registry on GitHub for testing

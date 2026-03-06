@@ -20,7 +20,63 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 2. Terminology
+## 2. Feature Overview
+
+### 2.1 Client Features (Marketplace UI)
+
+| Category           | Feature              | Description                                                   |
+| ------------------ | -------------------- | ------------------------------------------------------------- |
+| **Discovery**      | Extension listing    | Display all available extensions in VSCode-style cards        |
+|                    | Search               | Search by name, description, tags, and publisher              |
+|                    | Category filtering   | Data Loader, Data Streamer, Parser, Toolbox                   |
+|                    | Extension detail     | Panel with complete information, changelog, and dependencies  |
+| **Installation**   | Secure download      | ZIP artifact download with SHA256 verification                |
+|                    | Automatic extraction | Decompression to extensions directory                         |
+|                    | Platform detection   | Automatic selection of correct artifact (Linux/Windows/macOS) |
+| **Updates**        | Update detection     | Local vs registry version comparison (semver)                 |
+|                    | Individual update    | Update a specific extension                                   |
+|                    | Bulk update          | "Update All" for multiple extensions                          |
+|                    | Automatic backup     | Backup of previous version before updating                    |
+| **Uninstallation** | Clean removal        | Directory deletion + local state update                       |
+|                    | Confirmation         | Confirmation dialog before uninstalling                       |
+| **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
+|                    | Rollback             | Automatic restoration if a plugin fails to load               |
+|                    | Persistent state     | Local storage of installed extensions (JSON)                  |
+| **UI/UX**          | Download progress    | Progress bar in status bar                                    |
+|                    | Notifications        | Status messages and available update alerts                   |
+|                    | Context menu         | Quick actions per installed extension                         |
+
+### 2.2 CI System Features (For Developers)
+
+| Category       | Feature                    | Description                                                |
+| -------------- | -------------------------- | ---------------------------------------------------------- |
+| **Build**      | Cross-platform compilation | Matrix build for Linux, Windows, and macOS                 |
+|                | Static linking             | All dependencies embedded in the artifact                  |
+|                | Dependency management      | Support for Conan (current) and Pixi (future)              |
+| **Packaging**  | ZIP generation             | Automatic packaging with manifest, binaries, and resources |
+|                | Checksums                  | Automatic SHA256 generation per artifact                   |
+|                | Versioning                 | Version extraction from git tag                            |
+| **Publishing** | GitHub Release             | Automatic release creation with attached artifacts         |
+|                | Registry update            | Automatic PR to registry repo with new version             |
+| **Validation** | Unit tests                 | Test execution on each platform                            |
+|                | Lint/Format                | Code style verification                                    |
+|                | Schema validation          | Registry JSON validation in PRs                            |
+
+### 2.3 Registry Features
+
+| Category    | Feature             | Description                                           |
+| ----------- | ------------------- | ----------------------------------------------------- |
+| **Catalog** | Complete listing    | JSON with all available extensions                    |
+|             | Metadata            | Name, description, author, license, tags, category    |
+|             | Versioning          | Current version and minimum PlotJuggler versions      |
+|             | Cross-platform      | URLs and checksums per platform (Linux/Windows/macOS) |
+| **Hosting** | Static GitHub       | JSON file accessible via raw.githubusercontent.com    |
+|             | Cache TTL           | Support for local cache with expiration time          |
+|             | Multiple registries | Configuration for alternative registries (enterprise) |
+
+---
+
+## 3. Terminology
 
 | Term | Definition |
 |------|------------|
@@ -33,9 +89,9 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 3. Functional Requirements
+## 4. Functional Requirements
 
-### 3.1 P0 — Minimum Viable Product
+### 4.1 P0 — Minimum Viable Product
 
 | ID | Requirement | Acceptance Criteria |
 |----|-------------|---------------------|
@@ -50,7 +106,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | F-09 | Detect updates (local vs registry version) | User sees "Update available" badge when newer version exists |
 | F-10 | Uninstall extension | User can remove installed extensions |
 
-### 3.2 P1 — Robustness
+### 4.2 P1 — Robustness
 
 | ID | Requirement | Acceptance Criteria |
 |----|-------------|---------------------|
@@ -63,7 +119,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | F-17 | Update All | Single action to update all extensions with available updates |
 | F-18 | Confirmation dialogs | User confirms before install/uninstall/update actions |
 
-### 3.3 P2 — Polish
+### 4.3 P2 — Polish
 
 | ID | Requirement | Acceptance Criteria |
 |----|-------------|---------------------|
@@ -75,7 +131,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 4. Non-Functional Requirements
+## 5. Non-Functional Requirements
 
 | ID | Requirement | Metric |
 |----|-------------|--------|
@@ -92,7 +148,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 5. Use Cases
+## 6. Use Cases
 
 ### UC-01: User Discovers and Installs Extension
 
@@ -173,7 +229,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 6. Extension Categories
+## 7. Extension Categories
 
 | Category | Value | Description | Example |
 |----------|-------|-------------|---------|
@@ -185,9 +241,9 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 7. Corner Cases and Edge Cases
+## 8. Corner Cases and Edge Cases
 
-### 7.1 Network Issues
+### 8.1 Network Issues
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -196,7 +252,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | Download interrupted | Partial file deleted, user can retry |
 | Checksum mismatch | Download rejected, user notified |
 
-### 7.2 File System Issues
+### 8.2 File System Issues
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -205,7 +261,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | Extension directory doesn't exist | Create it automatically |
 | Corrupted ZIP file | Extraction fails gracefully, user notified |
 
-### 7.3 Version Conflicts
+### 8.3 Version Conflicts
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -213,7 +269,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | Downgrade requested | Allow with warning |
 | Same version reinstall | Ask confirmation, then reinstall |
 
-### 7.4 Windows-Specific
+### 8.4 Windows-Specific
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -221,7 +277,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | User cancels pending update | Remove staged files |
 | PlotJuggler crashes before applying update | Pending update remains for next start |
 
-### 7.5 Plugin Loading
+### 8.5 Plugin Loading
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -231,9 +287,9 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 8. Constraints
+## 9. Constraints
 
-### 8.1 Must NOT Do
+### 9.1 Must NOT Do
 
 - **No backend server** — All hosting via GitHub (serverless)
 - **No Qt dependency in plugins** — Plugins use abstract SDK only
@@ -241,7 +297,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 - **No user accounts** — Anonymous usage
 - **No telemetry** — No data collection without consent
 
-### 8.2 Assumptions
+### 9.2 Assumptions
 
 - Users have internet access for initial install
 - GitHub raw URLs remain accessible
@@ -249,7 +305,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 - Registry has < 100 extensions in foreseeable future
 - **POC phase:** Dummy plugins are pure C++ with no Qt dependency (only `getMetadata()` function), simplifying cross-platform CI
 
-### 8.3 Out of Scope (v1.0)
+### 9.3 Out of Scope (v1.0)
 
 - Paid extensions / license management
 - Dependency resolution between extensions
@@ -259,7 +315,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
-## 9. Acceptance Criteria (MVP)
+## 10. Acceptance Criteria (MVP)
 
 The minimum viable product is successful if:
 
@@ -276,9 +332,9 @@ The minimum viable product is successful if:
 
 ---
 
-## 10. Data Formats
+## 11. Data Formats
 
-### 10.1 Registry JSON Schema
+### 11.1 Registry JSON Schema
 
 ```json
 {
@@ -321,7 +377,7 @@ The minimum viable product is successful if:
 }
 ```
 
-### 10.2 Local State (installed.json) Schema
+### 11.2 Local State (installed.json) Schema
 
 ```json
 {
@@ -338,7 +394,7 @@ The minimum viable product is successful if:
 }
 ```
 
-### 10.3 Extension Manifest Schema
+### 11.3 Extension Manifest Schema
 
 ```json
 {
@@ -358,7 +414,7 @@ The minimum viable product is successful if:
 
 ---
 
-## 11. Pending Decisions
+## 12. Pending Decisions
 
 | # | Topic | Options | Impact |
 |---|-------|---------|--------|
