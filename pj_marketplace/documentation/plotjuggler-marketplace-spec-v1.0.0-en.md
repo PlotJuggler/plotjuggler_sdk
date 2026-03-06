@@ -661,7 +661,59 @@ The flow is:
 
 ## 12. Graphical Interface
 
-### 12.1 General Layout
+> **Note (2026-03-05 meeting):** Two UI approaches were discussed. For the POC/MVP, the simpler approach (12.1.A) is recommended. The VS Code-style panel layout (12.1.B) can be implemented in future iterations if needed.
+
+### 12.1.A Simple List + Dialog (POC/MVP)
+
+This approach prioritizes simplicity and fast implementation. Shown by Davide in the March 5th meeting.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PlotJuggler Marketplace                              [X]   │
+├─────────────────────────────────────────────────────────────┤
+│ [Search...              ] [Category ▼] [Refresh]            │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   CanOpen parser           v1.0.0    [install]              │
+│   Parquet parser           v2.1.0    [installed]            │
+│   FFT Toolbox              v1.3.0    [installed]            │
+│   CSV exporter             v1.0.0    [update] ⬆            │
+│   ROS 2 Streaming          v3.0.0    [install]              │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│  Status: Ready                              [████████] 100% │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Interaction model:**
+- **Mouseover** on item → Tooltip with brief description
+- **Double-click** on item → Opens dialog with full details
+- **Click on button** → Executes action (install/uninstall/update)
+
+**Detail dialog (on double-click):**
+
+```
+┌───────────────────────────────────────┐
+│  FFT Toolbox                    [X]   │
+├───────────────────────────────────────┤
+│  Version: 1.3.0                       │
+│  Author: PlotJuggler Team             │
+│  Category: toolbox                    │
+│                                       │
+│  Description:                         │
+│  Fast Fourier Transform toolbox...    │
+│                                       │
+│  Changelog:                           │
+│  v1.3.0 - Added Hamming window        │
+│  v1.2.0 - Performance improvements    │
+│                                       │
+│  [View on GitHub]  [Close]            │
+└───────────────────────────────────────┘
+```
+
+### 12.1.B VS Code-Style Panel Layout (Future)
+
+This more elaborate approach can be implemented after the POC if a richer UX is desired.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -713,21 +765,26 @@ The flow is:
 - Category filter (Loader, Streamer, Parser, Toolbox)
 - Quick filters: `@installed`, `@updates`
 
-### 12.3 Detail Panel
+### 12.3 Extension Details
 
-**Header:**
+**For Approach A (dialog):**
 
+The detail dialog shows:
+- Name, version, author
+- Category and tags
+- Description text
+- Changelog
+- Link to repository
+
+**For Approach B (panel):**
+
+The detail panel includes:
 - Icon (64x64)
 - Name and publisher
 - Metrics (downloads, rating)
 - Action buttons (Install/Update/Disable/Uninstall)
 - Metadata (category, tags, platforms, minimum version)
-
-**Tabs:**
-
-- Details: Description/README
-- Changelog: Version history
-- Dependencies: Required extensions
+- Tabs: Details (README), Changelog, Dependencies
 
 ### 12.4 Management Controls
 

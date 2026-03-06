@@ -25,8 +25,7 @@
 
 | Feature | Why It Can Wait |
 |---------|-----------------|
-| Windows staging | Ship Linux first |
-| Automatic rollback | Nice-to-have, not critical for demo |
+| Automatic rollback | NOT PRIORITY per Davide (2026-03-05 meeting) |
 | Enable/Disable | Can uninstall/reinstall |
 | Local cache with TTL | Direct network fetch works |
 | Backup on updates | First version simple |
@@ -36,26 +35,31 @@
 | Complete GitHub CI Template | Manual is OK for beta |
 | Metrics (downloads, rating) | Later phase |
 
+> **Update (2026-03-05):** Windows support moved to Week 1 per Davide's request. POC must work on both Linux and Windows.
+
 ---
 
 ## 2. High-Level View (4 Weeks)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ WEEK 1 (5-11 March): Standalone MVP                                     │
-│ Deliverable: Qt app that loads registry, shows list, installs dummy    │
+│ WEEK 1 (5-11 March): Standalone POC                                     │
+│ Deliverable: Qt app with dummy plugins, works on Linux AND Windows     │
+│ Note: Dummy plugins only have getMetadata() function                   │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ WEEK 2 (12-18 March): PlotJuggler Integration                           │
 │ Deliverable: Marketplace opens as dialog INSIDE PlotJuggler            │
+│ ★ 16 March: Convergence with Davide on real plugin interfaces          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ WEEK 3 (19-25 March): Real Plugin End-to-End                            │
 │ Deliverable: Install REAL plugin from marketplace, works in PJ         │
+│ Note: Davide traveling to Japan (work continues autonomously)          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -99,6 +103,7 @@
 - [ ] Can search "dummy" and find the extension
 - [ ] Click "Install" → downloads → extracts → appears as installed
 - [ ] Click "Uninstall" → removed
+- [ ] **Works on Linux AND Windows** (per Davide 2026-03-05)
 
 ---
 
@@ -263,14 +268,15 @@ MARCH TOTAL:  10/10 P0 (100%)
 
 ## 10. What's NOT in This Plan (and That's OK)
 
-1. **Windows**: Linux only. macOS/Windows in phase 2 (April)
-2. **Automatic rollback**: Manual is OK for v1
+1. ~~**Windows**: Linux only~~ → **UPDATED:** Windows included in Week 1 (2026-03-05)
+2. **Automatic rollback**: NOT PRIORITY per Davide (2026-03-05)
 3. **Enable/Disable**: Uninstall/reinstall works
 4. **Icons**: Text only
 5. **Changelog UI**: README in details panel
 6. **Multiple registries**: One hardcoded registry
 7. **Complete CI Template**: Manual documentation
 8. **Sophisticated cache**: Direct fetch every time
+9. **macOS**: Phase 2 (April)
 
 ---
 

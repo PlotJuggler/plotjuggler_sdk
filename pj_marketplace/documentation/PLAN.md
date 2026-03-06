@@ -17,20 +17,24 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ WEEK 1 (5-11 March): Standalone MVP                                     │
-│ Deliverable: Qt app that loads registry, shows list, installs dummy    │
+│ WEEK 1 (5-11 March): Standalone POC                                     │
+│ Deliverable: Qt app with dummy plugins, works on Linux AND Windows     │
+│ Note: Dummy plugins only have getMetadata() function (no Qt, no SDK)   │
+│ CI Reference: Foxglove MCAP (mono-repo with per-component releases)    │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ WEEK 2 (12-18 March): PlotJuggler Integration                           │
 │ Deliverable: Marketplace opens as dialog INSIDE PlotJuggler            │
+│ ★ 16 March: Convergence with Davide on real plugin interfaces          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ WEEK 3 (19-25 March): Real Plugin End-to-End                            │
 │ Deliverable: Install REAL plugin from marketplace, works in PJ         │
+│ Note: Davide traveling to Japan (work continues autonomously)          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -74,13 +78,14 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 |----|-------------|--------|
 | F-11 | Cache with TTL | Direct fetch works |
 | F-12 | Backup on updates | V1 can be simple |
-| F-13 | Automatic rollback | Manual OK for beta |
-| F-14 | Windows staging | Linux-only in March |
+| F-13 | Automatic rollback | NOT PRIORITY per Davide (2026-03-05) |
 | F-15 | Enable/Disable | Uninstall/reinstall |
 | F-16 | Cancel download | Nice-to-have |
 | F-17 | Update All | One by one OK |
 | F-18 | Confirmation dialogs | If time in W4 |
 | F-19-23 | Polish features | Post-MVP |
+
+> **Note (2026-03-05 meeting):** Windows support moved to Week 1. Rollback explicitly deprioritized by Davide.
 
 ---
 
