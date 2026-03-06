@@ -119,7 +119,9 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 - [ ] Implement progress signals
 - [ ] Create ChecksumVerifier (SHA256)
 - [ ] Create ZipExtractor (QuaZip)
-- [ ] Create LocalState (installed.json)
+- [ ] Create ExtensionManager — inject DownloadManager, ZipExtractor via constructor; installed state managed internally via private loadState()/saveState()
+- [ ] Use PlatformUtils::extensionsDir() as default extensions directory (no setExtensionsDir setter)
+- [ ] Delegate platform detection to PlatformUtils::currentPlatform() (no private detectPlatform())
 - [ ] Implement install flow
 - [ ] Implement uninstall flow
 - [ ] Create dummy registry on GitHub for testing
