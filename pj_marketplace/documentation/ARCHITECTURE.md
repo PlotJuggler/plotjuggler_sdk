@@ -67,8 +67,7 @@ marketplace/
 │   ├── models/
 │   │   ├── Extension.h           # Extension metadata struct
 │   │   ├── InstalledExtension.h  # Local installation info
-│   │   ├── Registry.h            # Full registry model
-│   │   └── LocalState.h          # installed.json model
+│   │   └── Registry.h            # Full registry model
 │   ├── core/
 │   │   ├── RegistryManager.h/cpp # Fetch, parse, cache registry
 │   │   ├── ExtensionManager.h/cpp # Install, uninstall, update
@@ -131,11 +130,30 @@ struct InstalledExtension {
 | Component | Responsibility | Dependencies |
 |-----------|---------------|--------------|
 | **RegistryManager** | Fetch JSON, parse, cache with TTL | QNetworkAccessManager |
-| **ExtensionManager** | Install, uninstall, update, rollback | DownloadManager, ZipExtractor |
+| **ExtensionManager** | Install, uninstall, update, rollback | DownloadManager, ZipExtractor, PlatformUtils |
 | **DownloadManager** | HTTP GET with progress signals | QNetworkAccessManager |
 | **ChecksumVerifier** | SHA256 verification | QCryptographicHash |
 | **ZipExtractor** | Extract ZIP to directory | QuaZip/minizip |
 | **PlatformUtils** | Detect OS, get paths | Qt platform macros |
+
+#### ExtensionManager — Constructor Design
+
+All dependencies are injected via constructor. The extensions directory defaults to
+`PlatformUtils::extensionsDir()`, allowing tests to point to a temp directory without
+mocking `PlatformUtils`:
+
+```cpp
+ExtensionManager(DownloadManager* downloader,
+                 ZipExtractor* extractor,
+                 const QString& extensions_dir = PlatformUtils::extensionsDir(),
+                 QObject* parent = nullptr);
+```
+
+**Design decisions:**
+- No `setExtensionsDir()` public setter — directory is fixed at construction time
+- No `detectPlatform()` private method — delegated to `PlatformUtils::currentPlatform()`
+- `ZipExtractor` is an explicit constructor dependency, not created internally
+- Local installation state (`QMap<QString, InstalledExtension>`) is a private member of `ExtensionManager` — loaded from `extensions_dir/installed.json` at construction via private `loadState()`/`saveState()` methods; testability is preserved via the `extensions_dir` parameter pointing to a temp directory
 
 ---
 
@@ -351,7 +369,6 @@ find_package(QuaZip-Qt6 REQUIRED)  # Or alternative ZIP library
 
 add_library(pj_marketplace SHARED
     src/models/Extension.cpp
-    src/models/LocalState.cpp
     src/core/RegistryManager.cpp
     src/core/ExtensionManager.cpp
     src/core/DownloadManager.cpp
