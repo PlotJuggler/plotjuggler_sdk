@@ -43,16 +43,17 @@
 
 ### 2.2 Browsing Extensions
 
-The marketplace window has two panels:
+The marketplace window shows a list of all extensions with their status:
 
-| Panel | Content |
-|-------|---------|
-| **Left sidebar** | List of extensions (installed and available) |
-| **Right panel** | Details of selected extension |
+| Column | Content |
+|--------|---------|
+| **Name** | Extension name |
+| **Version** | Current version |
+| **Status** | `[install]`, `[installed]`, or `[update]` |
 
-**Sections in the sidebar:**
-- **INSTALLED** — Extensions you have installed
-- **AVAILABLE** — Extensions you can install
+**To see extension details:** Double-click on any extension to open a detail dialog with full information (description, author, changelog).
+
+**Quick tip:** Hover over an extension to see a brief description tooltip.
 
 ### 2.3 Searching and Filtering
 
@@ -73,12 +74,12 @@ The marketplace window has two panels:
 
 ### 2.4 Installing an Extension
 
-1. Find the extension in the sidebar
-2. Click on it to see details
-3. Review the description, version, and author
-4. Click **Install**
-5. Wait for download and extraction
-6. See "Installation complete" message
+1. Find the extension in the list
+2. (Optional) Double-click to see details in a dialog
+3. Click the **[install]** button next to the extension
+4. Wait for download and extraction
+5. See "Installation complete" message
+6. Button changes to **[installed]**
 
 **On Windows:** You may see "Restart required to complete installation"
 

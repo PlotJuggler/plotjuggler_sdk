@@ -74,11 +74,11 @@ marketplace/
 │   │   ├── DownloadManager.h/cpp  # HTTP download with progress
 │   │   └── PlatformUtils.h/cpp    # OS detection, paths
 │   ├── ui/
-│   │   ├── MarketplaceWindow.h/cpp      # Main window/dialog
-│   │   ├── ExtensionListWidget.h/cpp    # Sidebar list
-│   │   ├── ExtensionCardDelegate.h/cpp  # Custom card rendering
-│   │   ├── ExtensionDetailWidget.h/cpp  # Detail panel
-│   │   └── StatusBarManager.h/cpp       # Progress/status
+│   │   ├── MarketplaceWindow.h/cpp       # Main window/dialog
+│   │   ├── ExtensionListWidget.h/cpp     # Extension list (table or list)
+│   │   ├── ExtensionDetailDialog.h/cpp   # Detail dialog (Approach A - POC)
+│   │   ├── ExtensionDetailWidget.h/cpp   # Detail panel (Approach B - future)
+│   │   └── StatusBarManager.h/cpp        # Progress/status
 │   └── utils/
 │       ├── ChecksumVerifier.h/cpp # SHA256 verification
 │       └── ZipExtractor.h/cpp     # ZIP decompression
@@ -529,7 +529,82 @@ jobs:
 
 ## 8. UI Layout
 
-### 8.1 Main Window Structure
+> **Note (2026-03-05 meeting):** Two UI approaches were discussed. For the POC, the simpler approach (Approach A) is recommended. The VS Code-style panel layout (Approach B) can be implemented in future iterations if needed.
+
+### 8.1 Approach A: Simple List + Dialog (POC)
+
+This is the approach shown by Davide in the March 5th meeting mockup. It prioritizes simplicity and fast implementation.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PlotJuggler Marketplace                              [X]   │
+├─────────────────────────────────────────────────────────────┤
+│ [Buscar...              ] [Categoría ▼] [Refresh]           │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   CanOpen parser           v1.0.0    [install]              │
+│   Parquet parser           v2.1.0    [installed]            │
+│   FFT Toolbox              v1.3.0    [installed]            │
+│   CSV exporter             v1.0.0    [update] ⬆            │
+│   ROS 2 Streaming          v3.0.0    [install]              │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│  Status: Ready                              [████████] 100% │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Interaction model:**
+- **Mouseover** on item → QToolTip with brief description
+- **Double-click** on item → Opens QDialog with full details (author, URL, changelog)
+- **Click on button** → Executes action (install/uninstall/update)
+
+**Detail dialog (on double-click):**
+
+```
+┌───────────────────────────────────────┐
+│  FFT Toolbox                    [X]   │
+├───────────────────────────────────────┤
+│  Version: 1.3.0                       │
+│  Author: PlotJuggler Team             │
+│  Category: toolbox                    │
+│                                       │
+│  Description:                         │
+│  Fast Fourier Transform toolbox for   │
+│  signal analysis and frequency domain │
+│  visualization.                       │
+│                                       │
+│  Changelog:                           │
+│  v1.3.0 - Added Hamming window        │
+│  v1.2.0 - Performance improvements    │
+│                                       │
+│  [View on GitHub]  [Close]            │
+└───────────────────────────────────────┘
+```
+
+**Qt Widget Hierarchy (Approach A):**
+
+```
+MarketplaceWindow (QDialog)
+├── QVBoxLayout
+│   ├── QHBoxLayout (toolbar)
+│   │   ├── QLineEdit (Search)
+│   │   ├── QComboBox (Category filter)
+│   │   └── QPushButton (Refresh)
+│   ├── QTableWidget or QListWidget (extension list)
+│   │   └── Rows with: Name, Version, Action Button
+│   └── QStatusBar
+│       ├── QLabel (Status message)
+│       └── QProgressBar (Download progress)
+└── ExtensionDetailDialog (QDialog) ← Opens on double-click
+    ├── QLabel (Name, Version, Author)
+    ├── QTextBrowser (Description)
+    ├── QTextBrowser (Changelog)
+    └── QDialogButtonBox
+```
+
+### 8.2 Approach B: VS Code-Style Panel (Future)
+
+This more elaborate approach can be implemented after the POC if a richer UX is desired.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -556,7 +631,7 @@ jobs:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### 8.2 Qt Widget Hierarchy
+**Qt Widget Hierarchy (Approach B):**
 
 ```
 MarketplaceWindow (QMainWindow or QDialog)
