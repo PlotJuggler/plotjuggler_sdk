@@ -247,6 +247,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 - GitHub raw URLs remain accessible
 - Extensions are < 50MB compressed
 - Registry has < 100 extensions in foreseeable future
+- **POC phase:** Dummy plugins are pure C++ with no Qt dependency (only `getMetadata()` function), simplifying cross-platform CI
 
 ### 8.3 Out of Scope (v1.0)
 

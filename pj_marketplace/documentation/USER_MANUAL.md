@@ -115,6 +115,14 @@ To re-enable:
 
 ## 3. Developer Guide
 
+> **Note (POC vs Real Plugins):**
+>
+> During the POC phase (March 2026), we use **dummy plugins** that only have a `getMetadata()` function — no Qt, no SDK dependency. This simplifies CI and cross-platform builds.
+>
+> **Real plugins** (post-POC) will use the PlotJuggler SDK and may have Qt UI files. The workflow below describes the full process for real plugins.
+>
+> **CI Options:** Extensions can live in separate repos (one per extension) or in a mono-repo with per-component releases (see [Foxglove MCAP](https://github.com/foxglove/mcap) as reference). The registry supports both approaches.
+
 ### 3.1 Creating a New Extension
 
 **Prerequisites:**

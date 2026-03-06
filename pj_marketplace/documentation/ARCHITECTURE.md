@@ -376,7 +376,48 @@ target_include_directories(pj_marketplace PUBLIC
 )
 ```
 
-### 6.2 Plugin Template CMakeLists.txt
+### 6.2 Dummy Plugin CMakeLists.txt (POC)
+
+For the POC phase, dummy plugins are extremely simple — no Qt, no SDK, just pure C++:
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(dummy_extension VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_library(dummy_extension SHARED
+    src/dummy_plugin.cpp
+)
+
+set_target_properties(dummy_extension PROPERTIES
+    PREFIX ""
+    POSITION_INDEPENDENT_CODE ON
+)
+
+install(TARGETS dummy_extension DESTINATION .)
+install(FILES manifest.json DESTINATION .)
+```
+
+**dummy_plugin.cpp:**
+```cpp
+extern "C" {
+    const char* getPluginMetadata() {
+        return R"({
+            "id": "dummy-extension",
+            "name": "Dummy Extension",
+            "version": "1.0.0"
+        })";
+    }
+}
+```
+
+> **Note:** Each dummy extension folder is an independent C++ project with its own CMakeLists.txt. No Qt dependency means trivial cross-platform compilation.
+
+### 6.3 Real Plugin Template CMakeLists.txt (Post-POC)
+
+For real plugins that use the PlotJuggler SDK:
 
 ```cmake
 cmake_minimum_required(VERSION 3.16)
@@ -409,6 +450,20 @@ install(FILES README.md LICENSE DESTINATION .)
 ---
 
 ## 7. CI/CD Architecture
+
+### 7.0 Repository Strategy
+
+Extensions can be organized in two ways:
+
+1. **Separate repos** (one repo per extension): Each extension has its own CI, independent versioning, standard tag → release flow.
+
+2. **Mono-repo** (multiple extensions in one repo): A single repository with multiple extension folders, each with its own CMakeLists.txt. Releases are tagged per-component (e.g., `dummy-csv/v1.0.0`, `dummy-parquet/v2.0.0`).
+
+**Reference:** [Foxglove MCAP](https://github.com/foxglove/mcap) uses the mono-repo approach with per-component releases:
+- https://github.com/foxglove/mcap/releases
+- https://github.com/foxglove/mcap/tags
+
+> **Note:** The registry doesn't care which approach is used — it only needs direct URLs to the ZIP artifacts. Both approaches work.
 
 ### 7.1 Release Workflow
 

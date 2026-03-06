@@ -19,7 +19,8 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ WEEK 1 (5-11 March): Standalone POC                                     │
 │ Deliverable: Qt app with dummy plugins, works on Linux AND Windows     │
-│ Note: Dummy plugins only have getMetadata() function                   │
+│ Note: Dummy plugins only have getMetadata() function (no Qt, no SDK)   │
+│ CI Reference: Foxglove MCAP (mono-repo with per-component releases)    │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
