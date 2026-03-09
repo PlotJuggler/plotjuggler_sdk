@@ -7,27 +7,27 @@
 
 namespace PJ {
 
-RegistryManager::RegistryManager(QObject* parent) : QObject(parent), m_network(new QNetworkAccessManager(this)) {}
+RegistryManager::RegistryManager(QObject* parent) : QObject(parent), network_(new QNetworkAccessManager(this)) {}
 
 void RegistryManager::fetchRegistry(const QUrl& url) {
   // Cancel any in-flight request before starting a new one.
-  if (m_pending_reply && m_pending_reply->isRunning()) {
-    m_pending_reply->abort();
+  if (pending_reply_ && pending_reply_->isRunning()) {
+    pending_reply_->abort();
   }
 
-  m_extensions.clear();
+  extensions_.clear();
 
   emit fetchStarted();
 
   QNetworkRequest request(url);
   request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 
-  m_pending_reply = m_network->get(request);
+  pending_reply_ = network_->get(request);
 
-  connect(m_pending_reply, &QNetworkReply::finished, this, [this]() {
+  connect(pending_reply_, &QNetworkReply::finished, this, [this]() {
     // Guard against a second invocation if the reply is reused.
-    auto* reply = m_pending_reply;
-    m_pending_reply = nullptr;
+    auto* reply = pending_reply_;
+    pending_reply_ = nullptr;
 
     if (reply->error() != QNetworkReply::NoError) {
       emit fetchError(reply->errorString());
@@ -45,11 +45,11 @@ void RegistryManager::fetchRegistry(const QUrl& url) {
 }
 
 QList<Extension> RegistryManager::extensions() const {
-  return m_extensions;
+  return extensions_;
 }
 
 Extension RegistryManager::findById(const QString& id) const {
-  for (const Extension& ext : m_extensions) {
+  for (const Extension& ext : extensions_) {
     if (ext.id == id) {
       return ext;
     }
@@ -153,7 +153,7 @@ bool RegistryManager::parseJson(const QByteArray& data) {
     parsed.append(ext);
   }
 
-  m_extensions = std::move(parsed);
+  extensions_ = std::move(parsed);
   return true;
 }
 
