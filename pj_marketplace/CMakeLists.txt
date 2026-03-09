@@ -1,25 +1,34 @@
 cmake_minimum_required(VERSION 3.22)
-project(marketplace LANGUAGES CXX)
+project(pj_marketplace VERSION 1.0.0 LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
 
-
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Test)
 find_package(GTest REQUIRED)
 
-
-# ---------------------------------------------------------------------------
-# marketplace — main executable
-# ---------------------------------------------------------------------------
-
-add_executable(marketplace
-  main.cpp
+add_executable(pj_marketplace_standalone
+  src/main.cpp
 )
 
-target_link_libraries(marketplace PRIVATE
-  Qt6::Widgets
+target_include_directories(pj_marketplace_standalone PRIVATE src)
+target_link_libraries(pj_marketplace_standalone PRIVATE Qt6::Widgets Qt6::Network)
+target_compile_options(pj_marketplace_standalone PRIVATE -Wall -Wextra)
+
+# ---------------------------------------------------------------------------
+# Unit tests
+# ---------------------------------------------------------------------------
+
+add_executable(registry_manager_test
+  tests/registry_manager_test.cpp
+  src/core/RegistryManager.cpp
+)
+
+target_include_directories(registry_manager_test PRIVATE src)
+target_link_libraries(registry_manager_test PRIVATE
   Qt6::Network
+  Qt6::Test
+  GTest::gtest
 )
-
-target_compile_options(marketplace PRIVATE ${PJ_WARNING_FLAGS})
+target_compile_options(registry_manager_test PRIVATE -Wall -Wextra)
+add_test(NAME registry_manager_test COMMAND registry_manager_test)
