@@ -837,10 +837,14 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
 }
 
 // ---------------------------------------------------------------------------
-// schedule
+// scheduleAll / scheduleActive
 // ---------------------------------------------------------------------------
 
-PJ::Status DerivedEngine::schedule(const std::unordered_set<PJ::NodeId>& active_nodes) {
+PJ::Status DerivedEngine::scheduleAll() {
+  return scheduleActive({});
+}
+
+PJ::Status DerivedEngine::scheduleActive(const std::unordered_set<PJ::NodeId>& active_nodes) {
   auto order = topologicalOrder();
 
   // Compute the set of nodes to consider (active_nodes ∪ their transitive upstream deps).

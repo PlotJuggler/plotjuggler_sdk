@@ -16,6 +16,8 @@ add_library(pj_datastore STATIC
   src/arrow_import.cpp
   src/derived_engine.cpp
   src/builtin_transforms.cpp
+  src/plugin_host_write.cpp
+  src/plugin_host_read.cpp
 )
 target_include_directories(pj_datastore PUBLIC include)
 target_compile_features(pj_datastore PUBLIC cxx_std_20)
@@ -52,6 +54,7 @@ set(PJ_DATASTORE_TESTS
   tests/derived_engine_test.cpp
   tests/array_expansion_test.cpp
   tests/regression_test.cpp
+  tests/plugin_host_read_test.cpp
 )
 
 foreach(test_src ${PJ_DATASTORE_TESTS})
@@ -69,6 +72,15 @@ target_link_libraries(arrow_import_test PRIVATE
   ${PJ_NANOARROW_IPC_TARGET}
   GTest::gtest_main)
 add_test(NAME arrow_import_test COMMAND arrow_import_test)
+
+# Plugin host write test (needs nanoarrow for Arrow IPC testing)
+add_executable(plugin_host_write_test tests/plugin_host_write_test.cpp)
+target_link_libraries(plugin_host_write_test PRIVATE
+  pj_datastore
+  ${PJ_NANOARROW_TARGET}
+  ${PJ_NANOARROW_IPC_TARGET}
+  GTest::gtest_main)
+add_test(NAME plugin_host_write_test COMMAND plugin_host_write_test)
 
 # ---------------------------------------------------------------------------
 # Benchmarks

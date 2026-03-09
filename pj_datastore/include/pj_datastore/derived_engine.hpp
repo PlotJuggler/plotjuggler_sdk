@@ -155,10 +155,15 @@ class DerivedEngine {
   void onSourceCommitted(PJ::Span<const PJ::TopicId> changed_topics);
 
   // ---- Scheduling ----------------------------------------------------------
-  // Process all dirty nodes in topological order (incremental path).
-  // If active_nodes is non-empty, only those nodes (and their transitive
-  // upstream dependencies) are considered.
-  PJ::Status schedule(const std::unordered_set<PJ::NodeId>& active_nodes = {});
+  // Run all dirty nodes in topological order (incremental path).
+  // Use for file/batch playback and tests. Equivalent to passing every
+  // registered node to scheduleActive().
+  PJ::Status scheduleAll();
+
+  // Run only the specified nodes (and their transitive upstream dependencies)
+  // that are dirty. Pass the set of nodes whose output topics are currently
+  // visible in the UI to implement display-lazy scheduling.
+  PJ::Status scheduleActive(const std::unordered_set<PJ::NodeId>& active_nodes);
 
   // Full history recompute: clear output, reset transform, replay all input.
   PJ::Status recompute_batch(PJ::NodeId node_id);
