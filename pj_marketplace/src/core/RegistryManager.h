@@ -48,9 +48,9 @@ class RegistryManager : public QObject {
   // Emits fetchError() and returns false on any parse failure.
   bool parseJson(const QByteArray& data);
 
-  QNetworkAccessManager* m_network;
-  QNetworkReply* m_pending_reply = nullptr;  // Non-owning; owned by m_network
-  QList<Extension> m_extensions;
+  QNetworkAccessManager* network_;
+  QNetworkReply* pending_reply_ = nullptr;  // Non-owning; owned by network_
+  QList<Extension> extensions_;
 };
 
 }  // namespace PJ
