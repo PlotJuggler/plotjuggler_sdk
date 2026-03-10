@@ -1,68 +1,113 @@
-cmake_minimum_required(VERSION 3.22)
-project(marketplace LANGUAGES CXX)
+# ---------------------------------------------------------------------------
+# Standalone build support
+#
+# When this file is the root of the build (standalone), we set up the project
+# and find all dependencies here. When used as a subdirectory of plotjuggler_core,
+# the parent already provides CXX standard, warning flags, GTest, and testing.
+# ---------------------------------------------------------------------------
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTOMOC ON)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  cmake_minimum_required(VERSION 3.22)
+  project(pj_marketplace LANGUAGES CXX)
+
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+  set(PJ_WARNING_FLAGS -Wall -Wextra -Werror -Wshadow -Wnon-virtual-dtor
+    -Wold-style-cast -Wcast-qual -Wconversion -Woverloaded-virtual -Wpedantic
+  )
+
+  find_package(GTest REQUIRED)
+  enable_testing()
+endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Test)
-find_package(GTest REQUIRED)
+find_package(LibArchive REQUIRED)
 
 # ---------------------------------------------------------------------------
-# marketplace_core — RegistryManager and core functionality
+# pj_marketplace — package download, checksum verification and zip extraction
 # ---------------------------------------------------------------------------
 
-add_library(marketplace_core STATIC
+add_library(pj_marketplace STATIC
+  src/core/DownloadManager.cpp
+  src/core/ExtensionManager.cpp
+  src/core/PlatformUtils.cpp
   src/core/RegistryManager.cpp
-  src/core/RegistryManager.h
 )
 
-target_include_directories(marketplace_core PUBLIC
+set_target_properties(pj_marketplace PROPERTIES AUTOMOC ON)
+
+target_include_directories(pj_marketplace PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(marketplace_core PUBLIC
+target_link_libraries(pj_marketplace PUBLIC
   Qt6::Core
   Qt6::Network
+  LibArchive::LibArchive
 )
 
-target_compile_options(marketplace_core PRIVATE ${PJ_WARNING_FLAGS})
+# pj_base provides expected.hpp (header-only for our usage).
+# When built as part of plotjuggler_core the target already exists;
+# in standalone mode we expose the include directory directly.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  target_include_directories(pj_marketplace PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_base/include
+  )
+else()
+  target_link_libraries(pj_marketplace PUBLIC pj_base)
+endif()
+
+target_compile_options(pj_marketplace PRIVATE ${PJ_WARNING_FLAGS})
 
 # ---------------------------------------------------------------------------
-# marketplace — main executable
+# pj_marketplace — main executable
 # ---------------------------------------------------------------------------
 
-add_executable(marketplace
+add_executable(pj_marketplace_app
   main.cpp
 )
 
-target_link_libraries(marketplace PRIVATE
-  marketplace_core
-  Qt6::Widgets
-  Qt6::Network
+set_target_properties(pj_marketplace_app PROPERTIES
+  AUTOMOC ON
+  AUTORCC ON
+  AUTOUIC ON
 )
 
-target_compile_options(marketplace PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(pj_marketplace_app PRIVATE
+  pj_marketplace
+  Qt6::Widgets
+)
+
+target_compile_options(pj_marketplace_app PRIVATE ${PJ_WARNING_FLAGS})
 
 # ---------------------------------------------------------------------------
-# Unit tests
+# Tests
 # ---------------------------------------------------------------------------
+
+# download_manager_test has its own main() to initialise QCoreApplication
+add_executable(download_manager_test tests/download_manager_test.cpp)
+target_link_libraries(download_manager_test PRIVATE pj_marketplace GTest::gtest Qt6::Test LibArchive::LibArchive)
+target_compile_options(download_manager_test PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(download_manager_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+)
+add_test(NAME download_manager_test COMMAND download_manager_test)
 
 add_executable(registry_manager_test
   tests/registry_manager_test.cpp
 )
 
+target_include_directories(registry_manager_test PRIVATE src)
 target_link_libraries(registry_manager_test PRIVATE
-  marketplace_core
+  pj_marketplace
   Qt6::Network
   Qt6::Test
   GTest::gtest
-  GTest::gtest_main
 )
-
-target_compile_options(registry_manager_test PRIVATE ${PJ_WARNING_FLAGS})
-
-enable_testing()
+set_target_properties(registry_manager_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+)
+target_compile_options(registry_manager_test PRIVATE -Wall -Wextra)
 add_test(NAME registry_manager_test COMMAND registry_manager_test)
+
