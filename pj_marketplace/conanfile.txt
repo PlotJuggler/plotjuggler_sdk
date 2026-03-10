@@ -1,26 +1,26 @@
 # Conan file for standalone builds of pj_marketplace.
 #
-# Dependencies:
-#   - Qt6         : provided by the system (install via install_qt6.sh or apt)
-#   - libarchive  : managed by Conan, built statically
-#   - GTest       : provided by the system (libgtest-dev)
+# Dependencies managed by Conan:
+#   - Qt6         : Core, Widgets, Network, Test modules
+#   - libarchive  : archive extraction
+#   - GTest       : unit testing
 #
-# This file exists solely to generate the CMake toolchain file used when
-# building the module in isolation:
-#
+# Usage:
 #   conan install . --output-folder=build --build=missing
-#   cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake ...
+#   cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+#   cmake --build build
 #
 # When building as part of the root plotjuggler_core project this file is
 # ignored — the root conanfile.txt and its toolchain are used instead.
 
 [requires]
-libarchive/3.7.4
 qt/6.8.3
+libarchive/3.7.4
+gtest/1.17.0
 
 [options]
 libarchive/*:shared=False
-qt/*:shared=False
+qt/*:shared=True
 qt/*:qtdeclarative=False
 qt/*:qtmultimedia=False
 qt/*:qtwebengine=False
@@ -33,6 +33,11 @@ qt/*:qtlocation=False
 qt/*:qtsensors=False
 qt/*:qtserialport=False
 qt/*:qtbluetooth=False
+qt/*:qtpositioning=False
+qt/*:qtremoteobjects=False
+qt/*:qtscxml=False
+qt/*:qtspeech=False
+qt/*:qtvirtualkeyboard=False
 
 [generators]
 CMakeDeps
