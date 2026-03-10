@@ -30,6 +30,9 @@ find_package(LibArchive REQUIRED)
 
 add_library(pj_marketplace STATIC
   src/core/DownloadManager.cpp
+  src/core/ExtensionManager.cpp
+  src/core/PlatformUtils.cpp
+  src/core/RegistryManager.cpp
 )
 
 set_target_properties(pj_marketplace PROPERTIES AUTOMOC ON)
@@ -90,4 +93,21 @@ set_target_properties(download_manager_test PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
 )
 add_test(NAME download_manager_test COMMAND download_manager_test)
+
+add_executable(registry_manager_test
+  tests/registry_manager_test.cpp
+)
+
+target_include_directories(registry_manager_test PRIVATE src)
+target_link_libraries(registry_manager_test PRIVATE
+  pj_marketplace
+  Qt6::Network
+  Qt6::Test
+  GTest::gtest
+)
+set_target_properties(registry_manager_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+)
+target_compile_options(registry_manager_test PRIVATE -Wall -Wextra)
+add_test(NAME registry_manager_test COMMAND registry_manager_test)
 
