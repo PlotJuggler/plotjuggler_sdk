@@ -1,735 +1,448 @@
-#include "pj_datastore/plugin_host_read.hpp"
+#include "pj_datastore/plugin_data_host.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cstddef>
+#include <climits>
 #include <cstdint>
 #include <memory>
-#include <string>
 #include <string_view>
 #include <vector>
 
+#include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/type_tree.hpp"
-#include "pj_base/types.hpp"
 #include "pj_datastore/engine.hpp"
-#include "pj_datastore/plugin_host_types.hpp"
-#include "pj_datastore/plugin_host_write.hpp"
 #include "pj_datastore/writer.hpp"
 
 namespace PJ {
 namespace {
 
-// ===========================================================================
-// Helper: create a populated engine via PluginHostWrite
-// ===========================================================================
+using namespace PJ::sdk;
 
-struct TestFixture {
+struct Fixture {
   DataEngine engine;
-  PluginHostWrite writer{engine};
-  PluginHostRead reader{engine};
+  DatastoreToolboxHost toolbox_impl{engine};
+  ToolboxHostView toolbox{toolbox_impl.raw()};
 };
 
-// ===========================================================================
-// 1. catalogView — empty catalog
-// ===========================================================================
+TEST(PluginDataHostReadTest, CatalogSnapshotIsDeterministicAndIncludesSchemaBackedTopics) {
+  Fixture f;
+  DataWriter writer(f.engine);
 
-TEST(PluginHostReadTest, CatalogViewEmpty) {
-  TestFixture f;
-  auto view = f.reader.catalogView();
+  auto schema = makeStruct(
+      "pose", {makePrimitive("x", PrimitiveType::kFloat32), makePrimitive("y", PrimitiveType::kInt16)});
+  const auto schema_id = *writer.registerSchema("pose_schema", schema);
+  const auto source_a = *f.toolbox.createDataSource("robot_b");
+  const auto source_b = *f.toolbox.createDataSource("robot_a");
 
-  EXPECT_TRUE(view.data_sources.empty());
-  EXPECT_TRUE(view.topics.empty());
-  EXPECT_TRUE(view.fields.empty());
+  TopicDescriptor desc;
+  desc.name = "pose";
+  desc.schema_id = schema_id;
+  ASSERT_TRUE(writer.registerTopic(source_a.id, desc).has_value());
+
+  auto topic_b = *f.toolbox.ensureTopic(source_b, "imu");
+  ASSERT_TRUE(f.toolbox.ensureField(topic_b, "ax", PrimitiveType::kFloat32).has_value());
+
+  auto snapshot_or = f.toolbox.catalogSnapshot();
+  ASSERT_TRUE(snapshot_or.has_value());
+  auto snapshot = std::move(snapshot_or.value());
+  ASSERT_EQ(snapshot.dataSources().size(), 2U);
+  EXPECT_EQ(snapshot.dataSources()[0].handle.id, source_a.id);
+  EXPECT_EQ(snapshot.dataSources()[1].handle.id, source_b.id);
+
+  std::vector<std::string_view> field_names;
+  for (const auto& field : snapshot.fields()) {
+    field_names.push_back(toStringView(field.name));
+  }
+  EXPECT_NE(std::find(field_names.begin(), field_names.end(), "x"), field_names.end());
+  EXPECT_NE(std::find(field_names.begin(), field_names.end(), "y"), field_names.end());
+  EXPECT_NE(std::find(field_names.begin(), field_names.end(), "ax"), field_names.end());
 }
 
-// ===========================================================================
-// 2. catalogView — single source, single topic, multiple fields
-// ===========================================================================
+TEST(PluginDataHostReadTest, CatalogSnapshotMustBeReacquiredAfterStructuralMutation) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  ASSERT_TRUE(f.toolbox.ensureField(topic, "a", PrimitiveType::kFloat64).has_value());
 
-TEST(PluginHostReadTest, CatalogViewSingleTopicMultipleFields) {
-  TestFixture f;
+  auto snapshot_before_or = f.toolbox.catalogSnapshot();
+  ASSERT_TRUE(snapshot_before_or.has_value());
+  auto snapshot_before = std::move(snapshot_before_or.value());
+  EXPECT_EQ(snapshot_before.fields().size(), 1U);
 
-  auto src = *f.writer.createDataSource("sensor");
-  auto topic = *f.writer.ensureTopic(src, "imu");
-  ASSERT_TRUE(f.writer.ensureField(topic, "x", FieldType::kFloat32).has_value());
-  ASSERT_TRUE(f.writer.ensureField(topic, "y", FieldType::kFloat32).has_value());
-  ASSERT_TRUE(f.writer.ensureField(topic, "z", FieldType::kFloat32).has_value());
+  ASSERT_TRUE(f.toolbox.ensureField(topic, "b", PrimitiveType::kFloat64).has_value());
 
-  auto view = f.reader.catalogView();
-
-  ASSERT_EQ(view.data_sources.size(), 1U);
-  EXPECT_EQ(view.data_sources[0].name, "sensor");
-  EXPECT_EQ(view.data_sources[0].topic_count, 1U);
-
-  ASSERT_EQ(view.topics.size(), 1U);
-  EXPECT_EQ(view.topics[0].name, "imu");
-  EXPECT_EQ(view.topics[0].field_count, 3U);
-  EXPECT_EQ(view.topics[0].source, src);
-
-  ASSERT_EQ(view.fields.size(), 3U);
-  EXPECT_EQ(view.fields[0].name, "x");
-  EXPECT_EQ(view.fields[0].type, FieldType::kFloat32);
-  EXPECT_EQ(view.fields[1].name, "y");
-  EXPECT_EQ(view.fields[2].name, "z");
-
-  // Verify index ranges: topic's first_field and field_count
-  uint32_t first = view.topics[0].first_field;
-  uint32_t count = view.topics[0].field_count;
-  EXPECT_EQ(first, 0U);
-  EXPECT_EQ(count, 3U);
-
-  // Verify data_source's first_topic and topic_count
-  EXPECT_EQ(view.data_sources[0].first_topic, 0U);
-  EXPECT_EQ(view.data_sources[0].topic_count, 1U);
+  auto snapshot_after_or = f.toolbox.catalogSnapshot();
+  ASSERT_TRUE(snapshot_after_or.has_value());
+  auto snapshot_after = std::move(snapshot_after_or.value());
+  EXPECT_EQ(snapshot_after.fields().size(), 2U);
 }
 
-// ===========================================================================
-// 3. catalogView — multiple sources, multiple topics
-// ===========================================================================
+TEST(PluginDataHostReadTest, ReadSeriesPreservesExactPrimitiveTypesAndNulls) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto i8 = *f.toolbox.ensureField(topic, "i8", PrimitiveType::kInt8);
+  const auto u32 = *f.toolbox.ensureField(topic, "u32", PrimitiveType::kUint32);
+  const auto u64 = *f.toolbox.ensureField(topic, "u64", PrimitiveType::kUint64);
+  const auto flag = *f.toolbox.ensureField(topic, "flag", PrimitiveType::kBool);
+  const auto label = *f.toolbox.ensureField(topic, "label", PrimitiveType::kString);
 
-TEST(PluginHostReadTest, CatalogViewMultiSourceMultiTopic) {
-  TestFixture f;
+  const std::vector<NamedFieldValue> row1 = {
+      {.name = "i8", .value = int8_t{-5}},
+      {.name = "u32", .value = uint32_t{123456}},
+      {.name = "u64", .value = uint64_t{(uint64_t{1} << 60) + 7}},
+      {.name = "flag", .value = true},
+      {.name = "label", .value = std::string_view("alpha")},
+  };
+  const std::vector<NamedFieldValue> row2 = {
+      {.name = "i8", .is_null = true, .value = int8_t{0}},
+      {.name = "u32", .value = uint32_t{42}},
+      {.name = "u64", .value = uint64_t{9}},
+      {.name = "flag", .value = false},
+      {.name = "label", .value = std::string_view("beta")},
+  };
+  ASSERT_TRUE(f.toolbox.appendRecord(topic, 1, row1).has_value());
+  ASSERT_TRUE(f.toolbox.appendRecord(topic, 2, row2).has_value());
+  f.toolbox_impl.flushPending();
 
-  auto s1 = *f.writer.createDataSource("robot1");
-  auto s2 = *f.writer.createDataSource("robot2");
+  auto i8_series_or = f.toolbox.readSeries(i8);
+  ASSERT_TRUE(i8_series_or.has_value());
+  auto i8_series = std::move(i8_series_or.value());
+  ASSERT_EQ(i8_series.type(), PrimitiveType::kInt8);
+  ASSERT_EQ(i8_series.timestamps().size(), 2U);
+  EXPECT_EQ(i8_series.raw().values.as_int8[0], -5);
+  EXPECT_EQ(i8_series.raw().values.as_int8[1], 0);
+  EXPECT_EQ(i8_series.raw().validity_bits[0] & 0b10U, 0U);
 
-  auto t1a = *f.writer.ensureTopic(s1, "gps");
-  auto t1b = *f.writer.ensureTopic(s1, "imu");
-  auto t2a = *f.writer.ensureTopic(s2, "lidar");
+  auto u32_series_or = f.toolbox.readSeries(u32);
+  ASSERT_TRUE(u32_series_or.has_value());
+  auto u32_series = std::move(u32_series_or.value());
+  ASSERT_EQ(u32_series.type(), PrimitiveType::kUint32);
+  EXPECT_EQ(u32_series.raw().values.as_uint32[0], 123456U);
+  EXPECT_EQ(u32_series.raw().values.as_uint32[1], 42U);
 
-  ASSERT_TRUE(f.writer.ensureField(t1a, "lat", FieldType::kFloat64).has_value());
-  ASSERT_TRUE(f.writer.ensureField(t1a, "lon", FieldType::kFloat64).has_value());
-  ASSERT_TRUE(f.writer.ensureField(t1b, "ax", FieldType::kFloat32).has_value());
-  ASSERT_TRUE(f.writer.ensureField(t2a, "range", FieldType::kFloat32).has_value());
-  ASSERT_TRUE(f.writer.ensureField(t2a, "angle", FieldType::kFloat32).has_value());
+  auto u64_series_or = f.toolbox.readSeries(u64);
+  ASSERT_TRUE(u64_series_or.has_value());
+  auto u64_series = std::move(u64_series_or.value());
+  ASSERT_EQ(u64_series.type(), PrimitiveType::kUint64);
+  EXPECT_EQ(u64_series.raw().values.as_uint64[0], (uint64_t{1} << 60) + 7);
+  EXPECT_EQ(u64_series.raw().values.as_uint64[1], 9U);
 
-  auto view = f.reader.catalogView();
+  auto flag_series_or = f.toolbox.readSeries(flag);
+  ASSERT_TRUE(flag_series_or.has_value());
+  auto flag_series = std::move(flag_series_or.value());
+  ASSERT_EQ(flag_series.type(), PrimitiveType::kBool);
+  EXPECT_EQ(flag_series.raw().values.as_bool[0], 1U);
+  EXPECT_EQ(flag_series.raw().values.as_bool[1], 0U);
 
-  EXPECT_EQ(view.data_sources.size(), 2U);
+  auto label_series_or = f.toolbox.readSeries(label);
+  ASSERT_TRUE(label_series_or.has_value());
+  auto label_series = std::move(label_series_or.value());
+  ASSERT_EQ(label_series.type(), PrimitiveType::kString);
+  ASSERT_EQ(label_series.raw().values.as_string.offset_count, 3U);
+  const auto bytes = std::string_view(
+      label_series.raw().values.as_string.bytes, label_series.raw().values.as_string.byte_count);
+  EXPECT_EQ(bytes, "alphabeta");
+}
 
-  // Total topics across both sources
-  EXPECT_EQ(view.topics.size(), 3U);
+TEST(PluginDataHostReadTest, ReadSeriesRejectsUnknownField) {
+  Fixture f;
+  const FieldHandle bad_field{.topic = TopicHandle{.id = 999}, .id = 1};
+  const auto result = f.toolbox.readSeries(bad_field);
+  EXPECT_FALSE(result.has_value());
+}
 
-  // Total fields
-  EXPECT_EQ(view.fields.size(), 5U);
+// ---------------------------------------------------------------------------
+// Catalog edge cases
+// ---------------------------------------------------------------------------
 
-  // source 1 has 2 topics
-  EXPECT_EQ(view.data_sources[0].topic_count, 2U);
+TEST(PluginDataHostReadTest, EmptyCatalogSnapshotReturnsZeroCounts) {
+  Fixture f;
+  auto snapshot_or = f.toolbox.catalogSnapshot();
+  ASSERT_TRUE(snapshot_or.has_value());
+  auto snapshot = std::move(snapshot_or.value());
+  EXPECT_EQ(snapshot.dataSources().size(), 0U);
+  EXPECT_EQ(snapshot.topics().size(), 0U);
+  EXPECT_EQ(snapshot.fields().size(), 0U);
+}
 
-  // source 2 has 1 topic
-  EXPECT_EQ(view.data_sources[1].topic_count, 1U);
+TEST(PluginDataHostReadTest, FieldHandleTopicBindingMatchesContainingTopic) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  ASSERT_TRUE(f.toolbox.ensureField(topic, "a", PrimitiveType::kFloat32).has_value());
+  ASSERT_TRUE(f.toolbox.ensureField(topic, "b", PrimitiveType::kInt32).has_value());
 
-  // Verify index ranges compose correctly
-  for (std::size_t si = 0; si < view.data_sources.size(); ++si) {
-    const auto& ds = view.data_sources[si];
-    for (uint32_t ti = 0; ti < ds.topic_count; ++ti) {
-      const auto& t = view.topics[ds.first_topic + ti];
-      // Every field in this topic should have its handle.topic match
-      for (uint32_t fi = 0; fi < t.field_count; ++fi) {
-        const auto& field = view.fields[t.first_field + fi];
-        EXPECT_EQ(field.handle.topic, t.handle);
-      }
+  auto snapshot_or = f.toolbox.catalogSnapshot();
+  ASSERT_TRUE(snapshot_or.has_value());
+  auto snapshot = std::move(snapshot_or.value());
+
+  for (const auto& topic_info : snapshot.topics()) {
+    for (uint32_t i = topic_info.first_field; i < topic_info.first_field + topic_info.field_count; ++i) {
+      ASSERT_LT(i, snapshot.fields().size());
+      EXPECT_EQ(snapshot.fields()[i].handle.topic.id, topic_info.handle.id)
+          << "field index " << i << " should belong to topic " << topic_info.handle.id;
     }
   }
 }
 
-// ===========================================================================
-// 4. catalogView — field handles carry correct topic reference
-// ===========================================================================
+TEST(PluginDataHostReadTest, CatalogSnapshotTopicOrderIsStableWithinSource) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  ASSERT_TRUE(f.toolbox.ensureTopic(source, "b").has_value());
+  ASSERT_TRUE(f.toolbox.ensureTopic(source, "a").has_value());
 
-TEST(PluginHostReadTest, CatalogViewFieldHandleTopic) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kFloat64);
-
-  auto view = f.reader.catalogView();
-  ASSERT_EQ(view.fields.size(), 1U);
-  EXPECT_EQ(view.fields[0].handle.topic, topic);
-  EXPECT_EQ(view.fields[0].handle.id, fld.id);
+  auto snapshot_or = f.toolbox.catalogSnapshot();
+  ASSERT_TRUE(snapshot_or.has_value());
+  auto snapshot = std::move(snapshot_or.value());
+  ASSERT_EQ(snapshot.topics().size(), 2U);
+  EXPECT_LT(snapshot.topics()[0].handle.id, snapshot.topics()[1].handle.id);
 }
 
-// ===========================================================================
-// 5. catalogView — re-acquire after structural mutation
-// ===========================================================================
-
-TEST(PluginHostReadTest, CatalogViewReacquireAfterMutation) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  ASSERT_TRUE(f.writer.ensureField(topic, "a", FieldType::kFloat64).has_value());
-
-  auto view1 = f.reader.catalogView();
-  EXPECT_EQ(view1.fields.size(), 1U);
-
-  // Add a new field (structural mutation)
-  ASSERT_TRUE(f.writer.ensureField(topic, "b", FieldType::kFloat64).has_value());
-
-  // Old view is potentially stale; re-acquire
-  auto view2 = f.reader.catalogView();
-  EXPECT_EQ(view2.fields.size(), 2U);
+TEST(PluginDataHostReadTest, ReadSeriesRejectsUnknownTopic) {
+  Fixture f;
+  const FieldHandle bad_field{.topic = TopicHandle{.id = 999}, .id = 0};
+  const auto result = f.toolbox.readSeries(bad_field);
+  EXPECT_FALSE(result.has_value());
 }
 
-// ===========================================================================
-// 6. readSeries — float64 series
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Type-specific reads
+// ---------------------------------------------------------------------------
 
-TEST(PluginHostReadTest, ReadSeriesFloat64) {
-  TestFixture f;
+TEST(PluginDataHostReadTest, ReadSeriesFloat32RoundTrip) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "val", PrimitiveType::kFloat32);
 
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kFloat64);
-
-  constexpr std::size_t N = 100;
-  for (std::size_t i = 0; i < N; ++i) {
-    std::vector<NamedFieldValue> fields = {
-        {.name = "val", .type = FieldType::kFloat64, .value = static_cast<double>(i) * 0.5},
-    };
-    ASSERT_TRUE(f.writer.appendRecord(topic, static_cast<Timestamp>(i) * 1000, fields).has_value());
-  }
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value()) << series_or.error();
-
-  const auto& series = *series_or;
-  EXPECT_EQ(series.type, FieldType::kFloat64);
-  EXPECT_EQ(series.source, src);
-  EXPECT_EQ(series.topic, topic);
-  EXPECT_EQ(series.field, fld);
-  EXPECT_EQ(series.timestamps.size(), N);
-
-  const auto& vals = std::get<std::vector<double>>(series.values);
-  ASSERT_EQ(vals.size(), N);
-
-  for (std::size_t i = 0; i < N; ++i) {
-    EXPECT_EQ(series.timestamps[i], static_cast<Timestamp>(i) * 1000);
-    EXPECT_DOUBLE_EQ(vals[i], static_cast<double>(i) * 0.5);
-  }
-
-  // All valid — check validity bits
-  for (std::size_t i = 0; i < N; ++i) {
-    const bool valid = (series.validity_bits[i / 8] & (1U << (i % 8))) != 0;
-    EXPECT_TRUE(valid) << "Row " << i << " should be valid";
-  }
-}
-
-// ===========================================================================
-// 7. readSeries — float32 series
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesFloat32) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kFloat32);
-
-  std::vector<NamedFieldValue> fields = {
-      {.name = "val", .type = FieldType::kFloat32, .value = 3.14F},
-  };
-  ASSERT_TRUE(f.writer.appendRecord(topic, 1000, fields).has_value());
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-  EXPECT_EQ(series_or->type, FieldType::kFloat32);
-  const auto& vals = std::get<std::vector<float>>(series_or->values);
-  ASSERT_EQ(vals.size(), 1U);
-  EXPECT_FLOAT_EQ(vals[0], 3.14F);
-}
-
-// ===========================================================================
-// 8. readSeries — int32 series
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesInt32) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kInt32);
-
-  std::vector<NamedFieldValue> fields = {
-      {.name = "val", .type = FieldType::kInt32, .value = int32_t{-42}},
-  };
-  ASSERT_TRUE(f.writer.appendRecord(topic, 1000, fields).has_value());
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-  const auto& vals = std::get<std::vector<int32_t>>(series_or->values);
-  ASSERT_EQ(vals.size(), 1U);
-  EXPECT_EQ(vals[0], -42);
-}
-
-// ===========================================================================
-// 9. readSeries — int64 series
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesInt64) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kInt64);
-
-  std::vector<NamedFieldValue> fields = {
-      {.name = "val", .type = FieldType::kInt64, .value = int64_t{9999999999LL}},
-  };
-  ASSERT_TRUE(f.writer.appendRecord(topic, 1000, fields).has_value());
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-  const auto& vals = std::get<std::vector<int64_t>>(series_or->values);
-  ASSERT_EQ(vals.size(), 1U);
-  EXPECT_EQ(vals[0], 9999999999LL);
-}
-
-// ===========================================================================
-// 10. readSeries — uint64 series
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesUint64) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kUint64);
-
-  std::vector<NamedFieldValue> fields = {
-      {.name = "val", .type = FieldType::kUint64, .value = uint64_t{0xDEADBEEF}},
-  };
-  ASSERT_TRUE(f.writer.appendRecord(topic, 1000, fields).has_value());
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-  const auto& vals = std::get<std::vector<uint64_t>>(series_or->values);
-  ASSERT_EQ(vals.size(), 1U);
-  EXPECT_EQ(vals[0], uint64_t{0xDEADBEEF});
-}
-
-// ===========================================================================
-// 11. readSeries — bool series
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesBool) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "flag", FieldType::kBool);
-
-  for (int i = 0; i < 5; ++i) {
-    std::vector<NamedFieldValue> fields = {
-        {.name = "flag", .type = FieldType::kBool, .value = (i % 2 == 0)},
-    };
-    ASSERT_TRUE(f.writer.appendRecord(topic, static_cast<Timestamp>(i) * 100, fields).has_value());
-  }
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-  EXPECT_EQ(series_or->type, FieldType::kBool);
-  const auto& bsv = std::get<BoolSeriesValues>(series_or->values);
-  ASSERT_EQ(bsv.values.size(), 5U);
-  EXPECT_EQ(bsv.values[0], 1);  // true
-  EXPECT_EQ(bsv.values[1], 0);  // false
-  EXPECT_EQ(bsv.values[2], 1);  // true
-  EXPECT_EQ(bsv.values[3], 0);  // false
-  EXPECT_EQ(bsv.values[4], 1);  // true
-}
-
-// ===========================================================================
-// 12. readSeries — string series
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesString) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "label", FieldType::kString);
-
-  const char* labels[] = {"alpha", "bravo", "charlie"};
+  const float values[] = {1.5F, -2.25F, 0.0F};
   for (int i = 0; i < 3; ++i) {
-    std::vector<NamedFieldValue> fields = {
-        {.name = "label", .type = FieldType::kString, .value = std::string_view(labels[i])},
-    };
-    ASSERT_TRUE(f.writer.appendRecord(topic, static_cast<Timestamp>(i) * 100, fields).has_value());
+    const std::vector<NamedFieldValue> fields = {{.name = "val", .value = values[i]}};
+    ASSERT_TRUE(f.toolbox.appendRecord(topic, i, fields).has_value());
   }
-  f.writer.flush();
+  f.toolbox_impl.flushPending();
 
-  auto series_or = f.reader.readSeries(fld);
+  auto series_or = f.toolbox.readSeries(field);
   ASSERT_TRUE(series_or.has_value());
-  EXPECT_EQ(series_or->type, FieldType::kString);
-
-  const auto& ssv = std::get<StringSeriesValues>(series_or->values);
-  ASSERT_EQ(ssv.offsets.size(), 4U);  // N+1 offsets for N strings
-
-  // Reconstruct and verify each string
-  for (std::size_t i = 0; i < 3; ++i) {
-    uint32_t start = ssv.offsets[i];
-    uint32_t end = ssv.offsets[i + 1];
-    std::string_view sv(ssv.bytes.data() + start, end - start);
-    EXPECT_EQ(sv, labels[i]) << "String mismatch at index " << i;
-  }
+  auto series = std::move(series_or.value());
+  ASSERT_EQ(series.type(), PrimitiveType::kFloat32);
+  ASSERT_EQ(series.timestamps().size(), 3U);
+  EXPECT_FLOAT_EQ(series.raw().values.as_float32[0], 1.5F);
+  EXPECT_FLOAT_EQ(series.raw().values.as_float32[1], -2.25F);
+  EXPECT_FLOAT_EQ(series.raw().values.as_float32[2], 0.0F);
 }
 
-// ===========================================================================
-// 13. readSeries — with nulls and validity bits
-// ===========================================================================
+TEST(PluginDataHostReadTest, ReadSeriesFloat64RoundTrip) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "val", PrimitiveType::kFloat64);
 
-TEST(PluginHostReadTest, ReadSeriesWithNulls) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kFloat64);
-
-  // Row 0: 1.0, Row 1: null, Row 2: 3.0, Row 3: null
-  for (int i = 0; i < 4; ++i) {
-    const bool is_null = (i % 2 == 1);
-    std::vector<NamedFieldValue> fields = {
-        {.name = "val", .type = FieldType::kFloat64, .is_null = is_null, .value = static_cast<double>(i)},
-    };
-    ASSERT_TRUE(f.writer.appendRecord(topic, static_cast<Timestamp>(i) * 100, fields).has_value());
+  const double values[] = {1e-15, -3.14159265358979, 1e+300};
+  for (int i = 0; i < 3; ++i) {
+    const std::vector<NamedFieldValue> fields = {{.name = "val", .value = values[i]}};
+    ASSERT_TRUE(f.toolbox.appendRecord(topic, i, fields).has_value());
   }
-  f.writer.flush();
+  f.toolbox_impl.flushPending();
 
-  auto series_or = f.reader.readSeries(fld);
+  auto series_or = f.toolbox.readSeries(field);
   ASSERT_TRUE(series_or.has_value());
-
-  const auto& series = *series_or;
-  const auto& vals = std::get<std::vector<double>>(series.values);
-  ASSERT_EQ(vals.size(), 4U);
-
-  // Check validity bits
-  auto isValid = [&](std::size_t row) -> bool {
-    return (series.validity_bits[row / 8] & (1U << (row % 8))) != 0;
-  };
-
-  EXPECT_TRUE(isValid(0));
-  EXPECT_DOUBLE_EQ(vals[0], 0.0);
-
-  EXPECT_FALSE(isValid(1));  // null
-
-  EXPECT_TRUE(isValid(2));
-  EXPECT_DOUBLE_EQ(vals[2], 2.0);
-
-  EXPECT_FALSE(isValid(3));  // null
+  auto series = std::move(series_or.value());
+  ASSERT_EQ(series.type(), PrimitiveType::kFloat64);
+  ASSERT_EQ(series.timestamps().size(), 3U);
+  EXPECT_DOUBLE_EQ(series.raw().values.as_float64[0], 1e-15);
+  EXPECT_DOUBLE_EQ(series.raw().values.as_float64[1], -3.14159265358979);
+  EXPECT_DOUBLE_EQ(series.raw().values.as_float64[2], 1e+300);
 }
 
-// ===========================================================================
-// 14. readSeries — across multiple chunks
-// ===========================================================================
+TEST(PluginDataHostReadTest, ReadSeriesInt32RoundTrip) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "val", PrimitiveType::kInt32);
 
-TEST(PluginHostReadTest, ReadSeriesMultipleChunks) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kFloat64);
-
-  // Write enough rows to span multiple chunks (default 1024)
-  constexpr std::size_t N = 3000;
-  for (std::size_t i = 0; i < N; ++i) {
-    std::vector<NamedFieldValue> fields = {
-        {.name = "val", .type = FieldType::kFloat64, .value = static_cast<double>(i)},
-    };
-    ASSERT_TRUE(f.writer.appendRecord(topic, static_cast<Timestamp>(i), fields).has_value());
+  const int32_t values[] = {-1, 0, INT32_MAX};
+  for (int i = 0; i < 3; ++i) {
+    const std::vector<NamedFieldValue> fields = {{.name = "val", .value = values[i]}};
+    ASSERT_TRUE(f.toolbox.appendRecord(topic, i, fields).has_value());
   }
-  f.writer.flush();
+  f.toolbox_impl.flushPending();
 
-  // Verify multiple chunks
-  const auto* storage = f.engine.getTopicStorage(topic.id);
-  ASSERT_NE(storage, nullptr);
-  EXPECT_GE(storage->sealedChunks().size(), 2U);
-
-  auto series_or = f.reader.readSeries(fld);
+  auto series_or = f.toolbox.readSeries(field);
   ASSERT_TRUE(series_or.has_value());
-
-  const auto& vals = std::get<std::vector<double>>(series_or->values);
-  ASSERT_EQ(vals.size(), N);
-  ASSERT_EQ(series_or->timestamps.size(), N);
-
-  // Verify first, middle, and last
-  EXPECT_DOUBLE_EQ(vals[0], 0.0);
-  EXPECT_DOUBLE_EQ(vals[N / 2], static_cast<double>(N / 2));
-  EXPECT_DOUBLE_EQ(vals[N - 1], static_cast<double>(N - 1));
-
-  EXPECT_EQ(series_or->timestamps[0], 0);
-  EXPECT_EQ(series_or->timestamps[N - 1], static_cast<Timestamp>(N - 1));
+  auto series = std::move(series_or.value());
+  ASSERT_EQ(series.type(), PrimitiveType::kInt32);
+  ASSERT_EQ(series.timestamps().size(), 3U);
+  EXPECT_EQ(series.raw().values.as_int32[0], -1);
+  EXPECT_EQ(series.raw().values.as_int32[1], 0);
+  EXPECT_EQ(series.raw().values.as_int32[2], INT32_MAX);
 }
 
-// ===========================================================================
-// 15. readSeries — unknown field error
-// ===========================================================================
+TEST(PluginDataHostReadTest, ReadSeriesInt64RoundTrip) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "val", PrimitiveType::kInt64);
 
-TEST(PluginHostReadTest, ReadSeriesUnknownField) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-
-  // Field 999 doesn't exist
-  FieldHandle bad_field{.topic = topic, .id = 999};
-  auto result = f.reader.readSeries(bad_field);
-  EXPECT_FALSE(result.has_value());
-}
-
-// ===========================================================================
-// 16. readSeries — unknown topic error
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesUnknownTopic) {
-  TestFixture f;
-
-  FieldHandle bad_field{.topic = TopicHandle{.id = 999}, .id = 0};
-  auto result = f.reader.readSeries(bad_field);
-  EXPECT_FALSE(result.has_value());
-}
-
-// ===========================================================================
-// 17. readSeries — empty field (no data written yet)
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesEmptyField) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "val", FieldType::kFloat64);
-
-  // No data written — field exists but has no rows
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-
-  EXPECT_TRUE(series_or->timestamps.empty());
-  const auto& vals = std::get<std::vector<double>>(series_or->values);
-  EXPECT_TRUE(vals.empty());
-}
-
-// ===========================================================================
-// 18. readSeries — string with nulls
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesStringWithNulls) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "label", FieldType::kString);
-
-  // "hello", null, "world"
-  std::vector<NamedFieldValue> f1 = {
-      {.name = "label", .type = FieldType::kString, .value = std::string_view("hello")},
-  };
-  std::vector<NamedFieldValue> f2 = {
-      {.name = "label", .type = FieldType::kString, .is_null = true, .value = std::string_view("")},
-  };
-  std::vector<NamedFieldValue> f3 = {
-      {.name = "label", .type = FieldType::kString, .value = std::string_view("world")},
-  };
-  ASSERT_TRUE(f.writer.appendRecord(topic, 100, f1).has_value());
-  ASSERT_TRUE(f.writer.appendRecord(topic, 200, f2).has_value());
-  ASSERT_TRUE(f.writer.appendRecord(topic, 300, f3).has_value());
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-
-  const auto& ssv = std::get<StringSeriesValues>(series_or->values);
-  ASSERT_EQ(ssv.offsets.size(), 4U);
-
-  auto isValid = [&](std::size_t row) -> bool {
-    return (series_or->validity_bits[row / 8] & (1U << (row % 8))) != 0;
-  };
-
-  // Row 0: "hello" (valid)
-  EXPECT_TRUE(isValid(0));
-  std::string_view s0(ssv.bytes.data() + ssv.offsets[0], ssv.offsets[1] - ssv.offsets[0]);
-  EXPECT_EQ(s0, "hello");
-
-  // Row 1: null
-  EXPECT_FALSE(isValid(1));
-
-  // Row 2: "world" (valid)
-  EXPECT_TRUE(isValid(2));
-  std::string_view s2(ssv.bytes.data() + ssv.offsets[2], ssv.offsets[3] - ssv.offsets[2]);
-  EXPECT_EQ(s2, "world");
-}
-
-// ===========================================================================
-// 19. catalogView — no fields on empty topic
-// ===========================================================================
-
-TEST(PluginHostReadTest, CatalogViewEmptyTopic) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  ASSERT_TRUE(f.writer.ensureTopic(src, "empty_topic").has_value());
-
-  auto view = f.reader.catalogView();
-  ASSERT_EQ(view.topics.size(), 1U);
-  EXPECT_EQ(view.topics[0].field_count, 0U);
-  EXPECT_TRUE(view.fields.empty());
-}
-
-// ===========================================================================
-// 20. readSeries — bool with nulls
-// ===========================================================================
-
-TEST(PluginHostReadTest, ReadSeriesBoolWithNulls) {
-  TestFixture f;
-
-  auto src = *f.writer.createDataSource("src");
-  auto topic = *f.writer.ensureTopic(src, "data");
-  auto fld = *f.writer.ensureField(topic, "flag", FieldType::kBool);
-
-  // true, null, false
-  std::vector<NamedFieldValue> r1 = {{.name = "flag", .type = FieldType::kBool, .value = true}};
-  std::vector<NamedFieldValue> r2 = {{.name = "flag", .type = FieldType::kBool, .is_null = true, .value = false}};
-  std::vector<NamedFieldValue> r3 = {{.name = "flag", .type = FieldType::kBool, .value = false}};
-
-  ASSERT_TRUE(f.writer.appendRecord(topic, 100, r1).has_value());
-  ASSERT_TRUE(f.writer.appendRecord(topic, 200, r2).has_value());
-  ASSERT_TRUE(f.writer.appendRecord(topic, 300, r3).has_value());
-  f.writer.flush();
-
-  auto series_or = f.reader.readSeries(fld);
-  ASSERT_TRUE(series_or.has_value());
-
-  const auto& bsv = std::get<BoolSeriesValues>(series_or->values);
-  ASSERT_EQ(bsv.values.size(), 3U);
-
-  auto isValid = [&](std::size_t row) -> bool {
-    return (series_or->validity_bits[row / 8] & (1U << (row % 8))) != 0;
-  };
-
-  EXPECT_TRUE(isValid(0));
-  EXPECT_EQ(bsv.values[0], 1);
-
-  EXPECT_FALSE(isValid(1));  // null
-
-  EXPECT_TRUE(isValid(2));
-  EXPECT_EQ(bsv.values[2], 0);
-}
-
-// ===========================================================================
-// BUG REPRO #3: Schema-backed topics should be visible via catalogView()
-//
-// catalogView() and readSeries() only look at TopicStorage::columnDescriptors().
-// For schema-backed topics (schema_id != 0), the writer populates columns from
-// the TypeRegistry, but never persists them to TopicStorage::columnDescriptors()
-// unless ensureColumn()/expandArray() is called.  This means schema-backed
-// topics appear with zero fields in the catalog and readSeries() fails.
-// ===========================================================================
-
-TEST(PluginHostReadTest, SchemaBackedTopicVisibleInCatalog) {
-  DataEngine engine;
-
-  // Register a schema: struct { float64 x, float64 y }
-  auto type_tree = makeStruct("Pose2D", {
-      makePrimitive("x", PrimitiveType::kFloat64),
-      makePrimitive("y", PrimitiveType::kFloat64),
-  });
-
-  DataWriter writer = engine.createWriter();
-  auto schema_id_or = writer.registerSchema("Pose2D", type_tree);
-  ASSERT_TRUE(schema_id_or.has_value()) << schema_id_or.error();
-
-  // Create dataset + topic with schema_id
-  auto ds_id_or = engine.createDataset(DatasetDescriptor{.source_name = "src", .time_domain_id = 0});
-  ASSERT_TRUE(ds_id_or.has_value());
-
-  TopicDescriptor desc;
-  desc.name = "pose";
-  desc.schema_id = *schema_id_or;
-  auto tid_or = writer.registerTopic(*ds_id_or, std::move(desc));
-  ASSERT_TRUE(tid_or.has_value()) << tid_or.error();
-
-  // Write data using the DataWriter's bound path
-  auto handle_or = writer.bindTopicWriter(*tid_or);
-  ASSERT_TRUE(handle_or.has_value()) << handle_or.error();
-
-  ASSERT_TRUE(writer.beginRow(*tid_or, 1000).has_value());
-  writer.setFloat64(*tid_or, 0, 1.5);
-  writer.setFloat64(*tid_or, 1, 2.5);
-  ASSERT_TRUE(writer.finishRow(*tid_or).has_value());
-
-  auto flushed = writer.flushAll();
-  engine.commitChunks(std::move(flushed));
-
-  // Read via PluginHostRead — schema-backed topic should show fields
-  PluginHostRead reader(engine);
-  auto view = reader.catalogView();
-
-  ASSERT_EQ(view.topics.size(), 1U);
-  // BUG: currently returns 0 fields because columnDescriptors() is empty
-  EXPECT_GE(view.topics[0].field_count, 2U) << "Schema-backed topic should expose fields";
-  EXPECT_GE(view.fields.size(), 2U);
-
-  // readSeries should also work for the first field
-  if (view.fields.size() >= 1) {
-    auto series_or = reader.readSeries(view.fields[0].handle);
-    ASSERT_TRUE(series_or.has_value()) << series_or.error();
-    EXPECT_EQ(series_or->timestamps.size(), 1U);
+  // Keep spread within uint32_t range to avoid Frame-of-Reference offset overflow.
+  const int64_t values[] = {-500'000'000LL, 0, 500'000'000LL};
+  for (int i = 0; i < 3; ++i) {
+    const std::vector<NamedFieldValue> fields = {{.name = "val", .value = values[i]}};
+    ASSERT_TRUE(f.toolbox.appendRecord(topic, i, fields).has_value());
   }
+  f.toolbox_impl.flushPending();
+
+  auto series_or = f.toolbox.readSeries(field);
+  ASSERT_TRUE(series_or.has_value());
+  auto series = std::move(series_or.value());
+  ASSERT_EQ(series.type(), PrimitiveType::kInt64);
+  ASSERT_EQ(series.timestamps().size(), 3U);
+  EXPECT_EQ(series.raw().values.as_int64[0], -500'000'000LL);
+  EXPECT_EQ(series.raw().values.as_int64[1], 0);
+  EXPECT_EQ(series.raw().values.as_int64[2], 500'000'000LL);
 }
 
-// ===========================================================================
-// BUG REPRO #5: catalogView() should return deterministic ordering
-//
-// listDatasets() iterates an absl::flat_hash_map, so dataset ordering is
-// not guaranteed.  Tests that assume data_sources[0] is always the first
-// created source can fail non-deterministically.  catalogView() should
-// sort datasets by ID for stable output.
-// ===========================================================================
+TEST(PluginDataHostReadTest, ReadSeriesStringWithNulls) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "label", PrimitiveType::kString);
 
-TEST(PluginHostReadTest, CatalogViewDeterministicOrdering) {
-  TestFixture f;
+  const std::vector<NamedFieldValue> row0 = {{.name = "label", .value = std::string_view("abc")}};
+  const std::vector<NamedFieldValue> row1 = {{.name = "label", .is_null = true, .value = std::string_view("")}};
+  const std::vector<NamedFieldValue> row2 = {{.name = "label", .value = std::string_view("de")}};
+  ASSERT_TRUE(f.toolbox.appendRecord(topic, 0, row0).has_value());
+  ASSERT_TRUE(f.toolbox.appendRecord(topic, 1, row1).has_value());
+  ASSERT_TRUE(f.toolbox.appendRecord(topic, 2, row2).has_value());
+  f.toolbox_impl.flushPending();
 
-  // Create 10 data sources to increase probability of hash-map reorder
-  std::vector<DataSourceHandle> handles;
-  for (int i = 0; i < 10; ++i) {
-    auto src = f.writer.createDataSource(std::string("source_") + std::to_string(i));
-    ASSERT_TRUE(src.has_value());
-    handles.push_back(*src);
-  }
+  auto series_or = f.toolbox.readSeries(field);
+  ASSERT_TRUE(series_or.has_value());
+  auto series = std::move(series_or.value());
+  ASSERT_EQ(series.type(), PrimitiveType::kString);
+  ASSERT_EQ(series.timestamps().size(), 3U);
 
-  auto view = f.reader.catalogView();
-  ASSERT_EQ(view.data_sources.size(), 10U);
+  // 3 rows → 4 offsets (rows+1)
+  EXPECT_EQ(series.raw().values.as_string.offset_count, 4U);
 
-  // Verify data sources are in ascending ID order
-  for (std::size_t i = 1; i < view.data_sources.size(); ++i) {
-    EXPECT_LT(view.data_sources[i - 1].handle.id, view.data_sources[i].handle.id)
-        << "Data sources should be sorted by ID for deterministic ordering";
-  }
+  // The null row (index 1) should have its validity bit cleared.
+  // Bit 1 in byte 0: mask is 0b10.
+  EXPECT_EQ(series.raw().validity_bits[0] & 0b010U, 0U);
+
+  // Total bytes = "abc" + "de" = 5 (null row contributes zero bytes).
+  EXPECT_EQ(series.raw().values.as_string.byte_count, 5U);
 }
 
-// Deterministic ordering: topics within a source should also be stable
-TEST(PluginHostReadTest, CatalogViewTopicOrderingStable) {
-  TestFixture f;
+// ---------------------------------------------------------------------------
+// Boundary conditions
+// ---------------------------------------------------------------------------
 
-  auto src = *f.writer.createDataSource("src");
-  auto t1 = *f.writer.ensureTopic(src, "alpha");
-  auto t2 = *f.writer.ensureTopic(src, "bravo");
-  auto t3 = *f.writer.ensureTopic(src, "charlie");
+TEST(PluginDataHostReadTest, ReadSeriesEmptyField) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "val", PrimitiveType::kFloat64);
 
-  auto view = f.reader.catalogView();
-  ASSERT_EQ(view.topics.size(), 3U);
+  f.toolbox_impl.flushPending();
 
-  // Topics should be in creation (insertion) order since listTopics returns a vector
-  EXPECT_EQ(view.topics[0].name, "alpha");
-  EXPECT_EQ(view.topics[1].name, "bravo");
-  EXPECT_EQ(view.topics[2].name, "charlie");
+  auto series_or = f.toolbox.readSeries(field);
+  ASSERT_TRUE(series_or.has_value());
+  auto series = std::move(series_or.value());
+  EXPECT_EQ(series.timestamps().size(), 0U);
+}
+
+TEST(PluginDataHostReadTest, ReadSeriesMultiChunkFloat64) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "val", PrimitiveType::kFloat64);
+
+  constexpr int kRowCount = 1100;  // > 1024 default chunk size
+  for (int i = 0; i < kRowCount; ++i) {
+    const std::vector<NamedFieldValue> fields = {{.name = "val", .value = double(i) * 0.1}};
+    ASSERT_TRUE(f.toolbox.appendRecord(topic, i, fields).has_value());
+  }
+  f.toolbox_impl.flushPending();
+
+  auto series_or = f.toolbox.readSeries(field);
+  ASSERT_TRUE(series_or.has_value());
+  auto series = std::move(series_or.value());
+  ASSERT_EQ(series.type(), PrimitiveType::kFloat64);
+  ASSERT_EQ(series.timestamps().size(), static_cast<size_t>(kRowCount));
+
+  EXPECT_EQ(series.timestamps()[0], 0);
+  EXPECT_EQ(series.timestamps()[kRowCount - 1], kRowCount - 1);
+  EXPECT_EQ(series.timestamps()[550], 550);
+
+  EXPECT_DOUBLE_EQ(series.raw().values.as_float64[0], 0.0);
+  EXPECT_DOUBLE_EQ(series.raw().values.as_float64[kRowCount - 1], double(kRowCount - 1) * 0.1);
+  EXPECT_DOUBLE_EQ(series.raw().values.as_float64[550], 550.0 * 0.1);
+}
+
+// ---------------------------------------------------------------------------
+// SDK RAII tests
+// ---------------------------------------------------------------------------
+
+TEST(PluginDataHostReadTest, CatalogSnapshotDefaultConstructorIsEmpty) {
+  CatalogSnapshot snapshot;
+  EXPECT_EQ(snapshot.dataSources().size(), 0U);
+  EXPECT_EQ(snapshot.topics().size(), 0U);
+  EXPECT_EQ(snapshot.fields().size(), 0U);
+  // Destructor runs safely — no crash.
+}
+
+TEST(PluginDataHostReadTest, CatalogSnapshotMoveTransfersOwnership) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  ASSERT_TRUE(f.toolbox.ensureTopic(source, "t").has_value());
+
+  auto original_or = f.toolbox.catalogSnapshot();
+  ASSERT_TRUE(original_or.has_value());
+  auto original = std::move(original_or.value());
+  ASSERT_GT(original.dataSources().size(), 0U);
+
+  // Move-construct.
+  CatalogSnapshot moved(std::move(original));
+  EXPECT_GT(moved.dataSources().size(), 0U);
+  EXPECT_EQ(original.dataSources().size(), 0U);  // NOLINT(bugprone-use-after-move)
+
+  // Move-assign.
+  CatalogSnapshot assigned;
+  assigned = std::move(moved);
+  EXPECT_GT(assigned.dataSources().size(), 0U);
+  EXPECT_EQ(moved.dataSources().size(), 0U);  // NOLINT(bugprone-use-after-move)
+}
+
+TEST(PluginDataHostReadTest, MaterializedSeriesMoveTransfersOwnership) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("src");
+  const auto topic = *f.toolbox.ensureTopic(source, "data");
+  const auto field = *f.toolbox.ensureField(topic, "val", PrimitiveType::kFloat64);
+
+  const std::vector<NamedFieldValue> fields = {{.name = "val", .value = 3.14}};
+  ASSERT_TRUE(f.toolbox.appendRecord(topic, 1, fields).has_value());
+  f.toolbox_impl.flushPending();
+
+  auto original_or = f.toolbox.readSeries(field);
+  ASSERT_TRUE(original_or.has_value());
+  auto original = std::move(original_or.value());
+  ASSERT_EQ(original.timestamps().size(), 1U);
+  ASSERT_EQ(original.type(), PrimitiveType::kFloat64);
+
+  // Move-construct.
+  MaterializedSeries moved(std::move(original));
+  EXPECT_EQ(moved.type(), PrimitiveType::kFloat64);
+  EXPECT_EQ(moved.timestamps().size(), 1U);
+  EXPECT_EQ(original.timestamps().size(), 0U);  // NOLINT(bugprone-use-after-move)
+
+  // Move-assign.
+  MaterializedSeries assigned;
+  assigned = std::move(moved);
+  EXPECT_EQ(assigned.type(), PrimitiveType::kFloat64);
+  EXPECT_EQ(assigned.timestamps().size(), 1U);
+  EXPECT_EQ(moved.timestamps().size(), 0U);  // NOLINT(bugprone-use-after-move)
 }
 
 }  // namespace
