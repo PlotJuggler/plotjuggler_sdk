@@ -339,7 +339,6 @@ The minimum viable product is successful if:
 ```json
 {
   "registry_version": "1.0",
-  "plotjuggler_abi_version": "4.0",
   "last_updated": "ISO8601 timestamp",
   "extensions": [
     {
