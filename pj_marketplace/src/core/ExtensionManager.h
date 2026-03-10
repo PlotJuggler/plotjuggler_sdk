@@ -91,10 +91,6 @@ class ExtensionManager : public QObject {
   void disconnect_dl_conns();
   void save_pending_meta(const Extension& ext);
 
-  // Extracted content is typically 2-4x the compressed download size.
-  // This factor is applied to the Content-Length when checking available disk space.
-  static constexpr qint64 kExtractionOverheadFactor = 3;
-
   DownloadManager* downloader_;
   QString extensions_dir_;
   QString pending_dir_;

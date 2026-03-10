@@ -63,14 +63,12 @@ void ExtensionManager::install(const Extension& ext) {
           return;
         }
 
-        // Check available disk space on the first tick that carries a known total size.
-        // The safety factor accounts for ZIP extraction overhead: extracted content is
-        // typically 2-4x the compressed size. If Content-Length is absent (total == 0),
-        // the check is skipped rather than blocking the install unnecessarily.
         if (total > 0 && !disk_space_checked_) {
           disk_space_checked_ = true;
-          const qint64 required = total * kExtractionOverheadFactor;
-          if (QStorageInfo(extensions_dir_).bytesAvailable() < required) {
+          // Extracted content is typically 2-4x the compressed size; 3 is a conservative estimate.
+          // If Content-Length is absent (total == 0) the check is skipped entirely.
+          constexpr qint64 kExtractionOverheadFactor = 3;
+          if (QStorageInfo(extensions_dir_).bytesAvailable() < total * kExtractionOverheadFactor) {
             downloader_->cancel(pending_op_id_);
             return;
           }
