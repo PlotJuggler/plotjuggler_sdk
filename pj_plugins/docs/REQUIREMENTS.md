@@ -4,7 +4,8 @@
 
 This document defines the requirements for the new PlotJuggler plugin interfaces.
 
-It is normative for plugin-facing runtime contracts. It is not an execution plan, not an SDK design document, and not a deployment/distribution specification.
+It is normative for plugin-facing runtime contracts. It is not an execution plan,
+not an SDK design document, and not a deployment/distribution specification.
 
 Legacy PlotJuggler plugins are useful references to understand the required behavior, but they are not normative for the new system.
 
@@ -18,7 +19,7 @@ The following are explicitly out of scope for this document:
 
 - `StatePublisher`
 - native `Transform` plugin ABI
-- plugin discovery, packaging, installation, marketplace, or distribution
+- plugin discovery, installation, marketplace, or exact SDK publishing workflow
 - detailed datastore/data-model semantics that belong in `pj_datamodel`
 
 ## 2. Common Plugin Requirements
@@ -69,6 +70,25 @@ The following are explicitly out of scope for this document:
 - Plugins write through that contract; they do not mutate host-owned data structures directly.
 - The exact host data model and datastore semantics are defined elsewhere.
 
+### 2.7 External SDK Consumption
+
+- The new plugin interfaces must support third-party plugin development in a
+  repository independent from PlotJuggler.
+- The primary supported SDK consumption model is a package, with Conan as the
+  intended distribution path.
+- Git submodule or vendored-source consumption is allowed as an alternative
+  development path.
+- A plugin author must be able to build against the plugin SDK without depending
+  on `pj_datastore`.
+- A plugin author must be able to build against the plugin SDK without depending
+  on Abseil.
+- The packaged SDK surface must contain the full plugin-facing ABI and the C++
+  wrappers needed by plugin authors.
+- Host-only runtime implementations, datastore adapters, and Qt host
+  integration are not part of the external plugin SDK.
+- The SDK should be componentized so headless plugin families do not require the
+  dialog/UI SDK unless they actually use it.
+
 ## 3. Shared Host Interaction Surfaces
 
 This section defines plugin-facing capabilities only. Detailed data semantics belong in `pj_datamodel`.
@@ -93,6 +113,8 @@ This section defines plugin-facing capabilities only. Detailed data semantics be
 
 - UI-capable plugin families use the same host-rendered dialog protocol.
 - UI state must integrate with the common save/load interface.
+- The dialog protocol is part of the external plugin SDK for UI-capable plugin
+  families.
 - In delegated-ingestion workflows, the host may embed parser selection and parser
   configuration controls inside a `DataSource` dialog.
 - Those parser controls are host-owned, not parser-owned, even when they appear in
@@ -116,6 +138,8 @@ This section defines plugin-facing capabilities only. Detailed data semantics be
   - hand raw payloads plus metadata to a `MessageParser`
 - This document does not define whether one specific topic may mix direct and delegated ingestion modes.
 - When UI is needed, it must use the common dialog protocol.
+- The `DataSource` family ABI and plugin-side wrappers are part of the external
+  plugin SDK.
 
 ### 4.2 MessageParser
 
@@ -159,7 +183,8 @@ This section defines plugin-facing capabilities only. Detailed data semantics be
 
 ## 6. Explicit Non-Goals / Out of Scope
 
-- Plugin discovery, packaging, installation, marketplace, and distribution.
+- Plugin discovery, installation, marketplace, and exact Conan recipe/publishing
+  policy.
 - Exact ABI versioning scheme and loader policy.
 - Exact runtime event taxonomy or event transport details.
 - Backpressure and overflow policy.

@@ -2,73 +2,124 @@
 
 ## Summary
 
-The `pj_base` data plane is now ready. The rest of the DataSource work is a
-control-plane project:
+The shared plugin data interface is already implemented and tested.
+
+Completed foundation:
+
+- `pj_base` owns the plugin-facing data ABI and C++ SDK.
+- `pj_datastore` owns the datastore-backed implementations of those data hosts.
+- DataSource work must build on top of that foundation and must not introduce a
+  second parallel plugin SDK for data access.
+- The external plugin SDK must be consumable from an independent repository,
+  with Conan as the primary distribution path.
+
+The remaining project is the DataSource control plane:
 
 - define the portable `DataSource` family ABI and C++ SDK
-- define the host runtime that binds a source instance to one `data_source`
+- make that SDK consumable by external plugin authors through packageable CMake
+  targets/components
+- define the host runtime that binds one source instance to one application
+  `data_source`
 - integrate delegated parsing through a host-owned parser-binding surface
 - reuse the existing dialog protocol for configuration, including integrated
   host-owned parser controls
 - migrate legacy sources in a staged order from simplest to most demanding
 
-This plan covers `DataSource` only. It does not include Toolbox work, parser
-implementation work, plugin discovery, or deployment.
+This plan covers `DataSource` only.
 
-## 1. Runtime Architecture
+## 1. Current Status
 
-### 1.1 New subsystem to add
+### 1.1 Done
 
-Add a new `pj_plugins/data_source_protocol` subtree mirroring the structure used
-for `dialog_protocol`:
+The following work is complete and should be treated as fixed input:
 
-- raw C ABI header for portable DataSource plugins
-- header-only C++ SDK for plugin authors
-- host-side C++ wrappers for loading and driving DataSource plugins
-- tests for raw ABI, wrapper API, host runtime behavior, and migration examples
+- plugin-facing data ABI in `pj_base`
+- C++ wrappers for source, parser, and toolbox data hosts in `pj_base`
+- datastore-backed source/parser/toolbox host adapters in `pj_datastore`
+- unit tests for the shared data interface and datastore adapters
 
-The split of responsibilities stays explicit:
+Consequences:
 
-- `pj_base`: data read/write surfaces and shared vocabulary
-- `pj_plugins/dialog_protocol`: configuration UI protocol
-- `pj_plugins/data_source_protocol`: DataSource lifecycle, delegated parsing, and
-  host runtime control plane
+- `DataSource` plugins must reuse `PJ_source_write_host_t` from `pj_base`
+- delegated parser integration must reuse the existing parser write host model
+- no new topic/field/value ABI should be invented in the DataSource layer
+- plugin authors in an external repository must not need `pj_datastore` or
+  Abseil to build against the SDK
 
-### 1.2 DataSource library shape
+### 1.2 Not the target architecture
 
-A DataSource shared library may export:
+Do not treat a separate `pj_plugins/data_source_protocol` public SDK as the end
+state.
 
-- `PJ_get_data_source_vtable()`
-- optionally `PJ_get_dialog_vtable()`
+The agreed direction is:
 
-The DataSource runtime instance and the dialog instance are separate contexts.
-They are synchronized only through serialized config JSON. They do not share live
-mutable state across ABI boundaries.
+- `pj_base`: plugin-facing ABI headers and plugin-side C++ wrappers, packaged as
+  the external SDK core
+- `pj_datastore`: datastore-backed host implementations for the shared data plane
+- `pj_plugins`: host runtime, library loading, dialog integration, parser
+  binding, and concrete source plugins
 
-### 1.3 One-instance model
+If any prototype exists under `pj_plugins/data_source_protocol`, it is only a
+temporary reference and must be relocated or removed rather than extended as a
+second public SDK.
 
-- One DataSource runtime instance is pre-bound by the host to one application
-  `data_source`.
-- The DataSource never creates its own `data_source`.
-- A DataSource may create topics lazily inside that bound `data_source`.
-- Starting or stopping a DataSource never mutates some shared host container
-  directly and never implicitly clears already-ingested data.
+## 2. Target Split of Responsibilities
 
-For v1, the host owns reset semantics:
+### 2.1 `pj_base`
 
-- if a restart should append, the host reuses the same bound `data_source`
-- if a restart should begin empty, the host creates a fresh DataSource instance
-  bound to a fresh `data_source`
+`pj_base` must contain all plugin-facing DataSource control-plane definitions:
 
-## 2. Public Interfaces to Build
+- raw DataSource ABI header
+- plugin-side C++ wrapper / base class
+- runtime-host views used by DataSource plugins
+- common enums and small POD structs specific to DataSource lifecycle/control
+- package-facing CMake targets/components for external plugin authors
 
-### 2.1 DataSource plugin ABI
+It must not depend on `pj_datastore`, Qt, or Abseil.
+
+The external SDK must be usable:
+
+- from a Conan package as the primary path
+- from git submodules or vendored source as a secondary path
+- without requiring plugin authors to include or link `pj_datastore`
+
+### 2.2 `pj_datastore`
+
+`pj_datastore` remains responsible only for the shared data plane:
+
+- `PJ_source_write_host_t`
+- `PJ_parser_write_host_t`
+- `PJ_toolbox_host_t`
+
+No new datastore-side data-access surface is planned for DataSource.
+
+Any additional work in `pj_datastore` should only happen if the DataSource
+runtime uncovers a missing capability in the already-defined data hosts.
+
+### 2.3 `pj_plugins`
+
+`pj_plugins` must contain host-side orchestration:
+
+- shared-library loading of DataSource plugins
+- instance lifetime wrappers
+- runtime host implementation for messages, progress, stop requests, and parser
+  binding
+- integration with `dialog_protocol`
+- migration of legacy source plugins
+
+`pj_plugins` is host-side only. It is not the dependency root that an external
+plugin repository should need to consume.
+
+## 3. Public Interfaces Still To Build
+
+### 3.1 DataSource plugin ABI in `pj_base`
 
 Define one raw ABI plus one C++ SDK wrapper for the `DataSource` family.
 
 The exported DataSource instance surface must include:
 
 - `create` / `destroy`
+- `get_manifest`
 - `bind_write_host`
 - `bind_runtime_host`
 - `load_config`
@@ -82,13 +133,42 @@ The exported DataSource instance surface must include:
 - `capabilities`
 - `get_last_error`
 
-`pause` and `resume` are always present in the ABI but may return
-`not_supported`.
+Rules:
 
-`poll` is always present and may be a no-op. It exists so sources that prefer a
-cooperative model can make progress without owning their own worker thread.
+- `bind_write_host` uses the already-implemented `PJ_source_write_host_t`
+- `bind_runtime_host` provides DataSource-specific control-plane services only
+- `pause` and `resume` are always present in the ABI but may return
+  `not_supported`
+- `poll` is a host-driven cooperative callback invoked after successful `start`
+  while the instance remains non-terminal
+- the host owns poll cadence; the source must tolerate redundant calls
+- `poll` returns `true` when the call succeeded, even if it did no work
+- `poll` returns `false` only for an unrecoverable poll-time failure; details
+  are available through `get_last_error()`
+- `poll` must not block; long-running work belongs on source-owned threads
+- no new data-plane vocabulary is introduced here
 
-### 2.2 Capability flags
+### 3.2 Package-facing SDK shape
+
+The DataSource work must produce package-facing SDK targets/components for
+external plugin authors.
+
+Required shape:
+
+- one core SDK component rooted in `pj_base`
+- one DataSource SDK component layered on top of that core
+- one dialog SDK component for UI-capable plugins
+
+Rules:
+
+- a headless DataSource plugin must be buildable with the core SDK plus the
+  DataSource SDK only
+- a UI-capable DataSource plugin may add the dialog SDK component
+- the host runtime and datastore adapters are not part of the plugin author
+  dependency surface
+- the SDK targets/components must be suitable for Conan packaging
+
+### 3.3 Capability flags
 
 Lock the v1 capability model to this set:
 
@@ -101,10 +181,7 @@ Lock the v1 capability model to this set:
 
 Do not add arbitrary plugin-defined actions in v1.
 
-If the host wants a running source to be reconfigured, it stops it, opens the
-dialog again with the saved config, then starts a new or restarted instance.
-
-### 2.3 Runtime states
+### 3.4 Runtime states
 
 Lock the DataSource state machine to:
 
@@ -126,30 +203,50 @@ Transitions:
 - `pause` transitions `running -> paused`
 - `resume` transitions `paused -> running`
 - `stop` transitions to `stopping`, then `stopped`
-- asynchronous runtime failures transition to `failed`, then the host stops and
+- a finite source that has completed its import calls `request_stop(stopped, "")`
+  through the runtime host; the host then transitions it to `stopping` then
+  `stopped`
+- a finite source that encounters an unrecoverable error during import calls
+  `request_stop(failed, reason)` through the runtime host
+- a continuous source may transition `running -> starting -> running` while it
+  is internally reconnecting after a recoverable transport disruption
+- asynchronous runtime failures transition to `failed`; the host stops and
   disposes the instance
+- `failed` is terminal and reserved for unrecoverable errors
+- recoverable transport disruptions are handled inside the source, reported
+  through runtime messages, and do not require host disposal or restart
+- host auto-restart of a failed source is optional policy, not part of the
+  plugin ABI contract
 
-### 2.4 Host runtime surface
+### 3.5 DataSource runtime host surface
 
-Define one host runtime vtable provided to each DataSource instance.
+Define one runtime-host ABI provided to each DataSource instance.
 
 It must provide:
 
-- message reporting with levels `info`, `warning`, `error`
-- progress begin / update / end
-- cancel check for long-running finite imports
-- state-change notification
-- source-initiated close / failure notification
-- delegated parser binding
+- message reporting
+- progress begin / update / finish
+- cancellation check for long-running finite imports
+- state notification
+- source-initiated stop / close request
+- delegated parser binding and raw-message dispatch
 
-The runtime host API must be safe to call from plugin-owned worker threads.
+The runtime host API must be safe to call from source-owned worker threads.
 
-### 2.5 Delegated parser binding surface
+Rules:
+
+- `notify_state` is informational only; it does not by itself terminate or
+  dispose the source instance
+- plugin-initiated successful completion or terminal failure must use
+  `request_stop(...)`
+
+### 3.6 Delegated parser binding surface
 
 Delegated parsing is not implemented by the DataSource plugin directly.
-Instead, the host provides a parser-binding surface through the runtime host.
+Instead, the host provides a parser-binding surface through the DataSource
+runtime host.
 
-Define one opaque parser-binding handle and two operations:
+Define one opaque parser-binding handle and these operations:
 
 - `ensure_parser_binding(binding_request) -> parser_binding_handle`
 - `push_raw_message(binding_handle, host_timestamp_ns, payload_bytes)`
@@ -170,26 +267,13 @@ Rules:
 - the DataSource never instantiates parser plugins directly
 - repeated binding requests for the same topic and same parser metadata are
   idempotent
-- if parser metadata changes incompatibly for an already-bound topic, binding is
-  an error
+- incompatible rebinding for an already-bound topic is an error
+- `ensure_parser_binding` returns `false` on failure; details are available
+  through `get_last_error()` on the runtime host
 
-### 2.6 Threading rule
+## 4. Config and Dialog Model
 
-For v1, the contract is:
-
-- the write host from `pj_base`
-- the DataSource runtime host
-- the delegated parser-binding surface
-
-must all be safe to call from source-owned worker threads.
-
-This is required to migrate MQTT, ZMQ, UDP, WebSocket, Foxglove, and the
-PlotJuggler bridge without inventing fake polling-only wrappers around their
-current behavior.
-
-## 3. Config and Dialog Model
-
-### 3.1 Persisted state envelope
+### 4.1 Persisted state envelope
 
 Persist one host-owned JSON envelope per DataSource instance:
 
@@ -210,7 +294,7 @@ Rules:
 - parser configuration remains logically independent even when shown inside the
   same dialog as source-specific controls
 
-### 3.2 Dialog ownership model
+### 4.2 Dialog ownership model
 
 When a DataSource has configuration UI:
 
@@ -219,11 +303,10 @@ When a DataSource has configuration UI:
 - the host may enrich that dialog with host-owned parser controls for delegated
   sources
 
-Do not create a second modal step just for parser configuration.
+The required UX for delegated sources is one integrated dialog. Do not create a
+second modal step just for parser configuration.
 
-The required UX for delegated sources is one integrated dialog.
-
-### 3.3 Parser UI injection
+### 4.3 Parser UI injection
 
 Standardize one reserved placeholder widget name:
 
@@ -235,17 +318,7 @@ the parser selector/config panel there.
 If the placeholder is absent, the host appends a default parser group at the end
 of the dialog.
 
-This keeps source dialogs simple while still supporting:
-
-- `UDP`
-- `Websocket`
-- `MQTT`
-- `ZMQ`
-- `MCAP`
-- `Foxglove`
-- `PlotJuggler Bridge`
-
-### 3.4 Supported delegated parser UI patterns in v1
+### 4.4 Supported delegated parser UI patterns in v1
 
 Lock v1 to three patterns only:
 
@@ -261,46 +334,98 @@ Lock v1 to three patterns only:
 
 Do not support arbitrary per-topic user-selected parser encodings in v1.
 
-### 3.5 Dialog-less start from restored config
+### 4.5 Dialog-less start from restored config
 
 The host start flow is:
 
 1. create the DataSource instance
-2. bind hosts
-3. load `source_config`
-4. load the host-owned `parser_binding` state for delegated sources
-5. if there is no UI or the host chooses a headless start path, call `start`
-6. otherwise open the dialog, merge parser UI if needed, save the envelope, then
+2. bind the already-existing source write host
+3. bind the DataSource runtime host
+4. load `source_config`
+5. load the host-owned `parser_binding` state for delegated sources
+6. if there is no UI or the host chooses a headless start path, call `start`
+7. otherwise open the dialog, merge parser UI if needed, save the envelope, then
    call `start`
 
 The runtime may skip the dialog when restored config is known-valid or when the
 caller explicitly requests a headless restart.
 
-## 4. Implementation Phases
+## 5. Implementation Phases
 
-### Phase 1: Protocol and wrappers
+### Phase 0: Shared data plane
 
-Build `pj_plugins/data_source_protocol` with:
+Status: done
 
-- raw C ABI header
-- C++ SDK wrapper
-- host-side RAII loader and instance handle
-- unit tests for lifecycle, config, state, and error handling
+Completed:
+
+- plugin data ABI in `pj_base`
+- plugin data C++ wrappers in `pj_base`
+- datastore-backed host adapters in `pj_datastore`
+- unit tests for the shared data plane
+
+No further work is planned here unless the DataSource runtime exposes a missing
+requirement.
+
+### Phase 1: DataSource control-plane ABI in `pj_base`
+
+Status: next (prototype exists in `pj_plugins/data_source_protocol/`)
+
+A working prototype of the DataSource ABI, C++ SDK wrapper, runtime host view,
+host-side library loader, and mock plugin tests already exists under
+`pj_plugins/data_source_protocol/`. That location is temporary.
+
+This phase relocates the plugin-facing surface into `pj_base` and refines it:
+
+- move the raw DataSource ABI header to `pj_base`
+- move the plugin-side C++ wrapper / base class to `pj_base`
+- move the DataSource runtime-host view to `pj_base`
+- move corresponding unit tests
+- keep host-side library loader and instance handle in `pj_plugins`
+- remove `pj_plugins/data_source_protocol/` once relocation is complete
+- review and refine the ABI against this plan during the move
 
 Acceptance:
 
-- a mock DataSource plugin can be loaded and driven without Qt widgets or parser
-  integration
+- a mock DataSource plugin can be instantiated and driven without Qt widgets or
+  parser integration
 - no exceptions cross the ABI
-- error handling is explicit and testable
+- the control plane reuses the existing `PJ_source_write_host_t` instead of
+  inventing a new data API
 
-### Phase 2: Host runtime on top of `pj_base`
+### Phase 2: Package-facing SDK targets/components
 
-Implement the host runtime that composes:
+Status: next
 
-- `PJ_source_write_host_t` from `pj_base`
-- message / progress / state host callbacks
-- delegated parser binding over the MessageParser family
+Implement:
+
+- package-facing CMake targets/components for the core SDK, DataSource SDK, and
+  dialog SDK
+- dependency boundaries that keep `pj_datastore` and Abseil out of the external
+  plugin SDK surface
+- at least one out-of-tree example plugin build path in the test/validation
+  story
+
+Acceptance:
+
+- an external DataSource plugin repository can consume the SDK through package
+  targets/components
+- a headless plugin does not need the dialog SDK
+- a UI-capable plugin can add the dialog SDK without host-runtime code
+- no accidental `pj_datastore` or Abseil dependency leaks into the plugin SDK
+
+### Phase 3: Host-side library loading and runtime in `pj_plugins`
+
+Implement in `pj_plugins`:
+
+- shared-library loader for DataSource plugins
+- RAII instance wrapper
+- runtime host implementation for:
+  - messages
+  - progress
+  - cancel check
+  - state notifications
+  - source-initiated stop requests
+  - delegated parser binding
 
 Acceptance:
 
@@ -308,9 +433,9 @@ Acceptance:
 - delegated sources can bind parsers and push raw payloads
 - host-mediated stop / failed transitions work for background-thread sources
 
-### Phase 3: Dialog integration and parser UI injection
+### Phase 4: Dialog integration and parser UI injection
 
-Extend the Qt dialog engine or add a thin DataSource-specific host layer to:
+Extend the host dialog layer to:
 
 - show the plugin-owned dialog
 - render host-owned parser controls into `pj_parser_slot`
@@ -323,7 +448,7 @@ Acceptance:
 - parser configuration is visibly host-owned but feels native in the same dialog
 - restored config round-trips through the envelope without `QSettings`
 
-### Phase 4: First migrations
+### Phase 5: First migrations
 
 Migration order is fixed:
 
@@ -341,7 +466,7 @@ Selection rule:
 
 - choose the smaller plugin when two options satisfy the same phase goal
 
-### Phase 5: Legacy compatibility cleanup
+### Phase 6: Legacy compatibility cleanup
 
 After at least one direct and one delegated source are stable:
 
@@ -349,7 +474,7 @@ After at least one direct and one delegated source are stable:
 - replace old signal-driven host integration with the new runtime host surface
 - move all persisted source state into the common save/load path
 
-## 5. Migration Mapping
+## 6. Migration Mapping
 
 ### Direct finite sources
 
@@ -360,7 +485,7 @@ After at least one direct and one delegated source are stable:
 
 Required features:
 
-- bound write host
+- bound source write host from `pj_base`
 - dialog protocol
 - progress and cancel for large imports
 - direct field creation and direct writes
@@ -371,7 +496,7 @@ Required features:
 
 Required features:
 
-- bound write host
+- bound source write host
 - integrated host-owned parser UI
 - delegated parser binding per topic
 - progress and cancel
@@ -383,7 +508,7 @@ Required features:
 
 Required features:
 
-- bound write host
+- bound source write host
 - start / stop lifecycle
 - runtime message reporting
 
@@ -405,15 +530,30 @@ Required features:
 - runtime messages
 - optional pause / resume
 
-## 6. Test Plan
+## 7. Test Plan
 
-### Protocol and wrapper tests
+### Shared-data regressions
+
+- keep the existing `pj_base` and `pj_datastore` data-host tests green
+- do not duplicate data-plane tests in the DataSource control-plane layer
+- add only targeted coverage for the new control-plane integration points
+
+### DataSource ABI and wrapper tests
 
 - load a mock DataSource plugin
 - save / load config round-trip
 - state-machine transition coverage
 - unsupported `pause` / `resume` returns a structured error, not a crash
-- background-thread calls into the runtime host are safe
+- no exceptions cross the DataSource ABI
+
+### External SDK consumption tests
+
+- out-of-tree example plugin build using only the exported/package SDK
+- headless DataSource example using the core SDK plus DataSource SDK only
+- UI-capable DataSource example using the core SDK, DataSource SDK, and dialog
+  SDK
+- verify no accidental `pj_datastore` include/link dependency leaks into the SDK
+- verify no Abseil dependency leaks into the SDK
 
 ### Direct-source runtime tests
 
@@ -437,14 +577,6 @@ Required features:
 - dialog-driven topic discovery works with repeated `on_tick`
 - source config and parser config persist independently inside the host envelope
 
-### Import / stream behavior tests
-
-- finite import progress updates and cancel path
-- continuous source start / stop / failed transitions
-- optional pause / resume path
-- runtime failure reported by plugin triggers host stop
-- status and warning reporting replaces legacy `QMessageBox` coupling
-
 ### Migration acceptance tests
 
 - `CSV` or `Parquet` migrated source reproduces old user-visible behavior
@@ -454,14 +586,16 @@ Required features:
 
 ## Assumptions and Defaults
 
-- `pj_base` data interfaces are fixed input.
-- `MessageParser` remains headless in v1.
-- Parser configuration is host-owned and persisted outside plugin-owned
-  `source_config`.
-- The existing dialog protocol is reused rather than replaced.
-- One integrated dialog is required for delegated sources.
-- Reconfiguration while running is implemented as stop -> edit -> restart in v1.
-- Stopping a DataSource does not implicitly delete or clear the bound
-  `data_source`.
-- The ULog post-load auxiliary window is not treated as a required v1
-  DataSource capability.
+- the shared plugin data interface in `pj_base` and `pj_datastore` is fixed input
+- Conan is the primary external SDK distribution path
+- git submodule consumption remains supported as a secondary path
+- `MessageParser` remains headless in v1
+- parser configuration is host-owned and persisted outside plugin-owned
+  `source_config`
+- the existing dialog protocol is reused rather than replaced
+- one integrated dialog is required for delegated sources
+- reconfiguration while running is implemented as stop -> edit -> restart in v1
+- stopping a DataSource does not implicitly delete or clear the bound
+  `data_source`
+- the ULog post-load auxiliary window is not treated as a required v1
+  DataSource capability
