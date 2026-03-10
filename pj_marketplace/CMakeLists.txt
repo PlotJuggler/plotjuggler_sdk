@@ -1,34 +1,93 @@
-cmake_minimum_required(VERSION 3.22)
-project(pj_marketplace VERSION 1.0.0 LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Widgets Network Test)
-find_package(GTest REQUIRED)
-
-add_executable(pj_marketplace_standalone
-  src/main.cpp
-)
-
-target_include_directories(pj_marketplace_standalone PRIVATE src)
-target_link_libraries(pj_marketplace_standalone PRIVATE Qt6::Widgets Qt6::Network)
-target_compile_options(pj_marketplace_standalone PRIVATE -Wall -Wextra)
-
 # ---------------------------------------------------------------------------
-# Unit tests
+# Standalone build support
+#
+# When this file is the root of the build (standalone), we set up the project
+# and find all dependencies here. When used as a subdirectory of plotjuggler_core,
+# the parent already provides CXX standard, warning flags, GTest, and testing.
 # ---------------------------------------------------------------------------
 
-add_executable(registry_manager_test
-  tests/registry_manager_test.cpp
-  src/core/RegistryManager.cpp
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  cmake_minimum_required(VERSION 3.22)
+  project(pj_marketplace LANGUAGES CXX)
+
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+  set(PJ_WARNING_FLAGS -Wall -Wextra -Werror -Wshadow -Wnon-virtual-dtor
+    -Wold-style-cast -Wcast-qual -Wconversion -Woverloaded-virtual -Wpedantic
+  )
+
+  find_package(GTest REQUIRED)
+  enable_testing()
+endif()
+
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Test)
+find_package(LibArchive REQUIRED)
+
+# ---------------------------------------------------------------------------
+# pj_marketplace — package download, checksum verification and zip extraction
+# ---------------------------------------------------------------------------
+
+add_library(pj_marketplace STATIC
+  src/core/DownloadManager.cpp
 )
 
-target_include_directories(registry_manager_test PRIVATE src)
-target_link_libraries(registry_manager_test PRIVATE
+set_target_properties(pj_marketplace PROPERTIES AUTOMOC ON)
+
+target_include_directories(pj_marketplace PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(pj_marketplace PUBLIC
+  Qt6::Core
   Qt6::Network
-  Qt6::Test
-  GTest::gtest
+  LibArchive::LibArchive
 )
-target_compile_options(registry_manager_test PRIVATE -Wall -Wextra)
-add_test(NAME registry_manager_test COMMAND registry_manager_test)
+
+# pj_base provides expected.hpp (header-only for our usage).
+# When built as part of plotjuggler_core the target already exists;
+# in standalone mode we expose the include directory directly.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  target_include_directories(pj_marketplace PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_base/include
+  )
+else()
+  target_link_libraries(pj_marketplace PUBLIC pj_base)
+endif()
+
+target_compile_options(pj_marketplace PRIVATE ${PJ_WARNING_FLAGS})
+
+# ---------------------------------------------------------------------------
+# pj_marketplace — main executable
+# ---------------------------------------------------------------------------
+
+add_executable(pj_marketplace_app
+  main.cpp
+)
+
+set_target_properties(pj_marketplace_app PROPERTIES
+  AUTOMOC ON
+  AUTORCC ON
+  AUTOUIC ON
+)
+
+target_link_libraries(pj_marketplace_app PRIVATE
+  pj_marketplace
+  Qt6::Widgets
+)
+
+target_compile_options(pj_marketplace_app PRIVATE ${PJ_WARNING_FLAGS})
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+# download_manager_test has its own main() to initialise QCoreApplication
+add_executable(download_manager_test tests/download_manager_test.cpp)
+target_link_libraries(download_manager_test PRIVATE pj_marketplace GTest::gtest Qt6::Test LibArchive::LibArchive)
+target_compile_options(download_manager_test PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(download_manager_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+)
+add_test(NAME download_manager_test COMMAND download_manager_test)
+
