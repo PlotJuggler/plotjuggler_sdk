@@ -21,7 +21,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   enable_testing()
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Test)
 find_package(LibArchive REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -59,27 +59,6 @@ else()
 endif()
 
 target_compile_options(pj_marketplace PRIVATE ${PJ_WARNING_FLAGS})
-
-# ---------------------------------------------------------------------------
-# pj_marketplace — main executable
-# ---------------------------------------------------------------------------
-
-add_executable(pj_marketplace_app
-  main.cpp
-)
-
-set_target_properties(pj_marketplace_app PROPERTIES
-  AUTOMOC ON
-  AUTORCC ON
-  AUTOUIC ON
-)
-
-target_link_libraries(pj_marketplace_app PRIVATE
-  pj_marketplace
-  Qt6::Widgets
-)
-
-target_compile_options(pj_marketplace_app PRIVATE ${PJ_WARNING_FLAGS})
 
 # ---------------------------------------------------------------------------
 # Tests

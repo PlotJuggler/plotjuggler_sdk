@@ -1,9 +1,10 @@
 # Conan file for standalone builds of pj_marketplace.
 #
 # Dependencies managed by Conan:
-#   - Qt6         : Core, Widgets, Network, Test modules
 #   - libarchive  : archive extraction
 #   - GTest       : unit testing
+#
+# Qt6 is expected from the system (apt install qt6-base-dev libqt6network6)
 #
 # Usage:
 #   conan install . --output-folder=build --build=missing
@@ -14,30 +15,11 @@
 # ignored — the root conanfile.txt and its toolchain are used instead.
 
 [requires]
-qt/6.8.3
 libarchive/3.7.4
 gtest/1.17.0
 
 [options]
 libarchive/*:shared=False
-qt/*:shared=True
-qt/*:qtdeclarative=False
-qt/*:qtmultimedia=False
-qt/*:qtwebengine=False
-qt/*:qt3d=False
-qt/*:qtcharts=False
-qt/*:qttools=False
-qt/*:qtwebsockets=False
-qt/*:qtwebchannel=False
-qt/*:qtlocation=False
-qt/*:qtsensors=False
-qt/*:qtserialport=False
-qt/*:qtbluetooth=False
-qt/*:qtpositioning=False
-qt/*:qtremoteobjects=False
-qt/*:qtscxml=False
-qt/*:qtspeech=False
-qt/*:qtvirtualkeyboard=False
 
 [generators]
 CMakeDeps
