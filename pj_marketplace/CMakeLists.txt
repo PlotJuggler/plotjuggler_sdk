@@ -111,3 +111,42 @@ set_target_properties(registry_manager_test PROPERTIES
 target_compile_options(registry_manager_test PRIVATE -Wall -Wextra)
 add_test(NAME registry_manager_test COMMAND registry_manager_test)
 
+add_executable(extension_manager_test
+  tests/extension_manager_test.cpp
+)
+
+target_include_directories(extension_manager_test PRIVATE src)
+target_link_libraries(extension_manager_test PRIVATE
+  pj_marketplace
+  Qt6::Network
+  Qt6::Test
+  GTest::gtest
+  LibArchive::LibArchive
+)
+set_target_properties(extension_manager_test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+)
+target_compile_options(extension_manager_test PRIVATE ${PJ_WARNING_FLAGS})
+add_test(NAME extension_manager_test COMMAND extension_manager_test)
+
+# Integration test — requires network access, excluded from CTest by default.
+# Run manually: ./tests/extension_manager_integration_test
+add_executable(extension_manager_check_plugin_management
+  tests/extension_manager_check_plugin_management.cpp
+)
+
+target_include_directories(extension_manager_check_plugin_management PRIVATE src)
+target_link_libraries(extension_manager_check_plugin_management PRIVATE
+  pj_marketplace
+  Qt6::Network
+  Qt6::Test
+  GTest::gtest
+)
+set_target_properties(extension_manager_check_plugin_management PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+)
+target_compile_definitions(extension_manager_check_plugin_management PRIVATE
+  REGISTRY_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../pj-plugin-registry/registry.json"
+  RESULTS_DIR="${CMAKE_CURRENT_BINARY_DIR}/tests/results"
+)
+target_compile_options(extension_manager_check_plugin_management PRIVATE ${PJ_WARNING_FLAGS})
