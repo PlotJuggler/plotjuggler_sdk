@@ -53,10 +53,7 @@ class MockDataSource : public PJ::DataSourcePluginBase {
       return PJ::unexpected(topic.error());
     }
 
-    const PJ::sdk::NamedFieldValue fields[] = {
-        {.name = "value", .is_null = false, .value = PJ::sdk::ValueRef{double(42.0)}}};
-    auto write_status = writeHost().appendRecord(
-        *topic, PJ::Timestamp{123}, PJ::Span<const PJ::sdk::NamedFieldValue>(fields, 1));
+    auto write_status = writeHost().appendRecord(*topic, PJ::Timestamp{123}, {{.name = "value", .value = 42.0}});
     if (!write_status) {
       state_ = PJ::DataSourceState::kFailed;
       runtimeHost().notifyState(state_);

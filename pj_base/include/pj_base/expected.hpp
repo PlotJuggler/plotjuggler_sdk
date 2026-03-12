@@ -36,6 +36,11 @@ template <typename E>
   return Unexpected<std::decay_t<E>>(std::forward<E>(error));
 }
 
+/// Convenience overload: accept a string literal without requiring std::string("...").
+[[nodiscard]] inline Unexpected<std::string> unexpected(const char* error) {
+  return Unexpected<std::string>(std::string(error));
+}
+
 /// Minimal value-or-error container.
 template <typename T, typename E = std::string>
 class Expected {

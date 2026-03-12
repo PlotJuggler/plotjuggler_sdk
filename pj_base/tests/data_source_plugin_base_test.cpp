@@ -64,10 +64,7 @@ class MockDataSource : public PJ::DataSourcePluginBase {
       return PJ::unexpected(topic.error());
     }
 
-    const PJ::sdk::NamedFieldValue fields[] = {
-        {.name = "value", .is_null = false, .value = PJ::sdk::ValueRef{double(42.0)}}};
-    auto write_status = writeHost().appendRecord(
-        *topic, PJ::Timestamp{123}, PJ::Span<const PJ::sdk::NamedFieldValue>(fields, 1));
+    auto write_status = writeHost().appendRecord(*topic, PJ::Timestamp{123}, {{.name = "value", .value = 42.0}});
     if (!write_status) {
       state_ = PJ::DataSourceState::kFailed;
       runtimeHost().notifyState(state_);
@@ -140,7 +137,7 @@ class MockDataSource : public PJ::DataSourcePluginBase {
   int poll_count_ = 0;
 };
 
-constexpr const char* kMockManifest = R"({"name":"Mock DataSource"})";
+constexpr const char* kMockManifest = R"({"name":"Mock DataSource","version":"1.0.0"})";
 
 const PJ_data_source_vtable_t* mockVtable() {
   static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate(
@@ -213,7 +210,7 @@ struct WriteRecorder {
     return true;
   }
 
-  static bool appendRecordFast(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
+  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
                                size_t) {
     return true;
   }
@@ -331,7 +328,7 @@ PJ_source_write_host_t makeWriteHost(WriteRecorder* recorder) {
       .ensure_topic = WriteRecorder::ensureTopic,
       .ensure_field = WriteRecorder::ensureField,
       .append_record = WriteRecorder::appendRecord,
-      .append_record_fast = WriteRecorder::appendRecordFast,
+      .append_bound_record = WriteRecorder::appendBoundRecord,
       .append_arrow_ipc = WriteRecorder::appendArrowIpc,
   };
   return PJ_source_write_host_t{.ctx = recorder, .vtable = &vtable};

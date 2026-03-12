@@ -31,7 +31,7 @@ struct MinimalWriteHost {
     return true;
   }
 
-  static bool appendRecordFast(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
+  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
                                size_t) {
     return true;
   }
@@ -70,7 +70,7 @@ PJ_source_write_host_t makeWriteHost() {
       .ensure_topic = MinimalWriteHost::ensureTopic,
       .ensure_field = MinimalWriteHost::ensureField,
       .append_record = MinimalWriteHost::appendRecord,
-      .append_record_fast = MinimalWriteHost::appendRecordFast,
+      .append_bound_record = MinimalWriteHost::appendBoundRecord,
       .append_arrow_ipc = MinimalWriteHost::appendArrowIpc,
   };
   return PJ_source_write_host_t{.ctx = reinterpret_cast<void*>(0x1), .vtable = &vtable};

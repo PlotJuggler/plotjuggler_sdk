@@ -151,7 +151,7 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
   /**
    * Push a raw message payload for host-side parsing.
    * @p handle must have been obtained from ensure_parser_binding.
-   * @p host_timestamp_ns is nanoseconds since epoch.
+   * @p host_timestamp_ns is nanoseconds since the Unix epoch (1970-01-01T00:00:00Z).
    */
   bool (*push_raw_message)(
       void* ctx,

@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <cstring>
 #include <exception>
 #include <string>
 #include <string_view>
@@ -148,7 +149,7 @@ class DataSourceRuntimeHostView {
   [[nodiscard]] Expected<ParserBindingHandle> ensureParserBinding(
       const ParserBindingRequest& request) const {
     if (!valid() || host_.vtable->ensure_parser_binding == nullptr) {
-      return unexpected(std::string("runtime host is not bound"));
+      return unexpected("runtime host is not bound");
     }
 
     PJ_parser_binding_request_t raw{
@@ -170,7 +171,7 @@ class DataSourceRuntimeHostView {
   [[nodiscard]] Status pushRawMessage(
       ParserBindingHandle handle, Timestamp host_timestamp_ns, Span<const uint8_t> payload) const {
     if (!valid() || host_.vtable->push_raw_message == nullptr) {
-      return unexpected(std::string("runtime host is not bound"));
+      return unexpected("runtime host is not bound");
     }
     if (!host_.vtable->push_raw_message(
             host_.ctx, handle, host_timestamp_ns, sdk::toAbiBytes(payload))) {
@@ -212,7 +213,7 @@ class DataSourcePluginBase {
   /// Bind the data-plane write host. Override only if you need custom validation.
   virtual Status bindWriteHost(PJ_source_write_host_t write_host) {
     if (write_host.ctx == nullptr || write_host.vtable == nullptr) {
-      return unexpected(std::string("write host is not bound"));
+      return unexpected("write host is not bound");
     }
     write_host_ = write_host;
     return okStatus();
@@ -221,7 +222,7 @@ class DataSourcePluginBase {
   /// Bind the control-plane runtime host. Override only if you need custom validation.
   virtual Status bindRuntimeHost(PJ_data_source_runtime_host_t runtime_host) {
     if (runtime_host.ctx == nullptr || runtime_host.vtable == nullptr) {
-      return unexpected(std::string("runtime host is not bound"));
+      return unexpected("runtime host is not bound");
     }
     runtime_host_ = runtime_host;
     return okStatus();
@@ -246,12 +247,12 @@ class DataSourcePluginBase {
 
   /// Pause a running source. Default returns error (unsupported).
   virtual Status pause() {
-    return unexpected(std::string("pause is not supported"));
+    return unexpected("pause is not supported");
   }
 
   /// Resume a paused source. Default returns error (unsupported).
   virtual Status resume() {
-    return unexpected(std::string("resume is not supported"));
+    return unexpected("resume is not supported");
   }
 
   /// Called periodically while running. Override for streaming sources. Default is no-op.
@@ -273,6 +274,9 @@ class DataSourcePluginBase {
 
   template <typename CreateFn>
   static const PJ_data_source_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
+    PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
+    PJ_ASSERT(std::strstr(manifest, "\"name\"") != nullptr, "manifest must contain a \"name\" key");
+    PJ_ASSERT(std::strstr(manifest, "\"version\"") != nullptr, "manifest must contain a \"version\" key");
     static const PJ_data_source_vtable_t vt = {
         PJ_DATA_SOURCE_PROTOCOL_VERSION,
         sizeof(PJ_data_source_vtable_t),
@@ -323,215 +327,28 @@ class DataSourcePluginBase {
   std::string config_buf_;
   mutable std::string last_error_;
 
-  static void trampoline_destroy(void* ctx) {
-    try {
-      delete static_cast<DataSourcePluginBase*>(ctx);
-    } catch (...) {
-    }
-  }
-
-  static uint64_t trampoline_capabilities(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      return self->capabilities();
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return 0;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in capabilities";
-      return 0;
-    }
-  }
-
-  static bool trampoline_bind_write_host(void* ctx, PJ_source_write_host_t write_host) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      auto status = self->bindWriteHost(write_host);
-      if (!status) {
-        self->last_error_ = std::move(status).error();
-        return false;
-      }
-      return true;
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return false;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in bind_write_host";
-      return false;
-    }
-  }
-
-  static bool trampoline_bind_runtime_host(
-      void* ctx, PJ_data_source_runtime_host_t runtime_host) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      auto status = self->bindRuntimeHost(runtime_host);
-      if (!status) {
-        self->last_error_ = std::move(status).error();
-        return false;
-      }
-      return true;
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return false;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in bind_runtime_host";
-      return false;
-    }
-  }
-
-  static const char* trampoline_save_config(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      self->config_buf_ = self->saveConfig();
-      return self->config_buf_.c_str();
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return "{}";
-    } catch (...) {
-      self->last_error_ = "Unknown exception in save_config";
-      return "{}";
-    }
-  }
-
-  static bool trampoline_load_config(void* ctx, const char* config_json) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      auto status = self->loadConfig(
-          config_json == nullptr ? std::string_view{} : std::string_view(config_json));
-      if (!status) {
-        self->last_error_ = std::move(status).error();
-        return false;
-      }
-      return true;
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return false;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in load_config";
-      return false;
-    }
-  }
-
-  static bool trampoline_start(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      auto status = self->start();
-      if (!status) {
-        self->last_error_ = std::move(status).error();
-        return false;
-      }
-      return true;
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return false;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in start";
-      return false;
-    }
-  }
-
-  static void trampoline_stop(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      self->stop();
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-    } catch (...) {
-      self->last_error_ = "Unknown exception in stop";
-    }
-  }
-
-  static bool trampoline_pause(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      auto status = self->pause();
-      if (!status) {
-        self->last_error_ = std::move(status).error();
-        return false;
-      }
-      return true;
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return false;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in pause";
-      return false;
-    }
-  }
-
-  static bool trampoline_resume(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      auto status = self->resume();
-      if (!status) {
-        self->last_error_ = std::move(status).error();
-        return false;
-      }
-      return true;
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return false;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in resume";
-      return false;
-    }
-  }
-
-  static bool trampoline_poll(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      auto status = self->poll();
-      if (!status) {
-        self->last_error_ = std::move(status).error();
-        return false;
-      }
-      return true;
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return false;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in poll";
-      return false;
-    }
-  }
-
-  static PJ_data_source_state_t trampoline_current_state(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      return static_cast<PJ_data_source_state_t>(self->currentState());
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return PJ_DATA_SOURCE_STATE_FAILED;
-    } catch (...) {
-      self->last_error_ = "Unknown exception in current_state";
-      return PJ_DATA_SOURCE_STATE_FAILED;
-    }
-  }
-
-  static void* trampoline_get_dialog_context(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      return self->dialogContext();
-    } catch (...) {
-      return nullptr;
-    }
-  }
-
-  static const char* trampoline_get_last_error(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      self->last_error_ = self->lastError();
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-    } catch (...) {
-      self->last_error_ = "Unknown exception in get_last_error";
-    }
-    return self->last_error_.empty() ? nullptr : self->last_error_.c_str();
-  }
+  // C ABI trampolines — exception-safe bridges between host vtable calls and
+  // C++ virtuals. Implementations live in detail/data_source_trampolines.hpp.
+  static void trampoline_destroy(void* ctx);
+  static uint64_t trampoline_capabilities(void* ctx);
+  static bool trampoline_bind_write_host(void* ctx, PJ_source_write_host_t write_host);
+  static bool trampoline_bind_runtime_host(void* ctx, PJ_data_source_runtime_host_t runtime_host);
+  static const char* trampoline_save_config(void* ctx);
+  static bool trampoline_load_config(void* ctx, const char* config_json);
+  static bool trampoline_start(void* ctx);
+  static void trampoline_stop(void* ctx);
+  static bool trampoline_pause(void* ctx);
+  static bool trampoline_resume(void* ctx);
+  static bool trampoline_poll(void* ctx);
+  static PJ_data_source_state_t trampoline_current_state(void* ctx);
+  static void* trampoline_get_dialog_context(void* ctx);
+  static const char* trampoline_get_last_error(void* ctx);
 };
 
 }  // namespace PJ
+
+// Out-of-line trampoline definitions — separated to keep the public API header concise.
+#include "pj_base/sdk/detail/data_source_trampolines.hpp"
 
 /**
  * Export a DataSourcePluginBase subclass as a shared-library plugin.

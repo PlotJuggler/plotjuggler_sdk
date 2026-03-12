@@ -140,7 +140,7 @@ typedef struct {
   PJ_topic_handle_t topic;
   PJ_field_handle_t field;
   PJ_primitive_type_t type;
-  const int64_t* timestamps;
+  const int64_t* timestamps;  /**< Nanoseconds since Unix epoch (1970-01-01T00:00:00Z). */
   size_t row_count;
   const uint8_t* validity_bits;
   size_t validity_size;
@@ -159,7 +159,7 @@ typedef struct PJ_source_write_host_vtable_t {
       PJ_field_handle_t* out_field);
   bool (*append_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count);
-  bool (*append_record_fast)(
+  bool (*append_bound_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count);
   bool (*append_arrow_ipc)(
       void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column);
@@ -177,7 +177,7 @@ typedef struct PJ_parser_write_host_vtable_t {
   bool (*ensure_field)(
       void* ctx, PJ_string_view_t field_name, PJ_primitive_type_t type, PJ_field_handle_t* out_field);
   bool (*append_record)(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count);
-  bool (*append_record_fast)(void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count);
+  bool (*append_bound_record)(void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count);
   bool (*append_arrow_ipc)(void* ctx, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column);
 } PJ_parser_write_host_vtable_t;
 
@@ -198,7 +198,7 @@ typedef struct PJ_toolbox_host_vtable_t {
       PJ_field_handle_t* out_field);
   bool (*append_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count);
-  bool (*append_record_fast)(
+  bool (*append_bound_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count);
   bool (*append_arrow_ipc)(
       void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column);

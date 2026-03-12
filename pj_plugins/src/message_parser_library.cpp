@@ -1,4 +1,4 @@
-#include "pj_plugins/host/data_source_library.hpp"
+#include "pj_plugins/host/message_parser_library.hpp"
 
 #include <utility>
 
@@ -7,41 +7,41 @@
 namespace PJ {
 namespace {
 
-Expected<PJ_get_data_source_vtable_fn> loadEntryPoint(void* handle) {
+Expected<PJ_get_message_parser_vtable_fn> loadEntryPoint(void* handle) {
 #if defined(_WIN32)
-  auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle), "PJ_get_data_source_vtable");
+  auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle), "PJ_get_message_parser_vtable");
   if (symbol == nullptr) {
-    return unexpected(std::string("PJ_get_data_source_vtable not found"));
+    return unexpected(std::string("PJ_get_message_parser_vtable not found"));
   }
-  return reinterpret_cast<PJ_get_data_source_vtable_fn>(symbol);
+  return reinterpret_cast<PJ_get_message_parser_vtable_fn>(symbol);
 #else
   dlerror();
-  void* symbol = dlsym(handle, "PJ_get_data_source_vtable");
+  void* symbol = dlsym(handle, "PJ_get_message_parser_vtable");
   const char* err = dlerror();
   if (err != nullptr) {
     return unexpected(std::string(err));
   }
-  return reinterpret_cast<PJ_get_data_source_vtable_fn>(symbol);
+  return reinterpret_cast<PJ_get_message_parser_vtable_fn>(symbol);
 #endif
 }
 
 }  // namespace
 
-DataSourceLibrary::DataSourceLibrary(
-    void* handle, const PJ_data_source_vtable_t* vtable, std::string path)
+MessageParserLibrary::MessageParserLibrary(
+    void* handle, const PJ_message_parser_vtable_t* vtable, std::string path)
     : handle_(handle), vtable_(vtable), path_(std::move(path)) {}
 
-DataSourceLibrary::~DataSourceLibrary() {
+MessageParserLibrary::~MessageParserLibrary() {
   reset();
 }
 
-DataSourceLibrary::DataSourceLibrary(DataSourceLibrary&& other) noexcept
+MessageParserLibrary::MessageParserLibrary(MessageParserLibrary&& other) noexcept
     : handle_(other.handle_), vtable_(other.vtable_), path_(std::move(other.path_)) {
   other.handle_ = nullptr;
   other.vtable_ = nullptr;
 }
 
-DataSourceLibrary& DataSourceLibrary::operator=(DataSourceLibrary&& other) noexcept {
+MessageParserLibrary& MessageParserLibrary::operator=(MessageParserLibrary&& other) noexcept {
   if (this != &other) {
     reset();
     handle_ = other.handle_;
@@ -53,7 +53,7 @@ DataSourceLibrary& DataSourceLibrary::operator=(DataSourceLibrary&& other) noexc
   return *this;
 }
 
-Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
+Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path) {
   auto handle = detail::loadLibraryHandle(path);
   if (!handle) {
     return unexpected(handle.error());
@@ -65,24 +65,24 @@ Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
     return unexpected(entry.error());
   }
 
-  const PJ_data_source_vtable_t* vtable = (*entry)();
+  const PJ_message_parser_vtable_t* vtable = (*entry)();
   if (vtable == nullptr) {
     detail::closeLibraryHandle(*handle);
-    return unexpected(std::string("PJ_get_data_source_vtable returned null"));
+    return unexpected(std::string("PJ_get_message_parser_vtable returned null"));
   }
-  if (vtable->protocol_version != PJ_DATA_SOURCE_PROTOCOL_VERSION) {
+  if (vtable->protocol_version != PJ_MESSAGE_PARSER_PROTOCOL_VERSION) {
     detail::closeLibraryHandle(*handle);
-    return unexpected(std::string("DataSource protocol version mismatch"));
+    return unexpected(std::string("MessageParser protocol version mismatch"));
   }
-  if (vtable->struct_size < sizeof(PJ_data_source_vtable_t)) {
+  if (vtable->struct_size < sizeof(PJ_message_parser_vtable_t)) {
     detail::closeLibraryHandle(*handle);
-    return unexpected(std::string("DataSource vtable is smaller than expected"));
+    return unexpected(std::string("MessageParser vtable is smaller than expected"));
   }
 
-  return DataSourceLibrary(*handle, vtable, std::string(path));
+  return MessageParserLibrary(*handle, vtable, std::string(path));
 }
 
-Expected<const PJ_dialog_vtable_t*> DataSourceLibrary::resolveDialogVtable() const {
+Expected<const PJ_dialog_vtable_t*> MessageParserLibrary::resolveDialogVtable() const {
   if (handle_ == nullptr) {
     return unexpected(std::string("library not loaded"));
   }
@@ -116,7 +116,7 @@ Expected<const PJ_dialog_vtable_t*> DataSourceLibrary::resolveDialogVtable() con
   return vt;
 }
 
-void DataSourceLibrary::reset() {
+void MessageParserLibrary::reset() {
   if (handle_ != nullptr) {
     detail::closeLibraryHandle(handle_);
     handle_ = nullptr;

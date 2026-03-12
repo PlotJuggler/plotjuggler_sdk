@@ -368,33 +368,25 @@ requirement.
 
 ### Phase 1: DataSource control-plane ABI in `pj_base`
 
-Status: next (prototype exists in `pj_plugins/data_source_protocol/`)
+Status: done
 
-A working prototype of the DataSource ABI, C++ SDK wrapper, runtime host view,
-host-side library loader, and mock plugin tests already exists under
-`pj_plugins/data_source_protocol/`. That location is temporary.
+Completed:
 
-This phase relocates the plugin-facing surface into `pj_base` and refines it:
-
-- move the raw DataSource ABI header to `pj_base`
-- move the plugin-side C++ wrapper / base class to `pj_base`
-- move the DataSource runtime-host view to `pj_base`
-- move corresponding unit tests
-- keep host-side library loader and instance handle in `pj_plugins`
-- remove `pj_plugins/data_source_protocol/` once relocation is complete
-- review and refine the ABI against this plan during the move
-
-Acceptance:
-
-- a mock DataSource plugin can be instantiated and driven without Qt widgets or
-  parser integration
-- no exceptions cross the ABI
-- the control plane reuses the existing `PJ_source_write_host_t` instead of
-  inventing a new data API
+- DataSource C ABI header (`pj_base/include/pj_base/data_source_protocol.h`)
+- C++ SDK base class and patterns (`data_source_plugin_base.hpp`,
+  `data_source_patterns.hpp` with `FileSourceBase` and `StreamSourceBase`)
+- DataSource runtime-host view in `pj_base`
+- trampoline code extracted to `sdk/detail/data_source_trampolines.hpp`
+- manifest validation at static init via `PJ_ASSERT`
+- host-side library loader and instance handle in `pj_plugins`
+- mock plugins: `mock_data_source.cpp`, `mock_source_with_dialog.cpp`,
+  `mock_file_source.cpp`
+- unit and integration tests for all ABI slots and SDK patterns
+- `pj_plugins/data_source_protocol/` removed
 
 ### Phase 2: Package-facing SDK targets/components
 
-Status: next
+Status: not started (CMake install rules exist but are not validated in CI)
 
 Implement:
 
@@ -415,40 +407,38 @@ Acceptance:
 
 ### Phase 3: Host-side library loading and runtime in `pj_plugins`
 
-Implement in `pj_plugins`:
+Status: done
 
-- shared-library loader for DataSource plugins
-- RAII instance wrapper
-- runtime host implementation for:
-  - messages
-  - progress
-  - cancel check
-  - state notifications
-  - source-initiated stop requests
-  - delegated parser binding
+Completed:
 
-Acceptance:
-
-- direct sources can write topics and fields through the bound source host
-- delegated sources can bind parsers and push raw payloads
-- host-mediated stop / failed transitions work for background-thread sources
+- `DataSourceLibrary::load()` — dlopen-based shared-library loader
+- `DataSourceHandle` — RAII instance wrapper with full vtable delegation
+- runtime host vtable wired: messages, progress, cancel check, state
+  notifications, source-initiated stop, delegated parser binding
+- integration tests exercise direct and delegated ingest end-to-end
 
 ### Phase 4: Dialog integration and parser UI injection
 
-Extend the host dialog layer to:
+Status: partially done
 
-- show the plugin-owned dialog
-- render host-owned parser controls into `pj_parser_slot`
-- persist the config envelope
-- support dynamic dialog updates driven by `on_tick`
+Completed:
 
-Acceptance:
+- borrowed dialog handle (`DialogHandle::borrowed`)
+- `resolveDialogVtable()` from same `.so`
+- `ConfigEnvelope` pack/unpack with versioned envelope
+- `DialogEngine` headless and Qt rendering
+- `pj_parser_slot` detection (`stats_.has_parser_slot`)
 
-- one integrated dialog works for both direct and delegated sources
-- parser configuration is visibly host-owned but feels native in the same dialog
-- restored config round-trips through the envelope without `QSettings`
+Remaining:
+
+- actual parser UI rendering into `pj_parser_slot` (blocked on MessageParser
+  protocol)
+- delegated-source integrated dialog end-to-end
 
 ### Phase 5: First migrations
+
+Status: not started (direct-ingest plugins are ready; delegated-ingest plugins
+are blocked on the MessageParser protocol)
 
 Migration order is fixed:
 

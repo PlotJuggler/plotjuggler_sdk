@@ -1,12 +1,37 @@
 /**
  * @file data_source_patterns.hpp
- * @brief Derived base classes for the two dominant DataSource patterns.
+ * @brief **Start here** for most DataSource plugins.
  *
- * FileSourceBase — for one-shot file/snapshot importers.
- * StreamSourceBase — for long-lived streaming sources.
+ * Two base classes covering the dominant DataSource patterns:
  *
- * Both manage the lifecycle state machine so that derived classes only need
- * to implement the domain-specific work.
+ *  - **FileSourceBase** — one-shot file/snapshot importers.
+ *    Override: extraCapabilities(), importData(), loadConfig/saveConfig.
+ *
+ *  - **StreamSourceBase** — long-lived streaming sources.
+ *    Override: extraCapabilities(), onStart(), onPoll(), onStop().
+ *
+ * Both manage the lifecycle state machine automatically — derived classes
+ * only implement the domain-specific work.
+ *
+ * Minimal file-importer plugin (complete):
+ * @code
+ *   #include <pj_base/sdk/data_source_patterns.hpp>
+ *   class MyImporter : public PJ::FileSourceBase {
+ *    public:
+ *     uint64_t extraCapabilities() const override { return PJ::kCapabilityDirectIngest; }
+ *     PJ::Status importData() override {
+ *       auto topic = writeHost().ensureTopic("my/data");
+ *       if (!topic) return PJ::unexpected(topic.error());
+ *       // ... appendRecord() calls ...
+ *       return PJ::okStatus();
+ *     }
+ *   };
+ *   PJ_DATA_SOURCE_PLUGIN(MyImporter, R"({"name":"My Importer","version":"1.0.0"})")
+ * @endcode
+ *
+ * @see examples/sdk_consumer/minimal_data_source.cpp for the smallest possible plugin.
+ * @see pj_plugins/examples/mock_file_source.cpp for a FileSourceBase with progress.
+ * @see pj_plugins/examples/mock_source_with_dialog.cpp for StreamSourceBase + Dialog.
  */
 #pragma once
 
@@ -20,10 +45,23 @@ namespace PJ {
  * Manages the full lifecycle state machine. The derived class implements
  * importData() — all file I/O, parsing, and write-host calls happen there.
  *
- * The host passes configuration via loadConfig(). By convention, file
- * importers receive a JSON object containing a "filepath" key. The derived
- * class should extract this in its loadConfig() override and preserve it
- * in saveConfig().
+ * ## Config convention
+ *
+ * The host passes configuration via loadConfig() as a JSON string.
+ * By convention, file importers receive an object containing a `"filepath"` key:
+ *
+ * @code
+ *   // In loadConfig():
+ *   auto cfg = nlohmann::json::parse(config_json, nullptr, false);
+ *   if (cfg.is_discarded()) return PJ::unexpected("invalid config JSON");
+ *   filepath_ = cfg.value("filepath", std::string{});
+ *
+ *   // In saveConfig():
+ *   return nlohmann::json{{"filepath", filepath_}}.dump();
+ * @endcode
+ *
+ * The host uses `"file_extensions"` from the manifest JSON to build
+ * file-dialog filters (e.g. `[".csv", ".tsv"]`).
  */
 class FileSourceBase : public DataSourcePluginBase {
  public:
