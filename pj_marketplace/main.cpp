@@ -1,21 +1,19 @@
-#include <QtPlugin>
+#include <QApplication>
+#include <QUrl>
+#include "core/DownloadManager.h"
+#include "core/ExtensionManager.h"
+#include "core/RegistryManager.h"
+#include "ui/marketplace_window.hpp"
 
-// Static Qt builds do not load platform plugins dynamically.
-// They must be imported explicitly so the linker pulls in the
-// plugin's static initializer. QT_STATIC is defined by Qt itself
-// when built as a static library, so this block is a no-op with
-// a shared Qt installation.
-#ifdef QT_STATIC
-#if defined(Q_OS_WIN)
-Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
-#elif defined(Q_OS_LINUX)
-Q_IMPORT_PLUGIN(QXcbIntegrationPlugin)
-#elif defined(Q_OS_MACOS)
-Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin)
-#endif
-#endif
-
-int main()
-{
-  return 0;
+int main(int argc, char* argv[]) {
+  QApplication app(argc, argv);
+  const QUrl registry_url = QUrl::fromLocalFile(
+      QStringLiteral(REGISTRY_JSON_PATH));
+  auto* registry   = new PJ::RegistryManager;
+  auto* downloader = new PJ::DownloadManager;
+  auto* ext_mgr    = new PJ::ExtensionManager(downloader);
+  PJ::MarketplaceWindow w(registry, ext_mgr, registry_url);
+  w.resize(700, 500);
+  w.show();
+  return app.exec();
 }
