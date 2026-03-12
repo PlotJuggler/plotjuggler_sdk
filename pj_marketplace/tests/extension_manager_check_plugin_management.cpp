@@ -4,7 +4,7 @@
 //   registry parse → ExtensionManager::install() → download → checksum → extract → register
 //
 // Results are written to tests/results/extensions/can-bus-parser/ (defined at build time
-// via RESULTS_DIR and REGISTRY_JSON_PATH compile definitions).
+// via RESULTS_DIR compile definition).
 
 #include <gtest/gtest.h>
 
@@ -43,7 +43,7 @@ TEST(ExtensionManagerIntegrationTest, InstallCanBusParserUsingRegistry) {
   QSignalSpy registry_finished(&registry, &RegistryManager::fetchFinished);
   QSignalSpy registry_error(&registry, &RegistryManager::fetchError);
 
-  registry.fetchRegistry(QUrl::fromLocalFile(QStringLiteral(REGISTRY_JSON_PATH)));
+  registry.fetchRegistry(QUrl("https://raw.githubusercontent.com/Intelligent-Behavior-Robots/pj-plugin-registry/main/registry.json"));
 
   ASSERT_TRUE(wait_for_signal(registry_finished, 5000)) << "RegistryManager did not finish parsing";
   ASSERT_TRUE(registry_finished.first().at(0).toBool())

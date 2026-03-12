@@ -77,9 +77,6 @@ set_target_properties(pj_marketplace_app PROPERTIES
   AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
 )
 
-target_compile_definitions(pj_marketplace_app PRIVATE
-  REGISTRY_JSON_PATH="${CMAKE_SOURCE_DIR}/../pj-plugin-registry/registry.json"
-)
 
 target_link_libraries(pj_marketplace_app PRIVATE
   pj_marketplace
@@ -153,7 +150,6 @@ set_target_properties(extension_manager_check_plugin_management PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
 )
 target_compile_definitions(extension_manager_check_plugin_management PRIVATE
-  REGISTRY_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../pj-plugin-registry/registry.json"
   RESULTS_DIR="${CMAKE_CURRENT_BINARY_DIR}/tests/results"
 )
 target_compile_options(extension_manager_check_plugin_management PRIVATE ${PJ_WARNING_FLAGS})

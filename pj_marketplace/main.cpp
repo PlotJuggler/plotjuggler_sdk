@@ -7,8 +7,7 @@
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
-  const QUrl registry_url = QUrl::fromLocalFile(
-      QStringLiteral(REGISTRY_JSON_PATH));
+  const QUrl registry_url = QUrl("https://raw.githubusercontent.com/Intelligent-Behavior-Robots/pj-plugin-registry/main/registry.json");
   auto* registry   = new PJ::RegistryManager;
   auto* downloader = new PJ::DownloadManager;
   auto* ext_mgr    = new PJ::ExtensionManager(downloader);
