@@ -138,7 +138,6 @@ class CsvFileLoader : public PJ::FileSourceBase {
 
     for (uint64_t row = 0; row < total_rows; ++row) {
       if (!runtimeHost().progressUpdate(row)) {
-        runtimeHost().progressFinish();
         return PJ::okStatus();  // clean cancellation
       }
 
@@ -151,12 +150,10 @@ class CsvFileLoader : public PJ::FileSourceBase {
           *topic, PJ::Timestamp{static_cast<int64_t>(row)},
           PJ::Span<const PJ::sdk::NamedFieldValue>(fields, 1));
       if (!status) {
-        runtimeHost().progressFinish();
         return PJ::unexpected(status.error());
       }
     }
 
-    runtimeHost().progressFinish();
     return PJ::okStatus();
   }
 
@@ -178,6 +175,8 @@ Key traits of `FileSourceBase`:
   manages state transitions, and calls `requestStop()` on success.
 - Return `okStatus()` on success, `unexpected("reason")` on failure.
 - `stop()` and `currentState()` are managed by the base class.
+- `progressFinish()` is called automatically after `importData()` returns —
+  plugins should NOT call it themselves.
 - **Filepath contract**: the host passes `{"filepath":"/path/to/file", ...}`
   via `loadConfig()`. Extract and preserve the `"filepath"` key.
 
@@ -333,14 +332,16 @@ Report progress during long operations (e.g. file imports):
 runtimeHost().progressStart("Importing CSV", total_rows, /*cancellable=*/true);
 for (uint64_t i = 0; i < total_rows; ++i) {
   if (!runtimeHost().progressUpdate(i)) {
-    // User cancelled
-    runtimeHost().progressFinish();
-    return PJ::okStatus();  // clean cancellation
+    return PJ::okStatus();  // user cancelled — just return
   }
   // ... process row ...
 }
-runtimeHost().progressFinish();
 ```
+
+> **Note:** `FileSourceBase` calls `progressFinish()` automatically after
+> `importData()` returns. Do not call it yourself — just return from
+> `importData()`. If you subclass `DataSourcePluginBase` directly, you must
+> call `progressFinish()` manually.
 
 ### Delegated parsing
 
@@ -430,6 +431,124 @@ Example:
   `runtimeHost().ensureParserBinding()` return `Expected<T>` / `Status` —
   always check before proceeding.
 
+## Dialog Integration
+
+A DataSource can provide a configuration dialog by declaring
+`kCapabilityHasDialog` and exporting a dialog vtable from the same `.so`.
+The dialog is owned by the DataSource as a member — they share state directly,
+with no JSON serialization needed at runtime.
+
+### Architecture
+
+```
+     Plugin .so
+┌──────────────────────────────────┐
+│  class MyDialog                  │  ← PJ::DialogPluginTyped
+│    (UI logic, event handlers)    │
+│                                  │
+│  class MySource                  │  ← PJ::StreamSourceBase
+│    MyDialog dialog_;  ← member   │
+│    (business logic)              │
+│    dialogContext() → &dialog_    │
+│                                  │
+│  PJ_DATA_SOURCE_PLUGIN(MySource) │  → exports DataSource vtable
+│  PJ_DIALOG_PLUGIN(MyDialog)      │  → exports Dialog vtable
+└──────────────────────────────────┘
+```
+
+One `.so`, two vtables, one DataSource instance. The dialog instance is a
+member of the DataSource — not independently created. The host obtains a
+**borrowed** reference to the dialog through the DataSource vtable.
+
+### Implementation steps
+
+**1. Define the dialog class** with read-only accessors for the source:
+
+```cpp
+class MyDialog : public PJ::DialogPluginTyped {
+ public:
+  const std::string& host() const { return host_; }
+  int port() const { return port_; }
+
+  // ... manifest(), ui_content(), widget_data(), event handlers,
+  //     saveConfig(), loadConfig() — same as any standalone dialog.
+
+ private:
+  std::string host_ = "localhost";
+  int port_ = 9090;
+};
+```
+
+**2. Define the source class** owning the dialog as a member:
+
+```cpp
+class MySource : public PJ::StreamSourceBase {
+ public:
+  void* dialogContext() override { return &dialog_; }
+
+  uint64_t extraCapabilities() const override {
+    return PJ::kCapabilityDirectIngest | PJ::kCapabilityHasDialog;
+  }
+
+  PJ::Status onStart() override {
+    // Read dialog state directly — no JSON parsing needed.
+    auto topic = writeHost().ensureTopic("data/" + dialog_.host());
+    if (!topic) return PJ::unexpected(topic.error());
+    // ...
+    return PJ::okStatus();
+  }
+
+  std::string saveConfig() const override { return dialog_.saveConfig(); }
+  PJ::Status loadConfig(std::string_view json) override {
+    return dialog_.loadConfig(json) ? PJ::okStatus()
+                                    : PJ::unexpected(std::string("bad config"));
+  }
+
+ private:
+  MyDialog dialog_;
+};
+```
+
+**3. Export both vtables** at file scope:
+
+```cpp
+PJ_DATA_SOURCE_PLUGIN(MySource, R"({"name":"My Source","version":"1.0.0"})")
+PJ_DIALOG_PLUGIN(MyDialog)
+```
+
+### Host-side flow
+
+```
+1. DataSourceLibrary::load("plugin.so")
+2. lib.createHandle()  →  DataSourceHandle
+3. source.capabilities() & kCapabilityHasDialog?
+4. lib.resolveDialogVtable()  →  dialog vtable from same .so
+5. source.dialogContext()  →  borrowed pointer to source's internal dialog
+6. DialogHandle::borrowed(dialog_vt, dialog_ctx)  →  non-owning handle
+7. DialogEngine(borrowed_handle).showDialog()
+   → dialog modifies source's internal state directly
+8. source.start()  ←  already has the config
+```
+
+### Config persistence
+
+`source.saveConfig()` serializes everything (dialog + source state).
+`loadConfig()` restores it. Headless restart: `loadConfig(saved) → start()` —
+no dialog needed.
+
+The host wraps the source config in a versioned envelope (`ConfigEnvelope`)
+that also holds host-owned parser binding state:
+
+```json
+{"version": 1, "source_config": "...", "parser_binding": "..."}
+```
+
+The source never sees `parser_binding` — the host manages it.
+
+A complete example lives at `pj_plugins/examples/mock_source_with_dialog.cpp`.
+See `pj_plugins/dialog_protocol/docs/dialog-plugin-guide.md` for the dialog
+protocol itself.
+
 ## Examples
 
 - **Finite import** and **continuous stream** patterns are documented above
@@ -438,3 +557,6 @@ Example:
   that exercises the full `DataSourcePluginBase` API surface: capabilities,
   direct ingest, delegated ingest, progress reporting, pause/resume, and
   config persistence.
+- `pj_plugins/examples/mock_source_with_dialog.cpp` demonstrates the
+  DataSource-owned dialog pattern: a combined `.so` with two vtables, shared
+  state via member ownership, and dialog read-only accessors.

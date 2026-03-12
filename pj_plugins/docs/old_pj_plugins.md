@@ -293,6 +293,106 @@ Assessment:
 - Covered only if the DataSource runtime includes delegated parser binding,
   runtime state transitions, and status reporting.
 
+## Dialog Ownership Patterns
+
+The legacy plugins use three distinct patterns for dialog–source interaction.
+Understanding these patterns motivated the new DataSource-owned dialog design.
+
+### Ephemeral (UDP, WebSocket)
+
+The dialog is created locally inside `start()`, shown with `exec()`, and
+destroyed after it returns. State flows from the dialog to the source via
+local variables or direct member reads between `exec()` and the dialog's
+deletion.
+
+```
+start() {
+  MyDialog d;
+  d.loadSettings(QSettings);
+  if (d.exec() != Accepted) return false;
+  host_ = d.host();           // read before dialog dies
+  port_ = d.port();
+  d.saveSettings(QSettings);  // persist for next time
+  // ... open socket with host_:port_ ...
+}
+```
+
+Traits:
+- Dialog lifetime is a subset of `start()`.
+- No shared state after `exec()` returns.
+- State persisted via `QSettings`, not the DataSource config system.
+
+### Persistent member (MQTT, CSV, PJ Bridge)
+
+The dialog is a class member of the source, reused across `start()` calls.
+The source reads dialog state directly via public accessors or friend access.
+
+```
+class MySource {
+  MyDialog dialog_;           // member, created once
+
+  start() {
+    dialog_.loadSettings(QSettings);
+    if (dialog_.exec() != Accepted) return false;
+    connect(dialog_.host(), dialog_.port());  // read state directly
+  }
+};
+```
+
+Traits:
+- Dialog survives across start/stop cycles.
+- Source reads dialog state without serialization.
+- Shared state is implicit (same object lifetime as the source).
+- State persisted via `QSettings`.
+
+### Shared business object (MQTT)
+
+The dialog holds a `shared_ptr` to a business-logic object (e.g., an MQTT
+client) and manipulates it directly — calling `connect()`, `subscribe()`, etc.
+from event handlers.
+
+```
+class MyDialog {
+  shared_ptr<MqttClient> client_;
+
+  onConnectClicked() {
+    client_->connect(host_, port_);    // direct business logic
+  }
+  onTopicSelected(topics) {
+    client_->subscribe(topics);
+  }
+};
+
+class MySource {
+  shared_ptr<MqttClient> client_;
+  MyDialog dialog_{client_};           // dialog shares the client
+};
+```
+
+Traits:
+- Dialog has write access to business logic, not just UI state.
+- Tight coupling between dialog and source internals.
+- Hardest pattern to test in isolation.
+
+### All legacy plugins use QSettings for persistence
+
+Every legacy plugin persists its dialog state via `QSettings` — not through
+the DataSource config system. The new design replaces this with
+`saveConfig()` / `loadConfig()` on the dialog, with the source delegating
+config persistence to its owned dialog member. This removes the ambient
+`QSettings` dependency and makes config fully serializable and testable.
+
+### New design choice
+
+The new DataSource-owned dialog design follows the **persistent member**
+pattern: the dialog is a member of the source, they share state directly, and
+the dialog exposes read-only accessors for the source to consume. This avoids
+the tight coupling of the shared business object pattern while preserving the
+direct state access that makes the persistent member pattern efficient.
+
+See `pj_plugins/examples/mock_source_with_dialog.cpp` for the reference
+implementation.
+
 ## Compatibility Conclusions
 
 ### What the new requirements already cover well

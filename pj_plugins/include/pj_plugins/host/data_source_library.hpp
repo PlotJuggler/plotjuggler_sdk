@@ -15,6 +15,7 @@
 #pragma once
 
 #include <pj_base/data_source_protocol.h>
+#include <pj_plugins/dialog_protocol.h>
 #include <pj_plugins/host/data_source_handle.hpp>
 
 #include <string>
@@ -53,6 +54,9 @@ class DataSourceLibrary {
 
   /// Create a new plugin instance. Each handle is independent.
   [[nodiscard]] DataSourceHandle createHandle() const { return DataSourceHandle(vtable_); }
+
+  /// Resolve the dialog vtable from this .so. Returns error if not exported.
+  [[nodiscard]] Expected<const PJ_dialog_vtable_t*> resolveDialogVtable() const;
 
   /// Filesystem path the library was loaded from.
   [[nodiscard]] std::string path() const { return path_; }

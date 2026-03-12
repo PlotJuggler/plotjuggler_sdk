@@ -43,6 +43,7 @@ class FileSourceBase : public DataSourcePluginBase {
     runtimeHost().notifyState(state_);
 
     auto status = importData();
+    runtimeHost().progressFinish();  // safe no-op if no progress was started
     if (!status) {
       state_ = DataSourceState::kFailed;
       runtimeHost().notifyState(state_);

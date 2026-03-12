@@ -226,6 +226,14 @@ typedef struct PJ_data_source_vtable_t {
 
   /** Return the last error message, or NULL if none. Plugin-owned string. */
   const char* (*get_last_error)(void* ctx);
+
+  /**
+   * Returns a context pointer usable with the dialog protocol vtable.
+   * The returned pointer is owned by the DataSource instance — the host
+   * must NOT call the dialog vtable's create() or destroy() on it.
+   * Returns NULL if this source has no dialog.
+   */
+  void* (*get_dialog_context)(void* ctx);
 } PJ_data_source_vtable_t;
 
 /** Signature of the exported entry point: `PJ_get_data_source_vtable`. */

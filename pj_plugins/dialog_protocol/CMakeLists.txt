@@ -30,11 +30,29 @@ add_library(pj_dialog_host INTERFACE)
 target_link_libraries(pj_dialog_host INTERFACE pj_dialog_protocol nlohmann_json::nlohmann_json)
 target_include_directories(pj_dialog_host INTERFACE include)
 
-# --- Mock plugin (shared library for integration testing) ---
+# ---------------------------------------------------------------------------
+# pj_dialog_library — host-side dialog .so loader
+# ---------------------------------------------------------------------------
 
-add_library(mock_streamer_plugin SHARED examples/mock_streamer.cpp)
-target_compile_options(mock_streamer_plugin PRIVATE ${PJ_WARNING_FLAGS})
-target_link_libraries(mock_streamer_plugin PRIVATE pj_dialog_sdk)
+add_library(pj_dialog_library STATIC
+  src/dialog_library.cpp
+)
+target_include_directories(pj_dialog_library PUBLIC include)
+target_compile_features(pj_dialog_library PUBLIC cxx_std_20)
+target_compile_options(pj_dialog_library PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(pj_dialog_library
+  PUBLIC
+    pj_dialog_host
+    pj_base
+  PRIVATE
+    ${CMAKE_DL_LIBS}
+)
+
+# --- Mock plugins (shared libraries for integration testing) ---
+
+add_library(mock_dialog_plugin SHARED examples/mock_dialog.cpp)
+target_compile_options(mock_dialog_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(mock_dialog_plugin PRIVATE pj_dialog_sdk)
 
 # --- Tests ---
 
@@ -48,6 +66,7 @@ set(PJ_PLUGIN_TESTS
   dialog_handle_test
   widget_data_view_test
   widget_event_builder_test
+  dialog_library_test
 )
 
 add_executable(widget_data_test tests/widget_data_test.cpp)
@@ -62,15 +81,15 @@ add_executable(dialog_plugin_typed_test tests/dialog_plugin_typed_test.cpp)
 target_link_libraries(dialog_plugin_typed_test PRIVATE pj_dialog_sdk GTest::gtest_main)
 add_test(NAME dialog_plugin_typed_test COMMAND dialog_plugin_typed_test)
 
-# Links mock_streamer.cpp statically (no dlopen) for lifecycle testing
-add_executable(plugin_lifecycle_test tests/plugin_lifecycle_test.cpp examples/mock_streamer.cpp)
+# Links mock_dialog.cpp statically (no dlopen) for lifecycle testing
+add_executable(plugin_lifecycle_test tests/plugin_lifecycle_test.cpp examples/mock_dialog.cpp)
 target_link_libraries(plugin_lifecycle_test PRIVATE pj_dialog_sdk GTest::gtest_main)
 add_test(NAME plugin_lifecycle_test COMMAND plugin_lifecycle_test)
 
 # --- Host-side API tests ---
 
-# Links mock_streamer.cpp statically for RAII handle testing
-add_executable(dialog_handle_test tests/dialog_handle_test.cpp examples/mock_streamer.cpp)
+# Links mock_dialog.cpp statically for RAII handle testing
+add_executable(dialog_handle_test tests/dialog_handle_test.cpp examples/mock_dialog.cpp)
 target_link_libraries(dialog_handle_test PRIVATE pj_dialog_host pj_dialog_sdk GTest::gtest_main)
 add_test(NAME dialog_handle_test COMMAND dialog_handle_test)
 
@@ -82,6 +101,16 @@ add_test(NAME widget_data_view_test COMMAND widget_data_view_test)
 add_executable(widget_event_builder_test tests/widget_event_builder_test.cpp)
 target_link_libraries(widget_event_builder_test PRIVATE pj_dialog_host pj_dialog_sdk GTest::gtest_main)
 add_test(NAME widget_event_builder_test COMMAND widget_event_builder_test)
+
+# DialogLibrary test (loads mock_dialog_plugin via dlopen)
+add_executable(dialog_library_test tests/dialog_library_test.cpp)
+target_compile_definitions(dialog_library_test PRIVATE
+  PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
+)
+target_link_libraries(dialog_library_test PRIVATE
+  pj_dialog_library pj_dialog_host pj_dialog_sdk GTest::gtest_main
+)
+add_test(NAME dialog_library_test COMMAND dialog_library_test)
 
 foreach(_test ${PJ_PLUGIN_TESTS})
   target_compile_options(${_test} PRIVATE ${PJ_WARNING_FLAGS})
@@ -135,7 +164,7 @@ if(PJ_BUILD_DIALOG_ENGINE_QT)
   # Qt dialog engine tests (uses custom main with QApplication)
   add_executable(dialog_engine_test
     tests/dialog_engine_test.cpp
-    examples/mock_streamer.cpp
+    examples/mock_dialog.cpp
   )
   target_link_libraries(dialog_engine_test
     PRIVATE pj_dialog_engine_qt pj_dialog_sdk GTest::gtest

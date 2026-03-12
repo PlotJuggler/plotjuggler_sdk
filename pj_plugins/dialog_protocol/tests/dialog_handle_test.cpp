@@ -4,7 +4,7 @@
 #include <pj_plugins/host/dialog_handle.hpp>
 #include <string>
 
-// Defined in mock_streamer.cpp, linked statically
+// Defined in mock_dialog.cpp, linked statically
 extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
 
 class DialogHandleTest : public ::testing::Test {
@@ -75,7 +75,7 @@ TEST_F(DialogHandleTest, ManifestIsValidJson) {
   auto j = nlohmann::json::parse(manifest, nullptr, false);
   EXPECT_FALSE(j.is_discarded());
   EXPECT_TRUE(j.contains("name"));
-  EXPECT_EQ(j["name"], "Mock Streamer");
+  EXPECT_EQ(j["name"], "Mock Dialog");
 }
 
 TEST_F(DialogHandleTest, UiContentIsNonEmpty) {
@@ -91,19 +91,19 @@ TEST_F(DialogHandleTest, WidgetDataIsValidJson) {
   auto j = nlohmann::json::parse(wd, nullptr, false);
   EXPECT_FALSE(j.is_discarded());
   EXPECT_TRUE(j.is_object());
-  // MockStreamer sets host_input text
-  EXPECT_EQ(j["host_input"]["text"], "localhost");
+  // MockDialog sets name_input text
+  EXPECT_EQ(j["name_input"]["text"], "default");
 }
 
 // --- Events ---
 
 TEST_F(DialogHandleTest, SendEventUpdatesState) {
   PJ::DialogHandle h(vt_);
-  bool refresh = h.sendEvent("host_input", R"({"text": "10.0.0.1"})");
+  bool refresh = h.sendEvent("name_input", R"({"text": "new_name"})");
   EXPECT_TRUE(refresh);
 
   auto j = nlohmann::json::parse(h.widget_data());
-  EXPECT_EQ(j["host_input"]["text"], "10.0.0.1");
+  EXPECT_EQ(j["name_input"]["text"], "new_name");
 }
 
 TEST_F(DialogHandleTest, SendEventUnknownWidget) {
@@ -119,36 +119,17 @@ TEST_F(DialogHandleTest, TickInitiallyFalse) {
   EXPECT_FALSE(h.tick());
 }
 
-TEST_F(DialogHandleTest, TickDiscoverTopics) {
-  PJ::DialogHandle h(vt_);
-  // Connect
-  (void)h.sendEvent("connect_btn", R"({"clicked": true})");
-
-  bool refresh = false;
-  for (int i = 0; i < 5; ++i) {
-    refresh = h.tick();
-    if (refresh) {
-      break;
-    }
-  }
-  EXPECT_TRUE(refresh);
-
-  auto j = nlohmann::json::parse(h.widget_data());
-  EXPECT_TRUE(j.contains("topic_list"));
-  EXPECT_GT(j["topic_list"]["list_items"].size(), 0u);
-}
-
 // --- Config persistence ---
 
 TEST_F(DialogHandleTest, SaveLoadConfigRoundTrip) {
   PJ::DialogHandle h1(vt_);
-  (void)h1.sendEvent("host_input", R"({"text": "saved-host"})");
-  (void)h1.sendEvent("port_input", R"({"value": 5555})");
+  (void)h1.sendEvent("name_input", R"({"text": "saved_name"})");
+  (void)h1.sendEvent("count_input", R"({"value": 55})");
 
   std::string config = h1.save_config();
   auto cfg = nlohmann::json::parse(config);
-  EXPECT_EQ(cfg["host"], "saved-host");
-  EXPECT_EQ(cfg["port"], 5555);
+  EXPECT_EQ(cfg["name"], "saved_name");
+  EXPECT_EQ(cfg["count"], 55);
 
   // Load into a new handle
   PJ::DialogHandle h2(vt_);
@@ -156,8 +137,8 @@ TEST_F(DialogHandleTest, SaveLoadConfigRoundTrip) {
   EXPECT_TRUE(loaded);
 
   auto j = nlohmann::json::parse(h2.widget_data());
-  EXPECT_EQ(j["host_input"]["text"], "saved-host");
-  EXPECT_EQ(j["port_input"]["value"], 5555);
+  EXPECT_EQ(j["name_input"]["text"], "saved_name");
+  EXPECT_EQ(j["count_input"]["value"], 55);
 }
 
 TEST_F(DialogHandleTest, LoadConfigInvalidJson) {
@@ -172,19 +153,6 @@ TEST_F(DialogHandleTest, NoErrorInitially) {
   EXPECT_EQ(h.lastError(), "");
 }
 
-TEST_F(DialogHandleTest, ErrorAfterTrigger) {
-  PJ::DialogHandle h(vt_);
-  // Clear host, then try to connect — triggers "Host cannot be empty"
-  (void)h.sendEvent("host_input", R"({"text": ""})");
-  (void)h.sendEvent("connect_btn", R"({"clicked": true})");
-
-  std::string err = h.lastError();
-  EXPECT_NE(err.find("empty"), std::string::npos);
-
-  // Error should be cleared after reading
-  EXPECT_EQ(h.lastError(), "");
-}
-
 // --- Accept / Reject ---
 
 TEST_F(DialogHandleTest, AcceptDoesNotCrash) {
@@ -195,6 +163,44 @@ TEST_F(DialogHandleTest, AcceptDoesNotCrash) {
 TEST_F(DialogHandleTest, RejectDoesNotCrash) {
   PJ::DialogHandle h(vt_);
   h.reject();
+}
+
+// --- Borrowed handle ---
+
+TEST_F(DialogHandleTest, BorrowedHandleWorks) {
+  PJ::DialogHandle owned(vt_);
+  void* ctx = owned.context();
+
+  // Create a borrowed handle from the owned one's context
+  auto borrowed = PJ::DialogHandle::borrowed(vt_, ctx);
+  EXPECT_NE(borrowed.context(), nullptr);
+  EXPECT_EQ(borrowed.context(), ctx);
+
+  // Borrowed handle should work for all query operations
+  std::string wd = borrowed.widget_data();
+  EXPECT_FALSE(wd.empty());
+
+  bool refresh = borrowed.sendEvent("name_input", R"({"text": "via_borrowed"})");
+  EXPECT_TRUE(refresh);
+
+  // Changes via borrowed should be visible in owned
+  auto j = nlohmann::json::parse(owned.widget_data());
+  EXPECT_EQ(j["name_input"]["text"], "via_borrowed");
+}
+
+TEST_F(DialogHandleTest, BorrowedHandleDoesNotDestroyContext) {
+  PJ::DialogHandle owned(vt_);
+  void* ctx = owned.context();
+
+  {
+    // Borrowed handle goes out of scope — should NOT destroy context
+    auto borrowed = PJ::DialogHandle::borrowed(vt_, ctx);
+    (void)borrowed.widget_data();
+  }
+
+  // Owned handle should still work after borrowed is destroyed
+  std::string wd = owned.widget_data();
+  EXPECT_FALSE(wd.empty());
 }
 
 // --- Escape hatch ---

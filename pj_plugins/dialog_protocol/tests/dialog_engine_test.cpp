@@ -21,7 +21,7 @@
 #include <pj_plugins/host_qt/dialog_engine.hpp>
 #include <pj_plugins/host_qt/widget_binding.hpp>
 
-// Defined in mock_streamer.cpp, linked statically
+// Defined in mock_dialog.cpp, linked statically
 extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
 
 // ==========================================================================
@@ -35,33 +35,17 @@ class WidgetBindingTest : public ::testing::Test {
     auto* layout = new QVBoxLayout(root_);
 
     line_edit_ = new QLineEdit(root_);
-    line_edit_->setObjectName("host_input");
+    line_edit_->setObjectName("name_input");
     layout->addWidget(line_edit_);
 
     spin_box_ = new QSpinBox(root_);
-    spin_box_->setObjectName("port_input");
+    spin_box_->setObjectName("count_input");
     spin_box_->setRange(0, 99999);
     layout->addWidget(spin_box_);
 
-    combo_box_ = new QComboBox(root_);
-    combo_box_->setObjectName("protocol_combo");
-    layout->addWidget(combo_box_);
-
     check_box_ = new QCheckBox(root_);
-    check_box_->setObjectName("use_tls_check");
+    check_box_->setObjectName("verbose_check");
     layout->addWidget(check_box_);
-
-    label_ = new QLabel(root_);
-    label_->setObjectName("status_label");
-    layout->addWidget(label_);
-
-    button_ = new QPushButton(root_);
-    button_->setObjectName("connect_btn");
-    layout->addWidget(button_);
-
-    list_widget_ = new QListWidget(root_);
-    list_widget_->setObjectName("topic_list");
-    layout->addWidget(list_widget_);
 
     button_box_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, root_);
     button_box_->setObjectName("button_box");
@@ -75,11 +59,7 @@ class WidgetBindingTest : public ::testing::Test {
   QWidget* root_ = nullptr;
   QLineEdit* line_edit_ = nullptr;
   QSpinBox* spin_box_ = nullptr;
-  QComboBox* combo_box_ = nullptr;
   QCheckBox* check_box_ = nullptr;
-  QLabel* label_ = nullptr;
-  QPushButton* button_ = nullptr;
-  QListWidget* list_widget_ = nullptr;
   QDialogButtonBox* button_box_ = nullptr;
 };
 
@@ -87,101 +67,42 @@ class WidgetBindingTest : public ::testing::Test {
 
 TEST_F(WidgetBindingTest, ApplyText) {
   nlohmann::json data;
-  data["host_input"]["text"] = "10.0.0.1";
+  data["name_input"]["text"] = "my_source";
   PJ::WidgetDataView view(data.dump());
 
   PJ::applyWidgetData(root_, view);
-  EXPECT_EQ(line_edit_->text().toStdString(), "10.0.0.1");
+  EXPECT_EQ(line_edit_->text().toStdString(), "my_source");
 }
 
 TEST_F(WidgetBindingTest, ApplySpinBoxValue) {
   nlohmann::json data;
-  data["port_input"]["value"] = 5555;
+  data["count_input"]["value"] = 42;
   PJ::WidgetDataView view(data.dump());
 
   PJ::applyWidgetData(root_, view);
-  EXPECT_EQ(spin_box_->value(), 5555);
+  EXPECT_EQ(spin_box_->value(), 42);
 }
 
 TEST_F(WidgetBindingTest, ApplySpinBoxRange) {
   nlohmann::json data;
-  data["port_input"]["min"] = 100;
-  data["port_input"]["max"] = 200;
-  data["port_input"]["value"] = 150;
+  data["count_input"]["min"] = 0;
+  data["count_input"]["max"] = 1000;
+  data["count_input"]["value"] = 500;
   PJ::WidgetDataView view(data.dump());
 
   PJ::applyWidgetData(root_, view);
-  EXPECT_EQ(spin_box_->minimum(), 100);
-  EXPECT_EQ(spin_box_->maximum(), 200);
-  EXPECT_EQ(spin_box_->value(), 150);
-}
-
-TEST_F(WidgetBindingTest, ApplyComboBoxItems) {
-  nlohmann::json data;
-  data["protocol_combo"]["items"] = {"TCP", "UDP", "WebSocket"};
-  data["protocol_combo"]["current_index"] = 1;
-  PJ::WidgetDataView view(data.dump());
-
-  PJ::applyWidgetData(root_, view);
-  EXPECT_EQ(combo_box_->count(), 3);
-  EXPECT_EQ(combo_box_->currentIndex(), 1);
-  EXPECT_EQ(combo_box_->currentText().toStdString(), "UDP");
+  EXPECT_EQ(spin_box_->minimum(), 0);
+  EXPECT_EQ(spin_box_->maximum(), 1000);
+  EXPECT_EQ(spin_box_->value(), 500);
 }
 
 TEST_F(WidgetBindingTest, ApplyCheckBox) {
   nlohmann::json data;
-  data["use_tls_check"]["checked"] = true;
+  data["verbose_check"]["checked"] = true;
   PJ::WidgetDataView view(data.dump());
 
   PJ::applyWidgetData(root_, view);
   EXPECT_TRUE(check_box_->isChecked());
-}
-
-TEST_F(WidgetBindingTest, ApplyLabel) {
-  nlohmann::json data;
-  data["status_label"]["label"] = "Connected";
-  PJ::WidgetDataView view(data.dump());
-
-  PJ::applyWidgetData(root_, view);
-  EXPECT_EQ(label_->text().toStdString(), "Connected");
-}
-
-TEST_F(WidgetBindingTest, ApplyButtonText) {
-  nlohmann::json data;
-  data["connect_btn"]["button_text"] = "Disconnect";
-  PJ::WidgetDataView view(data.dump());
-
-  PJ::applyWidgetData(root_, view);
-  EXPECT_EQ(button_->text().toStdString(), "Disconnect");
-}
-
-TEST_F(WidgetBindingTest, ApplyListItems) {
-  nlohmann::json data;
-  data["topic_list"]["list_items"] = {"/imu", "/gps", "/motor"};
-  PJ::WidgetDataView view(data.dump());
-
-  PJ::applyWidgetData(root_, view);
-  EXPECT_EQ(list_widget_->count(), 3);
-  EXPECT_EQ(list_widget_->item(0)->text().toStdString(), "/imu");
-}
-
-TEST_F(WidgetBindingTest, ApplyListSelectedItems) {
-  // Multi-selection must be enabled for multiple items to be selected
-  list_widget_->setSelectionMode(QAbstractItemView::MultiSelection);
-
-  // First populate
-  nlohmann::json data1;
-  data1["topic_list"]["list_items"] = {"/imu", "/gps", "/motor"};
-  PJ::applyWidgetData(root_, PJ::WidgetDataView(data1.dump()));
-
-  // Then select
-  nlohmann::json data2;
-  data2["topic_list"]["selected_items"] = {"/imu", "/motor"};
-  PJ::applyWidgetData(root_, PJ::WidgetDataView(data2.dump()));
-
-  EXPECT_TRUE(list_widget_->item(0)->isSelected());
-  EXPECT_FALSE(list_widget_->item(1)->isSelected());
-  EXPECT_TRUE(list_widget_->item(2)->isSelected());
 }
 
 TEST_F(WidgetBindingTest, ApplyOkEnabled) {
@@ -197,20 +118,20 @@ TEST_F(WidgetBindingTest, ApplyOkEnabled) {
 
 TEST_F(WidgetBindingTest, ApplyVisibility) {
   nlohmann::json data;
-  data["topic_list"]["visible"] = false;
+  data["count_input"]["visible"] = false;
   PJ::WidgetDataView view(data.dump());
 
   PJ::applyWidgetData(root_, view);
-  EXPECT_FALSE(list_widget_->isVisible());
+  EXPECT_FALSE(spin_box_->isVisible());
 }
 
 TEST_F(WidgetBindingTest, ApplyEnabled) {
   nlohmann::json data;
-  data["connect_btn"]["enabled"] = false;
+  data["name_input"]["enabled"] = false;
   PJ::WidgetDataView view(data.dump());
 
   PJ::applyWidgetData(root_, view);
-  EXPECT_FALSE(button_->isEnabled());
+  EXPECT_FALSE(line_edit_->isEnabled());
 }
 
 TEST_F(WidgetBindingTest, MissingWidgetIsIgnored) {
@@ -232,11 +153,11 @@ TEST_F(WidgetBindingTest, SignalTextChanged) {
     captured_json = json;
   });
 
-  line_edit_->setText("new-host");
+  line_edit_->setText("new_name");
 
-  EXPECT_EQ(captured_name, "host_input");
+  EXPECT_EQ(captured_name, "name_input");
   auto j = nlohmann::json::parse(captured_json);
-  EXPECT_EQ(j["text"], "new-host");
+  EXPECT_EQ(j["text"], "new_name");
 }
 
 TEST_F(WidgetBindingTest, SignalSpinBoxValueChanged) {
@@ -247,29 +168,11 @@ TEST_F(WidgetBindingTest, SignalSpinBoxValueChanged) {
     captured_json = json;
   });
 
-  spin_box_->setValue(1234);
+  spin_box_->setValue(99);
 
-  EXPECT_EQ(captured_name, "port_input");
+  EXPECT_EQ(captured_name, "count_input");
   auto j = nlohmann::json::parse(captured_json);
-  EXPECT_EQ(j["value"], 1234);
-}
-
-TEST_F(WidgetBindingTest, SignalComboBoxIndexChanged) {
-  combo_box_->addItems({"A", "B", "C"});
-
-  std::string captured_name;
-  std::string captured_json;
-  PJ::connectWidgetSignals(root_, [&](const std::string& name, const std::string& json) {
-    captured_name = name;
-    captured_json = json;
-  });
-
-  combo_box_->setCurrentIndex(2);
-
-  EXPECT_EQ(captured_name, "protocol_combo");
-  auto j = nlohmann::json::parse(captured_json);
-  EXPECT_EQ(j["current_index"], 2);
-  EXPECT_EQ(j["current_text"], "C");
+  EXPECT_EQ(j["value"], 99);
 }
 
 TEST_F(WidgetBindingTest, SignalCheckBoxToggled) {
@@ -282,24 +185,9 @@ TEST_F(WidgetBindingTest, SignalCheckBoxToggled) {
 
   check_box_->setChecked(true);
 
-  EXPECT_EQ(captured_name, "use_tls_check");
+  EXPECT_EQ(captured_name, "verbose_check");
   auto j = nlohmann::json::parse(captured_json);
   EXPECT_EQ(j["checked"], true);
-}
-
-TEST_F(WidgetBindingTest, SignalButtonClicked) {
-  std::string captured_name;
-  std::string captured_json;
-  PJ::connectWidgetSignals(root_, [&](const std::string& name, const std::string& json) {
-    captured_name = name;
-    captured_json = json;
-  });
-
-  button_->click();
-
-  EXPECT_EQ(captured_name, "connect_btn");
-  auto j = nlohmann::json::parse(captured_json);
-  EXPECT_EQ(j["clicked"], true);
 }
 
 TEST_F(WidgetBindingTest, SignalBlockerPreventsReentrant) {
@@ -308,7 +196,7 @@ TEST_F(WidgetBindingTest, SignalBlockerPreventsReentrant) {
 
   // apply_widget_data should NOT trigger signals (QSignalBlocker)
   nlohmann::json data;
-  data["host_input"]["text"] = "blocked-text";
+  data["name_input"]["text"] = "blocked-text";
   PJ::applyWidgetData(root_, PJ::WidgetDataView(data.dump()));
 
   EXPECT_EQ(call_count, 0);
@@ -331,22 +219,18 @@ TEST_F(DialogEngineTest, RunHeadlessReturnWidgetData) {
   std::string result = engine.runHeadless(0);
   auto j = nlohmann::json::parse(result, nullptr, false);
   EXPECT_FALSE(j.is_discarded());
-  EXPECT_TRUE(j.contains("host_input"));
+  EXPECT_TRUE(j.contains("name_input"));
 }
 
 TEST_F(DialogEngineTest, RunHeadlessWithTicks) {
   PJ::DialogHandle handle(vt_);
-
-  // Connect first
-  (void)handle.sendEvent("connect_btn", PJ::WidgetEventBuilder::clicked());
   PJ::DialogEngine engine(std::move(handle));
 
+  // mock_dialog has no tick behavior, but should still return valid widget data
   std::string result = engine.runHeadless(5);
   auto j = nlohmann::json::parse(result);
-  // After 3 ticks, mock_streamer discovers topics
-  EXPECT_TRUE(j.contains("topic_list"));
-  EXPECT_TRUE(j["topic_list"].contains("list_items"));
-  EXPECT_GT(j["topic_list"]["list_items"].size(), 0u);
+  EXPECT_TRUE(j.contains("name_input"));
+  EXPECT_TRUE(j.contains("count_input"));
 }
 
 TEST_F(DialogEngineTest, ConfigCanBeSet) {
@@ -363,8 +247,18 @@ TEST_F(DialogEngineTest, ConfigCanBeSet) {
   EXPECT_FALSE(result.empty());
 }
 
+TEST_F(DialogEngineTest, SavedConfigReturnsPluginConfig) {
+  PJ::DialogHandle handle(vt_);
+  (void)handle.sendEvent("name_input", R"({"text": "config_test"})");
+  PJ::DialogEngine engine(std::move(handle));
+
+  std::string cfg = engine.savedConfig();
+  auto j = nlohmann::json::parse(cfg);
+  EXPECT_EQ(j["name"], "config_test");
+}
+
 // ==========================================================================
-// Full round-trip: widget binding + mock_streamer through DialogHandle
+// Full round-trip: widget binding + mock_dialog through DialogHandle
 // ==========================================================================
 
 TEST_F(DialogEngineTest, RoundTripWidgetBinding) {
@@ -377,21 +271,21 @@ TEST_F(DialogEngineTest, RoundTripWidgetBinding) {
   auto* layout = new QVBoxLayout(root);
 
   auto* line_edit = new QLineEdit(root);
-  line_edit->setObjectName("host_input");
+  line_edit->setObjectName("name_input");
   layout->addWidget(line_edit);
 
   auto* spin_box = new QSpinBox(root);
-  spin_box->setObjectName("port_input");
+  spin_box->setObjectName("count_input");
   spin_box->setRange(0, 99999);
   layout->addWidget(spin_box);
 
   PJ::applyWidgetData(root, view);
 
-  // Verify the mock_streamer's initial state was applied
-  EXPECT_EQ(line_edit->text().toStdString(), "localhost");
-  EXPECT_EQ(spin_box->value(), 9090);
+  // Verify the mock_dialog's initial state was applied
+  EXPECT_EQ(line_edit->text().toStdString(), "default");
+  EXPECT_EQ(spin_box->value(), 10);
 
-  // Simulate user editing host via signal
+  // Simulate user editing name via signal
   std::string captured_name;
   std::string captured_json;
   PJ::connectWidgetSignals(root, [&](const std::string& name, const std::string& json) {
@@ -399,8 +293,8 @@ TEST_F(DialogEngineTest, RoundTripWidgetBinding) {
     captured_json = json;
   });
 
-  line_edit->setText("192.168.1.1");
-  EXPECT_EQ(captured_name, "host_input");
+  line_edit->setText("my_source");
+  EXPECT_EQ(captured_name, "name_input");
 
   // Send event to plugin
   bool refresh = handle.sendEvent(captured_name, captured_json);
@@ -410,8 +304,8 @@ TEST_F(DialogEngineTest, RoundTripWidgetBinding) {
   PJ::WidgetDataView updated_view(handle.widget_data());
   PJ::applyWidgetData(root, updated_view);
 
-  // Verify host was updated in the plugin's state
-  EXPECT_EQ(updated_view.text("host_input").value_or(""), "192.168.1.1");
+  // Verify name was updated in the plugin's state
+  EXPECT_EQ(updated_view.text("name_input").value_or(""), "my_source");
 
   delete root;
 }

@@ -113,6 +113,40 @@ Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
   return DataSourceLibrary(*handle, vtable, std::string(path));
 }
 
+Expected<const PJ_dialog_vtable_t*> DataSourceLibrary::resolveDialogVtable() const {
+  if (handle_ == nullptr) {
+    return unexpected(std::string("library not loaded"));
+  }
+
+#if defined(_WIN32)
+  auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle_), "PJ_get_dialog_vtable");
+  if (symbol == nullptr) {
+    return unexpected(std::string("PJ_get_dialog_vtable not found"));
+  }
+  auto fn = reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
+#else
+  dlerror();
+  void* symbol = dlsym(handle_, "PJ_get_dialog_vtable");
+  const char* err = dlerror();
+  if (err != nullptr) {
+    return unexpected(std::string(err));
+  }
+  auto fn = reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
+#endif
+
+  const PJ_dialog_vtable_t* vt = fn();
+  if (vt == nullptr) {
+    return unexpected(std::string("PJ_get_dialog_vtable returned null"));
+  }
+  if (vt->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
+    return unexpected(std::string("Dialog protocol version mismatch"));
+  }
+  if (vt->struct_size < sizeof(PJ_dialog_vtable_t)) {
+    return unexpected(std::string("Dialog vtable is smaller than expected"));
+  }
+  return vt;
+}
+
 void DataSourceLibrary::reset() {
   if (handle_ != nullptr) {
     closeLibraryHandle(handle_);

@@ -90,6 +90,9 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     }
   }
 
+  // Task 7: detect parser slot widget
+  stats_.has_parser_slot = loaded->findChild<QWidget*>("pj_parser_slot") != nullptr;
+
   QWidget* binding_root = loaded;
 
   // 3. Apply initial widget data
@@ -163,6 +166,10 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
 // ---------------------------------------------------------------------------
 // run_headless
 // ---------------------------------------------------------------------------
+
+std::string DialogEngine::savedConfig() const {
+  return handle_.save_config();
+}
 
 std::string DialogEngine::runHeadless(int max_ticks) {
   for (int i = 0; i < max_ticks; ++i) {

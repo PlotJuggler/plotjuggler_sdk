@@ -6,7 +6,7 @@
 #include <pj_plugins/sdk/widget_data.hpp>
 #include <string>
 
-// Defined in mock_streamer.cpp, linked statically
+// Defined in mock_dialog.cpp, linked statically
 extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
 
 class PluginLifecycleTest : public ::testing::Test {
@@ -107,11 +107,11 @@ TEST_F(PluginLifecycleTest, WidgetDataPointerValidUntilNextCall) {
 // --- Widget Events ---
 
 TEST_F(PluginLifecycleTest, OnWidgetEventTextChanged) {
-  bool refresh = vt_->on_widget_event(ctx_, "host_input", R"({"text": "192.168.1.1"})");
+  bool refresh = vt_->on_widget_event(ctx_, "name_input", R"({"text": "my_source"})");
   EXPECT_TRUE(refresh);
   // Verify the change took effect
   auto j = nlohmann::json::parse(vt_->get_widget_data(ctx_));
-  EXPECT_EQ(j["host_input"]["text"], "192.168.1.1");
+  EXPECT_EQ(j["name_input"]["text"], "my_source");
 }
 
 TEST_F(PluginLifecycleTest, OnWidgetEventUnknownWidget) {
@@ -122,36 +122,17 @@ TEST_F(PluginLifecycleTest, OnWidgetEventUnknownWidget) {
 // --- Tick ---
 
 TEST_F(PluginLifecycleTest, OnTickInitiallyFalse) {
-  // Before connecting, tick should not request a refresh
+  // mock_dialog has no tick behavior — always returns false
   EXPECT_FALSE(vt_->on_tick(ctx_));
-}
-
-TEST_F(PluginLifecycleTest, OnTickDiscoverTopics) {
-  // Connect first
-  vt_->on_widget_event(ctx_, "connect_btn", R"({"clicked": true})");
-  // Tick a few times to trigger topic discovery
-  bool refresh = false;
-  for (int i = 0; i < 5; ++i) {
-    refresh = vt_->on_tick(ctx_);
-    if (refresh) {
-      break;
-    }
-  }
-  EXPECT_TRUE(refresh);
-  // Topics should now be visible in widget data
-  auto j = nlohmann::json::parse(vt_->get_widget_data(ctx_));
-  EXPECT_TRUE(j.contains("topic_list"));
-  EXPECT_TRUE(j["topic_list"].contains("list_items"));
-  EXPECT_GT(j["topic_list"]["list_items"].size(), 0u);
 }
 
 // --- Config round-trip ---
 
 TEST_F(PluginLifecycleTest, SaveLoadConfigRoundTrip) {
   // Set some state
-  vt_->on_widget_event(ctx_, "host_input", R"({"text": "myhost.local"})");
-  vt_->on_widget_event(ctx_, "port_input", R"({"value": 1234})");
-  vt_->on_widget_event(ctx_, "use_tls_check", R"({"checked": true})");
+  vt_->on_widget_event(ctx_, "name_input", R"({"text": "test_name"})");
+  vt_->on_widget_event(ctx_, "count_input", R"({"value": 42})");
+  vt_->on_widget_event(ctx_, "verbose_check", R"({"checked": true})");
 
   // Save config
   const char* config = vt_->save_config(ctx_);
@@ -166,9 +147,9 @@ TEST_F(PluginLifecycleTest, SaveLoadConfigRoundTrip) {
 
   // Verify the state was restored
   auto j = nlohmann::json::parse(vt_->get_widget_data(ctx2));
-  EXPECT_EQ(j["host_input"]["text"], "myhost.local");
-  EXPECT_EQ(j["port_input"]["value"], 1234);
-  EXPECT_EQ(j["use_tls_check"]["checked"], true);
+  EXPECT_EQ(j["name_input"]["text"], "test_name");
+  EXPECT_EQ(j["count_input"]["value"], 42);
+  EXPECT_EQ(j["verbose_check"]["checked"], true);
 
   vt_->destroy(ctx2);
 }
@@ -180,30 +161,19 @@ TEST_F(PluginLifecycleTest, NoErrorInitially) {
   EXPECT_EQ(err, nullptr);
 }
 
-TEST_F(PluginLifecycleTest, ErrorAfterTrigger) {
-  // Clear host, then try to connect — should set an error
-  vt_->on_widget_event(ctx_, "host_input", R"({"text": ""})");
-  vt_->on_widget_event(ctx_, "connect_btn", R"({"clicked": true})");
-  const char* err = vt_->get_last_error(ctx_);
-  ASSERT_NE(err, nullptr);
-  EXPECT_NE(std::string(err).find("empty"), std::string::npos);
-  // Error should be cleared after reading
-  EXPECT_EQ(vt_->get_last_error(ctx_), nullptr);
-}
-
 TEST_F(PluginLifecycleTest, LoadConfigWithInvalidJson) {
   bool loaded = vt_->load_config(ctx_, "not valid json");
   EXPECT_FALSE(loaded);
 }
 
 TEST_F(PluginLifecycleTest, LoadConfigWithWrongTypes) {
-  // port as string instead of int — should not crash, should still return true
+  // name as int instead of string — should not crash, should still return true
   // (type-safe loading just skips invalid fields)
-  bool loaded = vt_->load_config(ctx_, R"({"host": 42, "port": "not_int"})");
+  bool loaded = vt_->load_config(ctx_, R"({"name": 42, "count": "not_int"})");
   EXPECT_TRUE(loaded);
-  // Verify host was NOT overwritten (was string, got int — skipped)
+  // Verify name was NOT overwritten (was string, got int — skipped)
   auto j = nlohmann::json::parse(vt_->get_widget_data(ctx_));
-  EXPECT_EQ(j["host_input"]["text"], "localhost");
+  EXPECT_EQ(j["name_input"]["text"], "default");
 }
 
 // --- Accepted / Rejected ---

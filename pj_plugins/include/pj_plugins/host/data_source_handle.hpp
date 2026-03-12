@@ -100,6 +100,10 @@ class DataSourceHandle {
 
   [[nodiscard]] std::string lastError() const { return safeString(vt_->get_last_error(ctx_)); }
 
+  [[nodiscard]] void* dialogContext() const {
+    return vt_->get_dialog_context ? vt_->get_dialog_context(ctx_) : nullptr;
+  }
+
   [[nodiscard]] const PJ_data_source_vtable_t* vtable() const { return vt_; }
 
   [[nodiscard]] void* context() const { return ctx_; }

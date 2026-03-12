@@ -34,11 +34,15 @@ class DialogEngine {
   /// Run plugin headlessly (no UI): pump N ticks, return final widget_data JSON.
   [[nodiscard]] std::string runHeadless(int max_ticks);
 
+  /// Return the plugin's current saved config.
+  [[nodiscard]] std::string savedConfig() const;
+
   /// Stats from the last showDialog() call.
   struct Stats {
     int tick_count = 0;
     int event_count = 0;
     int diff_apply_count = 0;
+    bool has_parser_slot = false;
   };
   [[nodiscard]] Stats lastStats() const {
     return stats_;

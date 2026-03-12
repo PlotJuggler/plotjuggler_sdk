@@ -267,6 +267,10 @@ class DataSourcePluginBase {
     return last_error_;
   }
 
+  /// Override to return your dialog member's context.
+  /// Default returns nullptr (no dialog).
+  virtual void* dialogContext() { return nullptr; }
+
   template <typename CreateFn>
   static const PJ_data_source_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     static const PJ_data_source_vtable_t vt = {
@@ -287,6 +291,7 @@ class DataSourcePluginBase {
         trampoline_poll,
         trampoline_current_state,
         trampoline_get_last_error,
+        trampoline_get_dialog_context,
     };
     return &vt;
   }
@@ -501,6 +506,15 @@ class DataSourcePluginBase {
     } catch (...) {
       self->last_error_ = "Unknown exception in current_state";
       return PJ_DATA_SOURCE_STATE_FAILED;
+    }
+  }
+
+  static void* trampoline_get_dialog_context(void* ctx) {
+    auto* self = static_cast<DataSourcePluginBase*>(ctx);
+    try {
+      return self->dialogContext();
+    } catch (...) {
+      return nullptr;
     }
   }
 
