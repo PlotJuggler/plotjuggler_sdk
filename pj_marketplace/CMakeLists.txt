@@ -66,12 +66,19 @@ target_compile_options(pj_marketplace PRIVATE ${PJ_WARNING_FLAGS})
 
 add_executable(pj_marketplace_app
   main.cpp
+  src/ui/marketplace_window.cpp
+  src/ui/extension_detail_dialog.cpp
 )
 
 set_target_properties(pj_marketplace_app PROPERTIES
   AUTOMOC ON
   AUTORCC ON
   AUTOUIC ON
+  AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+)
+
+target_compile_definitions(pj_marketplace_app PRIVATE
+  REGISTRY_JSON_PATH="${CMAKE_SOURCE_DIR}/../pj-plugin-registry/registry.json"
 )
 
 target_link_libraries(pj_marketplace_app PRIVATE
