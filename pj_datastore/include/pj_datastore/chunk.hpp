@@ -127,31 +127,19 @@ class TopicChunkBuilder {
   void finishRow();
 
   // ---- Bulk column append ----
-  // Call append_timestamps first, then append_column_* for each column,
-  // then append_column_validity for columns with nulls, then finish_bulk_append.
-  // Stats are computed in finish_bulk_append using the column's validity bitmap.
+  // Call appendTimestamps first, then appendColumn for each column,
+  // then appendColumnValidity for columns with nulls, then finishBulkAppend.
+  // Stats are computed in finishBulkAppend using the column's validity bitmap.
+
   /// Append a contiguous timestamp batch.
   void appendTimestamps(Span<const Timestamp> timestamps);
 
-  /// Append one float32 column batch.
-  void appendColumnFloat32(std::size_t col_index, Span<const float> data);
+  /// Append a typed column batch.
+  /// Supported T: float, double, int32_t, int64_t, uint64_t, uint8_t (bool bytes).
+  template <typename T>
+  void appendColumn(std::size_t col_index, Span<const T> data);
 
-  /// Append one float64 column batch.
-  void appendColumnFloat64(std::size_t col_index, Span<const double> data);
-
-  /// Append one int32 column batch.
-  void appendColumnInt32(std::size_t col_index, Span<const int32_t> data);
-
-  /// Append one int64 column batch.
-  void appendColumnInt64(std::size_t col_index, Span<const int64_t> data);
-
-  /// Append one uint64 column batch.
-  void appendColumnUint64(std::size_t col_index, Span<const uint64_t> data);
-
-  /// Append one bool-byte (0/1) column batch.
-  void appendColumnBool(std::size_t col_index, Span<const uint8_t> data);
-
-  /// Append one string column batch from offsets+data views.
+  /// Append a string column batch from offsets+data views.
   void appendColumnStrings(std::size_t col_index, Span<const uint32_t> offsets, Span<const char> data);
 
   /// Append validity bits for last appended rows of this column.

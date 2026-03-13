@@ -305,12 +305,12 @@ void append_single_column_to_builder(
     TopicChunkBuilder& builder, const ColumnData& col, std::size_t offset, std::size_t batch_size) {
   std::visit(
       overloaded{
-          [&](Span<const float> d) { builder.appendColumnFloat32(col.col_index, d.subspan(offset, batch_size)); },
-          [&](Span<const double> d) { builder.appendColumnFloat64(col.col_index, d.subspan(offset, batch_size)); },
-          [&](Span<const int32_t> d) { builder.appendColumnInt32(col.col_index, d.subspan(offset, batch_size)); },
-          [&](Span<const int64_t> d) { builder.appendColumnInt64(col.col_index, d.subspan(offset, batch_size)); },
-          [&](Span<const uint64_t> d) { builder.appendColumnUint64(col.col_index, d.subspan(offset, batch_size)); },
-          [&](Span<const uint8_t> d) { builder.appendColumnBool(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const float> d) { builder.appendColumn(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const double> d) { builder.appendColumn(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const int32_t> d) { builder.appendColumn(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const int64_t> d) { builder.appendColumn(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const uint64_t> d) { builder.appendColumn(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const uint8_t> d) { builder.appendColumn(col.col_index, d.subspan(offset, batch_size)); },
           [&](const ColumnData::StringData& s) {
             builder.appendColumnStrings(col.col_index, s.offsets.subspan(offset, batch_size + 1), s.values);
           },

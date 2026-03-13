@@ -86,7 +86,7 @@ void BM_Builder_Bulk_Float32(benchmark::State& state) {
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     builder.appendTimestamps(data.timestamps);
-    builder.appendColumnFloat32(0, data.floats);
+    builder.appendColumn<float>(0, data.floats);
     builder.finishBulkAppend();
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
@@ -127,7 +127,7 @@ void BM_Builder_Bulk_Int64(benchmark::State& state) {
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     builder.appendTimestamps(data.timestamps);
-    builder.appendColumnInt64(0, data.int64s);
+    builder.appendColumn<int64_t>(0, data.int64s);
     builder.finishBulkAppend();
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
@@ -179,7 +179,7 @@ void BM_Builder_Bulk_MultiCol(benchmark::State& state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     builder.appendTimestamps(data.timestamps);
     for (int c = 0; c < kMultiColCount; ++c) {
-      builder.appendColumnFloat32(static_cast<std::size_t>(c), data.floats);
+      builder.appendColumn<float>(static_cast<std::size_t>(c), data.floats);
     }
     builder.finishBulkAppend();
     auto chunk = builder.seal();

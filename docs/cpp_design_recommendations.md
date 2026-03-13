@@ -206,7 +206,7 @@ PJ::Expected<Config> load_config(std::string_view path) {
 - Mark every fallible function `[[nodiscard]]`
 - Check `.has_value()` before accessing the value in `Expected<T>`
 - Use `.error()` to access the error message string
-- Success: `PJ::ok_status()`. Error: `PJ::unexpected(msg_string)`.
+- Success: `PJ::okStatus()`. Error: `PJ::unexpected(msg_string)`.
 - Propagate errors upward rather than logging at low levels
 
 ---

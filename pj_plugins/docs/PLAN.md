@@ -132,6 +132,7 @@ The exported DataSource instance surface must include:
 - `current_state`
 - `capabilities`
 - `get_last_error`
+- `get_dialog_context`
 
 Rules:
 

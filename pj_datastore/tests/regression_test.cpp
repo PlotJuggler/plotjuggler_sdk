@@ -115,7 +115,7 @@ TEST(RegressionTest, Bug2_FinishBulkAppend_ColumnRowCountMismatch_TriggersUB) {
       {
         TopicChunkBuilder builder(/*topic_id=*/1, /*schema_id=*/1, cols, /*max_rows=*/100);
         builder.appendTimestamps(ts);
-        builder.appendColumnFloat32(0, vals);  // 2 rows appended, pending=3
+        builder.appendColumn<float>(0, vals);  // 2 rows appended, pending=3
         builder.finishBulkAppend();            // PJ_ASSERT fires → throws
       },
       std::exception);

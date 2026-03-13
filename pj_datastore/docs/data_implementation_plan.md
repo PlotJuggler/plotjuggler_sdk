@@ -237,7 +237,7 @@ adaptive chunking is deferred.
 `TypedColumnBuffer` instances for accumulation, with two ingestion APIs:
 - **Row-at-a-time**: `beginRow`, `set*`, `finishRow` -- stats are
   computed incrementally per value.
-- **Bulk columnar**: `appendTimestamps()`, `appendColumnFloat32()` etc.,
+- **Bulk columnar**: `appendTimestamps()`, `appendColumn<T>()`,
   `appendColumnValidity()`, `finishBulkAppend()` -- data is memcpy'd,
   stats are computed in a single pass after all data and validity bitmaps
   are in place.
@@ -932,7 +932,7 @@ struct TopicChunk {           // ✅ Implemented in pj/engine/chunk.hpp.
     ChunkId id;               //    Deviates: timestamps stored as
     TopicId topic_id;         //    std::vector<int64_t> (not encoded Buffer).
     SchemaId schema_version;  //    Columns stored as encoded RawBuffers
-    ChunkStats stats;         //    with separate encoding_data variant.
+    ChunkStats stats;         //    with AoS Column struct containing EncodedData.
     Buffer timestamp_values;
     std::vector<ColumnBuffer> columns;
 };
@@ -1177,19 +1177,19 @@ Explicitly deferred items that should not block v1:
 | `base/include/pj_base/assert.hpp` | PJ_ASSERT macro (exceptions or assert per PJ_ASSERT_THROWS) |
 | `base/include/pj_base/span.hpp` | Minimal non-owning contiguous view (like std::span) |
 | `base/include/pj_base/expected.hpp` | Value-or-error container (like Rust Result) |
-| `engine/include/pj_datastore/buffer.hpp` | Section 11: RawBuffer, validity bitmaps |
-| `engine/include/pj_datastore/column_buffer.hpp` | Section 11: TypedColumnBuffer (ColumnBuffer in plan) |
-| `engine/include/pj_datastore/encoding.hpp` | Section 6: Dictionary, PackedBools, Constant, FOR encodings |
-| `engine/include/pj_datastore/chunk.hpp` | Section 5.1/5.6: TopicChunk, TopicChunkBuilder, ChunkStats |
-| `engine/include/pj_datastore/topic_storage.hpp` | Section 5/11: TopicStorage, TopicDescriptor, TopicMetadata |
-| `engine/include/pj_datastore/type_registry.hpp` | Section 4.1/4.3: TypeRegistry |
-| `engine/include/pj_datastore/query.hpp` | Section 9.2: RangeCursor, LatestAtResult, QueryRange, QueryPoint |
-| `engine/include/pj_datastore/reader.hpp` | Section 9.2: DataReader (IDataReader in plan) |
-| `engine/include/pj_datastore/writer.hpp` | Section 9.2: DataWriter (IDataWriter in plan) |
-| `engine/include/pj_datastore/engine.hpp` | Section 2: DataEngine (coordinator) |
-| `engine/include/pj_datastore/arrow_import.hpp` | Section 17: nanoarrow IPC import adapter utilities |
-| `engine/include/pj_datastore/derived_engine.hpp` | Section 7: `VarValue`, `ISISOTransform`, `IMIMOTransform`, `DerivedEngine` |
-| `engine/include/pj_datastore/builtin_transforms.hpp` | Section 7.3: `DerivativeTransform` built-in SISO |
+| `pj_datastore/include/pj_datastore/buffer.hpp` | Section 11: RawBuffer, validity bitmaps |
+| `pj_datastore/include/pj_datastore/column_buffer.hpp` | Section 11: TypedColumnBuffer (ColumnBuffer in plan) |
+| `pj_datastore/include/pj_datastore/encoding.hpp` | Section 6: Dictionary, PackedBools, Constant, FOR encodings |
+| `pj_datastore/include/pj_datastore/chunk.hpp` | Section 5.1/5.6: TopicChunk, TopicChunkBuilder, ChunkStats |
+| `pj_datastore/include/pj_datastore/topic_storage.hpp` | Section 5/11: TopicStorage, TopicDescriptor, TopicMetadata |
+| `pj_datastore/include/pj_datastore/type_registry.hpp` | Section 4.1/4.3: TypeRegistry |
+| `pj_datastore/include/pj_datastore/query.hpp` | Section 9.2: RangeCursor, LatestAtResult, QueryRange, QueryPoint |
+| `pj_datastore/include/pj_datastore/reader.hpp` | Section 9.2: DataReader (IDataReader in plan) |
+| `pj_datastore/include/pj_datastore/writer.hpp` | Section 9.2: DataWriter (IDataWriter in plan) |
+| `pj_datastore/include/pj_datastore/engine.hpp` | Section 2: DataEngine (coordinator) |
+| `pj_datastore/include/pj_datastore/arrow_import.hpp` | Section 17: nanoarrow IPC import adapter utilities |
+| `pj_datastore/include/pj_datastore/derived_engine.hpp` | Section 7: `VarValue`, `ISISOTransform`, `IMIMOTransform`, `DerivedEngine` |
+| `pj_datastore/include/pj_datastore/builtin_transforms.hpp` | Section 7.3: `DerivativeTransform` built-in SISO |
 
 ### Tests
 
@@ -1233,13 +1233,13 @@ Explicitly deferred items that should not block v1:
 
 | File | Change |
 |---|---|
-| `engine/src/derived_engine.cpp` | `DerivedEngine` implementation (DAG, scheduling, recompute) |
-| `engine/src/builtin_transforms.cpp` | `DerivativeTransform` implementation |
-| `engine/include/pj_datastore/topic_storage.hpp` | Added `setColumnDescriptors()` / `columnDescriptors()` / `clearChunks()` |
-| `engine/src/topic_storage.cpp` | Implementations of the above |
-| `engine/src/writer.cpp` | `register_scalar_series` now propagates column layout to `TopicStorage`; `get_or_create_builder` checks stored layout before sealed chunks |
-| `engine/include/pj_datastore/writer.hpp` | Added `ensureColumn()`; added `element_type` param to `expandArray()`; added private `ensureColsLoaded()` helper |
-| `engine/src/writer.cpp` | Extracted `ensureColsLoaded()` private helper shared by all three column-layout methods; implemented `ensureColumn()`; added schemaless branch to `expandArray()` |
+| `pj_datastore/src/derived_engine.cpp` | `DerivedEngine` implementation (DAG, scheduling, recompute) |
+| `pj_datastore/src/builtin_transforms.cpp` | `DerivativeTransform` implementation |
+| `pj_datastore/include/pj_datastore/topic_storage.hpp` | Added `setColumnDescriptors()` / `columnDescriptors()` / `clearChunks()` |
+| `pj_datastore/src/topic_storage.cpp` | Implementations of the above |
+| `pj_datastore/src/writer.cpp` | `register_scalar_series` now propagates column layout to `TopicStorage`; `get_or_create_builder` checks stored layout before sealed chunks |
+| `pj_datastore/include/pj_datastore/writer.hpp` | Added `ensureColumn()`; added `element_type` param to `expandArray()`; added private `ensureColsLoaded()` helper |
+| `pj_datastore/src/writer.cpp` | Extracted `ensureColsLoaded()` private helper shared by all three column-layout methods; implemented `ensureColumn()`; added schemaless branch to `expandArray()` |
 | `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3, arrow/18.1.0, nanoarrow/0.7.0 |
 
 ---
@@ -1310,7 +1310,7 @@ absl::Status appendColumns(
   and correctly excluded from stats computation.
 
 **`TopicChunkBuilder` bulk methods**: The builder exposes per-type bulk
-append methods (`appendTimestamps()`, `appendColumnFloat32()`, etc.)
+append methods (`appendTimestamps()`, `appendColumn<T>()`, etc.)
 plus `appendColumnValidity()` and `finishBulkAppend()`. Stats are
 computed in `finishBulkAppend()` after both data and validity are set.
 

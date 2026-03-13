@@ -164,7 +164,7 @@ class CsvFileLoader : public PJ::FileSourceBase {
         // if we fail to parse the value string, use PJ::kNull
         row_fields[index].value = parseToDouble(row_values[index]).value_or(PJ::kNull);
       }
-       // Push data. We use row number as tiemstamp (to simplify the example)
+       // Push data. We use row number as timestamp (to simplify the example)
       PJ::Timestamp timestamp = row;
       writeHost().appendRecord(*topic, timestamp, row_fields);
       // update the progress bar

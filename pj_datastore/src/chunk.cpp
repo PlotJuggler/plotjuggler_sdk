@@ -202,32 +202,38 @@ void TopicChunkBuilder::appendTimestamps(Span<const Timestamp> timestamps) {
   bulk_pending_rows_ = count;
 }
 
-void TopicChunkBuilder::appendColumnFloat32(std::size_t col_index, Span<const float> data) {
+template <>
+void TopicChunkBuilder::appendColumn<float>(std::size_t col_index, Span<const float> data) {
   PJ_ASSERT(col_index < columns_.size(), "col_index out of bounds");
   columns_[col_index].appendFloat32Bulk(data);
 }
 
-void TopicChunkBuilder::appendColumnFloat64(std::size_t col_index, Span<const double> data) {
+template <>
+void TopicChunkBuilder::appendColumn<double>(std::size_t col_index, Span<const double> data) {
   PJ_ASSERT(col_index < columns_.size(), "col_index out of bounds");
   columns_[col_index].appendFloat64Bulk(data);
 }
 
-void TopicChunkBuilder::appendColumnInt32(std::size_t col_index, Span<const int32_t> data) {
+template <>
+void TopicChunkBuilder::appendColumn<int32_t>(std::size_t col_index, Span<const int32_t> data) {
   PJ_ASSERT(col_index < columns_.size(), "col_index out of bounds");
   columns_[col_index].appendInt32Bulk(data);
 }
 
-void TopicChunkBuilder::appendColumnInt64(std::size_t col_index, Span<const int64_t> data) {
+template <>
+void TopicChunkBuilder::appendColumn<int64_t>(std::size_t col_index, Span<const int64_t> data) {
   PJ_ASSERT(col_index < columns_.size(), "col_index out of bounds");
   columns_[col_index].appendInt64Bulk(data);
 }
 
-void TopicChunkBuilder::appendColumnUint64(std::size_t col_index, Span<const uint64_t> data) {
+template <>
+void TopicChunkBuilder::appendColumn<uint64_t>(std::size_t col_index, Span<const uint64_t> data) {
   PJ_ASSERT(col_index < columns_.size(), "col_index out of bounds");
   columns_[col_index].appendUint64Bulk(data);
 }
 
-void TopicChunkBuilder::appendColumnBool(std::size_t col_index, Span<const uint8_t> data) {
+template <>
+void TopicChunkBuilder::appendColumn<uint8_t>(std::size_t col_index, Span<const uint8_t> data) {
   PJ_ASSERT(col_index < columns_.size(), "col_index out of bounds");
   columns_[col_index].appendBoolBulk(data);
 }

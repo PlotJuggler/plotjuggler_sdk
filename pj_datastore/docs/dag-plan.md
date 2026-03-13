@@ -125,9 +125,9 @@ Public headers use `std::vector`, `std::unordered_map`, `std::unordered_set`,
 /// Engine storage kinds map as follows:
 ///   kFloat32, kFloat64        → double  (float32 widens losslessly)
 ///   kInt8 … kInt64, kBool     → int64_t (sign-extend; bool → 0/1)
-///   kUint64                   → int64_t (cast; document caveat for values > INT64_MAX)
+///   kUint64                   → uint64_t
 ///   kString                   → std::string
-using VarValue = std::variant<int64_t, double, std::string>;
+using VarValue = std::variant<int64_t, uint64_t, double, std::string>;
 ```
 
 ### 3.1  `ISISOTransform`
@@ -282,9 +282,10 @@ class DerivedEngine {
 
   // ---- Scheduling ----
   // Process all dirty nodes in topological order (incremental path).
-  // If active_nodes is non-empty, only nodes in that set (plus their transitive
-  // dependencies) are considered.
-  PJ::Status schedule(const std::unordered_set<PJ::NodeId>& active_nodes = {});
+  PJ::Status scheduleAll();
+
+  // Process only the given nodes (plus their transitive dependencies).
+  PJ::Status scheduleActive(const std::unordered_set<PJ::NodeId>& nodes);
 
   // Full history recompute: clear output, reset transform, replay all input.
   // Use after parameter changes or to verify incremental correctness.
@@ -336,7 +337,7 @@ struct DerivedNode {
   const std::vector<PJ::TopicId>& all_input_topics() const;
 };
 
-struct DerivedEngine::Impl {
+struct DerivedEngineImpl {
   absl::flat_hash_map<PJ::NodeId, DerivedNode> nodes;
 
   // For topological sort and dirty propagation:
@@ -574,11 +575,11 @@ end
 
 | File | Contents |
 |---|---|
-| `pj_datastore/include/pj_datastore/derived_engine.hpp` | `ISISOTransform`, `IMIMOTransform`, `MIMORow`, `DerivedEngine` |
-| `engine/src/derived_engine.cpp` | `DerivedEngine` implementation (`Impl` with absl) |
+| `pj_datastore/include/pj_datastore/derived_engine.hpp` | `ISISOTransform`, `IMIMOTransform`, `DerivedEngine` |
+| `pj_datastore/src/derived_engine.cpp` | `DerivedEngine` implementation (`DerivedEngineImpl` with absl) |
 | `pj_datastore/include/pj_datastore/builtin_transforms.hpp` | `DerivativeTransform`, `MovingAverageTransform` |
-| `engine/src/builtin_transforms.cpp` | Implementations |
-| `tests/derived_engine_test.cpp` | Full test suite |
+| `pj_datastore/src/builtin_transforms.cpp` | Implementations |
+| `pj_datastore/tests/derived_engine_test.cpp` | Full test suite |
 
 ### Modified files
 

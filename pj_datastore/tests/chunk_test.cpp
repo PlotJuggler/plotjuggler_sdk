@@ -784,8 +784,8 @@ TEST(ChunkTest, BulkAppendFloat32) {
   }
 
   builder.appendTimestamps(ts);
-  builder.appendColumnFloat32(0, x_vals);
-  builder.appendColumnFloat32(1, y_vals);
+  builder.appendColumn<float>(0, x_vals);
+  builder.appendColumn<float>(1, y_vals);
   builder.finishBulkAppend();
 
   EXPECT_EQ(builder.rowCount(), 100U);
@@ -818,7 +818,7 @@ TEST(ChunkTest, BulkAppendStats) {
   const Timestamp ts[] = {10, 20, 30, 40, 50};
 
   builder.appendTimestamps(Span<const Timestamp>(ts, 5));
-  builder.appendColumnFloat64(0, Span<const double>(data, 5));
+  builder.appendColumn(0, Span<const double>(data, 5));
   builder.finishBulkAppend();
 
   const auto& cs = builder.stats().column_stats[0];
@@ -846,7 +846,7 @@ TEST(ChunkTest, BulkAppendConstantColumn) {
   }
 
   builder.appendTimestamps(ts);
-  builder.appendColumnInt32(0, vals);
+  builder.appendColumn<int32_t>(0, vals);
   builder.finishBulkAppend();
 
   const auto& cs = builder.stats().column_stats[0];
@@ -902,7 +902,7 @@ TEST(ChunkTest, BulkRemainingCapacity) {
   const Timestamp ts[] = {1, 2, 3};
   const float vals[] = {1.0F, 2.0F, 3.0F};
   builder.appendTimestamps(Span<const Timestamp>(ts, 3));
-  builder.appendColumnFloat32(0, Span<const float>(vals, 3));
+  builder.appendColumn(0, Span<const float>(vals, 3));
   builder.finishBulkAppend();
 
   EXPECT_EQ(builder.remainingCapacity(), 97U);
@@ -922,7 +922,7 @@ TEST(ChunkTest, BulkAppendWithValidity) {
   const Timestamp ts[] = {10, 20, 30, 40};
 
   builder.appendTimestamps(Span<const Timestamp>(ts, 4));
-  builder.appendColumnFloat64(0, Span<const double>(data, 4));
+  builder.appendColumn(0, Span<const double>(data, 4));
   // validity: bits [1, 0, 1, 0] = 0b0101 = 0x05
   const uint8_t bitmap[] = {0x05};
   builder.appendColumnValidity(0, BitSpan{Span<const uint8_t>(bitmap, 1), 0, 4});
@@ -954,9 +954,9 @@ TEST(ChunkTest, BulkAppendMixedTypes) {
   const uint8_t bools[] = {1, 0, 1};
 
   builder.appendTimestamps(Span<const Timestamp>(ts, 3));
-  builder.appendColumnFloat32(0, Span<const float>(f32, 3));
-  builder.appendColumnInt64(1, Span<const int64_t>(i64, 3));
-  builder.appendColumnBool(2, Span<const uint8_t>(bools, 3));
+  builder.appendColumn(0, Span<const float>(f32, 3));
+  builder.appendColumn(1, Span<const int64_t>(i64, 3));
+  builder.appendColumn(2, Span<const uint8_t>(bools, 3));
   builder.finishBulkAppend();
 
   TopicChunk chunk = builder.seal();

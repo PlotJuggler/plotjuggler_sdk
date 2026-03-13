@@ -290,7 +290,6 @@ Encoding types (`EncodingType`) are:
 - `kPackedBool`
 - `kConstant`
 - `kFrameOfReference`
-- `kDelta` (declared but not currently used in chunk sealing path)
 
 Current seal-time behavior (implemented in `chunk.cpp`):
 

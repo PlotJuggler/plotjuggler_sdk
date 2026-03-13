@@ -10,7 +10,18 @@ PlotJuggler Core — C++20 foundation in three modules:
 
 Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (independent of each other).
 
-For architecture details see `docs/cpp_design_recommendations.md` and `pj_datastore/docs/`.
+## Key Documentation
+
+| Document | When to read |
+|----------|-------------|
+| `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
+| `pj_datastore/docs/architecture_overview.md` | Datastore internals: chunks, encodings, storage layout |
+| `pj_datastore/docs/data_implementation_plan.md` | Detailed design: types, schemas, query API, bulk ingest |
+| `pj_datastore/docs/dag-plan.md` | DerivedEngine: transforms, DAG scheduling, VarValue |
+| `pj_plugins/docs/PLAN.md` | Plugin ABI design: DataSource, MessageParser, host interfaces |
+| `pj_plugins/docs/data-source-guide.md` | How to write a DataSource plugin (SDK tutorial) |
+| `pj_plugins/docs/message-parser-guide.md` | How to write a MessageParser plugin (SDK tutorial) |
+| `pj_plugins/docs/REQUIREMENTS.md` | Plugin system requirements and constraints |
 
 ## Build & Test
 
