@@ -21,11 +21,11 @@ struct DerivedEngineImpl;
 // VarValue — universal column value type for transform I/O
 // ---------------------------------------------------------------------------
 // Engine storage kinds map as follows:
-//   kFloat32, kFloat64        → double  (float32 widens losslessly)
-//   kInt8 … kInt64, kBool     → int64_t (sign-extend; bool → 0/1)
-//   kUint64                   → int64_t (cast; caveat for values > INT64_MAX)
+//   kFloat32, kFloat64        → double   (float32 widens losslessly)
+//   kInt8 … kInt64, kBool     → int64_t  (sign-extend; bool → 0/1)
+//   kUint64                   → uint64_t (lossless)
 //   kString                   → std::string
-using VarValue = std::variant<int64_t, double, std::string>;
+using VarValue = std::variant<int64_t, uint64_t, double, std::string>;
 
 // ---------------------------------------------------------------------------
 // ISISOTransform — single-input / single-output transform

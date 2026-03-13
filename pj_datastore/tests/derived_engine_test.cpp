@@ -1188,5 +1188,72 @@ TEST(MimoTransformTest, TopologicalOrder_MimoComesAfterSiso) {
   EXPECT_LT(pos(n2), pos(n_mimo));
 }
 
+// ---------------------------------------------------------------------------
+// Uint64 precision round-trip (BUG-001)
+// ---------------------------------------------------------------------------
+
+// Identity SISO transform: passes value through unchanged, preserving StorageKind.
+class Uint64IdentityTransform : public ISISOTransform {
+ public:
+  StorageKind outputKind(StorageKind input_kind) const override { return input_kind; }
+
+  bool calculate(PJ::Timestamp time, const VarValue& input, PJ::Timestamp& out_time, VarValue& out_value) override {
+    out_time = time;
+    out_value = input;
+    return true;
+  }
+};
+
+TEST(DerivedEngine, Uint64PrecisionRoundTrip) {
+  DataEngine engine;
+  auto ds = make_dataset(engine);
+
+  // Create a uint64 scalar topic with values that exceed double precision (>2^53)
+  // and exceed int64_t range (>INT64_MAX).
+  DataWriter writer = engine.createWriter();
+  auto handle_or = writer.registerScalarSeries(ds, "u64_src", PJ::NumericType::kUint64);
+  ASSERT_TRUE(handle_or.has_value());
+  PJ::TopicId src_tid = handle_or->topic_id;
+
+  const std::vector<uint64_t> test_values = {
+      0ULL,
+      42ULL,
+      (1ULL << 53) + 1,                          // first value not exactly representable as double
+      std::numeric_limits<int64_t>::max(),         // INT64_MAX
+      static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1,  // INT64_MAX + 1
+      std::numeric_limits<uint64_t>::max(),        // UINT64_MAX
+  };
+
+  for (std::size_t i = 0; i < test_values.size(); ++i) {
+    auto ts = static_cast<PJ::Timestamp>(i * 1'000'000'000LL);
+    writer.appendScalar(*handle_or, ts, test_values[i]);
+  }
+  engine.commitChunks(writer.flushAll());
+
+  // Register identity transform: kUint64 → kUint64
+  DerivedEngine derived(engine);
+  auto node_or = derived.addSisoTransform(src_tid, "u64_out", ds, std::make_unique<Uint64IdentityTransform>());
+  ASSERT_TRUE(node_or.has_value());
+
+  derived.onSourceCommitted({&src_tid, 1});
+  auto s = derived.scheduleAll();
+  ASSERT_TRUE(s.has_value()) << s.error();
+
+  // Read back and verify exact bit-for-bit equality.
+  auto out_topics = derived.outputTopics(*node_or);
+  ASSERT_EQ(out_topics.size(), 1u);
+
+  const TopicStorage* out_storage = engine.getTopicStorage(out_topics[0]);
+  ASSERT_NE(out_storage, nullptr);
+  const auto& chunks = out_storage->sealedChunks();
+  ASSERT_EQ(chunks.size(), 1u);
+  ASSERT_EQ(chunks[0].stats.row_count, test_values.size());
+
+  for (std::size_t i = 0; i < test_values.size(); ++i) {
+    uint64_t actual = chunks[0].readNumericAsUint64(0, i);
+    EXPECT_EQ(actual, test_values[i]) << "Mismatch at row " << i;
+  }
+}
+
 }  // namespace
 }  // namespace PJ

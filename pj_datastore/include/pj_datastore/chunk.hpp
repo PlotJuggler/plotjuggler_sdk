@@ -89,6 +89,12 @@ struct TopicChunk {
   /// Read numeric value at `col_index,row` as double.
   [[nodiscard]] double readNumericAsDouble(std::size_t col_index, std::size_t row) const;
 
+  /// Read numeric value at `col_index,row` as int64_t.
+  [[nodiscard]] int64_t readNumericAsInt64(std::size_t col_index, std::size_t row) const;
+
+  /// Read numeric value at `col_index,row` as uint64_t.
+  [[nodiscard]] uint64_t readNumericAsUint64(std::size_t col_index, std::size_t row) const;
+
   /// Read string value at `col_index,row`.
   [[nodiscard]] std::string_view readString(std::size_t col_index, std::size_t row) const;
 

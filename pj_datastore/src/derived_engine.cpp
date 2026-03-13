@@ -73,9 +73,9 @@ static VarValue decode_as_varvalue(const TopicChunk& chunk, std::size_t col, std
       return chunk.readNumericAsDouble(col, row);
     case StorageKind::kInt32:
     case StorageKind::kInt64:
-      return static_cast<int64_t>(chunk.readNumericAsDouble(col, row));
+      return chunk.readNumericAsInt64(col, row);
     case StorageKind::kUint64:
-      return static_cast<int64_t>(chunk.readNumericAsDouble(col, row));
+      return chunk.readNumericAsUint64(col, row);
     case StorageKind::kBool:
       return static_cast<int64_t>(chunk.readBool(col, row) ? 1 : 0);
     case StorageKind::kString:
@@ -94,7 +94,39 @@ static void write_varvalue(
     return;
   }
 
-  // Numeric: extract as double then coerce to the target type.
+  // Integer→integer fast paths: avoid the lossy double round-trip.
+  if (out_kind == StorageKind::kUint64) {
+    if (const auto* u = std::get_if<uint64_t>(&val)) {
+      writer.setUint64(tid, col, *u);
+      return;
+    }
+    if (const auto* i = std::get_if<int64_t>(&val)) {
+      writer.setUint64(tid, col, static_cast<uint64_t>(*i));
+      return;
+    }
+  }
+  if (out_kind == StorageKind::kInt64) {
+    if (const auto* i = std::get_if<int64_t>(&val)) {
+      writer.setInt64(tid, col, *i);
+      return;
+    }
+    if (const auto* u = std::get_if<uint64_t>(&val)) {
+      writer.setInt64(tid, col, static_cast<int64_t>(*u));
+      return;
+    }
+  }
+  if (out_kind == StorageKind::kInt32) {
+    if (const auto* i = std::get_if<int64_t>(&val)) {
+      writer.setInt32(tid, col, static_cast<int32_t>(*i));
+      return;
+    }
+    if (const auto* u = std::get_if<uint64_t>(&val)) {
+      writer.setInt32(tid, col, static_cast<int32_t>(*u));
+      return;
+    }
+  }
+
+  // Fallback: extract as double then coerce to the target type.
   double dval = std::visit(
       [](const auto& v) -> double {
         using T = std::decay_t<decltype(v)>;

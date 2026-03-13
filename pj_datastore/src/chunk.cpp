@@ -51,6 +51,34 @@ bool dispatch_numeric_kind(StorageKind kind, F&& fn) {
   return result;
 }
 
+// Read a raw numeric value from a buffer as int64_t, dispatching on StorageKind.
+[[nodiscard]] int64_t read_raw_as_int64(const RawBuffer& buf, StorageKind kind, std::size_t row) {
+  const std::size_t elem_size = storageKindSize(kind);
+  const uint8_t* ptr = buf.data() + row * elem_size;
+
+  int64_t result = 0;
+  dispatch_numeric_kind(kind, [&]<typename T>(const T* /*tag*/) {
+    T v{};
+    std::memcpy(&v, ptr, sizeof(v));
+    result = static_cast<int64_t>(v);
+  });
+  return result;
+}
+
+// Read a raw numeric value from a buffer as uint64_t, dispatching on StorageKind.
+[[nodiscard]] uint64_t read_raw_as_uint64(const RawBuffer& buf, StorageKind kind, std::size_t row) {
+  const std::size_t elem_size = storageKindSize(kind);
+  const uint8_t* ptr = buf.data() + row * elem_size;
+
+  uint64_t result = 0;
+  dispatch_numeric_kind(kind, [&]<typename T>(const T* /*tag*/) {
+    T v{};
+    std::memcpy(&v, ptr, sizeof(v));
+    result = static_cast<uint64_t>(v);
+  });
+  return result;
+}
+
 }  // namespace
 
 // ===========================================================================
@@ -573,6 +601,40 @@ double TopicChunk::readNumericAsDouble(std::size_t col_index, std::size_t row) c
     }
     default:
       return 0.0;
+  }
+}
+
+int64_t TopicChunk::readNumericAsInt64(std::size_t col_index, std::size_t row) const {
+  switch (column_encodings[col_index]) {
+    case EncodingType::kConstant:
+      return static_cast<int64_t>(
+          encoding::constantDecodeAsDouble(std::get<encoding::ConstantEncoded>(encoding_data[col_index])));
+    case EncodingType::kFrameOfReference:
+      return static_cast<int64_t>(encoding::forDecodeOneAsDouble(
+          std::get<encoding::FrameOfReferenceEncoded>(encoding_data[col_index]), row));
+    case EncodingType::kRaw: {
+      const StorageKind kind = storageKindOf(column_descriptors[col_index].logical_type);
+      return read_raw_as_int64(encoded_columns[col_index], kind, row);
+    }
+    default:
+      return 0;
+  }
+}
+
+uint64_t TopicChunk::readNumericAsUint64(std::size_t col_index, std::size_t row) const {
+  switch (column_encodings[col_index]) {
+    case EncodingType::kConstant:
+      return static_cast<uint64_t>(
+          encoding::constantDecodeAsDouble(std::get<encoding::ConstantEncoded>(encoding_data[col_index])));
+    case EncodingType::kFrameOfReference:
+      return static_cast<uint64_t>(encoding::forDecodeOneAsDouble(
+          std::get<encoding::FrameOfReferenceEncoded>(encoding_data[col_index]), row));
+    case EncodingType::kRaw: {
+      const StorageKind kind = storageKindOf(column_descriptors[col_index].logical_type);
+      return read_raw_as_uint64(encoded_columns[col_index], kind, row);
+    }
+    default:
+      return 0;
   }
 }
 
