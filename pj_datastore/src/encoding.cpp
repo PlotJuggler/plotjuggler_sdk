@@ -97,6 +97,72 @@ double constantDecodeAsDouble(const ConstantEncoded& enc) {
   return 0.0;
 }
 
+int64_t constantDecodeAsInt64(const ConstantEncoded& enc) {
+  const uint8_t* ptr = enc.value_bytes.data();
+  switch (enc.value_kind) {
+    case StorageKind::kInt32: {
+      int32_t v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<int64_t>(v);
+    }
+    case StorageKind::kInt64: {
+      int64_t v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return v;
+    }
+    case StorageKind::kUint64: {
+      uint64_t v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<int64_t>(v);
+    }
+    case StorageKind::kFloat32: {
+      float v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<int64_t>(v);
+    }
+    case StorageKind::kFloat64: {
+      double v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<int64_t>(v);
+    }
+    default:
+      return 0;
+  }
+}
+
+uint64_t constantDecodeAsUint64(const ConstantEncoded& enc) {
+  const uint8_t* ptr = enc.value_bytes.data();
+  switch (enc.value_kind) {
+    case StorageKind::kUint64: {
+      uint64_t v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return v;
+    }
+    case StorageKind::kInt32: {
+      int32_t v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<uint64_t>(v);
+    }
+    case StorageKind::kInt64: {
+      int64_t v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<uint64_t>(v);
+    }
+    case StorageKind::kFloat32: {
+      float v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<uint64_t>(v);
+    }
+    case StorageKind::kFloat64: {
+      double v{};
+      std::memcpy(&v, ptr, sizeof(v));
+      return static_cast<uint64_t>(v);
+    }
+    default:
+      return 0;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Frame of Reference encoding
 // Data must be int64_t values.
@@ -147,57 +213,68 @@ FrameOfReferenceEncoded forEncode(
   return result;
 }
 
-double forDecodeOneAsDouble(const FrameOfReferenceEncoded& enc, std::size_t row) {
-  const uint8_t* data = enc.offsets.data();
-  uint64_t offset = 0;
+namespace {
 
-  switch (enc.offset_bytes) {
+uint64_t for_read_offset(const uint8_t* data, std::size_t row, uint8_t offset_bytes) {
+  switch (offset_bytes) {
     case 1: {
       uint8_t v = 0;
       std::memcpy(&v, data + row, sizeof(v));
-      offset = v;
-      break;
+      return v;
     }
     case 2: {
       uint16_t v = 0;
       std::memcpy(&v, data + row * 2, sizeof(v));
-      offset = v;
-      break;
+      return v;
     }
     default: {
       uint32_t v = 0;
       std::memcpy(&v, data + row * 4, sizeof(v));
-      offset = v;
-      break;
+      return v;
     }
   }
+}
 
+}  // namespace
+
+double forDecodeOneAsDouble(const FrameOfReferenceEncoded& enc, std::size_t row) {
+  const uint64_t offset = for_read_offset(enc.offsets.data(), row, enc.offset_bytes);
   return static_cast<double>(enc.reference) + static_cast<double>(offset);
+}
+
+int64_t forDecodeOneAsInt64(const FrameOfReferenceEncoded& enc, std::size_t row) {
+  const uint64_t offset = for_read_offset(enc.offsets.data(), row, enc.offset_bytes);
+  return enc.reference + static_cast<int64_t>(offset);
 }
 
 void forDecodeRangeAsDoubles(const FrameOfReferenceEncoded& enc, Span<double> out, std::size_t row_start) {
   const std::size_t count = out.size();
   const double ref = static_cast<double>(enc.reference);
+  const uint8_t* base = enc.offsets.data();
 
   switch (enc.offset_bytes) {
     case 1: {
-      const auto* src = reinterpret_cast<const uint8_t*>(enc.offsets.data()) + row_start;
+      const uint8_t* src = base + row_start;
       for (std::size_t i = 0; i < count; ++i) {
         out[i] = ref + static_cast<double>(src[i]);
       }
       break;
     }
     case 2: {
-      const auto* src = reinterpret_cast<const uint16_t*>(enc.offsets.data()) + row_start;
+      const uint8_t* src = base + row_start * 2;
       for (std::size_t i = 0; i < count; ++i) {
-        out[i] = ref + static_cast<double>(src[i]);
+        uint16_t v{};
+        std::memcpy(&v, src + i * 2, sizeof(v));
+        out[i] = ref + static_cast<double>(v);
       }
       break;
     }
     default: {
-      const auto* src = reinterpret_cast<const uint32_t*>(enc.offsets.data()) + row_start;
+      const uint8_t* src = base + row_start * 4;
       for (std::size_t i = 0; i < count; ++i) {
-        out[i] = ref + static_cast<double>(src[i]);
+        uint32_t v{};
+        std::memcpy(&v, src + i * 4, sizeof(v));
+        out[i] = ref + static_cast<double>(v);
       }
       break;
     }

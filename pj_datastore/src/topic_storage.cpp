@@ -68,17 +68,13 @@ TopicMetadata TopicStorage::metadata() const {
 
     // Approximate byte size: sum encoded timestamp buffer + all encoded column buffers
     meta.total_byte_size += chunk.timestamps.size() * sizeof(Timestamp);
-    for (const auto& col_buf : chunk.encoded_columns) {
-      meta.total_byte_size += col_buf.size();
-    }
-    for (const auto& validity_buf : chunk.validity_bitmaps) {
-      meta.total_byte_size += validity_buf.sizeBytes();
-    }
-    for (const auto& enc : chunk.encoding_data) {
+    for (const auto& col : chunk.columns) {
       std::visit(
           [&](const auto& v) {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, encoding::DictionaryEncoded>) {
+            if constexpr (std::is_same_v<T, RawBuffer>) {
+              meta.total_byte_size += v.size();
+            } else if constexpr (std::is_same_v<T, encoding::DictionaryEncoded>) {
               meta.total_byte_size += v.indices.size();
               for (const auto& s : v.dictionary) {
                 meta.total_byte_size += s.size();
@@ -90,9 +86,11 @@ TopicMetadata TopicStorage::metadata() const {
             } else if constexpr (std::is_same_v<T, encoding::FrameOfReferenceEncoded>) {
               meta.total_byte_size += v.offsets.size();
             }
-            // std::monostate (kRaw): already counted via encoded_columns
           },
-          enc);
+          col.data);
+      if (col.validity_bitmap) {
+        meta.total_byte_size += col.validity_bitmap->sizeBytes();
+      }
     }
   }
 

@@ -111,9 +111,9 @@ TEST(ArrayExpansionTest, FixedSizeArray_WriteAndRead) {
 
   for (int i = 0; i < 4; ++i) {
     ASSERT_TRUE(writer.beginRow(topic_id, PJ::Timestamp(i) * 1000).has_value());
-    writer.setFloat32(topic_id, 0, static_cast<float>(i) * 1.0f);
-    writer.setFloat32(topic_id, 1, static_cast<float>(i) * 2.0f);
-    writer.setFloat32(topic_id, 2, static_cast<float>(i) * 3.0f);
+    writer.set(topic_id, 0, static_cast<float>(i) * 1.0f);
+    writer.set(topic_id, 1, static_cast<float>(i) * 2.0f);
+    writer.set(topic_id, 2, static_cast<float>(i) * 3.0f);
     ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   }
   engine.commitChunks(writer.flushAll());
@@ -207,9 +207,9 @@ TEST(ArrayExpansionTest, VarLenArray_WriteAndRead_BasicValues) {
 
   for (int i = 0; i < 4; ++i) {
     ASSERT_TRUE(writer.beginRow(topic_id, PJ::Timestamp(i) * 1000).has_value());
-    writer.setFloat64(topic_id, 0, i * 1.0);
-    writer.setFloat64(topic_id, 1, i * 2.0);
-    writer.setFloat64(topic_id, 2, i * 3.0);
+    writer.set(topic_id, 0, i * 1.0);
+    writer.set(topic_id, 1, i * 2.0);
+    writer.set(topic_id, 2, i * 3.0);
     ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   }
   engine.commitChunks(writer.flushAll());
@@ -351,10 +351,10 @@ TEST(ArrayExpansionTest, Metadata_ExposedViaTopicMetadata) {
   writer.expandArray(topic_id, "data", 10u);  // clamped to 4; 1 truncation; max_observed=10
 
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
-  writer.setFloat64(topic_id, 1, 2.0);
-  writer.setFloat64(topic_id, 2, 3.0);
-  writer.setFloat64(topic_id, 3, 4.0);
+  writer.set(topic_id, 0, 1.0);
+  writer.set(topic_id, 1, 2.0);
+  writer.set(topic_id, 2, 3.0);
+  writer.set(topic_id, 3, 4.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
@@ -387,8 +387,8 @@ TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
   *writer.expandArray(topic_id, "data", 2u);
   for (int i = 0; i < 10; ++i) {
     ASSERT_TRUE(writer.beginRow(topic_id, PJ::Timestamp(i) * 1000).has_value());
-    writer.setFloat64(topic_id, 0, i * 1.0);
-    writer.setFloat64(topic_id, 1, i * 2.0);
+    writer.set(topic_id, 0, i * 1.0);
+    writer.set(topic_id, 1, i * 2.0);
     ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   }
 
@@ -398,10 +398,10 @@ TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
   // Write 5 more rows with all 4 elements
   for (int i = 10; i < 15; ++i) {
     ASSERT_TRUE(writer.beginRow(topic_id, PJ::Timestamp(i) * 1000).has_value());
-    writer.setFloat64(topic_id, 0, i * 1.0);
-    writer.setFloat64(topic_id, 1, i * 2.0);
-    writer.setFloat64(topic_id, 2, i * 3.0);
-    writer.setFloat64(topic_id, 3, i * 4.0);
+    writer.set(topic_id, 0, i * 1.0);
+    writer.set(topic_id, 1, i * 2.0);
+    writer.set(topic_id, 2, i * 3.0);
+    writer.set(topic_id, 3, i * 4.0);
     ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   }
   engine.commitChunks(writer.flushAll());
@@ -411,9 +411,9 @@ TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
   ASSERT_NE(storage, nullptr);
   for (const auto& chunk : storage->sealedChunks()) {
     if (chunk.stats.t_max < PJ::Timestamp(10) * 1000) {
-      EXPECT_EQ(chunk.column_descriptors.size(), 2u) << "pre-expansion chunk must have 2 columns";
+      EXPECT_EQ(chunk.columns.size(), 2u) << "pre-expansion chunk must have 2 columns";
     } else {
-      EXPECT_EQ(chunk.column_descriptors.size(), 4u) << "post-expansion chunk must have 4 columns";
+      EXPECT_EQ(chunk.columns.size(), 4u) << "post-expansion chunk must have 4 columns";
     }
   }
 
@@ -453,8 +453,8 @@ TEST(ArrayExpansionTest, UnsetElementsAutoNullFilled) {
 
   // Write row with only first 2 elements; cols 2 and 3 are unset
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
-  writer.setFloat64(topic_id, 1, 2.0);
+  writer.set(topic_id, 0, 1.0);
+  writer.set(topic_id, 1, 2.0);
   // col 2 and col 3 intentionally not set
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
@@ -510,10 +510,10 @@ TEST(ArrayExpansionTest, VarLenStructArray_ExpandAndWrite) {
 
   // Write and read back
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat32(topic_id, 0, 1.0f);
-  writer.setFloat32(topic_id, 1, 2.0f);
-  writer.setFloat32(topic_id, 2, 3.0f);
-  writer.setFloat32(topic_id, 3, 4.0f);
+  writer.set(topic_id, 0, 1.0f);
+  writer.set(topic_id, 1, 2.0f);
+  writer.set(topic_id, 2, 3.0f);
+  writer.set(topic_id, 3, 4.0f);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
@@ -565,9 +565,9 @@ TEST(ArrayExpansionTest, SecondWriter_PicksUpExpandedLayout) {
   ASSERT_EQ(*expand_result, 3u);
 
   ASSERT_TRUE(writerA.beginRow(topic_id, 1000).has_value());
-  writerA.setFloat64(topic_id, 0, 10.0);
-  writerA.setFloat64(topic_id, 1, 20.0);
-  writerA.setFloat64(topic_id, 2, 30.0);
+  writerA.set(topic_id, 0, 10.0);
+  writerA.set(topic_id, 1, 20.0);
+  writerA.set(topic_id, 2, 30.0);
   ASSERT_TRUE(writerA.finishRow(topic_id).has_value());
   engine.commitChunks(writerA.flushAll());
 
@@ -626,21 +626,21 @@ TEST(ArrayExpansionTest, ExpandArray_WhileRowInProgress_ReturnsError) {
 
   // Row 1 (completed)
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
-  writer.setFloat64(topic_id, 1, 2.0);
+  writer.set(topic_id, 0, 1.0);
+  writer.set(topic_id, 1, 2.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   // Row 2 (completed)
   ASSERT_TRUE(writer.beginRow(topic_id, 2000).has_value());
-  writer.setFloat64(topic_id, 0, 3.0);
-  writer.setFloat64(topic_id, 1, 4.0);
+  writer.set(topic_id, 0, 3.0);
+  writer.set(topic_id, 1, 4.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   // Row 3: begin_row but do NOT call finish_row before expand_array.
   // expand_array must return an error — it must not silently drop the row.
   ASSERT_TRUE(writer.beginRow(topic_id, 3000).has_value());
-  writer.setFloat64(topic_id, 0, 5.0);
-  writer.setFloat64(topic_id, 1, 6.0);
+  writer.set(topic_id, 0, 5.0);
+  writer.set(topic_id, 1, 6.0);
   auto expand_result = writer.expandArray(topic_id, "data", 3u);
   EXPECT_FALSE(expand_result.has_value())
       << "expand_array must fail when a row is in progress; got success unexpectedly";
@@ -764,10 +764,10 @@ TEST(ArrayExpansionTest, MixedSchema_ScalarPlusVarLenArray_CorrectColumnOrder) {
 
   // Write and read back to confirm data integrity
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 100.0);  // timestamp_sec
-  writer.setFloat64(topic_id, 1, 1.0);    // values[0]
-  writer.setFloat64(topic_id, 2, 2.0);    // values[1]
-  writer.setFloat64(topic_id, 3, 3.0);    // values[2]
+  writer.set(topic_id, 0, 100.0);  // timestamp_sec
+  writer.set(topic_id, 1, 1.0);    // values[0]
+  writer.set(topic_id, 2, 2.0);    // values[1]
+  writer.set(topic_id, 3, 3.0);    // values[2]
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
@@ -837,11 +837,11 @@ TEST(ArrayExpansionTest, TwoDistinctArrayFields_ExpandBoth_CorrectLayout) {
 
   // Write a row and read it back to confirm no data corruption
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
-  writer.setFloat64(topic_id, 1, 2.0);
-  writer.setFloat64(topic_id, 2, 10.0);
-  writer.setFloat64(topic_id, 3, 20.0);
-  writer.setFloat64(topic_id, 4, 30.0);
+  writer.set(topic_id, 0, 1.0);
+  writer.set(topic_id, 1, 2.0);
+  writer.set(topic_id, 2, 10.0);
+  writer.set(topic_id, 3, 20.0);
+  writer.set(topic_id, 4, 30.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
@@ -881,7 +881,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_AddsColumn) {
   ASSERT_EQ(handle.field_ids.size(), 1u);
 
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 42.0);
+  writer.set(topic_id, 0, 42.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
@@ -935,9 +935,9 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_MultipleColumns_WriteAndRead) {
   ASSERT_EQ(handle.field_ids.size(), 3u);
 
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
-  writer.setFloat64(topic_id, 1, 2.0);
-  writer.setFloat32(topic_id, 2, 3.0f);
+  writer.set(topic_id, 0, 1.0);
+  writer.set(topic_id, 1, 2.0);
+  writer.set(topic_id, 2, 3.0f);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
@@ -965,7 +965,7 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_SecondWriter_PicksUpLayout) {
 
   ASSERT_TRUE(writerA.ensureColumn(topic_id, "v", PJ::PrimitiveType::kFloat64).has_value());
   ASSERT_TRUE(writerA.beginRow(topic_id, 1000).has_value());
-  writerA.setFloat64(topic_id, 0, 99.0);
+  writerA.set(topic_id, 0, 99.0);
   ASSERT_TRUE(writerA.finishRow(topic_id).has_value());
   engine.commitChunks(writerA.flushAll());
 
@@ -1039,8 +1039,8 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_IncrementalExpansion) {
   EXPECT_EQ(*r1, 2u);
 
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
-  writer.setFloat64(topic_id, 1, 2.0);
+  writer.set(topic_id, 0, 1.0);
+  writer.set(topic_id, 1, 2.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
@@ -1049,18 +1049,18 @@ TEST(ArrayExpansionTest, Schemaless_ExpandArray_IncrementalExpansion) {
   EXPECT_EQ(*r2, 5u);
 
   ASSERT_TRUE(writer.beginRow(topic_id, 2000).has_value());
-  writer.setFloat64(topic_id, 0, 10.0);
-  writer.setFloat64(topic_id, 1, 20.0);
-  writer.setFloat64(topic_id, 2, 30.0);
-  writer.setFloat64(topic_id, 3, 40.0);
-  writer.setFloat64(topic_id, 4, 50.0);
+  writer.set(topic_id, 0, 10.0);
+  writer.set(topic_id, 1, 20.0);
+  writer.set(topic_id, 2, 30.0);
+  writer.set(topic_id, 3, 40.0);
+  writer.set(topic_id, 4, 50.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 
   const TopicStorage* storage = engine.getTopicStorage(topic_id);
   ASSERT_NE(storage, nullptr);
   ASSERT_GE(storage->sealedChunks().size(), 2u);
-  EXPECT_EQ(storage->sealedChunks().back().column_descriptors.size(), 5u);
+  EXPECT_EQ(storage->sealedChunks().back().columns.size(), 5u);
 }
 
 TEST(ArrayExpansionTest, Schemaless_ExpandArray_Idempotent_ShrinkIsNoop) {
@@ -1254,8 +1254,8 @@ TEST(ArrayExpansionTest, Typed_EnsureColumn_AddsColumnOutsideSchema) {
   ASSERT_EQ(handle.field_ids.size(), 2u);
 
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
-  writer.setFloat64(topic_id, 1, 2.0);
+  writer.set(topic_id, 0, 1.0);
+  writer.set(topic_id, 1, 2.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   engine.commitChunks(writer.flushAll());
 

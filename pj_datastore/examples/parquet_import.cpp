@@ -47,8 +47,6 @@ std::string_view encoding_name(EncodingType enc) {
   switch (enc) {
     case EncodingType::kRaw:
       return "Raw";
-    case EncodingType::kDelta:
-      return "Delta";
     case EncodingType::kDictionary:
       return "Dictionary";
     case EncodingType::kPackedBool:
@@ -74,36 +72,26 @@ struct ColumnMemory {
 };
 
 std::size_t encoded_column_bytes(const TopicChunk& chunk, std::size_t col) {
-  auto enc = chunk.column_encodings[col];
-  const auto& data = chunk.encoding_data[col];
-
-  switch (enc) {
-    case EncodingType::kRaw:
-    case EncodingType::kDelta:
-      return chunk.encoded_columns[col].size();
-
-    case EncodingType::kConstant: {
-      const auto& c = std::get<PJ::encoding::ConstantEncoded>(data);
-      return c.value_size;
-    }
-    case EncodingType::kFrameOfReference: {
-      const auto& f = std::get<PJ::encoding::FrameOfReferenceEncoded>(data);
-      return f.offsets.size();
-    }
-    case EncodingType::kDictionary: {
-      const auto& d = std::get<PJ::encoding::DictionaryEncoded>(data);
-      std::size_t dict_bytes = 0;
-      for (const auto& s : d.dictionary) {
-        dict_bytes += s.size();
-      }
-      return d.indices.size() + dict_bytes;
-    }
-    case EncodingType::kPackedBool: {
-      const auto& p = std::get<PJ::encoding::PackedBools>(data);
-      return p.bits.size();
-    }
-  }
-  return 0;
+  return std::visit(
+      [](const auto& v) -> std::size_t {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, PJ::RawBuffer>) {
+          return v.size();
+        } else if constexpr (std::is_same_v<T, PJ::encoding::ConstantEncoded>) {
+          return v.value_size;
+        } else if constexpr (std::is_same_v<T, PJ::encoding::FrameOfReferenceEncoded>) {
+          return v.offsets.size();
+        } else if constexpr (std::is_same_v<T, PJ::encoding::DictionaryEncoded>) {
+          std::size_t dict_bytes = 0;
+          for (const auto& s : v.dictionary) {
+            dict_bytes += s.size();
+          }
+          return v.indices.size() + dict_bytes;
+        } else if constexpr (std::is_same_v<T, PJ::encoding::PackedBools>) {
+          return v.bits.size();
+        }
+      },
+      chunk.columns[col].data);
 }
 
 std::vector<ColumnMemory> measure_memory(
@@ -112,20 +100,23 @@ std::vector<ColumnMemory> measure_memory(
   std::vector<ColumnMemory> result(num_columns);
 
   // Count encoding occurrences per column to determine dominant encoding
-  std::vector<std::vector<uint32_t>> enc_counts(num_columns, std::vector<uint32_t>(6, 0));
+  constexpr int kNumEncodings = 5;
+  std::vector<std::vector<uint32_t>> enc_counts(num_columns, std::vector<uint32_t>(kNumEncodings, 0));
 
   for (const auto& chunk : chunks) {
     for (std::size_t col = 0; col < num_columns; ++col) {
       result[col].actual_bytes += encoded_column_bytes(chunk, col);
-      result[col].actual_bytes += chunk.validity_bitmaps[col].sizeBytes();
-      enc_counts[col][static_cast<uint8_t>(chunk.column_encodings[col])]++;
+      if (chunk.columns[col].validity_bitmap) {
+        result[col].actual_bytes += chunk.columns[col].validity_bitmap->sizeBytes();
+      }
+      enc_counts[col][static_cast<uint8_t>(chunk.columnEncoding(col))]++;
     }
   }
 
   // Determine dominant encoding per column
   for (std::size_t col = 0; col < num_columns; ++col) {
     uint32_t max_count = 0;
-    for (int enc = 0; enc < 6; ++enc) {
+    for (int enc = 0; enc < kNumEncodings; ++enc) {
       if (enc_counts[col][static_cast<std::size_t>(enc)] > max_count) {
         max_count = enc_counts[col][static_cast<std::size_t>(enc)];
         result[col].dominant_encoding = static_cast<EncodingType>(enc);

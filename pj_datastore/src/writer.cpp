@@ -267,64 +267,25 @@ PJ::Status DataWriter::finishRow(PJ::TopicId topic_id) {
 }
 
 // ---------------------------------------------------------------------------
-// Set values (6 storage types)
+// Set values — templatized
 // ---------------------------------------------------------------------------
 
-void DataWriter::setFloat32(TopicId topic_id, std::size_t col_index, float value) {
+template <typename T>
+void DataWriter::set(TopicId topic_id, std::size_t col_index, T value) {
   auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "set_float32: no builder for topic");
+  PJ_ASSERT(it != builders_.end(), "set: no builder for topic");
   if (it != builders_.end()) {
-    it->second.setFloat32(col_index, value);
+    it->second.set<T>(col_index, value);
   }
 }
 
-void DataWriter::setFloat64(TopicId topic_id, std::size_t col_index, double value) {
-  auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "set_float64: no builder for topic");
-  if (it != builders_.end()) {
-    it->second.setFloat64(col_index, value);
-  }
-}
-
-void DataWriter::setInt32(TopicId topic_id, std::size_t col_index, int32_t value) {
-  auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "set_int32: no builder for topic");
-  if (it != builders_.end()) {
-    it->second.setInt32(col_index, value);
-  }
-}
-
-void DataWriter::setInt64(TopicId topic_id, std::size_t col_index, int64_t value) {
-  auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "set_int64: no builder for topic");
-  if (it != builders_.end()) {
-    it->second.setInt64(col_index, value);
-  }
-}
-
-void DataWriter::setUint64(TopicId topic_id, std::size_t col_index, uint64_t value) {
-  auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "set_uint64: no builder for topic");
-  if (it != builders_.end()) {
-    it->second.setUint64(col_index, value);
-  }
-}
-
-void DataWriter::setString(TopicId topic_id, std::size_t col_index, std::string_view value) {
-  auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "set_string: no builder for topic");
-  if (it != builders_.end()) {
-    it->second.setString(col_index, value);
-  }
-}
-
-void DataWriter::setBool(TopicId topic_id, std::size_t col_index, bool value) {
-  auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "set_bool: no builder for topic");
-  if (it != builders_.end()) {
-    it->second.setBool(col_index, value);
-  }
-}
+template void DataWriter::set<float>(TopicId, std::size_t, float);
+template void DataWriter::set<double>(TopicId, std::size_t, double);
+template void DataWriter::set<int32_t>(TopicId, std::size_t, int32_t);
+template void DataWriter::set<int64_t>(TopicId, std::size_t, int64_t);
+template void DataWriter::set<uint64_t>(TopicId, std::size_t, uint64_t);
+template void DataWriter::set<bool>(TopicId, std::size_t, bool);
+template void DataWriter::set<std::string_view>(TopicId, std::size_t, std::string_view);
 
 void DataWriter::setNull(TopicId topic_id, std::size_t col_index) {
   auto it = builders_.find(topic_id);
@@ -471,17 +432,17 @@ void DataWriter::appendScalar(const ScalarSeriesHandle& handle, Timestamp t, Num
       [&builder, col](const auto& v) {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, float>) {
-          builder.setFloat32(col, v);
+          builder.set(col, v);
         } else if constexpr (std::is_same_v<T, double>) {
-          builder.setFloat64(col, v);
+          builder.set(col, v);
         } else if constexpr (std::is_same_v<T, int32_t>) {
-          builder.setInt32(col, v);
+          builder.set(col, v);
         } else if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int64_t>) {
-          builder.setInt64(col, static_cast<int64_t>(v));
+          builder.set(col, static_cast<int64_t>(v));
         } else if constexpr (
             std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> ||
             std::is_same_v<T, uint64_t>) {
-          builder.setUint64(col, static_cast<uint64_t>(v));
+          builder.set(col, static_cast<uint64_t>(v));
         }
       },
       value);
@@ -760,7 +721,10 @@ void DataWriter::ensureColsLoaded(TopicId topic_id, const TopicStorage& storage)
   // schema_id==0 with no stored layout: fall back to first committed chunk.
   const auto& chunks = storage.sealedChunks();
   if (!chunks.empty()) {
-    cols = chunks[0].column_descriptors;
+    cols.reserve(chunks[0].columns.size());
+    for (const auto& col : chunks[0].columns) {
+      cols.push_back(*col.descriptor);
+    }
   }
   // else: stays empty — valid for brand-new schemaless topic
 }

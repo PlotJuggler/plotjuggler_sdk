@@ -63,23 +63,17 @@ struct TopicChunk {
   /// One timestamp per row.
   std::vector<Timestamp> timestamps;
 
-  // Per-column encoded data (parallel vectors, indexed by col_index).
-  // Intentionally SoA rather than AoS: the chunk is immutable after seal(),
-  // so misalignment is impossible, and SoA is cache-friendly for column scans.
-  /// Raw bytes for kRaw columns.
-  std::vector<RawBuffer> encoded_columns;  // Raw typed data for numeric cols
-  /// Encoding kind for each column.
-  std::vector<EncodingType> column_encodings;  // What encoding each column uses
-  /// Validity bitmaps per column (empty means all valid).
-  std::vector<BitVector> validity_bitmaps;  // Per-column (empty if no nulls)
-  /// Column descriptors aligned with encoded columns.
-  std::vector<ColumnDescriptor> column_descriptors;  // Metadata about each column
+  struct Column {
+    encoding::EncodedData data;
+    std::optional<BitVector> validity_bitmap;
+    std::shared_ptr<const ColumnDescriptor> descriptor;
+  };
 
-  // Per-column encoding data (variant: monostate for kRaw, or specific encoding)
-  /// Encoding-specific payload per column.
-  std::vector<encoding::ColumnEncodingData> encoding_data;
+  std::vector<Column> columns;
 
-  // Decode helpers
+  /// Derive encoding type from the EncodedData variant index.
+  [[nodiscard]] EncodingType columnEncoding(std::size_t index) const;
+
   /// Read timestamp at row index.
   [[nodiscard]] Timestamp readTimestamp(std::size_t row) const;
 
@@ -120,27 +114,10 @@ class TopicChunkBuilder {
   /// Begin a new row at `timestamp`.
   void beginRow(Timestamp timestamp);
 
-  // Set values for the current row (by column index) — 7 storage types
-  /// Set float32 value for current row.
-  void setFloat32(std::size_t col_index, float value);
-
-  /// Set float64 value for current row.
-  void setFloat64(std::size_t col_index, double value);
-
-  /// Set int32 value for current row.
-  void setInt32(std::size_t col_index, int32_t value);
-
-  /// Set int64 value for current row.
-  void setInt64(std::size_t col_index, int64_t value);
-
-  /// Set uint64 value for current row.
-  void setUint64(std::size_t col_index, uint64_t value);
-
-  /// Set bool value for current row.
-  void setBool(std::size_t col_index, bool value);
-
-  /// Set string value for current row.
-  void setString(std::size_t col_index, std::string_view value);
+  /// Set a typed value for the current row.
+  /// Supported T: float, double, int32_t, int64_t, uint64_t, bool, std::string_view.
+  template <typename T>
+  void set(std::size_t col_index, T value);
 
   /// Mark value as null for current row.
   void setNull(std::size_t col_index);

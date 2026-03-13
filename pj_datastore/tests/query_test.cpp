@@ -19,7 +19,7 @@ TopicChunk make_test_chunk(Timestamp t_start, uint32_t num_rows, Timestamp step)
   for (uint32_t i = 0; i < num_rows; ++i) {
     Timestamp t = t_start + static_cast<Timestamp>(i) * step;
     builder.beginRow(t);
-    builder.setFloat32(0, static_cast<float>(i) * 1.0f);
+    builder.set(0, static_cast<float>(i) * 1.0f);
     builder.finishRow();
   }
   return builder.seal();

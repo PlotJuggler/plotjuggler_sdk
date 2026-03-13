@@ -145,12 +145,12 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
   for (std::size_t i = 0; i < kRows; ++i) {
     Timestamp ts = static_cast<Timestamp>(i) * 1000000;  // 1ms apart
     ASSERT_TRUE(writer.beginRow(topic_id, ts).has_value());
-    writer.setFloat32(topic_id, 0, static_cast<float>(i) * 1.0F);
-    writer.setFloat32(topic_id, 1, static_cast<float>(i) * 2.0F);
-    writer.setFloat32(topic_id, 2, static_cast<float>(i) * 3.0F);
+    writer.set(topic_id, 0, static_cast<float>(i) * 1.0F);
+    writer.set(topic_id, 1, static_cast<float>(i) * 2.0F);
+    writer.set(topic_id, 2, static_cast<float>(i) * 3.0F);
     // Alternate frame name for variety
     std::string_view frame_name = (i % 2 == 0) ? "base_link" : "odom";
-    writer.setString(topic_id, 3, frame_name);
+    writer.set(topic_id, 3, frame_name);
     ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   }
 
@@ -197,9 +197,9 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
   const TopicStorage* storage = engine.getTopicStorage(topic_id);
   ASSERT_NE(storage, nullptr);
   for (const auto& chunk : storage->sealedChunks()) {
-    ASSERT_GT(chunk.column_encodings.size(), 3U);
-    EXPECT_EQ(chunk.column_encodings[3], EncodingType::kDictionary) << "String column should use dictionary encoding";
-    const auto& dict = std::get<encoding::DictionaryEncoded>(chunk.encoding_data[3]);
+    ASSERT_GT(chunk.columns.size(), 3U);
+    EXPECT_EQ(chunk.columnEncoding(3), EncodingType::kDictionary) << "String column should use dictionary encoding";
+    const auto& dict = std::get<encoding::DictionaryEncoded>(chunk.columns[3].data);
     // At most 2 unique values: "base_link" and "odom"
     EXPECT_LE(dict.dictionary.size(), 2U);
   }
@@ -253,7 +253,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   for (std::size_t i = 0; i < kRowCount; ++i) {
     Timestamp ts = static_cast<Timestamp>(i);
     ASSERT_TRUE(writer.beginRow(topic_id, ts).has_value());
-    writer.setFloat64(topic_id, 0, static_cast<double>(i) * 0.1);
+    writer.set(topic_id, 0, static_cast<double>(i) * 0.1);
     ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   }
 
@@ -349,9 +349,9 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   for (std::size_t i = 0; i < 100; ++i) {
     Timestamp ts = static_cast<Timestamp>(i) * 1000;
     ASSERT_TRUE(writer.beginRow(topic_id, ts).has_value());
-    writer.setFloat32(topic_id, 0, static_cast<float>(i) * 1.0F);
-    writer.setFloat32(topic_id, 1, static_cast<float>(i) * 2.0F);
-    writer.setFloat32(topic_id, 2, static_cast<float>(i) * 3.0F);
+    writer.set(topic_id, 0, static_cast<float>(i) * 1.0F);
+    writer.set(topic_id, 1, static_cast<float>(i) * 2.0F);
+    writer.set(topic_id, 2, static_cast<float>(i) * 3.0F);
     ASSERT_TRUE(writer.finishRow(topic_id).has_value());
   }
 
@@ -376,10 +376,10 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   for (std::size_t i = 0; i < 100; ++i) {
     Timestamp ts = static_cast<Timestamp>(100 + i) * 1000;
     ASSERT_TRUE(writer2.beginRow(topic_id, ts).has_value());
-    writer2.setFloat32(topic_id, 0, static_cast<float>(100 + i) * 1.0F);
-    writer2.setFloat32(topic_id, 1, static_cast<float>(100 + i) * 2.0F);
-    writer2.setFloat32(topic_id, 2, static_cast<float>(100 + i) * 3.0F);
-    writer2.setFloat32(topic_id, 3, static_cast<float>(100 + i) * 4.0F);
+    writer2.set(topic_id, 0, static_cast<float>(100 + i) * 1.0F);
+    writer2.set(topic_id, 1, static_cast<float>(100 + i) * 2.0F);
+    writer2.set(topic_id, 2, static_cast<float>(100 + i) * 3.0F);
+    writer2.set(topic_id, 3, static_cast<float>(100 + i) * 4.0F);
     ASSERT_TRUE(writer2.finishRow(topic_id).has_value());
   }
 
@@ -398,7 +398,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
     cursor_or->forEach([&count](const SampleRow& row) {
       ASSERT_NE(row.chunk, nullptr);
       // Old chunks should have 3 column descriptors
-      EXPECT_EQ(row.chunk->column_descriptors.size(), 3U);
+      EXPECT_EQ(row.chunk->columns.size(), 3U);
       if (count == 0) {
         // Verify first old row: x=0, y=0, z=0
         EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->readNumericAsDouble(0, row.row_index)), 0.0F);
@@ -418,7 +418,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
     cursor_or->forEach([&count](const SampleRow& row) {
       ASSERT_NE(row.chunk, nullptr);
       // New chunks should have 4 column descriptors
-      EXPECT_EQ(row.chunk->column_descriptors.size(), 4U);
+      EXPECT_EQ(row.chunk->columns.size(), 4U);
       if (count == 0) {
         // Verify first new row (i=100): x=100, y=200, z=300, w=400
         EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->readNumericAsDouble(0, row.row_index)), 100.0F);
@@ -618,14 +618,14 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
 
   // Row 1: set only x (columns y and z should be auto-null-filled)
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
-  writer.setFloat32(topic_id, 0, 1.0F);
+  writer.set(topic_id, 0, 1.0F);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   // Row 2: set all 3 columns (no nulls)
   ASSERT_TRUE(writer.beginRow(topic_id, 2000).has_value());
-  writer.setFloat32(topic_id, 0, 2.0F);
-  writer.setFloat32(topic_id, 1, 3.0F);
-  writer.setFloat32(topic_id, 2, 4.0F);
+  writer.set(topic_id, 0, 2.0F);
+  writer.set(topic_id, 1, 3.0F);
+  writer.set(topic_id, 2, 4.0F);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   auto flushed = writer.flushAll();
@@ -750,7 +750,7 @@ TEST(EngineIntegrationTest, BeginRowRejectsOutOfOrderTimestamp) {
 
   // First row at t=200 succeeds
   ASSERT_TRUE(writer.beginRow(topic_id, 200).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
+  writer.set(topic_id, 0, 1.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   // Second row at t=100 (out of order) should fail
@@ -776,16 +776,16 @@ TEST(EngineIntegrationTest, EqualTimestampsAllowed) {
 
   // Two rows at t=100 should both succeed
   ASSERT_TRUE(writer.beginRow(topic_id, 100).has_value());
-  writer.setFloat64(topic_id, 0, 1.0);
+  writer.set(topic_id, 0, 1.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   ASSERT_TRUE(writer.beginRow(topic_id, 100).has_value());
-  writer.setFloat64(topic_id, 0, 2.0);
+  writer.set(topic_id, 0, 2.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   // Third row at higher timestamp also succeeds
   ASSERT_TRUE(writer.beginRow(topic_id, 200).has_value());
-  writer.setFloat64(topic_id, 0, 3.0);
+  writer.set(topic_id, 0, 3.0);
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
   auto flushed = writer.flushAll();

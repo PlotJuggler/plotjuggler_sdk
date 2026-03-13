@@ -222,5 +222,52 @@ TEST(TypeTreeTest, DeeplyNestedStruct) {
   EXPECT_EQ(countLeafFields(*outer), 1u);
 }
 
+// ---------- BUG-24: countLeafFields counts kArray as 1 instead of recursing ----------
+
+TEST(TypeTreeTest, CountLeafFieldsFixedArray) {
+  // A fixed array of 4 float32 elements should count as 4 leaf fields
+  auto elem = makePrimitive("elem", PrimitiveType::kFloat32);
+  auto arr = makeArray("data", elem, 4);
+  auto root = makeStruct("Root", {arr});
+  EXPECT_EQ(countLeafFields(*root), 4u);
+}
+
+TEST(TypeTreeTest, CountLeafFieldsFixedArrayOfStruct) {
+  // A fixed array of 3 structs with 2 fields each = 6 leaf fields
+  auto inner = makeStruct("point", {
+                                        makePrimitive("x", PrimitiveType::kFloat32),
+                                        makePrimitive("y", PrimitiveType::kFloat32),
+                                    });
+  auto arr = makeArray("points", inner, 3);
+  auto root = makeStruct("Root", {arr});
+  EXPECT_EQ(countLeafFields(*root), 6u);
+}
+
+TEST(TypeTreeTest, CountLeafFieldsDynamicArray) {
+  // A dynamic (no fixed size) array should count as 0 leaf fields
+  auto elem = makePrimitive("elem", PrimitiveType::kFloat32);
+  auto arr = makeArray("data", elem);
+  auto root = makeStruct("Root", {arr});
+  EXPECT_EQ(countLeafFields(*root), 0u);
+}
+
+// ---------- BUG-25: flattenFieldPaths should expand fixed arrays ----------
+
+TEST(TypeTreeTest, FlattenFieldPathsFixedArray) {
+  auto elem = makePrimitive("v", PrimitiveType::kFloat32);
+  auto arr = makeArray("data", elem, 3);
+  auto root = makeStruct("Root", {
+                                      makePrimitive("id", PrimitiveType::kInt32),
+                                      arr,
+                                  });
+  auto paths = flattenFieldPaths(*root);
+  // Expect: id, data[0].v, data[1].v, data[2].v
+  ASSERT_EQ(paths.size(), 4u);
+  EXPECT_EQ(paths[0], "id");
+  EXPECT_EQ(paths[1], "data[0].v");
+  EXPECT_EQ(paths[2], "data[1].v");
+  EXPECT_EQ(paths[3], "data[2].v");
+}
+
 }  // namespace
 }  // namespace PJ

@@ -84,9 +84,7 @@ struct PackedBools {
 // ---------------------------------------------------------------------------
 // Unified per-column encoding data variant
 // ---------------------------------------------------------------------------
-using ColumnEncodingData = std::variant<
-    std::monostate,  // kRaw — data in encoded_columns[i]
-    ConstantEncoded, FrameOfReferenceEncoded, DictionaryEncoded, PackedBools>;
+using EncodedData = std::variant<RawBuffer, ConstantEncoded, FrameOfReferenceEncoded, DictionaryEncoded, PackedBools>;
 
 // ---------------------------------------------------------------------------
 // Constant encoding functions
@@ -97,6 +95,12 @@ using ColumnEncodingData = std::variant<
 /// Decode constant numeric value as double.
 [[nodiscard]] double constantDecodeAsDouble(const ConstantEncoded& enc);
 
+/// Decode constant numeric value as int64_t (no precision loss for integer types).
+[[nodiscard]] int64_t constantDecodeAsInt64(const ConstantEncoded& enc);
+
+/// Decode constant numeric value as uint64_t (no precision loss for integer types).
+[[nodiscard]] uint64_t constantDecodeAsUint64(const ConstantEncoded& enc);
+
 // ---------------------------------------------------------------------------
 // Frame of Reference encoding functions
 // Data must be kInt32 or kInt64 values.
@@ -106,6 +110,9 @@ using ColumnEncodingData = std::variant<
     PJ::Span<const uint8_t> data, StorageKind kind, std::size_t count, int64_t min_val, int64_t max_val);
 /// Decode one FOR value as double.
 [[nodiscard]] double forDecodeOneAsDouble(const FrameOfReferenceEncoded& enc, std::size_t row);
+
+/// Decode one FOR value as int64_t (no precision loss).
+[[nodiscard]] int64_t forDecodeOneAsInt64(const FrameOfReferenceEncoded& enc, std::size_t row);
 
 /// Decode a contiguous FOR range into `out`.
 void forDecodeRangeAsDoubles(const FrameOfReferenceEncoded& enc, PJ::Span<double> out, std::size_t row_start);

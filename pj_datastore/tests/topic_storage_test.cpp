@@ -22,7 +22,7 @@ TopicChunk make_test_chunk(TopicId topic_id, Timestamp t_start, Timestamp t_end,
   Timestamp step = (num_rows > 1) ? (t_end - t_start) / static_cast<Timestamp>(num_rows - 1) : 0;
   for (uint32_t i = 0; i < num_rows; ++i) {
     builder.beginRow(t_start + static_cast<Timestamp>(i) * step);
-    builder.setFloat32(0, static_cast<float>(i));
+    builder.set(0, static_cast<float>(i));
     builder.finishRow();
   }
   return builder.seal();

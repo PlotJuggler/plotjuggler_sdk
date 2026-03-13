@@ -66,19 +66,19 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] T decodeNumericExact(const TopicChunk& chunk, std::size_t col_index, std::size_t row) {
-  switch (chunk.column_encodings[col_index]) {
+  switch (chunk.columnEncoding(col_index)) {
     case EncodingType::kConstant: {
-      const auto& enc = std::get<encoding::ConstantEncoded>(chunk.encoding_data[col_index]);
+      const auto& enc = std::get<encoding::ConstantEncoded>(chunk.columns[col_index].data);
       return loadFromBytes<T>(enc.value_bytes.data());
     }
     case EncodingType::kFrameOfReference: {
-      const auto& enc = std::get<encoding::FrameOfReferenceEncoded>(chunk.encoding_data[col_index]);
+      const auto& enc = std::get<encoding::FrameOfReferenceEncoded>(chunk.columns[col_index].data);
       const uint64_t offset = readForOffset(enc, row);
       return static_cast<T>(enc.reference + static_cast<int64_t>(offset));
     }
     case EncodingType::kRaw: {
-      const StorageKind kind = storageKindOf(chunk.column_descriptors[col_index].logical_type);
-      const uint8_t* base = chunk.encoded_columns[col_index].data();
+      const StorageKind kind = storageKindOf(chunk.columns[col_index].descriptor->logical_type);
+      const uint8_t* base = std::get<RawBuffer>(chunk.columns[col_index].data).data();
       switch (kind) {
         case StorageKind::kFloat32: return static_cast<T>(loadFromBytes<float>(base + row * sizeof(float)));
         case StorageKind::kFloat64: return static_cast<T>(loadFromBytes<double>(base + row * sizeof(double)));
@@ -147,7 +147,12 @@ void flattenColumnsImpl(
   }
   const auto& chunks = storage.sealedChunks();
   if (!chunks.empty()) {
-    return chunks.front().column_descriptors;
+    std::vector<ColumnDescriptor> result;
+    result.reserve(chunks.front().columns.size());
+    for (const auto& col : chunks.front().columns) {
+      result.push_back(*col.descriptor);
+    }
+    return result;
   }
   return {};
 }
@@ -360,19 +365,19 @@ struct WriteCore {
 
   void setFieldValue(TopicId topic_id, std::size_t col_index, PrimitiveType logical_type, const PJ_scalar_value_t& value) {
     switch (logical_type) {
-      case PrimitiveType::kFloat32: writer_.setFloat32(topic_id, col_index, value.data.as_float32); break;
-      case PrimitiveType::kFloat64: writer_.setFloat64(topic_id, col_index, value.data.as_float64); break;
-      case PrimitiveType::kInt8: writer_.setInt64(topic_id, col_index, value.data.as_int8); break;
-      case PrimitiveType::kInt16: writer_.setInt64(topic_id, col_index, value.data.as_int16); break;
-      case PrimitiveType::kInt32: writer_.setInt32(topic_id, col_index, value.data.as_int32); break;
-      case PrimitiveType::kInt64: writer_.setInt64(topic_id, col_index, value.data.as_int64); break;
-      case PrimitiveType::kUint8: writer_.setUint64(topic_id, col_index, value.data.as_uint8); break;
-      case PrimitiveType::kUint16: writer_.setUint64(topic_id, col_index, value.data.as_uint16); break;
-      case PrimitiveType::kUint32: writer_.setUint64(topic_id, col_index, value.data.as_uint32); break;
-      case PrimitiveType::kUint64: writer_.setUint64(topic_id, col_index, value.data.as_uint64); break;
-      case PrimitiveType::kBool: writer_.setBool(topic_id, col_index, value.data.as_bool != 0); break;
+      case PrimitiveType::kFloat32: writer_.set(topic_id, col_index, value.data.as_float32); break;
+      case PrimitiveType::kFloat64: writer_.set(topic_id, col_index, value.data.as_float64); break;
+      case PrimitiveType::kInt8: writer_.set(topic_id, col_index, static_cast<int64_t>(value.data.as_int8)); break;
+      case PrimitiveType::kInt16: writer_.set(topic_id, col_index, static_cast<int64_t>(value.data.as_int16)); break;
+      case PrimitiveType::kInt32: writer_.set(topic_id, col_index, value.data.as_int32); break;
+      case PrimitiveType::kInt64: writer_.set(topic_id, col_index, value.data.as_int64); break;
+      case PrimitiveType::kUint8: writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint8)); break;
+      case PrimitiveType::kUint16: writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint16)); break;
+      case PrimitiveType::kUint32: writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint32)); break;
+      case PrimitiveType::kUint64: writer_.set(topic_id, col_index, value.data.as_uint64); break;
+      case PrimitiveType::kBool: writer_.set(topic_id, col_index, value.data.as_bool != 0); break;
       case PrimitiveType::kString:
-        writer_.setString(topic_id, col_index, toStringView(value.data.as_string));
+        writer_.set(topic_id, col_index, toStringView(value.data.as_string));
         break;
     }
   }
@@ -679,8 +684,8 @@ struct ToolboxCore {
     const auto& chunks = storage->sealedChunks();
     std::size_t total_rows = 0;
     for (const auto& chunk : chunks) {
-      for (const auto& chunk_desc : chunk.column_descriptors) {
-        if (chunk_desc.field_id == field.id) {
+      for (const auto& col : chunk.columns) {
+        if (col.descriptor->field_id == field.id) {
           total_rows += chunk.stats.row_count;
           break;
         }
@@ -714,8 +719,8 @@ struct ToolboxCore {
 
     for (const auto& chunk : chunks) {
       int col_index = -1;
-      for (std::size_t i = 0; i < chunk.column_descriptors.size(); ++i) {
-        if (chunk.column_descriptors[i].field_id == field.id) {
+      for (std::size_t i = 0; i < chunk.columns.size(); ++i) {
+        if (chunk.columns[i].descriptor->field_id == field.id) {
           col_index = static_cast<int>(i);
           break;
         }

@@ -60,7 +60,7 @@ static void append_linear_rows(
     double v = slope * (static_cast<double>(i) * static_cast<double>(step_ns) * 1e-9);
     auto s = writer.beginRow(src_topic_id, ts);
     (void)s;
-    writer.setFloat64(src_topic_id, 0, v);
+    writer.set(src_topic_id, 0, v);
     auto s2 = writer.finishRow(src_topic_id);
     (void)s2;
   }

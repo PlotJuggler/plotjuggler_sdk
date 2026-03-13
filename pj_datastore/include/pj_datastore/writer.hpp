@@ -124,27 +124,10 @@ class DataWriter {
   /// Finalize current row for `topic_id`. Returns error if begin_row was not called first.
   [[nodiscard]] PJ::Status finishRow(PJ::TopicId topic_id);
 
-  // ---- Set values for current row by column index (7 storage types) ----
-  /// Set float32 value in current row.
-  void setFloat32(PJ::TopicId topic_id, std::size_t col_index, float value);
-
-  /// Set float64 value in current row.
-  void setFloat64(PJ::TopicId topic_id, std::size_t col_index, double value);
-
-  /// Set int32 value in current row.
-  void setInt32(PJ::TopicId topic_id, std::size_t col_index, int32_t value);
-
-  /// Set int64 value in current row.
-  void setInt64(PJ::TopicId topic_id, std::size_t col_index, int64_t value);
-
-  /// Set uint64 value in current row.
-  void setUint64(PJ::TopicId topic_id, std::size_t col_index, uint64_t value);
-
-  /// Set string value in current row.
-  void setString(PJ::TopicId topic_id, std::size_t col_index, std::string_view value);
-
-  /// Set bool value in current row.
-  void setBool(PJ::TopicId topic_id, std::size_t col_index, bool value);
+  /// Set a typed value in the current row.
+  /// Supported T: float, double, int32_t, int64_t, uint64_t, bool, std::string_view.
+  template <typename T>
+  void set(PJ::TopicId topic_id, std::size_t col_index, T value);
 
   /// Mark current row value as null.
   void setNull(PJ::TopicId topic_id, std::size_t col_index);
