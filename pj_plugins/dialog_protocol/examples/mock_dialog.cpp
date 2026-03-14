@@ -43,7 +43,7 @@ constexpr const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     </widget>
    </item>
    <item>
-    <widget class="QDialogButtonBox" name="button_box"/>
+    <widget class="QDialogButtonBox" name="buttonBox"/>
    </item>
   </layout>
  </widget>
@@ -73,7 +73,7 @@ class MockDialog : public PJ::DialogPluginTyped {
     wd.setValue("count_input", count_);
     wd.setRange("count_input", 0, 1000);
     wd.setChecked("verbose_check", verbose_);
-    wd.setOkEnabled("button_box", !name_.empty());
+    wd.setOkEnabled(!name_.empty());
     return wd.toJson();
   }
 

@@ -158,9 +158,9 @@ TEST(WidgetDataTest, SetFilePicker) {
 
 TEST(WidgetDataTest, SetOkEnabled) {
   WidgetData wd;
-  wd.setOkEnabled("button_box", false);
+  wd.setOkEnabled(false);
   auto j = parse(wd);
-  EXPECT_EQ(j["button_box"]["ok_enabled"], false);
+  EXPECT_EQ(j["buttonBox"]["ok_enabled"], false);
 }
 
 // --- TabWidget ---

@@ -379,6 +379,8 @@ struct WriteCore {
       case PrimitiveType::kString:
         writer_.set(topic_id, col_index, toStringView(value.data.as_string));
         break;
+      case PrimitiveType::kUnspecified:
+        break;
     }
   }
 
@@ -405,12 +407,23 @@ struct WriteCore {
         return false;
       }
       if (field.is_null) {
-        // Null values: look up existing field by name (type from scalar is ignored).
+        // Null values: look up existing field by name.
         TopicFieldKey key{.topic_id = topic.id, .field_name = std::string(name)};
         auto it = field_cache_.find(key);
         if (it == field_cache_.end()) {
-          setError(absl::StrCat("null value for unknown field '", name, "'"));
-          return false;
+          // Field has never been seen. Check if this is a typed null (the ABI
+          // carries value.type even when is_null is true). A valid type lets
+          // us create the column now; an untyped null (kNull) is silently
+          // skipped — the column will be created when a non-null value arrives.
+          auto type_or = fromAbiType(field.value.type);
+          if (type_or.has_value()) {
+            FieldHandle handle{};
+            if (!ensureField(topic, name, field.value.type, &handle)) {
+              return false;
+            }
+            resolved.push_back({handle, *type_or, &field});
+          }
+          continue;
         }
         PrimitiveType existing{};
         if (!lookupFieldType(topic, it->second.id, &existing)) {
@@ -715,6 +728,8 @@ struct ToolboxCore {
       case PrimitiveType::kString:
         state->string_offsets.push_back(0);
         break;
+      case PrimitiveType::kUnspecified:
+        break;
     }
 
     for (const auto& chunk : chunks) {
@@ -787,6 +802,8 @@ struct ToolboxCore {
             state->string_offsets.push_back(static_cast<uint32_t>(state->string_bytes.size()));
             break;
           }
+          case PrimitiveType::kUnspecified:
+            break;
         }
         ++row_index;
       }
@@ -825,6 +842,8 @@ struct ToolboxCore {
             .bytes = state->string_bytes.data(),
             .byte_count = state->string_bytes.size(),
         };
+        break;
+      case PrimitiveType::kUnspecified:
         break;
     }
     write.last_error_.clear();

@@ -98,7 +98,7 @@ constexpr const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <widget class="QListWidget" name="topic_list"/>
    </item>
    <item>
-    <widget class="QDialogButtonBox" name="button_box"/>
+    <widget class="QDialogButtonBox" name="buttonBox"/>
    </item>
   </layout>
  </widget>
@@ -162,7 +162,7 @@ class MockStreamerDialog : public PJ::DialogPluginTyped {
       wd.setVisible("topic_list", false);
     }
 
-    wd.setOkEnabled("button_box", connected_ && !selected_topics_.empty());
+    wd.setOkEnabled(connected_ && !selected_topics_.empty());
 
     return wd.toJson();
   }

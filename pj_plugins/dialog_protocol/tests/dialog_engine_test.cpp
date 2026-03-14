@@ -48,7 +48,7 @@ class WidgetBindingTest : public ::testing::Test {
     layout->addWidget(check_box_);
 
     button_box_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, root_);
-    button_box_->setObjectName("button_box");
+    button_box_->setObjectName("buttonBox");
     layout->addWidget(button_box_);
   }
 
@@ -107,7 +107,7 @@ TEST_F(WidgetBindingTest, ApplyCheckBox) {
 
 TEST_F(WidgetBindingTest, ApplyOkEnabled) {
   nlohmann::json data;
-  data["button_box"]["ok_enabled"] = false;
+  data["buttonBox"]["ok_enabled"] = false;
   PJ::WidgetDataView view(data.dump());
 
   PJ::applyWidgetData(root_, view);

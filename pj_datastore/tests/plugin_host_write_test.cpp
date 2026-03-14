@@ -600,5 +600,160 @@ TEST(PluginDataHostWriteTest, ArrowIpcRejectsMissingTimestampColumn) {
   EXPECT_FALSE(status.has_value()) << "Expected error when timestamp column is missing";
 }
 
+// ---------------------------------------------------------------------------
+// Late column addition (schema evolution)
+// ---------------------------------------------------------------------------
+
+TEST(PluginDataHostWriteTest, LateColumnAddition) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("sensor");
+
+  DatastoreSourceWriteHost source_impl(f.engine, source);
+  SourceWriteHostView writer(source_impl.raw());
+  const auto topic = *writer.ensureTopic("json");
+
+  // Row 1: only field "x"
+  const std::vector<NamedFieldValue> row1 = {{.name = "x", .value = 1.0}};
+  ASSERT_TRUE(writer.appendRecord(topic, 10, row1).has_value());
+
+  // Row 2: "x" plus new field "y" — triggers auto-seal of chunk 1
+  const std::vector<NamedFieldValue> row2 = {
+      {.name = "x", .value = 2.0},
+      {.name = "y", .value = 3.0},
+  };
+  ASSERT_TRUE(writer.appendRecord(topic, 20, row2).has_value());
+  source_impl.flushPending();
+
+  // Find field handles via catalog
+  auto snapshot = std::move(*f.toolbox.catalogSnapshot());
+  FieldHandle x_field{}, y_field{};
+  for (const auto& fi : snapshot.fields()) {
+    auto name = std::string_view(fi.name.data, fi.name.size);
+    if (name == "x") x_field = fi.handle;
+    if (name == "y") y_field = fi.handle;
+  }
+
+  // x should have 2 rows across 2 chunks
+  auto x_series = std::move(*f.toolbox.readSeries(x_field));
+  ASSERT_EQ(x_series.timestamps().size(), 2U);
+  EXPECT_DOUBLE_EQ(x_series.raw().values.as_float64[0], 1.0);
+  EXPECT_DOUBLE_EQ(x_series.raw().values.as_float64[1], 2.0);
+
+  // y should have 1 row (only in chunk 2)
+  auto y_series = std::move(*f.toolbox.readSeries(y_field));
+  ASSERT_EQ(y_series.timestamps().size(), 1U);
+  EXPECT_EQ(y_series.timestamps()[0], 20);
+  EXPECT_DOUBLE_EQ(y_series.raw().values.as_float64[0], 3.0);
+}
+
+TEST(PluginDataHostWriteTest, UntypedNullForUnknownFieldIsSkipped) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("sensor");
+
+  DatastoreSourceWriteHost source_impl(f.engine, source);
+  SourceWriteHostView writer(source_impl.raw());
+  const auto topic = *writer.ensureTopic("sparse");
+
+  // Row 1: "x" is non-null, "y" is untyped null (kNull) and never seen → skipped
+  const std::vector<NamedFieldValue> row = {
+      {.name = "x", .value = 1.0},
+      {.name = "y", .value = PJ::kNull},
+  };
+  ASSERT_TRUE(writer.appendRecord(topic, 10, row).has_value());
+  source_impl.flushPending();
+
+  // Only field "x" should exist
+  auto snapshot = std::move(*f.toolbox.catalogSnapshot());
+  int field_count = 0;
+  for (const auto& fi : snapshot.fields()) {
+    auto name = std::string_view(fi.name.data, fi.name.size);
+    EXPECT_EQ(name, "x") << "unexpected field: " << name;
+    ++field_count;
+  }
+  EXPECT_EQ(field_count, 1);
+}
+
+TEST(PluginDataHostWriteTest, TypedNullForUnknownFieldCreatesColumn) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("sensor");
+
+  DatastoreSourceWriteHost source_impl(f.engine, source);
+  SourceWriteHostView writer(source_impl.raw());
+  const auto topic = *writer.ensureTopic("typed");
+
+  // Row 1: "x" non-null, "y" is a typed null (type known but value absent)
+  const std::vector<NamedFieldValue> row = {
+      {.name = "x", .value = 1.0},
+      {.name = "y", .value = TypedNull{PrimitiveType::kFloat64}},
+  };
+  ASSERT_TRUE(writer.appendRecord(topic, 10, row).has_value());
+  source_impl.flushPending();
+
+  // Both fields should exist
+  auto snapshot = std::move(*f.toolbox.catalogSnapshot());
+  FieldHandle x_field{}, y_field{};
+  int field_count = 0;
+  for (const auto& fi : snapshot.fields()) {
+    auto name = std::string_view(fi.name.data, fi.name.size);
+    if (name == "x") x_field = fi.handle;
+    if (name == "y") y_field = fi.handle;
+    ++field_count;
+  }
+  EXPECT_EQ(field_count, 2);
+
+  // y should have 1 row with null value
+  auto y_series = std::move(*f.toolbox.readSeries(y_field));
+  ASSERT_EQ(y_series.timestamps().size(), 1U);
+  ASSERT_GE(y_series.validityBits().size(), 1U);
+  EXPECT_EQ(y_series.validityBits()[0] & 0x01, 0) << "Expected null for TypedNull field";
+}
+
+TEST(PluginDataHostWriteTest, VariableLengthArraySimulation) {
+  Fixture f;
+  const auto source = *f.toolbox.createDataSource("sensor");
+
+  DatastoreSourceWriteHost source_impl(f.engine, source);
+  SourceWriteHostView writer(source_impl.raw());
+  const auto topic = *writer.ensureTopic("varlen");
+
+  // Row 1: 2-element array
+  const std::vector<NamedFieldValue> row1 = {
+      {.name = "data[0]", .value = 10.0},
+      {.name = "data[1]", .value = 20.0},
+  };
+  ASSERT_TRUE(writer.appendRecord(topic, 100, row1).has_value());
+
+  // Row 2: 4-element array — data[2] and data[3] are new columns
+  const std::vector<NamedFieldValue> row2 = {
+      {.name = "data[0]", .value = 11.0},
+      {.name = "data[1]", .value = 21.0},
+      {.name = "data[2]", .value = 31.0},
+      {.name = "data[3]", .value = 41.0},
+  };
+  ASSERT_TRUE(writer.appendRecord(topic, 200, row2).has_value());
+  source_impl.flushPending();
+
+  // Find field handles
+  auto snapshot = std::move(*f.toolbox.catalogSnapshot());
+  FieldHandle d0{}, d2{};
+  for (const auto& fi : snapshot.fields()) {
+    auto name = std::string_view(fi.name.data, fi.name.size);
+    if (name == "data[0]") d0 = fi.handle;
+    if (name == "data[2]") d2 = fi.handle;
+  }
+
+  // data[0] should have 2 rows across 2 chunks
+  auto s0 = std::move(*f.toolbox.readSeries(d0));
+  ASSERT_EQ(s0.timestamps().size(), 2U);
+  EXPECT_DOUBLE_EQ(s0.raw().values.as_float64[0], 10.0);
+  EXPECT_DOUBLE_EQ(s0.raw().values.as_float64[1], 11.0);
+
+  // data[2] should have 1 row (only in chunk 2)
+  auto s2 = std::move(*f.toolbox.readSeries(d2));
+  ASSERT_EQ(s2.timestamps().size(), 1U);
+  EXPECT_EQ(s2.timestamps()[0], 200);
+  EXPECT_DOUBLE_EQ(s2.raw().values.as_float64[0], 31.0);
+}
+
 }  // namespace
 }  // namespace PJ

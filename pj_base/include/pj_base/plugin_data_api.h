@@ -24,6 +24,9 @@ typedef enum {
   PJ_PRIMITIVE_TYPE_UINT64 = 9,
   PJ_PRIMITIVE_TYPE_BOOL = 10,
   PJ_PRIMITIVE_TYPE_STRING = 11,
+  /** Sentinel: null value with no type information. Used when is_null=true
+   *  and the plugin provides no type hint (untyped kNull). */
+  PJ_PRIMITIVE_TYPE_UNSPECIFIED = 0xFF,
 } PJ_primitive_type_t;
 
 typedef struct {

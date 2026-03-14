@@ -81,7 +81,12 @@ add_library(my_source_plugin SHARED my_source.cpp)
 target_link_libraries(my_source_plugin PRIVATE pj_base)
 ```
 
-No other dependencies are needed.
+No other dependencies are needed for headless sources. If your source includes
+a configuration dialog (see Dialog Integration below), also link `pj_dialog_sdk`:
+
+```cmake
+target_link_libraries(my_source_plugin PRIVATE pj_base pj_dialog_sdk)
+```
 
 ## Common Patterns
 
@@ -147,6 +152,12 @@ class CsvFileLoader : public PJ::FileSourceBase {
     std::getline(file, line);
     auto column_names = splitString(line, ',');
 
+    // Optional: pre-register columns for the faster bound-write path.
+    // Without this, fields are auto-created on first non-null write.
+    for(const auto& name: column_names) {
+      writeHost().ensureField(*topic, name, PJ::PrimitiveType::kFloat64);
+    }
+
     // prepare one NamedFieldValue per column
     std::vector<PJ::sdk::NamedFieldValue> row_fields;
     for(const auto& name: column_names) {
@@ -164,7 +175,9 @@ class CsvFileLoader : public PJ::FileSourceBase {
         // if we fail to parse the value string, use PJ::kNull
         row_fields[index].value = parseToDouble(row_values[index]).value_or(PJ::kNull);
       }
-       // Push data. We use row number as timestamp (to simplify the example)
+       // Push data. Timestamps are nanoseconds since Unix epoch.
+      // Here we use row number for simplicity — real plugins should
+      // extract or compute an absolute nanosecond timestamp.
       PJ::Timestamp timestamp = row;
       writeHost().appendRecord(*topic, timestamp, row_fields);
       // update the progress bar
@@ -303,7 +316,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
         return;
       }
 
-      auto now = std::chrono::steady_clock::now().time_since_epoch();
+      auto now = std::chrono::system_clock::now().time_since_epoch();
       PJ::Timestamp ts =
           std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
 
@@ -375,8 +388,8 @@ engine.
 | Method | Purpose |
 |---|---|
 | `ensureTopic(name)` | Create or look up a topic. Returns a handle. |
-| `ensureField(topic, name, type)` | Pre-register a field for fast writes. |
-| `appendRecord(topic, timestamp, fields)` | Write a row of named field values. |
+| `ensureField(topic, name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. |
+| `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowIpc(topic, ipc_stream, ts_col)` | Write an Arrow IPC stream directly (bulk columnar). |
 
@@ -542,8 +555,8 @@ Example:
 
 ### Named vs bound writes
 
-For simple sources, use `appendRecord()` with named fields — names are
-resolved on each call:
+For simple sources, use `appendRecord()` with named fields — fields are
+auto-created on first non-null value, and names are resolved on each call:
 
 ```cpp
 const PJ::sdk::NamedFieldValue fields[] = {
@@ -776,8 +789,7 @@ that also holds host-owned parser binding state:
 The source never sees `parser_binding` — the host manages it.
 
 A complete example lives at `pj_plugins/examples/mock_source_with_dialog.cpp`.
-See `pj_plugins/dialog_protocol/docs/dialog-plugin-guide.md` for the dialog
-protocol itself.
+See `pj_plugins/docs/dialog-plugin-guide.md` for the dialog protocol itself.
 
 ## Examples
 

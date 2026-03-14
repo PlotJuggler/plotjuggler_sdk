@@ -26,6 +26,7 @@ enum class PrimitiveType : uint8_t {
   kUint64,
   kBool,
   kString,
+  kUnspecified = 0xFF,  ///< Untyped null — no column type specified.
 };
 
 /// Node category in a schema tree.

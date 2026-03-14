@@ -17,14 +17,15 @@ Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (inde
 | Document | When to read |
 |----------|-------------|
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
-| `pj_datastore/docs/architecture_overview.md` | Datastore internals: chunks, encodings, storage layout |
-| `pj_datastore/docs/data_implementation_plan.md` | Detailed design: types, schemas, query API, bulk ingest |
-| `pj_datastore/docs/dag-plan.md` | DerivedEngine: transforms, DAG scheduling, VarValue |
-| `pj_plugins/docs/PLAN.md` | Plugin ABI design: DataSource, MessageParser, host interfaces |
+| `pj_datastore/docs/REQUIREMENTS.md` | Datastore goals, use cases, functional/non-functional requirements |
+| `pj_datastore/docs/ARCHITECTURE.md` | Datastore internals: domain model, layers, data flow, encoding, DerivedEngine |
+| `pj_datastore/docs/USER_GUIDE.md` | How to read/write data via plugin API — pitfalls, examples, ValueRef |
+| `pj_plugins/docs/REQUIREMENTS.md` | Plugin system goals, families, interaction model, capability system |
+| `pj_plugins/docs/ARCHITECTURE.md` | Plugin internals: ABI layers, host loaders, dialog engine, config envelope |
 | `pj_plugins/docs/data-source-guide.md` | How to write a DataSource plugin (SDK tutorial) |
 | `pj_plugins/docs/message-parser-guide.md` | How to write a MessageParser plugin (SDK tutorial) |
-| `pj_plugins/docs/REQUIREMENTS.md` | Plugin system requirements and constraints |
-| `pj_plugins/docs/dialog-plugin-guide.md` | How to write a Dialog plugin (WidgetData, events, requestAccept) |
+| `pj_plugins/docs/dialog-plugin-guide.md` | How to write a Dialog plugin (WidgetData, events, EmbedUi, requestAccept) |
+| `pj_plugins/docs/toolbox-guide.md` | How to write a Toolbox plugin (SDK tutorial) |
 | `pj_ported_plugins/porting_guide.md` | **READ FIRST** for plugin work: SDK patterns, datastore pitfalls, dialog SDK, lessons learned |
 
 ## Build & Test

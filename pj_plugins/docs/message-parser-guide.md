@@ -87,7 +87,12 @@ add_library(my_parser_plugin SHARED my_parser.cpp)
 target_link_libraries(my_parser_plugin PRIVATE pj_base)
 ```
 
-No other dependencies are needed.
+No other dependencies are needed for headless parsers. If your parser includes
+a configuration dialog (see Dialog Integration below), also link `pj_dialog_sdk`:
+
+```cmake
+target_link_libraries(my_parser_plugin PRIVATE pj_base pj_dialog_sdk)
+```
 
 ## Lifecycle
 
@@ -115,15 +120,15 @@ topic.
 
 | Method | Purpose |
 |---|---|
-| `ensureField(name, type)` | Pre-register a field for fast writes. Returns a `FieldHandle`. |
-| `appendRecord(timestamp, fields)` | Write a row of named field values. |
+| `ensureField(name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. Returns a `FieldHandle`. |
+| `appendRecord(timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowIpc(ipc_stream, timestamp_col)` | Write an Arrow IPC stream directly. |
 
 ### Named vs bound writes
 
-For simple parsers, use `appendRecord()` with `NamedFieldValue` — field names
-are resolved on each call:
+For simple parsers, use `appendRecord()` with `NamedFieldValue` — fields are
+auto-created on first non-null value, and names are resolved on each call:
 
 ```cpp
 const PJ::sdk::NamedFieldValue fields[] = {

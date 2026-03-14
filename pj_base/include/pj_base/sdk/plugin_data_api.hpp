@@ -53,7 +53,16 @@ inline bool operator!=(FieldHandle a, FieldHandle b) {
   return !(a == b);
 }
 
+/// Typed null — a null value with an explicit column type. Use this when the
+/// schema defines a field's type but the value is absent (e.g., an optional
+/// field in ROS/Protobuf that is not set in a particular message). Unlike
+/// `kNull` (untyped), a `TypedNull` can create a new column even on first use.
+struct TypedNull {
+  PrimitiveType type;
+};
+
 using ValueRef = std::variant<NullValue,
+                              TypedNull,
                               float,
                               double,
                               int8_t,
@@ -66,6 +75,11 @@ using ValueRef = std::variant<NullValue,
                               uint64_t,
                               bool,
                               std::string_view>;
+
+/// Returns true if the value is null (either untyped kNull or TypedNull).
+[[nodiscard]] inline bool isNull(const ValueRef& v) {
+  return std::holds_alternative<NullValue>(v) || std::holds_alternative<TypedNull>(v);
+}
 
 struct NamedFieldValue {
   std::string name;  // owned — safe from dangling string_view references
@@ -209,7 +223,8 @@ class MaterializedSeries {
   return std::visit(
       [](auto&& v) -> PrimitiveType {
         using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, NullValue>) return PrimitiveType::kFloat64;
+        if constexpr (std::is_same_v<T, NullValue>) return PrimitiveType::kUnspecified;
+        else if constexpr (std::is_same_v<T, TypedNull>) return v.type;
         else if constexpr (std::is_same_v<T, float>) return PrimitiveType::kFloat32;
         else if constexpr (std::is_same_v<T, double>) return PrimitiveType::kFloat64;
         else if constexpr (std::is_same_v<T, int8_t>) return PrimitiveType::kInt8;
@@ -234,6 +249,8 @@ class MaterializedSeries {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, NullValue>) {
           // zeroed scalar — type is a safe default, value is unused
+        } else if constexpr (std::is_same_v<T, TypedNull>) {
+          // zeroed scalar — type is set above via typeOf(), value is unused
         } else if constexpr (std::is_same_v<T, float>) {
           out.data.as_float32 = v;
         } else if constexpr (std::is_same_v<T, double>) {
@@ -308,7 +325,7 @@ class SourceWriteHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_named_field_value_t{
           .name = toAbiString(field.name),
-          .is_null = std::holds_alternative<NullValue>(field.value),
+          .is_null = isNull(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -328,7 +345,7 @@ class SourceWriteHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_bound_field_value_t{
           .field = field.field,
-          .is_null = std::holds_alternative<NullValue>(field.value),
+          .is_null = isNull(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -390,7 +407,7 @@ class ParserWriteHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_named_field_value_t{
           .name = toAbiString(field.name),
-          .is_null = std::holds_alternative<NullValue>(field.value),
+          .is_null = isNull(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -406,7 +423,7 @@ class ParserWriteHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_bound_field_value_t{
           .field = field.field,
-          .is_null = std::holds_alternative<NullValue>(field.value),
+          .is_null = isNull(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -478,7 +495,7 @@ class ToolboxHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_named_field_value_t{
           .name = toAbiString(field.name),
-          .is_null = std::holds_alternative<NullValue>(field.value),
+          .is_null = isNull(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -495,7 +512,7 @@ class ToolboxHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_bound_field_value_t{
           .field = field.field,
-          .is_null = std::holds_alternative<NullValue>(field.value),
+          .is_null = isNull(field.value),
           .value = toAbiScalar(field.value),
       });
     }

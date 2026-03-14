@@ -542,18 +542,12 @@ Expected<FieldId> DataWriter::ensureColumn(TopicId topic_id, std::string_view fi
             "ensure_column: topic ", topic_id, " has a row in progress; call finishRow() before adding new columns"));
   }
 
-  // Error: adding columns after rows have been written causes schema fragmentation.
-  // Require all columns to be registered before the first row.
-  if (builder_it != builders_.end() && builder_it->second.rowCount() > 0) {
-    return PJ::unexpected(
-        absl::StrCat("ensure_column: cannot add column '", field_path,
-                     "' after rows have been written to topic ", topic_id,
-                     "; call ensureField() for all columns before writing any data"));
-  }
-
-  // Erase stale builder so next getOrCreateBuilder() picks up the new column layout.
-  // (Builder has 0 rows here — the rowCount > 0 guard above already rejected that case.)
+  // Seal the current builder (if any) before changing the column layout.
+  // Same pattern as expandArray() — the reader handles chunks with different column sets.
   if (builder_it != builders_.end()) {
+    if (builder_it->second.rowCount() > 0) {
+      pending_chunks_[topic_id].push_back(builder_it->second.seal());
+    }
     builders_.erase(builder_it);
   }
 

@@ -126,8 +126,8 @@ data store.
 |---|---|
 | `createDataSource(name)` | Create a new data source. Returns a handle. |
 | `ensureTopic(source, topic_name)` | Create or look up a topic within a source. |
-| `ensureField(topic, name, type)` | Pre-register a field for fast writes. |
-| `appendRecord(topic, timestamp, fields)` | Write a row of named field values. |
+| `ensureField(topic, name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. |
+| `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowIpc(topic, ipc_stream, ts_col)` | Write an Arrow IPC stream directly (bulk columnar). |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |

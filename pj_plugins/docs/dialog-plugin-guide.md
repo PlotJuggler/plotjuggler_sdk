@@ -20,7 +20,7 @@ renders the widgets, and relays events to the plugin over the C vtable.
 7. Build as a shared library linking `pj_dialog_sdk`.
 
 A complete example lives at
-`pj_plugins/dialog_protocol/examples/mock_streamer.cpp`.
+`pj_plugins/dialog_protocol/examples/mock_dialog.cpp`.
 
 ## Step by Step
 
@@ -114,6 +114,33 @@ const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 > raw string literal. Just make sure every interactive widget has a descriptive
 > `objectName`.
 
+#### EmbedUi — external `.ui` files
+
+For larger dialogs, keeping the XML inline becomes unwieldy. The `EmbedUi`
+CMake helper converts a `.ui` file into a generated header with the XML as a
+`constexpr` string:
+
+```cmake
+include(cmake/EmbedUi.cmake)
+pj_embed_ui(my_plugin
+  UI_FILE  ${CMAKE_CURRENT_SOURCE_DIR}/ui/my_dialog.ui
+  HEADER   ${CMAKE_CURRENT_BINARY_DIR}/generated/my_dialog_ui.hpp
+  VAR_NAME kMyDialogUi
+)
+```
+
+Then in your plugin:
+
+```cpp
+#include "my_dialog_ui.hpp"  // generated
+
+std::string ui_content() const override { return kMyDialogUi; }
+```
+
+The `.ui` file is tracked as a CMake configure dependency — editing it
+triggers header regeneration. See `pj_ported_plugins/cmake/EmbedUi.cmake`
+for the implementation.
+
 ### 3. Build the widget state
 
 Override `widget_data()` to return a JSON string describing the current state of
@@ -128,7 +155,7 @@ std::string widget_data() override {
     .setPlaceholder("host_input", "e.g. localhost")
     .setValue("port_input", port_)
     .setRange("port_input", 1, 65535)
-    .setOkEnabled("button_box", !host_.empty());
+    .setOkEnabled(!host_.empty());
 
   return wd.toJson();
 }
@@ -248,9 +275,10 @@ work like polling a server for available topics.
 
 All widgets also support `setEnabled(name, bool)` and `setVisible(name, bool)`.
 
-> **Note:** `QTextEdit` and `QTableView` (model-based) are **not supported** by
-> the widget binding system. Use `QTableWidget` for tabular preview data and
-> `QLabel` or `QListWidget` for text display.
+> **Note:** `QTextEdit`, `QPlainTextEdit`, and `QTableView` (model-based) are
+> **not supported** by the widget binding system. Use `QTableWidget` for tabular
+> data (e.g. topic lists, preview tables) and `QLabel` or `QListWidget` for text
+> display.
 
 ## Optional Features
 
@@ -337,7 +365,7 @@ wd.setEnabled("connect_btn", !host_.empty());
 Control whether the dialog's OK button is clickable:
 
 ```cpp
-wd.setOkEnabled("button_box", is_connected_ && has_selection_);
+wd.setOkEnabled(is_connected_ && has_selection_);
 ```
 
 ### Double-click to accept — `onItemDoubleClicked` + `requestAccept`

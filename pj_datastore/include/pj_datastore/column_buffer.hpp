@@ -54,6 +54,8 @@ enum class StorageKind : uint8_t {
       return StorageKind::kBool;
     case PrimitiveType::kString:
       return StorageKind::kString;
+    case PrimitiveType::kUnspecified:
+      break;
   }
   return StorageKind::kFloat64;
 }
