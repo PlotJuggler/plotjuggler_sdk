@@ -543,13 +543,7 @@ Expected<FieldId> DataWriter::ensureColumn(TopicId topic_id, std::string_view fi
   }
 
   // Seal the current builder (if any) before changing the column layout.
-  // Same pattern as expandArray() — the reader handles chunks with different column sets.
-  if (builder_it != builders_.end()) {
-    if (builder_it->second.rowCount() > 0) {
-      pending_chunks_[topic_id].push_back(builder_it->second.seal());
-    }
-    builders_.erase(builder_it);
-  }
+  sealBeforeLayoutChange(topic_id);
 
   // Append new column (field ids are always dense starting at 0 — assert the invariant)
   PJ_ASSERT(
@@ -630,12 +624,7 @@ PJ::Expected<uint32_t> DataWriter::expandArray(
   }
 
   // Seal and stage the current builder (if any) before changing the column layout.
-  if (builder_it != builders_.end()) {
-    if (builder_it->second.rowCount() > 0) {
-      pending_chunks_[topic_id].push_back(builder_it->second.seal());
-    }
-    builders_.erase(builder_it);
-  }
+  sealBeforeLayoutChange(topic_id);
 
   // Load current column descriptor list for this topic.
   ensureColsLoaded(topic_id, *storage);
@@ -777,6 +766,17 @@ void DataWriter::autoSeal(TopicId topic_id) {
     return;
   }
   pending_chunks_[topic_id].push_back(it->second.seal());
+  builders_.erase(it);
+}
+
+void DataWriter::sealBeforeLayoutChange(TopicId topic_id) {
+  auto it = builders_.find(topic_id);
+  if (it == builders_.end()) {
+    return;
+  }
+  if (it->second.rowCount() > 0) {
+    pending_chunks_[topic_id].push_back(it->second.seal());
+  }
   builders_.erase(it);
 }
 

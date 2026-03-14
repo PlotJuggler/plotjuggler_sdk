@@ -195,6 +195,10 @@ class DataWriter {
 
   // Seal current builder and move chunk to pending list
   void autoSeal(PJ::TopicId topic_id);
+
+  // Seal and erase the current builder (if any) before a column layout change.
+  // No-op if no builder exists; skips sealing if builder has zero rows.
+  void sealBeforeLayoutChange(PJ::TopicId topic_id);
 };
 
 }  // namespace PJ
