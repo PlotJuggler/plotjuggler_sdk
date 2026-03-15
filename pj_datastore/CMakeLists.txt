@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# pj_datastore — storage engine, depends on pj_base + abseil + nanoarrow
+# pj_datastore — storage engine, depends on pj_base + fmt + nanoarrow
 # ---------------------------------------------------------------------------
 
 add_library(pj_datastore STATIC
@@ -29,10 +29,9 @@ endif()
 target_link_libraries(pj_datastore
   PUBLIC
     pj_base
-    absl::flat_hash_map
-    absl::hash
   PRIVATE
-    absl::strings
+    tsl::robin_map
+    fmt::fmt
     ${PJ_NANOARROW_TARGET}
     ${PJ_NANOARROW_IPC_TARGET}
 )

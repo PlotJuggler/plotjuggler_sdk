@@ -1,5 +1,7 @@
 #include "pj_datastore/arrow_import.hpp"
 
+#include <fmt/format.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -9,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/str_cat.h"
 #include "nanoarrow/nanoarrow.h"
 #include "nanoarrow/nanoarrow.hpp"
 #include "nanoarrow/nanoarrow_ipc.h"
@@ -368,8 +369,7 @@ PJ::Status importIpcStream(
     if (timestamp_column >= 0) {
       if (timestamp_column >= static_cast<int>(array_view->n_children)) {
         return PJ::unexpected(
-            absl::StrCat(
-                "timestamp_column ", timestamp_column, " out of range (", array_view->n_children, " children)"));
+            fmt::format("timestamp_column {} out of range ({} children)", timestamp_column, array_view->n_children));
       }
       timestamps = extract_timestamps_nanoarrow(array_view->children[timestamp_column], num_rows);
     } else {
@@ -384,7 +384,7 @@ PJ::Status importIpcStream(
 
     for (const auto& mapping : mappings) {
       if (mapping.arrow_column_index >= static_cast<int>(array_view->n_children)) {
-        return PJ::unexpected(absl::StrCat("Arrow column index ", mapping.arrow_column_index, " out of range"));
+        return PJ::unexpected(fmt::format("Arrow column index {} out of range", mapping.arrow_column_index));
       }
       col_buffers.push_back(
           make_column_data_nanoarrow(array_view->children[mapping.arrow_column_index], mapping, num_rows));

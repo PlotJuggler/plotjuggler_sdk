@@ -1,9 +1,10 @@
 #include "pj_datastore/topic_storage.hpp"
 
+#include <fmt/format.h>
+
 #include <utility>
 #include <variant>
 
-#include "absl/strings/str_cat.h"
 #include "pj_base/expected.hpp"
 
 namespace PJ {
@@ -17,8 +18,8 @@ PJ::Status TopicStorage::appendSealedChunk(TopicChunk chunk) {
     // Using t_max (not t_min) as the boundary: a new chunk starting exactly at
     // the previous t_max is allowed (equal-boundary chunks from normal chunking).
     return PJ::unexpected(
-        absl::StrCat(
-            "Overlapping chunk: new t_min=", chunk.stats.t_min, " < last t_max=", sealed_chunks_.back().stats.t_max));
+        fmt::format(
+            "Overlapping chunk: new t_min={} < last t_max={}", chunk.stats.t_min, sealed_chunks_.back().stats.t_max));
   }
   sealed_chunks_.push_back(std::move(chunk));
   return PJ::okStatus();

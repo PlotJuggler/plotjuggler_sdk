@@ -1,11 +1,12 @@
 #include "pj_datastore/type_registry.hpp"
 
+#include <fmt/format.h>
+#include <tsl/robin_map.h>
+
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"
-#include "absl/strings/str_cat.h"
 #include "pj_base/expected.hpp"
 
 namespace PJ {
@@ -19,7 +20,7 @@ namespace {
 void flatten_leaf_types_impl(
     const PJ::TypeTreeNode& node, std::string_view prefix,
     std::vector<std::pair<std::string, PJ::PrimitiveType>>& out) {
-  std::string current_path = prefix.empty() ? node.name : absl::StrCat(prefix, ".", node.name);
+  std::string current_path = prefix.empty() ? node.name : fmt::format("{}.{}", prefix, node.name);
 
   switch (node.kind) {
     case PJ::TypeKind::kPrimitive:
@@ -64,46 +65,57 @@ std::vector<std::pair<std::string, PJ::PrimitiveType>> flatten_leaf_types(const 
 
 }  // namespace
 
+struct TypeRegistry::Impl {
+  PJ::SchemaId next_id = 1;
+  tsl::robin_map<PJ::SchemaId, std::shared_ptr<PJ::TypeTreeNode>> schemas;
+  tsl::robin_map<std::string, PJ::SchemaId> name_to_id;
+};
+
+TypeRegistry::TypeRegistry() : impl_(std::make_unique<Impl>()) {}
+TypeRegistry::~TypeRegistry() = default;
+TypeRegistry::TypeRegistry(TypeRegistry&&) noexcept = default;
+TypeRegistry& TypeRegistry::operator=(TypeRegistry&&) noexcept = default;
+
 PJ::Expected<PJ::SchemaId> TypeRegistry::registerSchema(
     std::string schema_name, std::shared_ptr<PJ::TypeTreeNode> type_tree) {
-  if (name_to_id_.contains(schema_name)) {
-    return PJ::unexpected(absl::StrCat("Schema '", schema_name, "' already registered"));
+  if (impl_->name_to_id.contains(schema_name)) {
+    return PJ::unexpected(fmt::format("Schema '{}' already registered", schema_name));
   }
-  PJ::SchemaId id = next_id_++;
-  name_to_id_.emplace(schema_name, id);
-  schemas_.emplace(id, std::move(type_tree));
+  PJ::SchemaId id = impl_->next_id++;
+  impl_->name_to_id.emplace(schema_name, id);
+  impl_->schemas.emplace(id, std::move(type_tree));
   return id;
 }
 
 PJ::Expected<PJ::SchemaId> TypeRegistry::registerOrGet(
     std::string schema_name, std::shared_ptr<PJ::TypeTreeNode> type_tree) {
-  auto it = name_to_id_.find(schema_name);
-  if (it != name_to_id_.end()) {
+  auto it = impl_->name_to_id.find(schema_name);
+  if (it != impl_->name_to_id.end()) {
     return it->second;
   }
   return registerSchema(std::move(schema_name), std::move(type_tree));
 }
 
 const PJ::TypeTreeNode* TypeRegistry::lookup(PJ::SchemaId id) const {
-  auto it = schemas_.find(id);
-  if (it == schemas_.end()) {
+  auto it = impl_->schemas.find(id);
+  if (it == impl_->schemas.end()) {
     return nullptr;
   }
   return it->second.get();
 }
 
 std::optional<PJ::SchemaId> TypeRegistry::findByName(std::string_view name) const {
-  auto it = name_to_id_.find(name);
-  if (it == name_to_id_.end()) {
+  auto it = impl_->name_to_id.find(std::string(name));
+  if (it == impl_->name_to_id.end()) {
     return std::nullopt;
   }
   return it->second;
 }
 
 PJ::Status TypeRegistry::evolveSchema(PJ::SchemaId id, std::shared_ptr<PJ::TypeTreeNode> updated_tree) {
-  auto it = schemas_.find(id);
-  if (it == schemas_.end()) {
-    return PJ::unexpected(absl::StrCat("Schema ID ", id, " not found"));
+  auto it = impl_->schemas.find(id);
+  if (it == impl_->schemas.end()) {
+    return PJ::unexpected(fmt::format("Schema ID {} not found", id));
   }
 
   const auto& old_tree = it->second;
@@ -111,7 +123,7 @@ PJ::Status TypeRegistry::evolveSchema(PJ::SchemaId id, std::shared_ptr<PJ::TypeT
   auto new_leaves = flatten_leaf_types(*updated_tree);
 
   // Build a map from path -> PrimitiveType for the new tree
-  absl::flat_hash_map<std::string, PJ::PrimitiveType> new_leaf_map;
+  tsl::robin_map<std::string, PJ::PrimitiveType> new_leaf_map;
   new_leaf_map.reserve(new_leaves.size());
   for (auto& [path, ptype] : new_leaves) {
     new_leaf_map.emplace(std::move(path), ptype);
@@ -121,15 +133,15 @@ PJ::Status TypeRegistry::evolveSchema(PJ::SchemaId id, std::shared_ptr<PJ::TypeT
   for (const auto& [old_path, old_type] : old_leaves) {
     auto new_it = new_leaf_map.find(old_path);
     if (new_it == new_leaf_map.end()) {
-      return PJ::unexpected(absl::StrCat("Field '", old_path, "' was removed in the updated schema"));
+      return PJ::unexpected(fmt::format("Field '{}' was removed in the updated schema", old_path));
     }
     if (new_it->second != old_type) {
-      return PJ::unexpected(absl::StrCat("Field '", old_path, "' changed type in the updated schema"));
+      return PJ::unexpected(fmt::format("Field '{}' changed type in the updated schema", old_path));
     }
   }
 
   // Validation passed — replace with updated tree
-  it->second = std::move(updated_tree);
+  it.value() = std::move(updated_tree);
   return PJ::okStatus();
 }
 

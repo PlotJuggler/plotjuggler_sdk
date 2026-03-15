@@ -3,7 +3,6 @@
 #include <optional>
 #include <string>
 
-#include "absl/container/flat_hash_map.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_base/types.hpp"
@@ -12,6 +11,14 @@ namespace PJ {
 
 class TypeRegistry {
  public:
+  TypeRegistry();
+  ~TypeRegistry();
+  TypeRegistry(TypeRegistry&&) noexcept;
+  TypeRegistry& operator=(TypeRegistry&&) noexcept;
+
+  TypeRegistry(const TypeRegistry&) = delete;
+  TypeRegistry& operator=(const TypeRegistry&) = delete;
+
   // Register a known schema (from Protobuf, ROS, etc.)
   // Fails if schema_name already exists.
   [[nodiscard]] PJ::Expected<PJ::SchemaId> registerSchema(
@@ -33,12 +40,8 @@ class TypeRegistry {
   [[nodiscard]] PJ::Status evolveSchema(PJ::SchemaId id, std::shared_ptr<PJ::TypeTreeNode> updated_tree);
 
  private:
-  /// Next schema id to assign.
-  PJ::SchemaId next_id_ = 1;
-  /// Schema storage by id.
-  absl::flat_hash_map<PJ::SchemaId, std::shared_ptr<PJ::TypeTreeNode>> schemas_;
-  /// Name -> schema id index.
-  absl::flat_hash_map<std::string, PJ::SchemaId> name_to_id_;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace PJ

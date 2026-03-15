@@ -1,8 +1,8 @@
 #include "pj_datastore/encoding.hpp"
 
-#include <cstring>
+#include <tsl/robin_map.h>
 
-#include "absl/container/flat_hash_map.h"
+#include <cstring>
 
 namespace PJ::encoding {
 
@@ -296,7 +296,7 @@ DictionaryEncoded dictionaryEncodeStrings(
   }
 
   // First pass: build dictionary to determine size
-  absl::flat_hash_map<std::string, uint32_t> lookup;
+  tsl::robin_map<std::string, uint32_t> lookup;
   std::vector<uint32_t> temp_indices;
   temp_indices.reserve(row_count);
 
@@ -309,15 +309,15 @@ DictionaryEncoded dictionaryEncodeStrings(
     std::string_view str_view(
         reinterpret_cast<const char*>(values_data.data() + start_offset), end_offset - start_offset);
 
-    auto it = lookup.find(str_view);
+    std::string key_str(str_view);
+    auto it = lookup.find(key_str);
     uint32_t index = 0;
     if (it != lookup.end()) {
       index = it->second;
     } else {
       index = static_cast<uint32_t>(result.dictionary.size());
-      std::string owned_str(str_view);
-      result.dictionary.push_back(owned_str);
-      lookup[std::move(owned_str)] = index;
+      result.dictionary.push_back(key_str);
+      lookup[std::move(key_str)] = index;
     }
     temp_indices.push_back(index);
   }
