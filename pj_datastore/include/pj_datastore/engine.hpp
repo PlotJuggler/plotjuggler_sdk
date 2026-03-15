@@ -1,8 +1,8 @@
 #pragma once
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"
 #include "pj_base/dataset.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/types.hpp"
@@ -19,6 +19,21 @@ class DataEngine {
  public:
   /// Construct an empty engine instance.
   DataEngine();
+
+  /// Destructor (defined in .cpp for pimpl).
+  ~DataEngine();
+
+  /// Move constructor.
+  DataEngine(DataEngine&&) noexcept;
+
+  /// Move assignment.
+  DataEngine& operator=(DataEngine&&) noexcept;
+
+  /// Deleted copy constructor.
+  DataEngine(const DataEngine&) = delete;
+
+  /// Deleted copy assignment.
+  DataEngine& operator=(const DataEngine&) = delete;
 
   // Dataset management
   /// Create and register a dataset.
@@ -79,21 +94,8 @@ class DataEngine {
   [[nodiscard]] std::vector<PJ::TopicId> listTopics(PJ::DatasetId dataset_id) const;
 
  private:
-  /// Global schema registry.
-  TypeRegistry type_registry_;
-  /// Id generator state for datasets.
-  PJ::DatasetId next_dataset_id_ = 1;
-  /// Id generator state for topics.
-  PJ::TopicId next_topic_id_ = 1;
-  /// Id generator state for time domains.
-  PJ::TimeDomainId next_time_domain_id_ = 1;
-
-  /// Dataset storage by id.
-  absl::flat_hash_map<PJ::DatasetId, PJ::DatasetInfo> datasets_;
-  /// Topic storage by id.
-  absl::flat_hash_map<PJ::TopicId, TopicStorage> topics_;
-  /// Time-domain storage by id.
-  absl::flat_hash_map<PJ::TimeDomainId, PJ::TimeDomain> time_domains_;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace PJ

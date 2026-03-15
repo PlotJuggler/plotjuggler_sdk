@@ -1,5 +1,9 @@
 #include "pj_datastore/plugin_data_host.hpp"
 
+#include <fmt/format.h>
+#include <tsl/robin_map.h>
+#include <tsl/robin_set.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -11,9 +15,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
-#include "absl/strings/str_cat.h"
 #include "pj_base/dataset.hpp"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/type_tree.hpp"
@@ -43,7 +44,7 @@ using FieldHandle = PJ_field_handle_t;
 [[nodiscard]] Expected<PrimitiveType> fromAbiType(PJ_primitive_type_t type) {
   const auto raw = static_cast<uint32_t>(type);
   if (raw > static_cast<uint32_t>(PrimitiveType::kString)) {
-    return unexpected(absl::StrCat("unsupported primitive type value ", raw));
+    return unexpected(fmt::format("unsupported primitive type value {}", raw));
   }
   return static_cast<PrimitiveType>(type);
 }
@@ -107,7 +108,7 @@ template <typename T>
 
 void flattenColumnsImpl(
     const TypeTreeNode& node, std::string_view prefix, FieldId& next_id, std::vector<ColumnDescriptor>& out) {
-  std::string path = prefix.empty() ? node.name : absl::StrCat(prefix, ".", node.name);
+  std::string path = prefix.empty() ? node.name : fmt::format("{}.{}", prefix, node.name);
   switch (node.kind) {
     case TypeKind::kPrimitive: {
       ColumnDescriptor desc;
@@ -194,10 +195,13 @@ struct WriteCore {
     friend bool operator==(const DatasetTopicKey& a, const DatasetTopicKey& b) {
       return a.dataset_id == b.dataset_id && a.topic_name == b.topic_name;
     }
+  };
 
-    template <typename H>
-    friend H AbslHashValue(H h, const DatasetTopicKey& key) {
-      return H::combine(std::move(h), key.dataset_id, key.topic_name);
+  struct DatasetTopicKeyHash {
+    std::size_t operator()(const DatasetTopicKey& key) const noexcept {
+      std::size_t h1 = std::hash<DatasetId>{}(key.dataset_id);
+      std::size_t h2 = std::hash<std::string>{}(key.topic_name);
+      return h1 ^ (h2 << 1);
     }
   };
 
@@ -208,10 +212,13 @@ struct WriteCore {
     friend bool operator==(const TopicFieldKey& a, const TopicFieldKey& b) {
       return a.topic_id == b.topic_id && a.field_name == b.field_name;
     }
+  };
 
-    template <typename H>
-    friend H AbslHashValue(H h, const TopicFieldKey& key) {
-      return H::combine(std::move(h), key.topic_id, key.field_name);
+  struct TopicFieldKeyHash {
+    std::size_t operator()(const TopicFieldKey& key) const noexcept {
+      std::size_t h1 = std::hash<TopicId>{}(key.topic_id);
+      std::size_t h2 = std::hash<std::string>{}(key.field_name);
+      return h1 ^ (h2 << 1);
     }
   };
 
@@ -222,16 +229,19 @@ struct WriteCore {
     friend bool operator==(const TopicFieldIdKey& a, const TopicFieldIdKey& b) {
       return a.topic_id == b.topic_id && a.field_id == b.field_id;
     }
+  };
 
-    template <typename H>
-    friend H AbslHashValue(H h, const TopicFieldIdKey& key) {
-      return H::combine(std::move(h), key.topic_id, key.field_id);
+  struct TopicFieldIdKeyHash {
+    std::size_t operator()(const TopicFieldIdKey& key) const noexcept {
+      std::size_t h1 = std::hash<TopicId>{}(key.topic_id);
+      std::size_t h2 = std::hash<FieldId>{}(key.field_id);
+      return h1 ^ (h2 << 1);
     }
   };
 
-  absl::flat_hash_map<DatasetTopicKey, TopicHandle> topic_cache_;
-  absl::flat_hash_map<TopicFieldKey, FieldHandle> field_cache_;
-  absl::flat_hash_map<TopicFieldIdKey, PrimitiveType> field_types_;
+  tsl::robin_map<DatasetTopicKey, TopicHandle, DatasetTopicKeyHash> topic_cache_;
+  tsl::robin_map<TopicFieldKey, FieldHandle, TopicFieldKeyHash> field_cache_;
+  tsl::robin_map<TopicFieldIdKey, PrimitiveType, TopicFieldIdKeyHash> field_types_;
 
   void setError(std::string message) {
     last_error_ = std::move(message);
@@ -255,7 +265,7 @@ struct WriteCore {
   [[nodiscard]] bool ensureTopic(DataSourceHandle source, std::string_view topic_name, TopicHandle* out_topic) {
     const auto* dataset = engine_.getDataset(source.id);
     if (dataset == nullptr) {
-      setError(absl::StrCat("data source ", source.id, " not found"));
+      setError(fmt::format("data source {} not found", source.id));
       return false;
     }
 
@@ -302,13 +312,13 @@ struct WriteCore {
 
     const auto* storage = engine_.getTopicStorage(topic.id);
     if (storage == nullptr) {
-      setError(absl::StrCat("topic ", topic.id, " not found"));
+      setError(fmt::format("topic {} not found", topic.id));
       return false;
     }
     const auto columns = effectiveColumns(engine_, *storage);
     const auto* desc = findFieldDescriptor(columns, field_id);
     if (desc == nullptr) {
-      setError(absl::StrCat("field ", field_id, " not found in topic ", topic.id));
+      setError(fmt::format("field {} not found in topic {}", field_id, topic.id));
       return false;
     }
 
@@ -322,7 +332,7 @@ struct WriteCore {
       TopicHandle topic, std::string_view field_name, PJ_primitive_type_t abi_type, FieldHandle* out_field) {
     const auto* storage = engine_.getTopicStorage(topic.id);
     if (storage == nullptr) {
-      setError(absl::StrCat("topic ", topic.id, " not found"));
+      setError(fmt::format("topic {} not found", topic.id));
       return false;
     }
 
@@ -340,7 +350,7 @@ struct WriteCore {
         return false;
       }
       if (existing != type) {
-        setError(absl::StrCat("field '", field_name, "' already exists with a different type"));
+        setError(fmt::format("field '{}' already exists with a different type", field_name));
         return false;
       }
       *out_field = it->second;
@@ -368,7 +378,7 @@ struct WriteCore {
       return false;
     }
     if (*actual_or != expected) {
-      setError(absl::StrCat(where, ": scalar type mismatch"));
+      setError(fmt::format("{}: scalar type mismatch", where));
       return false;
     }
     return true;
@@ -421,11 +431,11 @@ struct WriteCore {
   [[nodiscard]] bool appendRecord(
       TopicHandle topic, Timestamp timestamp, const PJ_named_field_value_t* fields, std::size_t field_count) {
     if (engine_.getTopicStorage(topic.id) == nullptr) {
-      setError(absl::StrCat("topic ", topic.id, " not found"));
+      setError(fmt::format("topic {} not found", topic.id));
       return false;
     }
 
-    absl::flat_hash_set<std::string_view> seen_names;
+    tsl::robin_set<std::string_view> seen_names;
     struct ResolvedField {
       FieldHandle handle;
       PrimitiveType type;
@@ -437,7 +447,7 @@ struct WriteCore {
       const auto& field = fields[i];
       const auto name = toStringView(field.name);
       if (!seen_names.insert(name).second) {
-        setError(absl::StrCat("duplicate field name '", name, "'"));
+        setError(fmt::format("duplicate field name '{}'", name));
         return false;
       }
       if (field.is_null) {
@@ -505,11 +515,11 @@ struct WriteCore {
   [[nodiscard]] bool appendBoundRecord(
       TopicHandle topic, Timestamp timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
     if (engine_.getTopicStorage(topic.id) == nullptr) {
-      setError(absl::StrCat("topic ", topic.id, " not found"));
+      setError(fmt::format("topic {} not found", topic.id));
       return false;
     }
 
-    absl::flat_hash_set<FieldId> seen_ids;
+    tsl::robin_set<FieldId> seen_ids;
     struct ResolvedField {
       PrimitiveType type;
       const PJ_bound_field_value_t* raw;
@@ -523,7 +533,7 @@ struct WriteCore {
         return false;
       }
       if (!seen_ids.insert(field.field.id).second) {
-        setError(absl::StrCat("duplicate field id ", field.field.id));
+        setError(fmt::format("duplicate field id {}", field.field.id));
         return false;
       }
       PrimitiveType type{};
@@ -559,7 +569,7 @@ struct WriteCore {
 
   [[nodiscard]] bool appendArrowIpc(TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
     if (engine_.getTopicStorage(topic.id) == nullptr) {
-      setError(absl::StrCat("topic ", topic.id, " not found"));
+      setError(fmt::format("topic {} not found", topic.id));
       return false;
     }
 
@@ -588,7 +598,7 @@ struct WriteCore {
     }
 
     if (ts_arrow_col < 0) {
-      setError(absl::StrCat("timestamp column '", timestamp_name, "' not found in IPC schema"));
+      setError(fmt::format("timestamp column '{}' not found in IPC schema", timestamp_name));
       return false;
     }
 
@@ -720,13 +730,13 @@ struct ToolboxCore {
   [[nodiscard]] bool readSeries(FieldHandle field, PJ_materialized_series_t* out_series) {
     const auto* storage = engine_.getTopicStorage(field.topic.id);
     if (storage == nullptr) {
-      write.setError(absl::StrCat("topic ", field.topic.id, " not found"));
+      write.setError(fmt::format("topic {} not found", field.topic.id));
       return false;
     }
     const auto columns = effectiveColumns(engine_, *storage);
     const auto* desc = findFieldDescriptor(columns, field.id);
     if (desc == nullptr) {
-      write.setError(absl::StrCat("field ", field.id, " not found in topic ", field.topic.id));
+      write.setError(fmt::format("field {} not found in topic {}", field.id, field.topic.id));
       return false;
     }
 

@@ -25,7 +25,7 @@ else()
   option(PJ_BUILD_DIALOG_ENGINE_QT "Build Qt dialog engine (requires Qt6)" OFF)
 endif()
 
-option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires Abseil, nanoarrow)" ON)
+option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires nanoarrow)" ON)
 option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
 
@@ -66,7 +66,8 @@ if(PJ_BUILD_TESTS)
 endif()
 
 if(PJ_BUILD_DATASTORE)
-  find_package(absl REQUIRED)
+  find_package(fmt REQUIRED)
+  find_package(tsl-robin-map REQUIRED)
   if(PJ_BUILD_TESTS)
     find_package(benchmark CONFIG REQUIRED)
   endif()

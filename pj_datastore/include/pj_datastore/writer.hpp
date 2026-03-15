@@ -8,7 +8,6 @@
 #include <variant>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/span.hpp"
 #include "pj_base/type_tree.hpp"
@@ -100,6 +99,12 @@ class DataWriter {
   /// Create a writer bound to one engine instance.
   explicit DataWriter(DataEngine& engine);
 
+  ~DataWriter();
+  DataWriter(DataWriter&&) noexcept;
+  DataWriter& operator=(DataWriter&&) noexcept;
+  DataWriter(const DataWriter&) = delete;
+  DataWriter& operator=(const DataWriter&) = delete;
+
   // ---- Schema registration (delegates to engine's TypeRegistry) ----
   /// Register a schema name -> type tree mapping.
   [[nodiscard]] PJ::Expected<PJ::SchemaId> registerSchema(
@@ -178,16 +183,12 @@ class DataWriter {
   [[nodiscard]] std::vector<std::pair<PJ::TopicId, TopicChunk>> flushAll();
 
  private:
-  DataEngine& engine_;
-  absl::flat_hash_map<PJ::TopicId, TopicChunkBuilder> builders_;
-  absl::flat_hash_map<PJ::TopicId, std::vector<TopicChunk>> pending_chunks_;
-
-  // Column descriptors cached per topic (needed to recreate builders)
-  absl::flat_hash_map<PJ::TopicId, std::vector<ColumnDescriptor>> topic_columns_;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 
   TopicChunkBuilder& getOrCreateBuilder(PJ::TopicId topic_id);
 
-  // Populate topic_columns_[topic_id] from TopicStorage if not already cached.
+  // Populate topic_columns[topic_id] from TopicStorage if not already cached.
   void ensureColsLoaded(PJ::TopicId topic_id, const TopicStorage& storage);
 
   // Build column descriptors from a type tree

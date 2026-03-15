@@ -1,5 +1,6 @@
 [requires]
-abseil/20250814.1
+fmt/12.1.0
+tsl-robin-map/1.4.0
 gtest/1.17.0
 benchmark/1.9.4
 arrow/23.0.1

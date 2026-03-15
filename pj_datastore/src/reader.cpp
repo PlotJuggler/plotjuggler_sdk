@@ -1,10 +1,11 @@
 #include "pj_datastore/reader.hpp"
 
+#include <fmt/format.h>
+
 #include <deque>
 #include <optional>
 #include <vector>
 
-#include "absl/strings/str_cat.h"
 #include "pj_base/expected.hpp"
 #include "pj_datastore/chunk.hpp"
 #include "pj_datastore/engine.hpp"
@@ -44,7 +45,7 @@ std::optional<TopicMetadata> DataReader::getMetadata(TopicId topic_id) const {
 Expected<RangeCursor> DataReader::rangeQuery(const QueryRange& range) const {
   const TopicStorage* storage = engine_.getTopicStorage(range.topic_id);
   if (storage == nullptr) {
-    return PJ::unexpected(absl::StrCat("Topic ", range.topic_id, " not found"));
+    return PJ::unexpected(fmt::format("Topic {} not found", range.topic_id));
   }
   return PJ::rangeQuery(storage->sealedChunks(), range.t_min, range.t_max);
 }
@@ -52,7 +53,7 @@ Expected<RangeCursor> DataReader::rangeQuery(const QueryRange& range) const {
 PJ::Expected<std::optional<SampleRow>> DataReader::latestAt(const QueryPoint& point) const {
   const TopicStorage* storage = engine_.getTopicStorage(point.topic_id);
   if (storage == nullptr) {
-    return PJ::unexpected(absl::StrCat("Topic ", point.topic_id, " not found"));
+    return PJ::unexpected(fmt::format("Topic {} not found", point.topic_id));
   }
   return PJ::latestAt(storage->sealedChunks(), point.t);
 }

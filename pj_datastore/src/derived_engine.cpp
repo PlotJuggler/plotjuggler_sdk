@@ -1,5 +1,9 @@
 #include "pj_datastore/derived_engine.hpp"
 
+#include <fmt/format.h>
+#include <tsl/robin_map.h>
+#include <tsl/robin_set.h>
+
 #include <algorithm>
 #include <cassert>
 #include <limits>
@@ -7,9 +11,6 @@
 #include <string>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
-#include "absl/strings/str_cat.h"
 #include "pj_base/type_tree.hpp"
 #include "pj_datastore/engine.hpp"
 #include "pj_datastore/query.hpp"
@@ -196,20 +197,28 @@ struct DerivedNode {
   std::vector<VarValue> mimo_out_buf;  // MIMO outputs
 };
 
+struct DatasetNameHash {
+  std::size_t operator()(const std::pair<PJ::DatasetId, std::string>& key) const noexcept {
+    std::size_t h1 = std::hash<PJ::DatasetId>{}(key.first);
+    std::size_t h2 = std::hash<std::string>{}(key.second);
+    return h1 ^ (h2 << 1);
+  }
+};
+
 struct DerivedEngineImpl {
-  absl::flat_hash_map<PJ::NodeId, DerivedNode> nodes;
+  tsl::robin_map<PJ::NodeId, DerivedNode> nodes;
 
   // downstream_of[N] = list of nodes whose inputs include an output of N
-  absl::flat_hash_map<PJ::NodeId, std::vector<PJ::NodeId>> downstream_of;
+  tsl::robin_map<PJ::NodeId, std::vector<PJ::NodeId>> downstream_of;
 
   // topic_to_nodes[T] = list of nodes that use T as an input
-  absl::flat_hash_map<PJ::TopicId, std::vector<PJ::NodeId>> topic_to_nodes;
+  tsl::robin_map<PJ::TopicId, std::vector<PJ::NodeId>> topic_to_nodes;
 
   // output_topic_to_node[T] = node that produces T (for cycle detection)
-  absl::flat_hash_map<PJ::TopicId, PJ::NodeId> output_topic_to_node;
+  tsl::robin_map<PJ::TopicId, PJ::NodeId> output_topic_to_node;
 
   // Name uniqueness within dataset: (dataset_id, topic_name) → topic_id
-  absl::flat_hash_map<std::pair<PJ::DatasetId, std::string>, PJ::TopicId> registered_output_names;
+  tsl::robin_map<std::pair<PJ::DatasetId, std::string>, PJ::TopicId, DatasetNameHash> registered_output_names;
 };
 
 // ---------------------------------------------------------------------------
@@ -228,12 +237,12 @@ DerivedEngine::~DerivedEngine() = default;
 static std::string check_cycle(
     const DerivedEngineImpl& impl, const std::vector<PJ::TopicId>& input_topics,
     const std::vector<PJ::TopicId>& output_topics) {
-  absl::flat_hash_set<PJ::TopicId> outputs(output_topics.begin(), output_topics.end());
+  tsl::robin_set<PJ::TopicId> outputs(output_topics.begin(), output_topics.end());
 
   // DFS from each input: follow upstream edges (output → producing node → its inputs).
   // If we ever reach a topic in `outputs`, we have a cycle.
   std::vector<PJ::TopicId> stack(input_topics.begin(), input_topics.end());
-  absl::flat_hash_set<PJ::TopicId> visited;
+  tsl::robin_set<PJ::TopicId> visited;
 
   while (!stack.empty()) {
     PJ::TopicId t = stack.back();
@@ -243,7 +252,7 @@ static std::string check_cycle(
     }
 
     if (outputs.contains(t)) {
-      return absl::StrCat("cycle detected: topic ", t, " is both an input and an output");
+      return fmt::format("cycle detected: topic {} is both an input and an output", t);
     }
 
     auto it = impl.output_topic_to_node.find(t);
@@ -276,7 +285,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addSisoTransform(
   // 1. Check input topic exists
   const TopicStorage* in_storage = engine_.getTopicStorage(input_topic_id);
   if (!in_storage) {
-    return PJ::unexpected(absl::StrCat("add_siso_transform: input topic ", input_topic_id, " not found"));
+    return PJ::unexpected(fmt::format("add_siso_transform: input topic {} not found", input_topic_id));
   }
 
   // 2. Determine the single leaf column's StorageKind.
@@ -317,13 +326,14 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addSisoTransform(
 
   if (num_cols == 0) {
     return PJ::unexpected(
-        absl::StrCat(
-            "add_siso_transform: cannot determine column layout for topic ", input_topic_id,
-            " (no schema_id, no stored column layout, and no committed chunks)"));
+        fmt::format(
+            "add_siso_transform: cannot determine column layout for topic {}"
+            " (no schema_id, no stored column layout, and no committed chunks)",
+            input_topic_id));
   }
   if (num_cols != 1) {
     return PJ::unexpected(
-        absl::StrCat("add_siso_transform: SISO requires single-column input, got ", num_cols, " columns"));
+        fmt::format("add_siso_transform: SISO requires single-column input, got {} columns", num_cols));
   }
   if (!leaf_primitive) {
     return PJ::unexpected(std::string("add_siso_transform: could not determine leaf primitive type"));
@@ -337,8 +347,8 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addSisoTransform(
   auto name_key = std::make_pair(output_dataset_id, output_topic_name);
   if (impl_->registered_output_names.contains(name_key)) {
     return PJ::unexpected(
-        absl::StrCat(
-            "add_siso_transform: output topic '", output_topic_name, "' already registered in dataset ",
+        fmt::format(
+            "add_siso_transform: output topic '{}' already registered in dataset {}", output_topic_name,
             output_dataset_id));
   }
 
@@ -350,7 +360,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addSisoTransform(
 
   // 6. Create output schema (single column, output_kind, name = "value")
   PJ::PrimitiveType out_primitive = storage_kind_to_primitive(out_kind);
-  std::string schema_name = absl::StrCat("derived_siso_", output_topic_name, "_", next_node_id_);
+  std::string schema_name = fmt::format("derived_siso_{}_{}", output_topic_name, next_node_id_);
   auto out_type_tree = PJ::makePrimitive("value", out_primitive);
   auto out_schema_or = engine_.typeRegistry().registerOrGet(schema_name, out_type_tree);
   if (!out_schema_or.has_value()) {
@@ -419,7 +429,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
   for (PJ::TopicId tid : input_topic_ids) {
     const TopicStorage* storage = engine_.getTopicStorage(tid);
     if (!storage) {
-      return PJ::unexpected(absl::StrCat("add_mimo_transform: input topic ", tid, " not found"));
+      return PJ::unexpected(fmt::format("add_mimo_transform: input topic {} not found", tid));
     }
 
     PJ::SchemaId schema_id = storage->descriptor().schema_id;
@@ -449,15 +459,15 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
     }
 
     if (num_cols == 0) {
-      return PJ::unexpected(absl::StrCat("add_mimo_transform: cannot determine column layout for input topic ", tid));
+      return PJ::unexpected(fmt::format("add_mimo_transform: cannot determine column layout for input topic {}", tid));
     }
     if (num_cols != 1) {
       return PJ::unexpected(
-          absl::StrCat(
-              "add_mimo_transform: MIMO requires single-column inputs; topic ", tid, " has ", num_cols, " columns"));
+          fmt::format(
+              "add_mimo_transform: MIMO requires single-column inputs; topic {} has {} columns", tid, num_cols));
     }
     if (!leaf_primitive) {
-      return PJ::unexpected(absl::StrCat("add_mimo_transform: cannot determine primitive type for input topic ", tid));
+      return PJ::unexpected(fmt::format("add_mimo_transform: cannot determine primitive type for input topic {}", tid));
     }
     input_kinds.push_back(storageKindOf(*leaf_primitive));
   }
@@ -467,8 +477,8 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
     auto key = std::make_pair(output_dataset_id, name);
     if (impl_->registered_output_names.contains(key)) {
       return PJ::unexpected(
-          absl::StrCat(
-              "add_mimo_transform: output topic '", name, "' already registered in dataset ", output_dataset_id));
+          fmt::format(
+              "add_mimo_transform: output topic '{}' already registered in dataset {}", name, output_dataset_id));
     }
   }
 
@@ -484,9 +494,9 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
   std::vector<StorageKind> output_kinds = op->outputKinds(PJ::Span<const StorageKind>(input_kinds));
   if (output_kinds.size() != output_topic_names.size()) {
     return PJ::unexpected(
-        absl::StrCat(
-            "add_mimo_transform: op->outputKinds() returned ", output_kinds.size(), " kinds but ",
-            output_topic_names.size(), " output names provided"));
+        fmt::format(
+            "add_mimo_transform: op->outputKinds() returned {} kinds but {} output names provided", output_kinds.size(),
+            output_topic_names.size()));
   }
 
   // 5. Create output schema (single "value" column) and topic for each output.
@@ -496,7 +506,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
 
   for (std::size_t k = 0; k < output_topic_names.size(); ++k) {
     PJ::PrimitiveType out_primitive = storage_kind_to_primitive(output_kinds[k]);
-    std::string schema_name = absl::StrCat("derived_mimo_", node_id, "_", k);
+    std::string schema_name = fmt::format("derived_mimo_{}_{}", node_id, k);
     auto out_type_tree = PJ::makePrimitive("value", out_primitive);
     auto out_schema_or = engine_.typeRegistry().registerOrGet(schema_name, out_type_tree);
     if (!out_schema_or.has_value()) {
@@ -562,7 +572,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
 PJ::Status DerivedEngine::removeNode(PJ::NodeId id) {
   auto it = impl_->nodes.find(id);
   if (it == impl_->nodes.end()) {
-    return PJ::unexpected(absl::StrCat("remove_node: node ", id, " not found"));
+    return PJ::unexpected(fmt::format("remove_node: node {} not found", id));
   }
 
   const DerivedNode& node = it->second;
@@ -587,7 +597,8 @@ PJ::Status DerivedEngine::removeNode(PJ::NodeId id) {
 
   // Remove from downstream_of
   impl_->downstream_of.erase(id);
-  for (auto& [upstream, list] : impl_->downstream_of) {
+  for (auto dit = impl_->downstream_of.begin(); dit != impl_->downstream_of.end(); ++dit) {
+    auto& list = dit.value();
     list.erase(std::remove(list.begin(), list.end(), id), list.end());
   }
 
@@ -612,7 +623,7 @@ std::vector<PJ::TopicId> DerivedEngine::outputTopics(PJ::NodeId id) const {
 // ---------------------------------------------------------------------------
 
 std::vector<PJ::NodeId> DerivedEngine::topologicalOrder() const {
-  absl::flat_hash_map<PJ::NodeId, int> in_degree;
+  tsl::robin_map<PJ::NodeId, int> in_degree;
   for (const auto& [id, _] : impl_->nodes) {
     in_degree[id] = 0;
   }
@@ -680,7 +691,7 @@ void DerivedEngine::onSourceCommitted(PJ::Span<const PJ::TopicId> changed_topics
     for (PJ::NodeId nid : it->second) {
       auto nit = impl_->nodes.find(nid);
       if (nit != impl_->nodes.end()) {
-        nit->second.dirty = true;
+        nit.value().dirty = true;
       }
     }
   }
@@ -693,7 +704,7 @@ void DerivedEngine::onSourceCommitted(PJ::Span<const PJ::TopicId> changed_topics
 static PJ::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& engine, DerivedNode& node) {
   const TopicStorage* in_storage = engine.getTopicStorage(node.siso_input_topic_id);
   if (!in_storage) {
-    return PJ::unexpected(absl::StrCat("run_siso_incremental: input topic ", node.siso_input_topic_id, " not found"));
+    return PJ::unexpected(fmt::format("run_siso_incremental: input topic {} not found", node.siso_input_topic_id));
   }
 
   const std::deque<TopicChunk>& all_chunks = in_storage->sealedChunks();
@@ -761,7 +772,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
     const TopicStorage* storage = engine.getTopicStorage(node.mimo_input_topic_ids[i]);
     if (!storage) {
       return PJ::unexpected(
-          absl::StrCat("run_mimo_incremental: input topic ", node.mimo_input_topic_ids[i], " not found"));
+          fmt::format("run_mimo_incremental: input topic {} not found", node.mimo_input_topic_ids[i]));
     }
     for (const TopicChunk& chunk : storage->sealedChunks()) {
       if (chunk.stats.t_max <= node.mimo_last_ts) {
@@ -790,7 +801,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   }
 
   for (std::size_t i = 1; i < num_inputs; ++i) {
-    absl::flat_hash_set<PJ::Timestamp> topic_set;
+    tsl::robin_set<PJ::Timestamp> topic_set;
     topic_set.reserve(per_topic[i].size());
     for (const auto& s : per_topic[i]) {
       topic_set.insert(s.ts);
@@ -817,7 +828,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   // 3. Build per-topic lookup: timestamp → (chunk*, row_index).
   //    insert_or_assign gives last-write-wins semantics for duplicate timestamps
   //    within a topic, producing a well-defined and consistent result.
-  std::vector<absl::flat_hash_map<PJ::Timestamp, std::pair<const TopicChunk*, uint32_t>>> lookups(num_inputs);
+  std::vector<tsl::robin_map<PJ::Timestamp, std::pair<const TopicChunk*, uint32_t>>> lookups(num_inputs);
   for (std::size_t i = 0; i < num_inputs; ++i) {
     lookups[i].reserve(per_topic[i].size());
     for (const auto& s : per_topic[i]) {
@@ -880,7 +891,7 @@ PJ::Status DerivedEngine::scheduleActive(const std::unordered_set<PJ::NodeId>& a
   auto order = topologicalOrder();
 
   // Compute the set of nodes to consider (active_nodes ∪ their transitive upstream deps).
-  absl::flat_hash_set<PJ::NodeId> filter;
+  tsl::robin_set<PJ::NodeId> filter;
   if (!active_nodes.empty()) {
     std::queue<PJ::NodeId> bfs;
     for (PJ::NodeId n : active_nodes) {
@@ -938,7 +949,7 @@ PJ::Status DerivedEngine::scheduleActive(const std::unordered_set<PJ::NodeId>& a
       for (PJ::NodeId downstream : dit->second) {
         auto dnit = impl_->nodes.find(downstream);
         if (dnit != impl_->nodes.end()) {
-          dnit->second.dirty = true;
+          dnit.value().dirty = true;
         }
       }
     }
@@ -954,9 +965,9 @@ PJ::Status DerivedEngine::scheduleActive(const std::unordered_set<PJ::NodeId>& a
 PJ::Status DerivedEngine::recompute_batch(PJ::NodeId node_id) {
   auto it = impl_->nodes.find(node_id);
   if (it == impl_->nodes.end()) {
-    return PJ::unexpected(absl::StrCat("recompute_batch: node ", node_id, " not found"));
+    return PJ::unexpected(fmt::format("recompute_batch: node {} not found", node_id));
   }
-  DerivedNode& node = it->second;
+  DerivedNode& node = it.value();
 
   // 1. Clear all output chunks unconditionally.
   for (PJ::TopicId out_tid : node.output_topic_ids) {

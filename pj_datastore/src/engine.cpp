@@ -1,29 +1,47 @@
 #include "pj_datastore/engine.hpp"
 
+#include <fmt/format.h>
+#include <tsl/robin_map.h>
+
 #include <algorithm>
 #include <utility>
 
-#include "absl/strings/str_cat.h"
 #include "pj_base/expected.hpp"
 #include "pj_datastore/reader.hpp"
 #include "pj_datastore/writer.hpp"
 
 namespace PJ {
 
-DataEngine::DataEngine() = default;
+struct DataEngine::Impl {
+  TypeRegistry type_registry;
+  PJ::DatasetId next_dataset_id = 1;
+  PJ::TopicId next_topic_id = 1;
+  PJ::TimeDomainId next_time_domain_id = 1;
+  tsl::robin_map<PJ::DatasetId, PJ::DatasetInfo> datasets;
+  tsl::robin_map<PJ::TopicId, TopicStorage> topics;
+  tsl::robin_map<PJ::TimeDomainId, PJ::TimeDomain> time_domains;
+};
+
+DataEngine::DataEngine() : impl_(std::make_unique<Impl>()) {}
+
+DataEngine::~DataEngine() = default;
+
+DataEngine::DataEngine(DataEngine&&) noexcept = default;
+
+DataEngine& DataEngine::operator=(DataEngine&&) noexcept = default;
 
 // ---------------------------------------------------------------------------
 // Dataset management
 // ---------------------------------------------------------------------------
 
 Expected<DatasetId> DataEngine::createDataset(DatasetDescriptor descriptor) {
-  DatasetId id = next_dataset_id_++;
+  DatasetId id = impl_->next_dataset_id++;
 
   // Verify time domain exists if specified
   if (descriptor.time_domain_id != 0) {
-    auto it = time_domains_.find(descriptor.time_domain_id);
-    if (it == time_domains_.end()) {
-      return PJ::unexpected(absl::StrCat("Time domain ", descriptor.time_domain_id, " not found"));
+    auto it = impl_->time_domains.find(descriptor.time_domain_id);
+    if (it == impl_->time_domains.end()) {
+      return PJ::unexpected(fmt::format("Time domain {} not found", descriptor.time_domain_id));
     }
   }
 
@@ -31,15 +49,15 @@ Expected<DatasetId> DataEngine::createDataset(DatasetDescriptor descriptor) {
   info.id = id;
   info.source_name = std::move(descriptor.source_name);
   if (descriptor.time_domain_id != 0) {
-    info.time_domain = time_domains_.at(descriptor.time_domain_id);
+    info.time_domain = impl_->time_domains.at(descriptor.time_domain_id);
   }
-  datasets_.emplace(id, std::move(info));
+  impl_->datasets.emplace(id, std::move(info));
   return id;
 }
 
 const DatasetInfo* DataEngine::getDataset(DatasetId id) const {
-  auto it = datasets_.find(id);
-  if (it == datasets_.end()) {
+  auto it = impl_->datasets.find(id);
+  if (it == impl_->datasets.end()) {
     return nullptr;
   }
   return &it->second;
@@ -50,37 +68,37 @@ const DatasetInfo* DataEngine::getDataset(DatasetId id) const {
 // ---------------------------------------------------------------------------
 
 Expected<TopicId> DataEngine::createTopic(DatasetId dataset_id, TopicDescriptor descriptor) {
-  auto it = datasets_.find(dataset_id);
-  if (it == datasets_.end()) {
-    return PJ::unexpected(absl::StrCat("Dataset ", dataset_id, " not found"));
+  auto it = impl_->datasets.find(dataset_id);
+  if (it == impl_->datasets.end()) {
+    return PJ::unexpected(fmt::format("Dataset {} not found", dataset_id));
   }
 
   // Validate schema_id if non-zero (zero means inline columns, e.g. scalar series)
   if (descriptor.schema_id != 0) {
-    if (type_registry_.lookup(descriptor.schema_id) == nullptr) {
-      return PJ::unexpected(absl::StrCat("Schema ", descriptor.schema_id, " not found"));
+    if (impl_->type_registry.lookup(descriptor.schema_id) == nullptr) {
+      return PJ::unexpected(fmt::format("Schema {} not found", descriptor.schema_id));
     }
   }
 
-  TopicId id = next_topic_id_++;
+  TopicId id = impl_->next_topic_id++;
   descriptor.dataset_id = dataset_id;
-  topics_.emplace(
+  impl_->topics.emplace(
       std::piecewise_construct, std::forward_as_tuple(id), std::forward_as_tuple(id, std::move(descriptor)));
-  it->second.topic_ids.push_back(id);
+  it.value().topic_ids.push_back(id);
   return id;
 }
 
 TopicStorage* DataEngine::getTopicStorage(TopicId id) {
-  auto it = topics_.find(id);
-  if (it == topics_.end()) {
+  auto it = impl_->topics.find(id);
+  if (it == impl_->topics.end()) {
     return nullptr;
   }
-  return &it->second;
+  return &it.value();
 }
 
 const TopicStorage* DataEngine::getTopicStorage(TopicId id) const {
-  auto it = topics_.find(id);
-  if (it == topics_.end()) {
+  auto it = impl_->topics.find(id);
+  if (it == impl_->topics.end()) {
     return nullptr;
   }
   return &it->second;
@@ -91,11 +109,11 @@ const TopicStorage* DataEngine::getTopicStorage(TopicId id) const {
 // ---------------------------------------------------------------------------
 
 TypeRegistry& DataEngine::typeRegistry() {
-  return type_registry_;
+  return impl_->type_registry;
 }
 
 const TypeRegistry& DataEngine::typeRegistry() const {
-  return type_registry_;
+  return impl_->type_registry;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,26 +121,26 @@ const TypeRegistry& DataEngine::typeRegistry() const {
 // ---------------------------------------------------------------------------
 
 Expected<TimeDomainId> DataEngine::createTimeDomain(std::string name) {
-  TimeDomainId id = next_time_domain_id_++;
+  TimeDomainId id = impl_->next_time_domain_id++;
   TimeDomain td;
   td.id = id;
   td.name = std::move(name);
-  time_domains_.emplace(id, std::move(td));
+  impl_->time_domains.emplace(id, std::move(td));
   return id;
 }
 
 const TimeDomain* DataEngine::getTimeDomain(TimeDomainId id) const {
-  auto it = time_domains_.find(id);
-  if (it == time_domains_.end()) {
+  auto it = impl_->time_domains.find(id);
+  if (it == impl_->time_domains.end()) {
     return nullptr;
   }
   return &it->second;
 }
 
 void DataEngine::setDisplayOffset(TimeDomainId id, Timestamp offset) {
-  auto it = time_domains_.find(id);
-  if (it != time_domains_.end()) {
-    it->second.display_offset = offset;
+  auto it = impl_->time_domains.find(id);
+  if (it != impl_->time_domains.end()) {
+    it.value().display_offset = offset;
   }
 }
 
@@ -152,7 +170,8 @@ std::vector<TopicId> DataEngine::commitChunks(
 }
 
 void DataEngine::enforceRetention(Timestamp retention_window_ns) {
-  for (auto& [topic_id, storage] : topics_) {
+  for (auto it = impl_->topics.begin(); it != impl_->topics.end(); ++it) {
+    auto& storage = it.value();
     if (!storage.empty()) {
       Timestamp t_max = storage.time_max();
       storage.evictBefore(t_max - retention_window_ns);
@@ -166,16 +185,16 @@ void DataEngine::enforceRetention(Timestamp retention_window_ns) {
 
 std::vector<DatasetId> DataEngine::listDatasets() const {
   std::vector<DatasetId> result;
-  result.reserve(datasets_.size());
-  for (const auto& [id, info] : datasets_) {
+  result.reserve(impl_->datasets.size());
+  for (const auto& [id, info] : impl_->datasets) {
     result.push_back(id);
   }
   return result;
 }
 
 std::vector<TopicId> DataEngine::listTopics(DatasetId dataset_id) const {
-  auto it = datasets_.find(dataset_id);
-  if (it == datasets_.end()) {
+  auto it = impl_->datasets.find(dataset_id);
+  if (it == impl_->datasets.end()) {
     return {};
   }
   return it->second.topic_ids;
