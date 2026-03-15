@@ -189,7 +189,7 @@ The source never sees `parser_binding`; the host manages it.
 - The SDK is consumable from an independent repository via Conan (primary)
   or git submodule (secondary).
 - A plugin author builds against `pj_base` without depending on
-  `pj_datastore` or Abseil.
+  `pj_datastore`.
 - The SDK is componentized: headless families don't require the dialog SDK.
 
 ## 9. Permission Summary

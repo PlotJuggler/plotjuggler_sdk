@@ -2,15 +2,14 @@
 
 ## Project Overview
 
-PlotJuggler Core — C++20 foundation in five modules:
+PlotJuggler Core — C++20 foundation in four modules:
 
 - **pj_base** — vocabulary types, plugin SDK headers (zero external deps)
-- **pj_datastore** — columnar storage engine (Abseil, nanoarrow)
+- **pj_datastore** — columnar storage engine (fmt, tsl::robin_map, nanoarrow)
 - **pj_plugins** — plugin protocol, host-side loaders, dialog SDK (Qt 6.8.3 optional)
-- **pj_ported_plugins** — 11 ported plugins from old PlotJuggler (CSV, Parquet, ULog, MCAP, JSON, Protobuf, ROS, ZMQ, MQTT, Foxglove Bridge, PJ Bridge)
 - **pj_proto_app** — prototype Qt application for testing plugins (Qt 6.8.3 required)
 
-Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (independent of each other). `pj_ported_plugins` → `pj_base` + various Conan deps. `pj_proto_app` → all modules.
+Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (independent of each other). `pj_proto_app` → all modules.
 
 ## Key Documentation
 
@@ -39,12 +38,6 @@ Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (inde
 | `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
 | `toolbox-guide.md` | SDK tutorial: read+write access, catalog, notifyDataChanged |
 
-**Ported plugins** (`pj_ported_plugins/`):
-
-| Document | Content |
-|----------|---------|
-| `porting_guide.md` | **READ FIRST** for plugin work: SDK patterns, datastore pitfalls, sparse data, dialog SDK, lessons learned |
-
 ## Build & Test
 
 ```bash
@@ -65,7 +58,7 @@ Before committing, always run:
 
 ## Instructions Glossary
 
-- **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `pj_base/`, `pj_datastore/docs/`, `pj_plugins/docs/`, `pj_ported_plugins/`, and any other location.
+- **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `pj_base/`, `pj_datastore/docs/`, `pj_plugins/docs/`, and any other location.
 
 - **"Update the documentation"** means: based on what you learned during this session, correct any documentation that is outdated or inaccurate, and clarify any ambiguity that caused confusion or errors. If a doc says one thing but the code does another, fix the doc to match reality. If missing information led to a bug, add it.
 

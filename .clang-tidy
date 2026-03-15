@@ -1,4 +1,4 @@
-# .clang-tidy configuration for C++20 + Abseil projects
+# .clang-tidy configuration for C++20 projects
 #
 # Usage: place at project root. clang-tidy will auto-discover it.
 # Run:   clang-tidy --config-file=.clang-tidy <file.cpp>
@@ -7,7 +7,6 @@
 ---
 Checks: >
   -*,
-  abseil-*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-exception-escape,
@@ -37,7 +36,6 @@ Checks: >
   -readability-uppercase-literal-suffix,
 
 WarningsAsErrors: >
-  abseil-unchecked-statusor-access,
   bugprone-use-after-move,
   bugprone-unused-raii,
   bugprone-dangling-handle,
@@ -111,7 +109,7 @@ CheckOptions:
 
   # --- Misc ---
   - key: performance-unnecessary-value-param.AllowedTypes
-    value: 'absl::Duration;absl::Time;absl::string_view;std::string_view'
+    value: 'std::string_view'
   - key: modernize-use-override.AllowOverrideAndFinal
     value: 'false'
   - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic

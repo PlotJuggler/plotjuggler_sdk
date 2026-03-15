@@ -124,7 +124,7 @@ class Expected {
   std::variant<T, E> storage_;
 };
 
-/// Specialization for void value type (replaces absl::Status).
+/// Specialization for void value type (replaces a status-or-error type).
 template <typename E>
 class Expected<void, E> {
  public:

@@ -95,7 +95,7 @@ Requirements:
 
 ## 5. Non-Functional Requirements
 
-- Pure C++20 with Abseil containers (no Qt dependency)
+- Pure C++20 with fmt + tsl::robin_map (no Qt dependency)
 - Clean under AddressSanitizer (ASAN) in debug builds
 - Deterministic chunk ordering: no internal threading, synchronous commit model
 - Zero-copy string reads where possible (string_view into dictionary-encoded column memory)

@@ -48,9 +48,7 @@ build_config() {
 
   local conan_extra=()
   if [[ "$sanitizer" == "asan" ]]; then
-    # Abseil hash tables require ABI-matching sanitizer flags; force-rebuild.
     conan_extra+=(
-      "--build=abseil/*"
       "-c" "tools.build:cxxflags=['-fsanitize=address', '-fno-omit-frame-pointer']"
       "-c" "tools.build:cflags=['-fsanitize=address', '-fno-omit-frame-pointer']"
       "-c" "tools.build:sharedlinkflags=['-fsanitize=address']"

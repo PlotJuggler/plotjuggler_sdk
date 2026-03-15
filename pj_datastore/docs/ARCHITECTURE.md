@@ -13,7 +13,7 @@ Two libraries with a strict dependency direction:
   - `Span<T>` (alias for `std::span`), `BitSpan` (bit-level view with offset)
   - `Expected<T>` / `Status` for fallible operations, `PJ_ASSERT` for invariants
 
-- **pj_datastore** (`pj_datastore/`): Engine implementation. External dependencies: Abseil (`flat_hash_map`, `StrCat`), nanoarrow (Arrow IPC import).
+- **pj_datastore** (`pj_datastore/`): Engine implementation. External dependencies: fmt, tsl::robin_map, nanoarrow (Arrow IPC import).
 
 Dependency: `pj_datastore` -> `pj_base`. No reverse dependency. `pj_plugins` depends on `pj_base` only, never on `pj_datastore`.
 
@@ -35,7 +35,7 @@ Hierarchy: **Dataset -> Topic -> Chunk -> Column**
 
 ### Logical Layer
 
-**`DataEngine`** — Central owner of all state. Stores datasets, topics (as `TopicStorage`), time domains, and the global `TypeRegistry`, all in `absl::flat_hash_map` containers. Provides:
+**`DataEngine`** — Central owner of all state. Stores datasets, topics (as `TopicStorage`), time domains, and the global `TypeRegistry`, all in hash map containers (tsl::robin_map internally, std::unordered_map in headers). Provides:
 - `createDataset()`, `createTopic()`, `createTimeDomain()` with monotonic ID allocation
 - `commitChunks()` — appends sealed chunks to `TopicStorage`, returns deduplicated list of changed `TopicId`s
 - `enforceRetention()` — evicts old chunks across all topics

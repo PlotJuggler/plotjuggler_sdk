@@ -1,6 +1,6 @@
 # C++ API Design Recommendations
 
-A practical guide to writing C++20 APIs (with Abseil) that are easy to use correctly and hard to use incorrectly.
+A practical guide to writing C++20 APIs that are easy to use correctly and hard to use incorrectly.
 
 ## Core Philosophy
 
@@ -27,10 +27,10 @@ Rect(Position origin, Size extent);
 void setDuration(int ms);
 
 // Good: self-documenting, unit-safe
-void setDuration(absl::Duration d);
+void setDuration(std::chrono::milliseconds d);
 ```
 
-**Use `enum class` instead of `bool` parameters** ([Abseil Tip #94](https://abseil.io/tips/94)):
+**Use `enum class` instead of `bool` parameters:**
 
 ```cpp
 // Bad: what does true, false mean here?
@@ -171,33 +171,22 @@ Make ownership explicit. The reader should never have to guess who owns what.
 
 Pick one strategy per API layer. Never mix exceptions, error codes, and global error state.
 
-### Two-layer policy (public API vs. internals)
-
-| Layer | Mechanism |
-|---|---|
-| **Public API headers (`.hpp`)** | `PJ::Expected<T>` (value or string error), `PJ::Status` (no-value error), `PJ::Span<T>` (non-owning view) |
-| **Implementation files (`.cpp`)** | `absl::StatusOr<T>`, `absl::Status`, `absl::StrCat`, `absl::flat_hash_map`, etc. — all OK |
-
-Public headers must not expose `absl::` types at API boundaries. This keeps the `pj_base` library dependency-free and avoids leaking Abseil into downstream consumers.
-
 ### Situation → mechanism
 
 | Situation | Mechanism |
 |---|---|
-| Recoverable failure with return value | `PJ::Expected<T>` in headers; `absl::StatusOr<T>` in .cpp internals |
-| Recoverable failure, no return value | `PJ::Status` in headers; `absl::Status` in .cpp internals |
+| Recoverable failure with return value | `PJ::Expected<T>` |
+| Recoverable failure, no return value | `PJ::Status` |
 | Truly exceptional (contract violation, OOM) | Exceptions |
 | Simple absence, no error detail needed | `std::optional<T>` |
 
 ```cpp
-// Public header: no absl types
 [[nodiscard]] PJ::Expected<Config> load_config(std::string_view path);
 [[nodiscard]] PJ::Status save_config(const Config& cfg, std::string_view path);
 
-// Implementation: absl types are fine
 PJ::Expected<Config> load_config(std::string_view path) {
   if (!std::filesystem::exists(path))
-    return PJ::unexpected(absl::StrCat("file not found: ", path));
+    return PJ::unexpected(fmt::format("file not found: {}", path));
   // ...
   return config;
 }
@@ -257,78 +246,51 @@ Avoid template metaprogramming when `concepts` + `constexpr if` suffices.
 
 ---
 
-## 13. Abseil Library Usage
+## 13. Library Dependencies
 
-Abseil is a project dependency. Prefer `absl::` types where they outperform or extend the standard library. Use `std::` where the standard equivalent is equal or superior.
+The project uses a small set of third-party libraries alongside the C++20 standard library.
 
-### Containers (prefer over std:: equivalents in `.cpp` files)
+### String Formatting
 
-**Important:** `absl::` containers must only be used in implementation files (`.cpp`). Public headers (`.hpp`) must use `std::` equivalents (e.g., `std::unordered_map`). If `absl::` container performance is critical for a header-visible member, hide it behind Pimpl.
-
-| Need | Use (in `.cpp`) | Why |
-|---|---|---|
-| Hash map (default) | `absl::flat_hash_map` | Swiss Tables: SIMD-accelerated, flat layout, faster and less memory than `std::unordered_map` |
-| Hash set (default) | `absl::flat_hash_set` | Same Swiss Tables advantages |
-| Hash map with pointer stability | `absl::node_hash_map` | Elements referenced from outside the container |
-| Ordered map | `absl::btree_map` | Lower memory, more cache-friendly than `std::map` red-black trees |
-| Ordered set | `absl::btree_set` | Same btree advantages |
-| Small vector (SBO) | `absl::InlinedVector<T, N>` | Avoids heap allocation for ≤ N elements |
-| Runtime-sized temp array | `absl::FixedArray<T>` | Stack-allocates up to a threshold, then heap |
-
-### Strings
+Use `fmt` for all string formatting and concatenation:
 
 | Task | Use |
 |---|---|
-| Concatenation | `absl::StrCat()` -- no temporaries, type-safe, handles numbers/string_view/strings |
-| Joining containers | `absl::StrJoin()` |
-| Splitting | `absl::StrSplit()` -- returns vector, set, map, or string_view results |
-| Simple positional formatting | `absl::Substitute("$0 of $1", a, b)` |
-| printf-style formatting | `absl::StrFormat()` -- type-safe |
+| Formatting / concatenation | `fmt::format("prefix: {}", value)` |
+| Joining containers | `fmt::join(container, ", ")` inside `fmt::format` |
+
+### Hash Containers
+
+**In `.cpp` files:** use `tsl::robin_map` / `tsl::robin_set` for performance-critical hash containers.
+
+**In `.hpp` headers:** use `std::unordered_map` / `std::unordered_set` to avoid leaking dependencies.
+
+| Need | Use (in `.cpp`) | Use (in `.hpp`) |
+|---|---|---|
+| Hash map (default) | `tsl::robin_map` | `std::unordered_map` |
+| Hash set (default) | `tsl::robin_set` | `std::unordered_set` |
 
 ### Error Handling
 
-| Pattern | Public API (`.hpp`) | Implementation (`.cpp`) |
-|---|---|---|
-| Function returns value or fails | `PJ::Expected<T>` | `absl::StatusOr<T>` OK internally |
-| Function can fail, no return value | `PJ::Status` | `absl::Status` OK internally |
-| Non-owning span parameter | `PJ::Span<T>` | `absl::Span<T>` OK internally |
+| Pattern | Type |
+|---|---|
+| Function returns value or fails | `PJ::Expected<T>` |
+| Function can fail, no return value | `PJ::Status` |
+| Non-owning span parameter | `PJ::Span<T>` / `std::span<T>` |
 
-See [Section 9](#9-error-handling) for the full two-layer policy and examples.
+See [Section 9](#9-error-handling) for the full policy and examples.
 
 ### Time
 
-Use `absl::Time` and `absl::Duration` instead of raw integers. They are concrete types (not templates), support civil-time conversion, and interoperate with `absl::TimeZone`.
-
-```cpp
-absl::Duration timeout = absl::Seconds(30);
-absl::Time deadline = absl::Now() + timeout;
-```
+The project uses `int64_t` nanoseconds for timestamps. Use `std::chrono` types for durations when type safety is desired.
 
 ### Hashing
 
-Use `absl::Hash<T>` as the default hash framework. Support custom types via `AbslHashValue`:
-
-```cpp
-template <typename H>
-friend H AbslHashValue(H h, const MyType& m) {
-    return H::combine(std::move(h), m.field1, m.field2);
-}
-```
+Use `std::hash<T>` for custom hash support. Specialize `std::hash` in the same namespace as the type.
 
 ### Synchronization
 
-| Need | Use |
-|---|---|
-| Mutex with static analysis | `absl::Mutex` + `ABSL_GUARDED_BY` / `ABSL_LOCKS_EXCLUDED` annotations |
-| Scoped lock | `absl::MutexLock` |
-| One-shot thread signaling | `absl::Notification` |
-
-### When to use std:: instead of absl::
-
-- `std::optional`, `std::variant`, `std::any`, `std::string_view` -- standard and mature in C++20; `absl::` versions are aliases in C++17+ builds
-- `std::span` -- standard in C++20
-- `std::unique_ptr`, `std::shared_ptr` -- no absl alternative
-- `std::vector`, `std::array`, `std::string` -- no reason to avoid std::
+Use `std::mutex` and `std::scoped_lock` when synchronization is needed.
 
 ---
 
@@ -336,7 +298,7 @@ friend H AbslHashValue(H h, const MyType& m) {
 
 - Document thread-safety guarantees for every public API
 - Avoid data races by construction: value semantics, message passing, confined ownership
-- Prefer `absl::Mutex` with thread-safety annotations over `std::mutex` for static-analysis support
+- Use `std::mutex` with `std::scoped_lock` when synchronization is needed
 - Use atomics/mutexes explicitly and minimally where needed
 - Const objects and pure functions are inherently thread-safe
 
@@ -356,7 +318,7 @@ friend H AbslHashValue(H h, const MyType& m) {
 
 ## Parameter Passing Guide
 
-Based on [Abseil Tip #234](https://abseil.io/tips/234):
+General guidelines:
 
 ### Input (read-only)
 
@@ -365,7 +327,7 @@ Based on [Abseil Tip #234](https://abseil.io/tips/234):
 | Small trivial type (≤ 16 bytes) | By value |
 | `std::string` / large type | `const&` or `std::string_view` |
 | Contiguous range | `std::span<const T>` |
-| Callable (not stored) | `const Fn&` or `absl::FunctionRef` |
+| Callable (not stored) | `const Fn&` or `std::function_ref` (C++26) / `const Fn&` |
 
 ### Input (sink / will be consumed)
 
@@ -387,7 +349,7 @@ Based on [Abseil Tip #234](https://abseil.io/tips/234):
 |---|---|
 | Single value | Return by value |
 | Multiple values | Return named struct |
-| Fallible | Return `PJ::Expected<T>` (public API) / `absl::StatusOr<T>` (internal .cpp) |
+| Fallible | Return `PJ::Expected<T>` |
 
 Never pass `std::shared_ptr` unless the callee genuinely shares ownership. If it just reads the pointee, dereference and pass `const&`.
 
@@ -395,25 +357,25 @@ Never pass `std::shared_ptr` unless the callee genuinely shares ownership. If it
 
 ## Additional API Design Tips
 
-From the [Abseil Tips of the Week](https://abseil.io/tips/):
+Practical tips for robust API design:
 
-- **No sentinel values** -- Don't use `-1`, `INT_MAX`, etc. to signal absence. Use `std::optional`. ([Tip #171](https://abseil.io/tips/171))
+- **No sentinel values** -- Don't use `-1`, `INT_MAX`, etc. to signal absence. Use `std::optional`.
 
-- **Factory functions over two-phase init** -- Prefer returning `PJ::Expected<T>` (public API) or `std::unique_ptr<T>` from a factory over constructor + `Init()` method. Objects should be fully valid after construction. ([Tip #42](https://abseil.io/tips/42))
+- **Factory functions over two-phase init** -- Prefer returning `PJ::Expected<T>` or `std::unique_ptr<T>` from a factory over constructor + `Init()` method. Objects should be fully valid after construction.
 
 - **Option structs for many parameters** -- Wrap functions with > 3 parameters in a struct with defaulted members. Use C++20 designated initializers at the callsite:
   ```cpp
   PrintDouble(5.0, {.prefix = "val=", .precision = 2});
   ```
-  ([Tip #173](https://abseil.io/tips/173))
 
-- **No `vector.at()`** -- Use `operator[]` when the index is known valid. Perform explicit bounds checking with early return or `PJ::Status` (public API) / `absl::Status` (.cpp internals) when it is not. ([Tip #224](https://abseil.io/tips/224))
 
-- **Tag types** -- Use empty structs to disambiguate overloads when factory functions or enums are insufficient. ([Tip #198](https://abseil.io/tips/198))
+- **No `vector.at()`** -- Use `operator[]` when the index is known valid. Perform explicit bounds checking with early return or `PJ::Status` when it is not.
 
-- **Return by value for cheap types** -- Avoid returning `const T&` to internal data when `T` is cheap to copy (e.g., `string_view`, `int`). Return by value instead -- this decouples callers from internal representation and preserves optimization freedom. ([Performance Tip #64](https://abseil.io/fast/64))
+- **Tag types** -- Use empty structs to disambiguate overloads when factory functions or enums are insufficient.
 
-- **Avoid unnecessarily strong guarantees** -- Weaker guarantees (e.g., no iterator stability) can enable significantly better performance, as demonstrated by Abseil's Swiss Tables vs `std::unordered_map`. ([Performance Tip #64](https://abseil.io/fast/64))
+- **Return by value for cheap types** -- Avoid returning `const T&` to internal data when `T` is cheap to copy (e.g., `string_view`, `int`). Return by value instead -- this decouples callers from internal representation and preserves optimization freedom.
+
+- **Avoid unnecessarily strong guarantees** -- Weaker guarantees (e.g., no iterator stability) can enable significantly better performance. Open-addressing hash maps like `tsl::robin_map` outperform `std::unordered_map` precisely because they trade iterator stability for cache locality.
 
 ---
 
@@ -446,27 +408,23 @@ Pick the simplest container that fits the access pattern.
 | Need | Container |
 |---|---|
 | Default choice | `std::vector` |
-| Small-buffer optimization (≤ N inline) | `absl::InlinedVector<T, N>` |
-| Runtime-sized, bounded lifetime | `absl::FixedArray<T>` |
 | Stable addresses / frequent mid-insert | `std::deque` or `std::list` |
 | Fixed size known at compile time | `std::array` |
 | Non-owning view into contiguous memory | `std::span` |
 
 ### Associative (key lookup)
 
-| Need | Container |
-|---|---|
-| Ordered, unique keys | `absl::btree_map` |
-| Ordered, duplicate keys | `absl::btree_multimap` |
-| Unordered (faster), unique keys | `absl::flat_hash_map` (default) |
-| Need pointer stability for elements | `absl::node_hash_map` |
+| Need | Container (`.cpp`) | Container (`.hpp`) |
+|---|---|---|
+| Ordered, unique keys | `std::map` | `std::map` |
+| Unordered (faster), unique keys | `tsl::robin_map` | `std::unordered_map` |
 
 ### Sets
 
-| Need | Container |
-|---|---|
-| Ordered | `absl::btree_set` |
-| Unordered (fastest) | `absl::flat_hash_set` |
+| Need | Container (`.cpp`) | Container (`.hpp`) |
+|---|---|---|
+| Ordered | `std::set` | `std::set` |
+| Unordered (fastest) | `tsl::robin_set` | `std::unordered_set` |
 
 ### Adaptors
 
@@ -505,7 +463,7 @@ Pick the simplest container that fits the access pattern.
 Clang additional:
 ```
 -Wmost
--Wthread-safety      # required for absl::Mutex annotations
+-Wthread-safety      # thread-safety static analysis
 ```
 
 Debug/test builds:
@@ -550,7 +508,7 @@ When reviewing code, classify issues by severity:
 - `bool` parameter where `enum class` would be clearer
 - Function with > 3 parameters that could use a struct
 - Missing `constexpr` on a function that could be constexpr
-- Using `std::unordered_map` in `.cpp` files where `absl::flat_hash_map` would be better
+- Using `std::unordered_map` in `.cpp` files where `tsl::robin_map` would be better
 
 ### Suggestion (optional improvement)
 - Opportunity to use ranges for cleaner pipeline
@@ -565,12 +523,8 @@ When reviewing code, classify issues by severity:
 - [Qt API Design Principles](https://wiki.qt.io/API_Design_Principles)
 - [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/)
 - Scott Meyers, *Effective C++* Item 18; [How Non-Member Functions Improve Encapsulation](https://www.aristeia.com/Papers/CUJ_Feb_2000.pdf)
-- [Abseil C++ Library](https://abseil.io/)
-- [Abseil Tips of the Week](https://abseil.io/tips/) -- especially #42, #94, #171, #173, #198, #224, #234
-- [Abseil Performance Tips](https://abseil.io/fast/) -- especially #64, #83
-- [Abseil Container Guide](https://abseil.io/docs/cpp/guides/container)
-- [Abseil Status Guide](https://abseil.io/docs/cpp/guides/status)
-- [Abseil Swiss Tables Design](https://abseil.io/about/design/swisstables)
+- [fmt library](https://fmt.dev/) -- type-safe formatting
+- [tsl::robin_map](https://github.com/Tessil/robin-map) -- fast open-addressing hash map
 - [Strong Types for Strong Interfaces](https://www.fluentcpp.com/2016/12/08/strong-types-for-strong-interfaces/) -- Fluent C++
 - [When SOLID Breaks: Choose CLARITY](https://krossovochkin.com/posts/2025_05_05_when_solid_breaks_choose_clarity/)
 - [CppCon 2024: The Most Important C++ Design Guideline is Testability](https://www.classcentral.com/course/youtube-the-most-important-c-design-guideline-is-testability-jody-hagins-cppcon-2024-419955) -- Jody Hagins

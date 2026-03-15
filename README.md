@@ -10,7 +10,7 @@ C++20 foundation libraries for [PlotJuggler](https://github.com/facontidavide/Pl
 | Module | Description | Dependencies |
 |--------|-------------|--------------|
 | **pj_base** | Vocabulary types: `Timestamp`, `DatasetId`, `TopicId`, type trees, `Expected<T>`, `Span<T>` | None |
-| **pj_datastore** | Columnar in-memory storage engine with typed schemas, chunk-based encoding, range/latest-at queries, derived transform DAG, and Arrow IPC import | pj_base, Abseil, nanoarrow |
+| **pj_datastore** | Columnar in-memory storage engine with typed schemas, chunk-based encoding, range/latest-at queries, derived transform DAG, and Arrow IPC import | pj_base, fmt, tsl::robin_map, nanoarrow |
 | **pj_plugins** | C-ABI plugin dialog protocol with host-side C++ API and optional Qt 6.8.3 dialog engine | nlohmann/json, Qt 6.8.3 (optional) |
 
 ## Getting Started
@@ -52,7 +52,7 @@ export CMAKE_PREFIX_PATH=$(pwd)/.qt/6.8.3/gcc_64
 
 ```
 pj_base/           Basic types (zero deps)
-pj_datastore/      Storage engine (Abseil, nanoarrow)
+pj_datastore/      Storage engine (fmt, tsl::robin_map, nanoarrow)
 pj_plugins/        Plugin dialog protocol (nlohmann/json, optional Qt)
 ```
 

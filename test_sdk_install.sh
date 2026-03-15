@@ -62,7 +62,7 @@ echo ""
 echo "--- Step 4: Verify no host-internal headers leaked ---"
 
 LEAKED=0
-for pattern in 'absl/' 'pj_datastore/'; do
+for pattern in 'pj_datastore/'; do
   if grep -r "$pattern" "$STAGING_DIR/include/" 2>/dev/null; then
     echo "ERROR: Found leaked dependency: ${pattern}"
     LEAKED=1

@@ -138,8 +138,7 @@ std::string ui_content() const override { return kMyDialogUi; }
 ```
 
 The `.ui` file is tracked as a CMake configure dependency — editing it
-triggers header regeneration. See `pj_ported_plugins/cmake/EmbedUi.cmake`
-for the implementation.
+triggers header regeneration.
 
 ### 3. Build the widget state
 

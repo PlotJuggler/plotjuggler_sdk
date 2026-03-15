@@ -1,4 +1,4 @@
 interface:
-  display_name: "C++20 API Guidelines (with Abseil)"
-  short_description: "C++20 + Abseil API rules for simple, misuse-resistant code."
-  default_prompt: "Apply C++20 API and design rules from cpp_design_recommendations.md prioritizing simplicity, const-by-default, testability, absl::StatusOr error handling, Swiss Table containers, and explicit ownership."
+  display_name: "C++20 API Guidelines"
+  short_description: "C++20 API rules for simple, misuse-resistant code."
+  default_prompt: "Apply C++20 API and design rules from cpp_design_recommendations.md prioritizing simplicity, const-by-default, testability, PJ::Expected<T> error handling, tsl::robin_map containers, and explicit ownership."
