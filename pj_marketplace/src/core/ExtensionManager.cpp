@@ -52,7 +52,7 @@ void ExtensionManager::install(const Extension& ext) {
   // On Windows, DLLs that are currently loaded cannot be overwritten. Extract to a
   // staging directory (.pending/) instead and let the user restart to activate.
   const bool staging = PlatformUtils::isWindows();
-  const QString dest_dir = (staging ? pending_dir_ : extensions_dir_) + "/" + ext.id;
+  const QString dest_dir = staging ? pending_dir_ : extensions_dir_;
 
   pending_id_ = ext.id;
   emit installStarted(ext.id);
