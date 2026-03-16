@@ -43,7 +43,7 @@ QString PlatformUtils::extensionsDir() {
 }
 
 QString PlatformUtils::pendingDir() {
-  return configDir() + "/.pending";
+  return configDir() + "/.extension_windows_staging";
 }
 
 QString PlatformUtils::backupDir() {
