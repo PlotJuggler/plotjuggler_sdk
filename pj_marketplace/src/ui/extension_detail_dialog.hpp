@@ -15,8 +15,8 @@ class ExtensionDetailDialog : public QDialog {
   ~ExtensionDetailDialog() override;
 
  signals:
-  void install_requested();
-  void uninstall_requested();
+  void installRequested();
+  void uninstallRequested();
 
  private:
   Ui::ExtensionDetailDialog* ui_ = nullptr;

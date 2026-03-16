@@ -36,8 +36,8 @@ MarketplaceWindow::MarketplaceWindow(RegistryManager* registry_mgr, ExtensionMan
   registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);
 
   ui_->setupUi(this);
-  setup_ui();
-  setup_signals();
+  setupUi();
+  setupSignals();
   ext_mgr_->applyPendingInstalls();
   registry_mgr_->fetchRegistry(registry_url_);
   // extensions_ is now populated via the fetchFinished signal above.
@@ -49,7 +49,7 @@ MarketplaceWindow::~MarketplaceWindow() {
 
 // ─── UI Setup ────────────────────────────────────────────────────────────────
 
-void MarketplaceWindow::setup_ui() {
+void MarketplaceWindow::setupUi() {
   ui_->refresh_btn_->setFixedWidth(80);
   ui_->update_all_btn_->setFixedWidth(90);
   ui_->update_all_btn_->setEnabled(false);
@@ -62,27 +62,27 @@ void MarketplaceWindow::setup_ui() {
   ui_->category_combo_->addItem("Bundle",         "bundle");
 
   connect(ui_->search_edit_, &QLineEdit::textChanged,
-          this, &MarketplaceWindow::on_search_changed);
+          this, &MarketplaceWindow::onSearchChanged);
   connect(ui_->category_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-          this, &MarketplaceWindow::on_category_changed);
+          this, &MarketplaceWindow::onCategoryChanged);
   connect(ui_->refresh_btn_, &QPushButton::clicked,
-          this, &MarketplaceWindow::on_refresh_clicked);
+          this, &MarketplaceWindow::onRefreshClicked);
   connect(ui_->update_all_btn_, &QPushButton::clicked,
-          this, &MarketplaceWindow::on_update_all_clicked);
+          this, &MarketplaceWindow::onUpdateAllClicked);
   connect(ui_->settings_btn_, &QPushButton::clicked,
-          this, &MarketplaceWindow::on_settings_clicked);
+          this, &MarketplaceWindow::onSettingsClicked);
 }
 
 // ─── Signal wiring ───────────────────────────────────────────────────────────
 
-void MarketplaceWindow::setup_signals() {
+void MarketplaceWindow::setupSignals() {
   // RegistryManager
   connect(registry_mgr_, &RegistryManager::fetchStarted, this,
-          [this]() { set_status("Loading registry..."); });
+          [this]() { setStatus("Loading registry..."); });
 
   connect(registry_mgr_, &RegistryManager::fetchFinished, this, [this](bool success) {
     if (!success) {
-      set_status("Failed to load registry", true);
+      setStatus("Failed to load registry", true);
       return;
     }
 
@@ -90,16 +90,16 @@ void MarketplaceWindow::setup_signals() {
         [this](const QString& id) {
           pending_restart_ids_.insert(id);
           ui_->progress_bar_->setVisible(false);
-          populate_cards();
-          set_status("Extension staged — will be active after restart");
+          populateCards();
+          setStatus("Extension staged — will be active after restart");
         });
     extensions_ = registry_mgr_->extensions();
-    apply_filters();
-    set_status("Ready — " + QString::number(extensions_.size()) + " extensions loaded");
+    applyFilters();
+    setStatus("Ready — " + QString::number(extensions_.size()) + " extensions loaded");
   });
 
   connect(registry_mgr_, &RegistryManager::fetchError, this,
-          [this](const QString& error) { set_status("Registry error: " + error, true); });
+          [this](const QString& error) { setStatus("Registry error: " + error, true); });
 
   // ExtensionManager
   connect(ext_mgr_, &ExtensionManager::installStarted, this, [this](const QString& id) {
@@ -107,7 +107,7 @@ void MarketplaceWindow::setup_signals() {
     ui_->progress_bar_->setRange(0, 100);
     ui_->progress_bar_->setVisible(true);
     for (const auto& ext : extensions_)
-      if (ext.id == id) { set_status("Installing " + ext.name + "..."); break; }
+      if (ext.id == id) { setStatus("Installing " + ext.name + "..."); break; }
   });
 
   connect(ext_mgr_, &ExtensionManager::installProgress, this,
@@ -119,45 +119,45 @@ void MarketplaceWindow::setup_signals() {
           [this](const QString& id, bool success) {
             ui_->progress_bar_->setVisible(false);
             if (success) installations_changed_ = true;
-            populate_cards();
+            populateCards();
             if (success) {
               for (const auto& ext : extensions_)
                 if (ext.id == id) {
-                  set_status("Installed " + ext.name + " v" + ext.version);
+                  setStatus("Installed " + ext.name + " v" + ext.version);
                   break;
                 }
             }
             // On failure the status was already set by installError — do not overwrite it.
-            process_install_queue();
+            processInstallQueue();
           });
 
   connect(ext_mgr_, &ExtensionManager::installError, this,
           [this](const QString& /*id*/, const QString& error) {
             ui_->progress_bar_->setVisible(false);
-            set_status("Installation failed: " + error, true);
-            process_install_queue();
+            setStatus("Installation failed: " + error, true);
+            processInstallQueue();
           });
 
   connect(ext_mgr_, &ExtensionManager::uninstallFinished, this,
           [this](const QString& id, bool success) {
             if (success) {
               installations_changed_ = true;
-              populate_cards();
+              populateCards();
               for (const auto& ext : extensions_)
-                if (ext.id == id) { set_status("Uninstalled " + ext.name); break; }
+                if (ext.id == id) { setStatus("Uninstalled " + ext.name); break; }
             }
             // On failure the status was already set by uninstallError — do not overwrite it.
           });
 
   connect(ext_mgr_, &ExtensionManager::uninstallError, this,
           [this](const QString& /*id*/, const QString& error) {
-            set_status("Uninstall failed: " + error, true);
+            setStatus("Uninstall failed: " + error, true);
           });
 }
 
 // ─── Cards Population ─────────────────────────────────────────────────────────
 
-void MarketplaceWindow::populate_cards() {
+void MarketplaceWindow::populateCards() {
   while (ui_->cards_layout_->count() > 1)
     delete ui_->cards_layout_->takeAt(0)->widget();
 
@@ -217,7 +217,7 @@ void MarketplaceWindow::populate_cards() {
           "  border-radius:4px; padding:4px 0px; font-weight:bold; }"
           "QPushButton:hover { background:#f0b820; }");
       connect(btn, &QPushButton::clicked, this,
-              [this, ext_id]() { on_action_button_clicked(ext_id); });
+              [this, ext_id]() { onActionButtonClicked(ext_id); });
       btn_box->addWidget(btn);
     } else if (ext_mgr_->isInstalled(ext.id)) {
       auto* badge = new QPushButton("Installed", card);
@@ -235,7 +235,7 @@ void MarketplaceWindow::populate_cards() {
           "  border-radius:4px; padding:4px 0px; font-weight:bold; }"
           "QPushButton:hover { background:#42a5f5; }");
       connect(btn, &QPushButton::clicked, this,
-              [this, ext_id]() { on_action_button_clicked(ext_id); });
+              [this, ext_id]() { onActionButtonClicked(ext_id); });
       btn_box->addWidget(btn);
     }
 
@@ -272,23 +272,23 @@ void MarketplaceWindow::populate_cards() {
 bool MarketplaceWindow::eventFilter(QObject* obj, QEvent* event) {
   if (event->type() == QEvent::MouseButtonDblClick) {
     const QString ext_id = static_cast<QFrame*>(obj)->property("ext_id").toString();
-    if (!ext_id.isEmpty()) open_detail(ext_id);
+    if (!ext_id.isEmpty()) openDetail(ext_id);
     return true;
   }
   return QDialog::eventFilter(obj, event);
 }
 
-void MarketplaceWindow::open_detail(const QString& ext_id) {
+void MarketplaceWindow::openDetail(const QString& ext_id) {
   for (const auto& ext : filtered_) {
     if (ext.id != ext_id) continue;
     const auto installed = ext_mgr_->installedExtensions();
     const QString installed_version =
         installed.contains(ext_id) ? installed[ext_id].version : QString{};
     ExtensionDetailDialog dlg(ext, installed_version, this);
-    connect(&dlg, &ExtensionDetailDialog::install_requested, this,
-            [this, ext_id]() { on_action_button_clicked(ext_id); });
-    connect(&dlg, &ExtensionDetailDialog::uninstall_requested, this,
-            [this, ext_id]() { on_uninstall_button_clicked(ext_id); });
+    connect(&dlg, &ExtensionDetailDialog::installRequested, this,
+            [this, ext_id]() { onActionButtonClicked(ext_id); });
+    connect(&dlg, &ExtensionDetailDialog::uninstallRequested, this,
+            [this, ext_id]() { onUninstallButtonClicked(ext_id); });
     dlg.exec();
     return;
   }
@@ -296,7 +296,7 @@ void MarketplaceWindow::open_detail(const QString& ext_id) {
 
 // ─── Filtering ────────────────────────────────────────────────────────────────
 
-void MarketplaceWindow::apply_filters() {
+void MarketplaceWindow::applyFilters() {
   const QString search   = ui_->search_edit_->text().toLower();
   const QString category = ui_->category_combo_->currentData().toString();
 
@@ -314,27 +314,27 @@ void MarketplaceWindow::apply_filters() {
     filtered_.append(ext);
   }
 
-  populate_cards();
-  set_status(QString::number(filtered_.size()) + " of " +
+  populateCards();
+  setStatus(QString::number(filtered_.size()) + " of " +
              QString::number(extensions_.size()) + " extensions shown");
 }
 
-void MarketplaceWindow::set_status(const QString& msg, bool is_error) {
+void MarketplaceWindow::setStatus(const QString& msg, bool is_error) {
   ui_->status_label_->setText(msg);
   ui_->status_label_->setStyleSheet(is_error ? "color: #d32f2f; font-weight: bold;" : "");
 }
 
 // ─── Slots ────────────────────────────────────────────────────────────────────
 
-void MarketplaceWindow::on_search_changed(const QString& /*text*/) { apply_filters(); }
-void MarketplaceWindow::on_category_changed(int /*index*/)         { apply_filters(); }
+void MarketplaceWindow::onSearchChanged(const QString& /*text*/) { applyFilters(); }
+void MarketplaceWindow::onCategoryChanged(int /*index*/)         { applyFilters(); }
 
-void MarketplaceWindow::on_refresh_clicked() {
-  set_status("Refreshing...");
+void MarketplaceWindow::onRefreshClicked() {
+  setStatus("Refreshing...");
   registry_mgr_->fetchRegistry(registry_url_);
 }
 
-void MarketplaceWindow::on_settings_clicked() {
+void MarketplaceWindow::onSettingsClicked() {
   QDialog dlg(this);
   dlg.setWindowTitle("Marketplace Settings");
   dlg.setMinimumWidth(480);
@@ -367,11 +367,11 @@ void MarketplaceWindow::on_settings_clicked() {
   registry_url_ = new_url;
   QSettings("PlotJuggler", "Marketplace").setValue("registry_url", registry_url_.toString());
 
-  set_status("Refreshing...");
+  setStatus("Refreshing...");
   registry_mgr_->fetchRegistry(registry_url_);
 }
 
-void MarketplaceWindow::on_action_button_clicked(const QString& ext_id) {
+void MarketplaceWindow::onActionButtonClicked(const QString& ext_id) {
   for (const auto& ext : filtered_) {
     if (ext.id != ext_id) continue;
     if (ext_mgr_->hasUpdate(ext))
@@ -382,11 +382,11 @@ void MarketplaceWindow::on_action_button_clicked(const QString& ext_id) {
   }
 }
 
-void MarketplaceWindow::on_uninstall_button_clicked(const QString& ext_id) {
+void MarketplaceWindow::onUninstallButtonClicked(const QString& ext_id) {
   ext_mgr_->uninstall(ext_id);
 }
 
-void MarketplaceWindow::on_update_all_clicked() {
+void MarketplaceWindow::onUpdateAllClicked() {
   update_queue_.clear();
   for (const auto& ext : filtered_) {
     if (ext_mgr_->hasUpdate(ext))
@@ -394,11 +394,11 @@ void MarketplaceWindow::on_update_all_clicked() {
   }
   if (update_queue_.isEmpty()) return;
   ui_->update_all_btn_->setEnabled(false);
-  set_status("Updating " + QString::number(update_queue_.size()) + " extensions...");
-  process_install_queue();
+  setStatus("Updating " + QString::number(update_queue_.size()) + " extensions...");
+  processInstallQueue();
 }
 
-void MarketplaceWindow::process_install_queue() {
+void MarketplaceWindow::processInstallQueue() {
   if (update_queue_.isEmpty()) return;
   ext_mgr_->update(update_queue_.takeFirst());
 }

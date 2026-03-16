@@ -32,7 +32,7 @@ class MockExtensionManager : public ExtensionManager {
   QMap<QString, InstalledExtension> installedExtensions() const override;
 
  private:
-  void start_mock_operation(const Extension& ext, bool is_update);
+  void startMockOperation(const Extension& ext, bool is_update);
 
   QMap<QString, InstalledExtension> mock_installed_;
   QTimer* progress_timer_ = nullptr;
