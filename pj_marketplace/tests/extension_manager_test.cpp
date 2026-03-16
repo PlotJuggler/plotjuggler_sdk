@@ -342,8 +342,8 @@ TEST_F(ExtensionManagerTest, UninstallUnknownExtensionEmitsError) {
 // [4] Update
 // ---------------------------------------------------------------------------
 
-// update() deletes the current installation files before re-downloading, so the
-// new version is registered with the correct version string after completion.
+// update() backs up the current version and re-installs from the registry.
+// The new version is registered with the correct version string after completion.
 TEST_F(ExtensionManagerTest, UpdateReinstallsWithNewVersion) {
   server_.set_body(dummy_plugin_zip("csv-loader"));
   const Extension ext_v1 = make_extension("csv-loader", "1.0.0", server_.url());
@@ -362,6 +362,91 @@ TEST_F(ExtensionManagerTest, UpdateReinstallsWithNewVersion) {
   ASSERT_TRUE(wait_for_signal(spy_install));
   EXPECT_TRUE(spy_install.first().at(1).toBool());
   EXPECT_EQ(mgr_->installedExtensions()["csv-loader"].version, "2.0.0");
+}
+
+// After a successful update the old version directory must exist in backupDir()
+// and the new installed record must carry the backup_path.
+//
+// ext_dir is placed under the same filesystem root as backupDir() (~/.plotjuggler/)
+// so that QDir::rename() can do an atomic move without a cross-device copy.
+TEST_F(ExtensionManagerTest, UpdateBacksUpOldVersionOnSuccess) {
+  // Place the extension directory on the same filesystem as backupDir().
+  QTemporaryDir local_ext_dir(QDir(PlatformUtils::backupDir()).absoluteFilePath("../test_ext_XXXXXX"));
+  ASSERT_TRUE(local_ext_dir.isValid());
+
+  DownloadManager local_dl;
+  ExtensionManager local_mgr(&local_dl, local_ext_dir.path(), pending_dir_.path());
+
+  server_.set_body(dummy_plugin_zip("csv-loader"));
+  const Extension ext_v1 = make_extension("csv-loader", "1.0.0", server_.url());
+
+  QSignalSpy spy_install(&local_mgr, &ExtensionManager::installFinished);
+  local_mgr.install(ext_v1);
+  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(spy_install.first().at(1).toBool());
+
+  ASSERT_TRUE(QFile::exists(local_ext_dir.path() + "/csv-loader/csv-loader.plugin"));
+
+  spy_install.clear();
+  server_.set_body(dummy_plugin_zip("csv-loader"));
+  const Extension ext_v2 = make_extension("csv-loader", "2.0.0", server_.url());
+  local_mgr.update(ext_v2);
+
+  ASSERT_TRUE(wait_for_signal(spy_install));
+  EXPECT_TRUE(spy_install.first().at(1).toBool()) << "update must succeed";
+  EXPECT_EQ(local_mgr.installedExtensions()["csv-loader"].version, "2.0.0");
+
+  const QString backup_path = PlatformUtils::backupDir() + "/csv-loader-1.0.0";
+  EXPECT_TRUE(QDir(backup_path).exists()) << "backup directory must exist after update";
+  EXPECT_TRUE(QFile::exists(backup_path + "/csv-loader.plugin"))
+      << "original plugin file must be preserved in backup";
+  EXPECT_EQ(local_mgr.installedExtensions()["csv-loader"].backup_path, backup_path);
+
+  QDir(backup_path).removeRecursively();
+}
+
+// When the install step fails after the backup, the old version files must still
+// be recoverable from backupDir() — no data is permanently lost.
+//
+// ext_dir is placed under the same filesystem root as backupDir() (~/.plotjuggler/)
+// so that QDir::rename() can do an atomic move without a cross-device copy.
+TEST_F(ExtensionManagerTest, UpdateKeepsBackupWhenInstallFails) {
+  QTemporaryDir local_ext_dir(QDir(PlatformUtils::backupDir()).absoluteFilePath("../test_ext_XXXXXX"));
+  ASSERT_TRUE(local_ext_dir.isValid());
+
+  DownloadManager local_dl;
+  ExtensionManager local_mgr(&local_dl, local_ext_dir.path(), pending_dir_.path());
+
+  server_.set_body(dummy_plugin_zip("csv-loader"));
+  const Extension ext_v1 = make_extension("csv-loader", "1.0.0", server_.url());
+
+  QSignalSpy spy_install(&local_mgr, &ExtensionManager::installFinished);
+  local_mgr.install(ext_v1);
+  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(spy_install.first().at(1).toBool());
+
+  spy_install.clear();
+  // Serve garbage data — libarchive will fail to extract it and DownloadManager
+  // will emit failed(), which propagates to installFinished(id, false).
+  server_.set_body(QByteArray("not_a_valid_zip"));
+  const Extension ext_v2 = make_extension("csv-loader", "2.0.0", server_.url());
+
+  QSignalSpy spy_error(&local_mgr, &ExtensionManager::installError);
+  local_mgr.update(ext_v2);
+
+  ASSERT_TRUE(wait_for_signal(spy_install)) << "installFinished must fire even on failure";
+  EXPECT_FALSE(spy_install.first().at(1).toBool()) << "install must have failed";
+  EXPECT_FALSE(spy_error.isEmpty()) << "installError must be emitted on failure";
+
+  EXPECT_FALSE(local_mgr.isInstalled("csv-loader"));
+
+  const QString backup_path = PlatformUtils::backupDir() + "/csv-loader-1.0.0";
+  EXPECT_TRUE(QDir(backup_path).exists())
+      << "backup must survive a failed install — files are recoverable";
+  EXPECT_TRUE(QFile::exists(backup_path + "/csv-loader.plugin"))
+      << "original plugin binary must be preserved in backup";
+
+  QDir(backup_path).removeRecursively();
 }
 
 // ---------------------------------------------------------------------------

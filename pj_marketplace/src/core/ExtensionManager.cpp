@@ -187,11 +187,43 @@ void ExtensionManager::uninstall(const QString& extension_id) {
 }
 
 void ExtensionManager::update(const Extension& ext) {
-  // Remove the current files first so the fetch step gets a clean destination directory.
+  QString backup_path;
+
   if (installed_.contains(ext.id)) {
-    QDir(installed_[ext.id].path).removeRecursively();
+    const QString current_version = installed_[ext.id].version;
+    const QString current_path    = installed_[ext.id].path;
+
+    // Back up the current version before downloading the new one (F-12).
+    // If the install subsequently fails, the files remain in backup_path and
+    // can be restored manually until automatic rollback (F-13, April+) is implemented.
+    const QString candidate = PlatformUtils::backupDir() + "/" + ext.id + "-" + current_version;
+    QDir().mkpath(PlatformUtils::backupDir());
+
+    if (!QDir().rename(current_path, candidate)) {
+      emit installError(ext.id,
+          QString("Could not back up \"%1\" — update aborted to prevent data loss")
+              .arg(current_path));
+      emit installFinished(ext.id, false);
+      return;
+    }
+    backup_path = candidate;
+
     installed_.remove(ext.id);
   }
+
+  // Once the install completes successfully, attach the backup location to the
+  // new record so future rollback code (F-13, April+) can find it.
+  if (!backup_path.isEmpty()) {
+    connect(this, &ExtensionManager::installFinished, this,
+        [this, backup_path](const QString& finished_id, bool success) {
+          if (success && installed_.contains(finished_id)) {
+            installed_[finished_id].backup_path = backup_path;
+            saveState();
+          }
+        },
+        Qt::SingleShotConnection);
+  }
+
   install(ext);
 }
 
