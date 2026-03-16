@@ -10,3 +10,4 @@ pj_plugins/dialog_protocol/build*
 .cache/
 /pj_datastore/docs/node_modules/
 pj_ported_plugins
+aqtinstall.log
