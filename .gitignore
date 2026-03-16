@@ -9,3 +9,6 @@ pj_plugins/dialog_protocol/build*
 .worktrees/
 .cache/
 /pj_datastore/docs/node_modules/*
+aqtinstall.log
+.aqt_venv/
+pj-plugin-registry/

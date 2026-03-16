@@ -51,6 +51,8 @@ MarketplaceWindow::~MarketplaceWindow() {
 
 void MarketplaceWindow::setup_ui() {
   ui_->refresh_btn_->setFixedWidth(80);
+  ui_->update_all_btn_->setFixedWidth(90);
+  ui_->update_all_btn_->setEnabled(false);
 
   ui_->category_combo_->addItem("All categories", "");
   ui_->category_combo_->addItem("Data Loader",    "data_loader");
@@ -65,6 +67,8 @@ void MarketplaceWindow::setup_ui() {
           this, &MarketplaceWindow::on_category_changed);
   connect(ui_->refresh_btn_, &QPushButton::clicked,
           this, &MarketplaceWindow::on_refresh_clicked);
+  connect(ui_->update_all_btn_, &QPushButton::clicked,
+          this, &MarketplaceWindow::on_update_all_clicked);
   connect(ui_->settings_btn_, &QPushButton::clicked,
           this, &MarketplaceWindow::on_settings_clicked);
 }
@@ -124,12 +128,14 @@ void MarketplaceWindow::setup_signals() {
                 }
             }
             // On failure the status was already set by installError — do not overwrite it.
+            process_install_queue();
           });
 
   connect(ext_mgr_, &ExtensionManager::installError, this,
           [this](const QString& /*id*/, const QString& error) {
             ui_->progress_bar_->setVisible(false);
             set_status("Installation failed: " + error, true);
+            process_install_queue();
           });
 
   connect(ext_mgr_, &ExtensionManager::uninstallFinished, this,
@@ -250,6 +256,15 @@ void MarketplaceWindow::populate_cards() {
 
     ui_->cards_layout_->insertWidget(ui_->cards_layout_->count() - 1, card);
   }
+
+  bool has_updatable = false;
+  for (const auto& ext : filtered_) {
+    if (ext_mgr_->hasUpdate(ext)) {
+      has_updatable = true;
+      break;
+    }
+  }
+  ui_->update_all_btn_->setEnabled(has_updatable && update_queue_.isEmpty());
 }
 
 // ─── Event Filter (double-click on card) ─────────────────────────────────────
@@ -369,6 +384,23 @@ void MarketplaceWindow::on_action_button_clicked(const QString& ext_id) {
 
 void MarketplaceWindow::on_uninstall_button_clicked(const QString& ext_id) {
   ext_mgr_->uninstall(ext_id);
+}
+
+void MarketplaceWindow::on_update_all_clicked() {
+  update_queue_.clear();
+  for (const auto& ext : filtered_) {
+    if (ext_mgr_->hasUpdate(ext))
+      update_queue_.append(ext);
+  }
+  if (update_queue_.isEmpty()) return;
+  ui_->update_all_btn_->setEnabled(false);
+  set_status("Updating " + QString::number(update_queue_.size()) + " extensions...");
+  process_install_queue();
+}
+
+void MarketplaceWindow::process_install_queue() {
+  if (update_queue_.isEmpty()) return;
+  ext_mgr_->update(update_queue_.takeFirst());
 }
 
 }  // namespace PJ
