@@ -17,7 +17,7 @@ void MockExtensionManager::install(const Extension& ext) {
     emit installError(ext.id, "Another installation is already in progress");
     return;
   }
-  start_mock_operation(ext, false);
+  startMockOperation(ext, false);
 }
 
 void MockExtensionManager::uninstall(const QString& extension_id) {
@@ -30,7 +30,7 @@ void MockExtensionManager::update(const Extension& ext) {
     emit installError(ext.id, "Another installation is already in progress");
     return;
   }
-  start_mock_operation(ext, true);
+  startMockOperation(ext, true);
 }
 
 bool MockExtensionManager::isInstalled(const QString& id) const {
@@ -48,7 +48,7 @@ QMap<QString, InstalledExtension> MockExtensionManager::installedExtensions() co
 
 // ─── Mock progress simulation ────────────────────────────────────────────────
 
-void MockExtensionManager::start_mock_operation(const Extension& ext, bool is_update) {
+void MockExtensionManager::startMockOperation(const Extension& ext, bool is_update) {
   pending_ext_ = ext;
   pending_is_update_ = is_update;
   tick_ = 0;

@@ -45,7 +45,7 @@ namespace {
 // ---------------------------------------------------------------------------
 
 // Spins the Qt event loop until spy receives at least one signal or the deadline expires.
-bool wait_for_signal(QSignalSpy& spy, int timeout_ms = 5000) {
+bool waitForSignal(QSignalSpy& spy, int timeout_ms = 5000) {
   QDeadlineTimer deadline(timeout_ms);
   while (spy.isEmpty() && !deadline.hasExpired()) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -81,7 +81,7 @@ class LocalHttpServer {
     return QUrl(QStringLiteral("http://127.0.0.1:%1/").arg(server_.serverPort()));
   }
 
-  void set_body(const QByteArray& body) { body_ = body; }
+  void setBody(const QByteArray& body) { body_ = body; }
 
  private:
   QTcpServer server_;
@@ -89,7 +89,7 @@ class LocalHttpServer {
 };
 
 // Builds an in-memory ZIP archive from a map of { relative_path -> file_content }.
-QByteArray build_zip(const QMap<QString, QByteArray>& files) {
+QByteArray buildZip(const QMap<QString, QByteArray>& files) {
   std::vector<char> buf(4 * 1024 * 1024);
   size_t used = 0;
 
@@ -116,13 +116,13 @@ QByteArray build_zip(const QMap<QString, QByteArray>& files) {
 }
 
 // Returns a minimal single-file ZIP that looks like a real plugin package.
-QByteArray dummy_plugin_zip(const QString& ext_id) {
-  return build_zip({{ext_id + ".plugin", "placeholder binary content"}});
+QByteArray dummyPluginZip(const QString& ext_id) {
+  return buildZip({{ext_id + ".plugin", "placeholder binary content"}});
 }
 
 // Builds an Extension whose download artifact for the current platform points to `url`.
 // Checksum is empty by default so DownloadManager skips SHA-256 verification.
-Extension make_extension(const QString& id, const QString& version, const QUrl& url,
+Extension makeExtension(const QString& id, const QString& version, const QUrl& url,
                          const QString& checksum = {}) {
   Extension ext;
   ext.id = id;
@@ -168,8 +168,8 @@ class ExtensionManagerTest : public ::testing::Test {
 // A fresh install downloads the ZIP, extracts it, registers the extension, and
 // emits the correct signal sequence: installStarted → installFinished(id, true).
 TEST_F(ExtensionManagerTest, InstallDirectRegistersExtension) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy_started(mgr_, &ExtensionManager::installStarted);
   QSignalSpy spy_finished(mgr_, &ExtensionManager::installFinished);
@@ -181,7 +181,7 @@ TEST_F(ExtensionManagerTest, InstallDirectRegistersExtension) {
   ASSERT_EQ(spy_started.count(), 1);
   EXPECT_EQ(spy_started.first().at(0).toString(), "csv-loader");
 
-  ASSERT_TRUE(wait_for_signal(spy_finished)) << "installFinished not received within 5 s";
+  ASSERT_TRUE(waitForSignal(spy_finished)) << "installFinished not received within 5 s";
   ASSERT_EQ(spy_finished.count(), 1);
   EXPECT_EQ(spy_finished.first().at(0).toString(), "csv-loader");
   EXPECT_TRUE(spy_finished.first().at(1).toBool()) << "install must succeed";
@@ -193,12 +193,12 @@ TEST_F(ExtensionManagerTest, InstallDirectRegistersExtension) {
 
 // The extracted content lands under extensions_dir/<id>/ after a successful install.
 TEST_F(ExtensionManagerTest, InstallCreatesExtensionDirectory) {
-  server_.set_body(dummy_plugin_zip("can-bus-parser"));
-  const Extension ext = make_extension("can-bus-parser", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("can-bus-parser"));
+  const Extension ext = makeExtension("can-bus-parser", "1.0.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext);
-  ASSERT_TRUE(wait_for_signal(spy));
+  ASSERT_TRUE(waitForSignal(spy));
   ASSERT_TRUE(spy.first().at(1).toBool());
 
   EXPECT_TRUE(QDir(ext_dir_.path() + "/can-bus-parser").exists());
@@ -207,14 +207,14 @@ TEST_F(ExtensionManagerTest, InstallCreatesExtensionDirectory) {
 // installProgress signals are forwarded during the download phase.
 // Each signal must carry the correct extension id and a percent in [0, 100].
 TEST_F(ExtensionManagerTest, InstallEmitsProgressSignals) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy_progress(mgr_, &ExtensionManager::installProgress);
   QSignalSpy spy_finished(mgr_, &ExtensionManager::installFinished);
 
   mgr_->install(ext);
-  ASSERT_TRUE(wait_for_signal(spy_finished));
+  ASSERT_TRUE(waitForSignal(spy_finished));
 
   EXPECT_GE(spy_progress.count(), 1);
   for (const QList<QVariant>& args : spy_progress) {
@@ -232,13 +232,13 @@ TEST_F(ExtensionManagerTest, InstallEmitsProgressSignals) {
 // Calling install() for an extension that is already installed must emit installError
 // immediately — it must not start a new download.
 TEST_F(ExtensionManagerTest, InstallRejectsAlreadyInstalledExtension) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
 
   // First install — must succeed.
   QSignalSpy spy_first(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext);
-  ASSERT_TRUE(wait_for_signal(spy_first));
+  ASSERT_TRUE(waitForSignal(spy_first));
   ASSERT_TRUE(spy_first.first().at(1).toBool());
 
   // Second install — must be rejected with an error.
@@ -259,8 +259,8 @@ TEST_F(ExtensionManagerTest, InstallBlocksConcurrentRequests) {
   const QUrl hanging_url =
       QUrl(QStringLiteral("http://127.0.0.1:%1/").arg(hanging_server.serverPort()));
 
-  const Extension ext_a = make_extension("csv-loader", "1.0.0", hanging_url);
-  const Extension ext_b = make_extension("can-bus-parser", "1.0.0", hanging_url);
+  const Extension ext_a = makeExtension("csv-loader", "1.0.0", hanging_url);
+  const Extension ext_b = makeExtension("can-bus-parser", "1.0.0", hanging_url);
 
   QSignalSpy spy_error(mgr_, &ExtensionManager::installError);
 
@@ -300,12 +300,12 @@ TEST_F(ExtensionManagerTest, InstallRejectsUnsupportedPlatform) {
 
 // A successful uninstall removes the extension directory and updates installed.json.
 TEST_F(ExtensionManagerTest, UninstallRemovesDirectoryAndState) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy_install(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext);
-  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(waitForSignal(spy_install));
   ASSERT_TRUE(spy_install.first().at(1).toBool());
 
   const QString ext_path = ext_dir_.path() + "/csv-loader";
@@ -345,21 +345,21 @@ TEST_F(ExtensionManagerTest, UninstallUnknownExtensionEmitsError) {
 // update() backs up the current version and re-installs from the registry.
 // The new version is registered with the correct version string after completion.
 TEST_F(ExtensionManagerTest, UpdateReinstallsWithNewVersion) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext_v1 = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext_v1 = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy_install(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext_v1);
-  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(waitForSignal(spy_install));
   ASSERT_TRUE(spy_install.first().at(1).toBool());
 
   // Prepare a "new version" and trigger the update.
   spy_install.clear();
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext_v2 = make_extension("csv-loader", "2.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext_v2 = makeExtension("csv-loader", "2.0.0", server_.url());
   mgr_->update(ext_v2);
 
-  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(waitForSignal(spy_install));
   EXPECT_TRUE(spy_install.first().at(1).toBool());
   EXPECT_EQ(mgr_->installedExtensions()["csv-loader"].version, "2.0.0");
 }
@@ -467,24 +467,24 @@ TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseWhenNotInstalled) {
 
 // Returns false when the installed and registry versions are identical.
 TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseForSameVersion) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext);
-  ASSERT_TRUE(wait_for_signal(spy));
+  ASSERT_TRUE(waitForSignal(spy));
 
   EXPECT_FALSE(mgr_->hasUpdate(ext));
 }
 
 // Returns true when the registry version is strictly higher than the installed one.
 TEST_F(ExtensionManagerTest, HasUpdateReturnsTrueForNewerVersion) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext_v1 = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext_v1 = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext_v1);
-  ASSERT_TRUE(wait_for_signal(spy));
+  ASSERT_TRUE(waitForSignal(spy));
 
   Extension ext_v2 = ext_v1;
   ext_v2.version = "2.0.0";
@@ -494,12 +494,12 @@ TEST_F(ExtensionManagerTest, HasUpdateReturnsTrueForNewerVersion) {
 // QVersionNumber must compare multi-segment versions numerically, not lexically:
 // "1.10.0" > "1.9.0" — a raw string compare would invert this result.
 TEST_F(ExtensionManagerTest, HasUpdateHandlesMultiSegmentVersionsCorrectly) {
-  server_.set_body(dummy_plugin_zip("can-bus-parser"));
-  const Extension ext_installed = make_extension("can-bus-parser", "1.9.0", server_.url());
+  server_.setBody(dummyPluginZip("can-bus-parser"));
+  const Extension ext_installed = makeExtension("can-bus-parser", "1.9.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext_installed);
-  ASSERT_TRUE(wait_for_signal(spy));
+  ASSERT_TRUE(waitForSignal(spy));
 
   // "1.10.0" is numerically greater but lexically smaller than "1.9.0".
   Extension ext_registry = ext_installed;
@@ -509,12 +509,12 @@ TEST_F(ExtensionManagerTest, HasUpdateHandlesMultiSegmentVersionsCorrectly) {
 
 // Returns false when the registry version is older than the installed one (downgrade scenario).
 TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseForOlderVersion) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext_v2 = make_extension("csv-loader", "2.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext_v2 = makeExtension("csv-loader", "2.0.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext_v2);
-  ASSERT_TRUE(wait_for_signal(spy));
+  ASSERT_TRUE(waitForSignal(spy));
 
   Extension ext_v1 = ext_v2;
   ext_v1.version = "1.0.0";
@@ -622,12 +622,12 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesMultipleExtensions) {
 // installed.json must be readable by a new ExtensionManager instance pointing to the
 // same directory — this simulates an application restart.
 TEST_F(ExtensionManagerTest, StatePersistsAcrossManagerRestarts) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext);
-  ASSERT_TRUE(wait_for_signal(spy));
+  ASSERT_TRUE(waitForSignal(spy));
   ASSERT_TRUE(spy.first().at(1).toBool());
 
   // Simulate restart: a brand-new manager reads the same extensions_dir.
@@ -641,12 +641,12 @@ TEST_F(ExtensionManagerTest, StatePersistsAcrossManagerRestarts) {
 // Uninstalling removes the record from installed.json; a fresh manager must not
 // report the extension as installed.
 TEST_F(ExtensionManagerTest, UninstallRemovesEntryFromPersistentState) {
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy_install(mgr_, &ExtensionManager::installFinished);
   mgr_->install(ext);
-  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(waitForSignal(spy_install));
 
   mgr_->uninstall("csv-loader");
 

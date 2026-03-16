@@ -23,7 +23,7 @@
 namespace PJ {
 namespace {
 
-bool wait_for_signal(QSignalSpy& spy, int timeout_ms = 5000) {
+bool waitForSignal(QSignalSpy& spy, int timeout_ms = 5000) {
   QDeadlineTimer deadline(timeout_ms);
   while (spy.isEmpty() && !deadline.hasExpired()) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -45,7 +45,7 @@ TEST(ExtensionManagerIntegrationTest, InstallCanBusParserUsingRegistry) {
 
   registry.fetchRegistry(QUrl("https://raw.githubusercontent.com/Intelligent-Behavior-Robots/pj-plugin-registry/main/registry.json"));
 
-  ASSERT_TRUE(wait_for_signal(registry_finished, 5000)) << "RegistryManager did not finish parsing";
+  ASSERT_TRUE(waitForSignal(registry_finished, 5000)) << "RegistryManager did not finish parsing";
   ASSERT_TRUE(registry_finished.first().at(0).toBool())
       << "Registry parse failed: "
       << (registry_error.isEmpty() ? "" : registry_error.first().at(0).toString().toStdString());
@@ -82,7 +82,7 @@ TEST(ExtensionManagerIntegrationTest, InstallCanBusParserUsingRegistry) {
   EXPECT_EQ(spy_started.first().at(0).toString(), "can-bus-parser");
 
   // Real network download — allow up to 60 seconds.
-  ASSERT_TRUE(wait_for_signal(spy_finished, 60000))
+  ASSERT_TRUE(waitForSignal(spy_finished, 60000))
       << "installFinished not received within 60s — check network and URL: "
       << ext.platforms.value(QStringLiteral("linux-x86_64")).url.toStdString();
 

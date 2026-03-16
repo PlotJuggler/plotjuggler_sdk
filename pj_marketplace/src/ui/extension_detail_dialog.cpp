@@ -78,7 +78,7 @@ ExtensionDetailDialog::ExtensionDetailDialog(const Extension& ext, const QString
     ui_->action_btn->setStyleSheet(style);
     ui_->action_btn->setVisible(true);
     connect(ui_->action_btn, &QPushButton::clicked, this, [this]() {
-      emit install_requested();
+      emit installRequested();
       accept();
     });
   }
@@ -86,7 +86,7 @@ ExtensionDetailDialog::ExtensionDetailDialog(const Extension& ext, const QString
   if (installed) {
     ui_->uninstall_btn->setVisible(true);
     connect(ui_->uninstall_btn, &QPushButton::clicked, this, [this]() {
-      emit uninstall_requested();
+      emit uninstallRequested();
       accept();
     });
   }

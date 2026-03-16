@@ -26,10 +26,10 @@
 class TestHttpServer : public QTcpServer {
  public:
   explicit TestHttpServer(QObject* parent = nullptr) : QTcpServer(parent) {
-    connect(this, &QTcpServer::newConnection, this, &TestHttpServer::on_new_connection);
+    connect(this, &QTcpServer::newConnection, this, &TestHttpServer::onNewConnection);
   }
 
-  void set_response_body(const QByteArray& body) {
+  void setResponseBody(const QByteArray& body) {
     body_ = body;
   }
 
@@ -39,7 +39,7 @@ class TestHttpServer : public QTcpServer {
   }
 
  private:
-  void on_new_connection() {
+  void onNewConnection() {
     QTcpSocket* socket = nextPendingConnection();
     connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
       socket->readAll();  // discard the HTTP request — content doesn't matter for tests
@@ -143,7 +143,7 @@ TEST_F(RegistryManagerTest, EmitsFetchStartedImmediatelyOnCall) {
   RegistryManager mgr;
   QSignalSpy spy(&mgr, &RegistryManager::fetchStarted);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
 
   // No event loop processing needed — must already be emitted
@@ -156,7 +156,7 @@ TEST_F(RegistryManagerTest, EmitsFetchStartedOnEachCall) {
   QSignalSpy spy_started(&mgr, &RegistryManager::fetchStarted);
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   mgr.fetchRegistry(server_->url());  // cancels the previous one and starts fresh
 
@@ -174,7 +174,7 @@ TEST_F(RegistryManagerTest, EmitsFetchFinishedTrueOnSuccessfulDownload) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
 
   ASSERT_TRUE(spy_finished.wait(3000)) << "fetchFinished was not emitted within 3 seconds";
@@ -190,7 +190,7 @@ TEST_F(RegistryManagerTest, ParsesRequiredFields) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -208,7 +208,7 @@ TEST_F(RegistryManagerTest, ParsesOptionalStringFields) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -229,7 +229,7 @@ TEST_F(RegistryManagerTest, ParsesTags) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -245,7 +245,7 @@ TEST_F(RegistryManagerTest, ParsesPlatformArtifacts) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -265,7 +265,7 @@ TEST_F(RegistryManagerTest, ParsesChangelog) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -280,7 +280,7 @@ TEST_F(RegistryManagerTest, ParsesMultipleExtensions) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kMultiExtensionJson);
+  server_->setResponseBody(kMultiExtensionJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -295,7 +295,7 @@ TEST_F(RegistryManagerTest, AcceptsEmptyExtensionsArray) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kEmptyExtensionsJson);
+  server_->setResponseBody(kEmptyExtensionsJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -308,7 +308,7 @@ TEST_F(RegistryManagerTest, FindByIdReturnsCorrectExtension) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -322,7 +322,7 @@ TEST_F(RegistryManagerTest, FindByIdReturnsEmptyExtensionOnMiss) {
   RegistryManager mgr;
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
@@ -359,7 +359,7 @@ TEST_F(RegistryManagerTest, EmitsFetchErrorOnMalformedJson) {
   QSignalSpy spy_error(&mgr, &RegistryManager::fetchError);
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body("{ this is: definitely [not valid json !!!");
+  server_->setResponseBody("{ this is: definitely [not valid json !!!");
   mgr.fetchRegistry(server_->url());
 
   ASSERT_TRUE(spy_finished.wait(3000));
@@ -374,7 +374,7 @@ TEST_F(RegistryManagerTest, EmitsFetchErrorWhenRootIsNotObject) {
   QSignalSpy spy_error(&mgr, &RegistryManager::fetchError);
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(R"([{"id":"x","name":"X","version":"1.0"}])");
+  server_->setResponseBody(R"([{"id":"x","name":"X","version":"1.0"}])");
   mgr.fetchRegistry(server_->url());
 
   ASSERT_TRUE(spy_finished.wait(3000));
@@ -388,7 +388,7 @@ TEST_F(RegistryManagerTest, EmitsFetchErrorWhenExtensionsKeyMissing) {
   QSignalSpy spy_error(&mgr, &RegistryManager::fetchError);
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(R"({"plugins":[]})");
+  server_->setResponseBody(R"({"plugins":[]})");
   mgr.fetchRegistry(server_->url());
 
   ASSERT_TRUE(spy_finished.wait(3000));
@@ -402,7 +402,7 @@ TEST_F(RegistryManagerTest, EmitsFetchErrorOnMissingRequiredFieldId) {
   QSignalSpy spy_error(&mgr, &RegistryManager::fetchError);
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(R"({"extensions":[{"name":"No ID","version":"1.0.0"}]})");
+  server_->setResponseBody(R"({"extensions":[{"name":"No ID","version":"1.0.0"}]})");
   mgr.fetchRegistry(server_->url());
 
   ASSERT_TRUE(spy_finished.wait(3000));
@@ -417,7 +417,7 @@ TEST_F(RegistryManagerTest, EmitsFetchErrorOnMissingRequiredFieldVersion) {
   QSignalSpy spy_error(&mgr, &RegistryManager::fetchError);
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
-  server_->set_response_body(R"({"extensions":[{"id":"ext-x","name":"Ext X"}]})");
+  server_->setResponseBody(R"({"extensions":[{"id":"ext-x","name":"Ext X"}]})");
   mgr.fetchRegistry(server_->url());
 
   ASSERT_TRUE(spy_finished.wait(3000));
@@ -431,7 +431,7 @@ TEST_F(RegistryManagerTest, ExtensionsEmptyAfterParseError) {
   QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
 
   // First request succeeds
-  server_->set_response_body(kFullRegistryJson);
+  server_->setResponseBody(kFullRegistryJson);
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
   ASSERT_EQ(mgr.extensions().size(), 1);
@@ -439,7 +439,7 @@ TEST_F(RegistryManagerTest, ExtensionsEmptyAfterParseError) {
   spy_finished.clear();
 
   // Second request returns invalid JSON — list must be cleared
-  server_->set_response_body("not json at all");
+  server_->setResponseBody("not json at all");
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
   EXPECT_TRUE(mgr.extensions().isEmpty());
