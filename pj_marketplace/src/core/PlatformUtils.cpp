@@ -1,6 +1,7 @@
 #include "core/PlatformUtils.h"
 
 #include <QDir>
+#include <QStandardPaths>
 #include <QSysInfo>
 
 namespace PJ {
@@ -34,7 +35,7 @@ bool PlatformUtils::isWindows() {
 }
 
 QString PlatformUtils::configDir() {
-  return QDir::homePath() + "/.plotjuggler";
+  return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/plotjuggler";
 }
 
 QString PlatformUtils::extensionsDir() {

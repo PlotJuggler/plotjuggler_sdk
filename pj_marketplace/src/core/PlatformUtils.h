@@ -16,7 +16,10 @@ class PlatformUtils {
 
   static bool isWindows();
 
-  // ~/.plotjuggler/ — root of all PlotJuggler user data.
+  // Root of all PlotJuggler user data, using the OS-standard writable location:
+  //   Linux:   ~/.local/share/plotjuggler/
+  //   Windows: AppData/Local/plotjuggler/
+  //   macOS:   ~/Library/Application Support/plotjuggler/
   static QString configDir();
 
   // ~/.plotjuggler/extensions/ — active, loaded extensions.
