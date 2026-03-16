@@ -53,9 +53,11 @@ class ExtensionManager : public QObject {
   // be removed (e.g. a DLL is still loaded on Windows — F-14 staging is deferred).
   void uninstall(const QString& extension_id);
 
-  // Removes the current installation files and re-installs from the registry.
-  // F-12 (backup before update) is deferred to April+ per PLAN.md, so the old
-  // directory is deleted before the new download begins.
+  // Moves the current version to ~/.plotjuggler/.backup/<id>-<version>/ and
+  // re-installs from the registry. If the rename fails (cross-device or DLL locked
+  // on Windows) the old directory is deleted instead so the install gets a clean target.
+  // On success the backup path is recorded in installed.json so that future automatic
+  // rollback (F-13, April+) can find it.
   void update(const Extension& ext);
 
   // Moves any staged extensions from .pending/ into extensions/ and registers them.
