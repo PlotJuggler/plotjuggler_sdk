@@ -7,14 +7,13 @@
 //   [4] Update: removes old files and re-installs cleanly
 //   [5] hasUpdate: multi-segment semver comparison using registry fixture data
 //   [6] applyPendingInstalls: simulates the Windows post-restart staging path
-//   [7] State persistence: installed.json survives across manager restarts
+//   [7] State persistence: installed state derived from disk across manager restarts
 //   [8] Platform detection: currentPlatform() format and registry key resolution
 
 #include <gtest/gtest.h>
 
 #include <QByteArray>
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QDeadlineTimer>
 #include <QDir>
 #include <QEventLoop>
@@ -115,15 +114,23 @@ QByteArray buildZip(const QMap<QString, QByteArray>& files) {
   return QByteArray(buf.data(), static_cast<int>(used));
 }
 
-// Returns a minimal single-file ZIP that looks like a real plugin package.
-QByteArray dummyPluginZip(const QString& ext_id) {
-  return buildZip({{ext_id + ".plugin", "placeholder binary content"}});
+// Returns a minimal ZIP that mimics a real artifact: an <id>/ root directory containing
+// manifest.json (with id and version) and a placeholder binary. The <id>/ prefix matches
+// the CI packaging convention, so extraction to extensions_dir produces the correct
+// extensions_dir/<id>/manifest.json layout that loadState() expects.
+QByteArray dummyPluginZip(const QString& ext_id, const QString& version = "1.0.0") {
+  const QByteArray manifest =
+      QJsonDocument(QJsonObject{{"id", ext_id}, {"version", version}}).toJson();
+  return buildZip({
+      {ext_id + "/" + ext_id + ".plugin", "placeholder binary content"},
+      {ext_id + "/manifest.json", manifest},
+  });
 }
 
 // Builds an Extension whose download artifact for the current platform points to `url`.
 // Checksum is empty by default so DownloadManager skips SHA-256 verification.
 Extension makeExtension(const QString& id, const QString& version, const QUrl& url,
-                         const QString& checksum = {}) {
+                        const QString& checksum = {}) {
   Extension ext;
   ext.id = id;
   ext.name = id;
@@ -298,7 +305,7 @@ TEST_F(ExtensionManagerTest, InstallRejectsUnsupportedPlatform) {
 // [3] Uninstall
 // ---------------------------------------------------------------------------
 
-// A successful uninstall removes the extension directory and updates installed.json.
+// A successful uninstall removes the extension directory and clears it from memory.
 TEST_F(ExtensionManagerTest, UninstallRemovesDirectoryAndState) {
   server_.setBody(dummyPluginZip("csv-loader"));
   const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
@@ -355,7 +362,7 @@ TEST_F(ExtensionManagerTest, UpdateReinstallsWithNewVersion) {
 
   // Prepare a "new version" and trigger the update.
   spy_install.clear();
-  server_.setBody(dummyPluginZip("csv-loader"));
+  server_.setBody(dummyPluginZip("csv-loader", "2.0.0"));
   const Extension ext_v2 = makeExtension("csv-loader", "2.0.0", server_.url());
   mgr_->update(ext_v2);
 
@@ -377,22 +384,22 @@ TEST_F(ExtensionManagerTest, UpdateBacksUpOldVersionOnSuccess) {
   DownloadManager local_dl;
   ExtensionManager local_mgr(&local_dl, local_ext_dir.path(), pending_dir_.path());
 
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext_v1 = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext_v1 = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy_install(&local_mgr, &ExtensionManager::installFinished);
   local_mgr.install(ext_v1);
-  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(waitForSignal(spy_install));
   ASSERT_TRUE(spy_install.first().at(1).toBool());
 
   ASSERT_TRUE(QFile::exists(local_ext_dir.path() + "/csv-loader/csv-loader.plugin"));
 
   spy_install.clear();
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext_v2 = make_extension("csv-loader", "2.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader", "2.0.0"));
+  const Extension ext_v2 = makeExtension("csv-loader", "2.0.0", server_.url());
   local_mgr.update(ext_v2);
 
-  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(waitForSignal(spy_install));
   EXPECT_TRUE(spy_install.first().at(1).toBool()) << "update must succeed";
   EXPECT_EQ(local_mgr.installedExtensions()["csv-loader"].version, "2.0.0");
 
@@ -417,24 +424,24 @@ TEST_F(ExtensionManagerTest, UpdateKeepsBackupWhenInstallFails) {
   DownloadManager local_dl;
   ExtensionManager local_mgr(&local_dl, local_ext_dir.path(), pending_dir_.path());
 
-  server_.set_body(dummy_plugin_zip("csv-loader"));
-  const Extension ext_v1 = make_extension("csv-loader", "1.0.0", server_.url());
+  server_.setBody(dummyPluginZip("csv-loader"));
+  const Extension ext_v1 = makeExtension("csv-loader", "1.0.0", server_.url());
 
   QSignalSpy spy_install(&local_mgr, &ExtensionManager::installFinished);
   local_mgr.install(ext_v1);
-  ASSERT_TRUE(wait_for_signal(spy_install));
+  ASSERT_TRUE(waitForSignal(spy_install));
   ASSERT_TRUE(spy_install.first().at(1).toBool());
 
   spy_install.clear();
   // Serve garbage data — libarchive will fail to extract it and DownloadManager
   // will emit failed(), which propagates to installFinished(id, false).
-  server_.set_body(QByteArray("not_a_valid_zip"));
-  const Extension ext_v2 = make_extension("csv-loader", "2.0.0", server_.url());
+  server_.setBody(QByteArray("not_a_valid_zip"));
+  const Extension ext_v2 = makeExtension("csv-loader", "2.0.0", server_.url());
 
   QSignalSpy spy_error(&local_mgr, &ExtensionManager::installError);
   local_mgr.update(ext_v2);
 
-  ASSERT_TRUE(wait_for_signal(spy_install)) << "installFinished must fire even on failure";
+  ASSERT_TRUE(waitForSignal(spy_install)) << "installFinished must fire even on failure";
   EXPECT_FALSE(spy_install.first().at(1).toBool()) << "install must have failed";
   EXPECT_FALSE(spy_error.isEmpty()) << "installError must be emitted on failure";
 
@@ -494,7 +501,7 @@ TEST_F(ExtensionManagerTest, HasUpdateReturnsTrueForNewerVersion) {
 // QVersionNumber must compare multi-segment versions numerically, not lexically:
 // "1.10.0" > "1.9.0" — a raw string compare would invert this result.
 TEST_F(ExtensionManagerTest, HasUpdateHandlesMultiSegmentVersionsCorrectly) {
-  server_.setBody(dummyPluginZip("can-bus-parser"));
+  server_.setBody(dummyPluginZip("can-bus-parser", "1.9.0"));
   const Extension ext_installed = makeExtension("can-bus-parser", "1.9.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
@@ -509,7 +516,7 @@ TEST_F(ExtensionManagerTest, HasUpdateHandlesMultiSegmentVersionsCorrectly) {
 
 // Returns false when the registry version is older than the installed one (downgrade scenario).
 TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseForOlderVersion) {
-  server_.setBody(dummyPluginZip("csv-loader"));
+  server_.setBody(dummyPluginZip("csv-loader", "2.0.0"));
   const Extension ext_v2 = makeExtension("csv-loader", "2.0.0", server_.url());
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
@@ -525,16 +532,17 @@ TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseForOlderVersion) {
 // [6] applyPendingInstalls — Windows post-restart staging simulation
 //
 // On Windows, DLLs in use cannot be overwritten, so install() extracts to
-// .pending/<id>/ instead and saves a pj_meta.json metadata file. On the next
-// startup, applyPendingInstalls() moves the directory into extensions/ and
-// registers it. These tests create that directory structure manually and verify
-// the promotion logic on any platform (the function is always safe to call).
+// .pending/<id>/ instead. On the next startup, applyPendingInstalls() moves
+// the directory into extensions/ and registers it using the manifest.json
+// already present in the artifact. These tests create that directory structure
+// manually and verify the promotion logic on any platform (the function is
+// always safe to call).
 // ---------------------------------------------------------------------------
 
-// applyPendingInstalls() promotes a staged extension to extensions/, registers it,
-// emits installFinished(id, true), and removes the pj_meta.json staging artifact.
+// applyPendingInstalls() promotes a staged extension to extensions/ and registers it.
 TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesStagedExtension) {
-  // Replicate what savePendingMeta() and DownloadManager::fetch() produce on Windows.
+  // Replicate what DownloadManager::fetch() produces on Windows: an <id>/ directory
+  // with the artifact contents, including manifest.json.
   const QString staged_dir = pending_dir_.path() + "/mcap-loader";
   ASSERT_TRUE(QDir().mkpath(staged_dir));
 
@@ -543,14 +551,11 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesStagedExtension) {
   plugin_file.write("placeholder binary");
   plugin_file.close();
 
-  QJsonObject meta;
-  meta["id"] = "mcap-loader";
-  meta["version"] = "1.0.0";
-  meta["install_date"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-  QFile meta_file(staged_dir + "/pj_meta.json");
-  ASSERT_TRUE(meta_file.open(QIODevice::WriteOnly));
-  meta_file.write(QJsonDocument(meta).toJson());
-  meta_file.close();
+  QFile manifest_file(staged_dir + "/manifest.json");
+  ASSERT_TRUE(manifest_file.open(QIODevice::WriteOnly));
+  manifest_file.write(
+      QJsonDocument(QJsonObject{{"id", "mcap-loader"}, {"version", "1.0.0"}}).toJson());
+  manifest_file.close();
 
   QSignalSpy spy_finished(mgr_, &ExtensionManager::installFinished);
   mgr_->applyPendingInstalls();
@@ -566,17 +571,14 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesStagedExtension) {
   // The active directory lives under extensions_dir, not pending_dir.
   EXPECT_TRUE(QDir(ext_dir_.path() + "/mcap-loader").exists());
   EXPECT_FALSE(QDir(staged_dir).exists());
-
-  // pj_meta.json must be cleaned up so it does not pollute the active install.
-  EXPECT_FALSE(QFile::exists(ext_dir_.path() + "/mcap-loader/pj_meta.json"));
 }
 
-// An entry in .pending/ that lacks pj_meta.json is silently skipped — it may be
+// An entry in .pending/ that lacks manifest.json is silently skipped — it may be
 // a leftover from an incomplete extraction and must not cause a crash or bad state.
 TEST_F(ExtensionManagerTest, ApplyPendingInstallsSkipsDirectoryWithoutMetaFile) {
   const QString staged_dir = pending_dir_.path() + "/bad-extension";
   ASSERT_TRUE(QDir().mkpath(staged_dir));
-  // Intentionally omit pj_meta.json to simulate a broken staging directory.
+  // Intentionally omit manifest.json to simulate a broken staging directory.
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->applyPendingInstalls();
@@ -598,13 +600,9 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesMultipleExtensions) {
     const QString staged = pending_dir_.path() + "/" + id;
     ASSERT_TRUE(QDir().mkpath(staged));
 
-    QJsonObject meta;
-    meta["id"] = id;
-    meta["version"] = "1.0.0";
-    meta["install_date"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-    QFile f(staged + "/pj_meta.json");
+    QFile f(staged + "/manifest.json");
     ASSERT_TRUE(f.open(QIODevice::WriteOnly));
-    f.write(QJsonDocument(meta).toJson());
+    f.write(QJsonDocument(QJsonObject{{"id", id}, {"version", "1.0.0"}}).toJson());
   }
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
@@ -619,8 +617,8 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesMultipleExtensions) {
 // [7] State persistence
 // ---------------------------------------------------------------------------
 
-// installed.json must be readable by a new ExtensionManager instance pointing to the
-// same directory — this simulates an application restart.
+// A new ExtensionManager pointing to the same directory discovers the same extensions
+// by scanning disk — this simulates an application restart.
 TEST_F(ExtensionManagerTest, StatePersistsAcrossManagerRestarts) {
   server_.setBody(dummyPluginZip("csv-loader"));
   const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
@@ -638,8 +636,8 @@ TEST_F(ExtensionManagerTest, StatePersistsAcrossManagerRestarts) {
   EXPECT_EQ(mgr2.installedExtensions()["csv-loader"].version, "1.0.0");
 }
 
-// Uninstalling removes the record from installed.json; a fresh manager must not
-// report the extension as installed.
+// Uninstalling removes the directory from disk; a fresh manager scanning the same
+// directory must not report the extension as installed.
 TEST_F(ExtensionManagerTest, UninstallRemovesEntryFromPersistentState) {
   server_.setBody(dummyPluginZip("csv-loader"));
   const Extension ext = makeExtension("csv-loader", "1.0.0", server_.url());
@@ -655,8 +653,8 @@ TEST_F(ExtensionManagerTest, UninstallRemovesEntryFromPersistentState) {
   EXPECT_FALSE(mgr2.isInstalled("csv-loader"));
 }
 
-// A new manager that finds no installed.json starts with an empty extension list —
-// no crash or undefined behaviour on first run.
+// A new manager pointing to an empty extensions directory starts with no installed
+// extensions — no crash or undefined behaviour on first run.
 TEST_F(ExtensionManagerTest, FreshManagerHasNoInstalledExtensions) {
   EXPECT_TRUE(mgr_->installedExtensions().isEmpty());
 }
