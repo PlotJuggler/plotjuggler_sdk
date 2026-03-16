@@ -35,11 +35,13 @@ static constexpr const char* kManifestFileName = "manifest.json";
 void ExtensionManager::install(const Extension& ext) {
   if (!pending_id_.isEmpty()) {
     emit installError(ext.id, QString("Install of \"%1\" is already in progress").arg(pending_id_));
+    emit installFinished(ext.id, false);
     return;
   }
 
   if (isInstalled(ext.id)) {
     emit installError(ext.id, QString("Extension \"%1\" is already installed").arg(ext.id));
+    emit installFinished(ext.id, false);
     return;
   }
 
@@ -47,6 +49,7 @@ void ExtensionManager::install(const Extension& ext) {
   const QString platform = PlatformUtils::currentPlatform();
   if (!ext.platforms.contains(platform)) {
     emit installError(ext.id, QString("No artifact available for platform \"%1\"").arg(platform));
+    emit installFinished(ext.id, false);
     return;
   }
   const Platform& artifact = ext.platforms[platform];
@@ -71,6 +74,7 @@ void ExtensionManager::install(const Extension& ext) {
           // If Content-Length is absent (total == 0) the check is skipped entirely.
           constexpr qint64 kExtractionOverheadFactor = 3;
           if (QStorageInfo(extensions_dir_).bytesAvailable() < total * kExtractionOverheadFactor) {
+            cancel_reason_ = "Not enough disk space to install the extension";
             downloader_->cancel(pending_op_id_);
             return;
           }
@@ -151,7 +155,9 @@ void ExtensionManager::install(const Extension& ext) {
     QDir(extensions_dir_ + "/" + cancelled_id).removeRecursively();
     QDir(pending_dir_ + "/" + cancelled_id).removeRecursively();
 
-    emit installError(cancelled_id, "Installation was cancelled");
+    const QString reason = cancel_reason_.isEmpty() ? "Installation was cancelled" : cancel_reason_;
+    cancel_reason_.clear();
+    emit installError(cancelled_id, reason);
     emit installFinished(cancelled_id, false);
   });
 
