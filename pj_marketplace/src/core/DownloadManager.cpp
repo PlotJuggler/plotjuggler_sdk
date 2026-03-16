@@ -18,21 +18,21 @@ namespace PJ {
 // ---------------------------------------------------------------------------
 
 PJ::Expected<void, QString> DownloadManager::extractFromMemory(const QByteArray& data,
-                                                       const QString& destinationDir) const
+                                                                   const QString& destination_dir) const
 {
-  QDir destDir(destinationDir);
+  QDir destDir(destination_dir);
   if (!destDir.exists() && !destDir.mkpath(QStringLiteral(".")))
   {
     return PJ::unexpected(
-        QStringLiteral("Could not create destination directory: %1").arg(destinationDir));
+        QStringLiteral("Could not create destination directory: %1").arg(destination_dir));
   }
 
   // Trailing separator ensures prefix check is exact and not fooled by
   // sibling directories sharing a common prefix (e.g. /tmp/foo vs /tmp/foo_evil).
-  const QString safeRoot = destDir.absolutePath() + QLatin1Char('/');
+  const QString safe_root = destDir.absolutePath() + QLatin1Char('/');
 
-  auto archiveDeleter = [](struct archive* a) { archive_read_free(a); };
-  std::unique_ptr<struct archive, decltype(archiveDeleter)> a(archive_read_new(), archiveDeleter);
+  auto archive_deleter = [](struct archive* a) { archive_read_free(a); };
+  std::unique_ptr<struct archive, decltype(archive_deleter)> a(archive_read_new(), archive_deleter);
 
   archive_read_support_format_zip(a.get());
 
@@ -47,30 +47,30 @@ PJ::Expected<void, QString> DownloadManager::extractFromMemory(const QByteArray&
   int r;
   while ((r = archive_read_next_header(a.get(), &entry)) == ARCHIVE_OK)
   {
-    const QString entryName = QString::fromUtf8(archive_entry_pathname(entry));
-    const QString targetPath = destDir.filePath(entryName);
+    const QString entry_name = QString::fromUtf8(archive_entry_pathname(entry));
+    const QString target_path = destDir.filePath(entry_name);
 
     // Guard against path-traversal attacks (e.g. entries containing "../")
-    if (!QFileInfo(targetPath).absoluteFilePath().startsWith(safeRoot))
+    if (!QFileInfo(target_path).absoluteFilePath().startsWith(safe_root))
     {
       return PJ::unexpected(
-          QStringLiteral("Unsafe path detected in ZIP entry: %1").arg(entryName));
+          QStringLiteral("Unsafe path detected in ZIP entry: %1").arg(entry_name));
     }
 
     if (archive_entry_filetype(entry) == AE_IFDIR)
     {
-      destDir.mkpath(entryName);
+      destDir.mkpath(entry_name);
       continue;
     }
 
     // Ensure the parent directory exists before writing
-    QFileInfo fi(targetPath);
+    QFileInfo fi(target_path);
     QDir().mkpath(fi.absolutePath());
 
-    QFile outFile(targetPath);
+    QFile outFile(target_path);
     if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
-      return PJ::unexpected(QStringLiteral("No write permission for: %1").arg(targetPath));
+      return PJ::unexpected(QStringLiteral("No write permission for: %1").arg(target_path));
     }
 
     const void* buf;
@@ -86,7 +86,7 @@ PJ::Expected<void, QString> DownloadManager::extractFromMemory(const QByteArray&
         outFile.close();
         return PJ::unexpected(
             QStringLiteral("Error reading ZIP entry '%1': %2")
-                .arg(entryName, QString::fromUtf8(archive_error_string(a.get()))));
+                .arg(entry_name, QString::fromUtf8(archive_error_string(a.get()))));
       }
       outFile.write(static_cast<const char*>(buf), static_cast<qint64>(size));
     }
@@ -107,22 +107,22 @@ PJ::Expected<void, QString> DownloadManager::extractFromMemory(const QByteArray&
 // ---------------------------------------------------------------------------
 
 DownloadManager::DownloadManager(QObject* parent)
-  : QObject(parent), m_network(new QNetworkAccessManager(this))
+  : QObject(parent), network_(new QNetworkAccessManager(this))
 {
-  connect(m_network, &QNetworkAccessManager::finished, this, &DownloadManager::onReplyFinished);
+  connect(network_, &QNetworkAccessManager::finished, this, &DownloadManager::onReplyFinished);
 }
 
 int DownloadManager::fetch(const QUrl& url,
-                           const QString& expectedChecksum,
-                           const QString& destinationDir)
+                           const QString& expected_checksum,
+                           const QString& destination_dir)
 {
-  const int id = m_nextId++;
+  const int id = next_id_++;
 
-  QNetworkReply* reply = m_network->get(QNetworkRequest(url));
+  QNetworkReply* reply = network_->get(QNetworkRequest(url));
   reply->setProperty("operationId", id);
 
-  m_activeReplies.insert(id, reply);
-  m_operations.insert(id, {expectedChecksum, destinationDir});
+  active_replies_.insert(id, reply);
+  operations_.insert(id, {expected_checksum, destination_dir});
 
   connect(reply, &QNetworkReply::downloadProgress, this, &DownloadManager::onDownloadProgress);
 
@@ -132,29 +132,28 @@ int DownloadManager::fetch(const QUrl& url,
 
 void DownloadManager::cancel(int id)
 {
-  QNetworkReply* reply = m_activeReplies.value(id, nullptr);
+  QNetworkReply* reply = active_replies_.value(id, nullptr);
   if (reply)
   {
     reply->abort();
   }
 }
 
-void DownloadManager::onDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
+void DownloadManager::onDownloadProgress(qint64 bytes_received, qint64 bytes_total)
 {
   auto* reply = qobject_cast<QNetworkReply*>(sender());
   if (!reply)
   {
     return;
   }
-  emit progress(reply->property("operationId").toInt(), bytesReceived, bytesTotal);
+  emit progress(reply->property("operationId").toInt(), bytes_received, bytes_total);
 }
 
 void DownloadManager::onReplyFinished(QNetworkReply* reply)
 {
   const int id = reply->property("operationId").toInt();
-  m_activeReplies.remove(id);
-  const Operation op = m_operations.take(id);
-
+  active_replies_.remove(id);
+  const Operation op = operations_.take(id);
   if (reply->error() != QNetworkReply::NoError)
   {
     if (reply->error() == QNetworkReply::OperationCanceledError)
@@ -172,16 +171,16 @@ void DownloadManager::onReplyFinished(QNetworkReply* reply)
   const QByteArray data = reply->readAll();
   reply->deleteLater();
 
-  if (!op.expectedChecksum.isEmpty() && !verifyChecksum(data, op.expectedChecksum))
+  if (!op.expected_checksum.isEmpty() && !verifyChecksum(data, op.expected_checksum))
   {
     emit failed(id, QStringLiteral("Checksum mismatch"));
     return;
   }
 
-  auto extractResult = extractFromMemory(data, op.destinationDir);
-  if (!extractResult)
+  auto extract_result = extractFromMemory(data, op.destination_dir);
+  if (!extract_result)
   {
-    emit failed(id, extractResult.error());
+    emit failed(id, extract_result.error());
     return;
   }
 
@@ -193,9 +192,9 @@ QString DownloadManager::calculateSha256(const QByteArray& data) const
   return QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex();
 }
 
-bool DownloadManager::verifyChecksum(const QByteArray& data, const QString& expectedChecksum) const
+bool DownloadManager::verifyChecksum(const QByteArray& data, const QString& expected_checksum) const
 {
-  QString expected = expectedChecksum;
+  QString expected = expected_checksum;
   if (expected.startsWith(QStringLiteral("sha256:")))
   {
     expected = expected.mid(7);

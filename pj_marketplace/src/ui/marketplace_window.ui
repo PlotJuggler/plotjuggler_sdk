@@ -3,7 +3,7 @@
  <class>MarketplaceWindow</class>
  <widget class="QDialog" name="MarketplaceWindow">
   <property name="geometry">
-   <rect><x>0</x><y>0</y><width>640</width><height>520</height></rect>
+   <rect><x>0</x><y>0</y><width>760</width><height>520</height></rect>
   </property>
   <property name="windowTitle">
    <string>PlotJuggler Marketplace</string>
@@ -34,6 +34,13 @@
       <widget class="QPushButton" name="refresh_btn_">
        <property name="text"><string>Refresh</string></property>
        <!-- fixedWidth(80) set in C++ -->
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="update_all_btn_">
+       <property name="text"><string>Update All</string></property>
+       <property name="toolTip"><string>Install all extensions shown in the current view</string></property>
+       <!-- fixedWidth(90) set in C++ -->
       </widget>
      </item>
      <item>

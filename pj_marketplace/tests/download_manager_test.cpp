@@ -19,9 +19,9 @@
 namespace {
 
 // Spins the event loop until spy receives at least one signal or timeout expires.
-bool waitForSignal(QSignalSpy& spy, int timeoutMs = 5000)
+bool wait_for_signal(QSignalSpy& spy, int timeout_ms = 5000)
 {
-  QDeadlineTimer deadline(timeoutMs);
+  QDeadlineTimer deadline(timeout_ms);
   while (spy.isEmpty() && !deadline.hasExpired())
   {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -39,19 +39,19 @@ class LocalHttpServer
 public:
   LocalHttpServer()
   {
-    m_server.listen(QHostAddress::LocalHost, 0);
-    QObject::connect(&m_server, &QTcpServer::newConnection, [this]() {
-      QTcpSocket* socket = m_server.nextPendingConnection();
-      socket->setParent(&m_server);
+    server_.listen(QHostAddress::LocalHost, 0);
+    QObject::connect(&server_, &QTcpServer::newConnection, [this]() {
+      QTcpSocket* socket = server_.nextPendingConnection();
+      socket->setParent(&server_);
       QObject::connect(socket, &QTcpSocket::readyRead, [this, socket]() {
         socket->readAll();  // consume the HTTP request
         const QByteArray header = "HTTP/1.1 200 OK\r\n"
                                   "Content-Type: application/octet-stream\r\n"
                                   "Content-Length: " +
-                                  QByteArray::number(m_body.size()) +
+                                  QByteArray::number(body_.size()) +
                                   "\r\n"
                                   "Connection: close\r\n\r\n";
-        socket->write(header + m_body);
+        socket->write(header + body_);
         socket->flush();
         socket->disconnectFromHost();
       });
@@ -60,35 +60,35 @@ public:
 
   QUrl url() const
   {
-    return QUrl(QStringLiteral("http://127.0.0.1:%1/").arg(m_server.serverPort()));
+    return QUrl(QStringLiteral("http://127.0.0.1:%1/").arg(server_.serverPort()));
   }
 
-  void setBody(const QByteArray& body) { m_body = body; }
+  void set_body(const QByteArray& body) { body_ = body; }
 
 private:
-  QTcpServer m_server;
-  QByteArray m_body;
+  QTcpServer server_;
+  QByteArray body_;
 };
 
 // ---------------------------------------------------------------------------
 // Helper: builds an in-memory ZIP from a map of {filename -> content}
 // ---------------------------------------------------------------------------
 
-QByteArray buildZip(const QMap<QString, QByteArray>& files)
+QByteArray build_zip(const QMap<QString, QByteArray>& files)
 {
   std::vector<char> buffer(4 * 1024 * 1024);
   size_t used = 0;
 
-  auto writeDeleter = [](struct archive* a) { archive_write_free(a); };
-  std::unique_ptr<struct archive, decltype(writeDeleter)> a(archive_write_new(), writeDeleter);
+  auto write_deleter = [](struct archive* a) { archive_write_free(a); };
+  std::unique_ptr<struct archive, decltype(write_deleter)> a(archive_write_new(), write_deleter);
 
   archive_write_set_format_zip(a.get());
   archive_write_add_filter_none(a.get());
   archive_write_open_memory(a.get(), buffer.data(), buffer.size(), &used);
 
-  auto entryDeleter = [](struct archive_entry* e) { archive_entry_free(e); };
-  std::unique_ptr<struct archive_entry, decltype(entryDeleter)> entry(archive_entry_new(),
-                                                                       entryDeleter);
+  auto entry_deleter = [](struct archive_entry* e) { archive_entry_free(e); };
+  std::unique_ptr<struct archive_entry, decltype(entry_deleter)> entry(archive_entry_new(),
+                                                                       entry_deleter);
 
   for (auto it = files.cbegin(); it != files.cend(); ++it)
   {
@@ -105,7 +105,7 @@ QByteArray buildZip(const QMap<QString, QByteArray>& files)
   return QByteArray(buffer.data(), static_cast<int>(used));
 }
 
-static QString sha256Hex(const QByteArray& data)
+static QString sha256_hex(const QByteArray& data)
 {
   return QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex();
 }
@@ -117,142 +117,142 @@ static QString sha256Hex(const QByteArray& data)
 TEST(DownloadManagerTest, InvalidUrlEmitsFailed)
 {
   PJ::DownloadManager dm;
-  QSignalSpy failedSpy(&dm, &PJ::DownloadManager::failed);
-  QSignalSpy startedSpy(&dm, &PJ::DownloadManager::started);
+  QSignalSpy failed_spy(&dm, &PJ::DownloadManager::failed);
+  QSignalSpy started_spy(&dm, &PJ::DownloadManager::started);
 
   const int id = dm.fetch(QUrl("http://255.255.255.255/nonexistent"), {}, {});
 
-  EXPECT_TRUE(waitForSignal(startedSpy));
-  EXPECT_EQ(startedSpy.first().at(0).toInt(), id);
+  EXPECT_TRUE(wait_for_signal(started_spy));
+  EXPECT_EQ(started_spy.first().at(0).toInt(), id);
 
-  EXPECT_TRUE(waitForSignal(failedSpy));
-  EXPECT_EQ(failedSpy.first().at(0).toInt(), id);
-  EXPECT_FALSE(failedSpy.first().at(1).toString().isEmpty());
+  EXPECT_TRUE(wait_for_signal(failed_spy));
+  EXPECT_EQ(failed_spy.first().at(0).toInt(), id);
+  EXPECT_FALSE(failed_spy.first().at(1).toString().isEmpty());
 }
 
 TEST(DownloadManagerTest, SuccessfulDownloadExtractsFiles)
 {
-  const QByteArray zipData = buildZip({{"hello.txt", "world"}});
-  const QString checksum = QStringLiteral("sha256:") + sha256Hex(zipData);
+  const QByteArray zip_data = build_zip({{"hello.txt", "world"}});
+  const QString checksum = QStringLiteral("sha256:") + sha256_hex(zip_data);
 
   LocalHttpServer server;
-  server.setBody(zipData);
+  server.set_body(zip_data);
 
   PJ::DownloadManager dm;
   QTemporaryDir tmp;
   ASSERT_TRUE(tmp.isValid());
 
-  QSignalSpy finishedSpy(&dm, &PJ::DownloadManager::finished);
-  QSignalSpy failedSpy(&dm, &PJ::DownloadManager::failed);
+  QSignalSpy finished_spy(&dm, &PJ::DownloadManager::finished);
+  QSignalSpy failed_spy(&dm, &PJ::DownloadManager::failed);
 
   dm.fetch(server.url(), checksum, tmp.path());
 
-  EXPECT_TRUE(waitForSignal(finishedSpy));
-  EXPECT_TRUE(failedSpy.isEmpty());
+  EXPECT_TRUE(wait_for_signal(finished_spy));
+  EXPECT_TRUE(failed_spy.isEmpty());
   EXPECT_TRUE(QFile::exists(tmp.path() + "/hello.txt"));
 }
 
 TEST(DownloadManagerTest, EmptyChecksumSkipsVerification)
 {
-  const QByteArray zipData = buildZip({{"readme.txt", "content"}});
+  const QByteArray zip_data = build_zip({{"readme.txt", "content"}});
 
   LocalHttpServer server;
-  server.setBody(zipData);
+  server.set_body(zip_data);
 
   PJ::DownloadManager dm;
   QTemporaryDir tmp;
   ASSERT_TRUE(tmp.isValid());
 
-  QSignalSpy finishedSpy(&dm, &PJ::DownloadManager::finished);
+  QSignalSpy finished_spy(&dm, &PJ::DownloadManager::finished);
 
   dm.fetch(server.url(), {}, tmp.path());
 
-  EXPECT_TRUE(waitForSignal(finishedSpy));
+  EXPECT_TRUE(wait_for_signal(finished_spy));
   EXPECT_TRUE(QFile::exists(tmp.path() + "/readme.txt"));
 }
 
 TEST(DownloadManagerTest, ChecksumMismatchEmitsFailed)
 {
-  const QByteArray zipData = buildZip({{"file.txt", "content"}});
+  const QByteArray zip_data = build_zip({{"file.txt", "content"}});
 
   LocalHttpServer server;
-  server.setBody(zipData);
+  server.set_body(zip_data);
 
   PJ::DownloadManager dm;
   QTemporaryDir tmp;
   ASSERT_TRUE(tmp.isValid());
 
-  QSignalSpy failedSpy(&dm, &PJ::DownloadManager::failed);
-  QSignalSpy finishedSpy(&dm, &PJ::DownloadManager::finished);
+  QSignalSpy failed_spy(&dm, &PJ::DownloadManager::failed);
+  QSignalSpy finished_spy(&dm, &PJ::DownloadManager::finished);
 
   dm.fetch(server.url(),
            QStringLiteral("sha256:0000000000000000000000000000000000000000000000000000000000000000"),
            tmp.path());
 
-  EXPECT_TRUE(waitForSignal(failedSpy));
-  EXPECT_TRUE(finishedSpy.isEmpty());
-  EXPECT_TRUE(failedSpy.first().at(1).toString().contains("Checksum"));
+  EXPECT_TRUE(wait_for_signal(failed_spy));
+  EXPECT_TRUE(finished_spy.isEmpty());
+  EXPECT_TRUE(failed_spy.first().at(1).toString().contains("Checksum"));
 }
 
 TEST(DownloadManagerTest, InvalidZipEmitsFailed)
 {
   LocalHttpServer server;
-  server.setBody(QByteArray("this is not a zip"));
+  server.set_body(QByteArray("this is not a zip"));
 
   PJ::DownloadManager dm;
   QTemporaryDir tmp;
   ASSERT_TRUE(tmp.isValid());
 
-  QSignalSpy failedSpy(&dm, &PJ::DownloadManager::failed);
-  QSignalSpy finishedSpy(&dm, &PJ::DownloadManager::finished);
+  QSignalSpy failed_spy(&dm, &PJ::DownloadManager::failed);
+  QSignalSpy finished_spy(&dm, &PJ::DownloadManager::finished);
 
   dm.fetch(server.url(), {}, tmp.path());
 
-  EXPECT_TRUE(waitForSignal(failedSpy));
-  EXPECT_TRUE(finishedSpy.isEmpty());
+  EXPECT_TRUE(wait_for_signal(failed_spy));
+  EXPECT_TRUE(finished_spy.isEmpty());
 }
 
 TEST(DownloadManagerTest, PathTraversalInZipEmitsFailed)
 {
-  const QByteArray zipData = buildZip({{"../../evil.txt", "malicious"}});
+  const QByteArray zip_data = build_zip({{"../../evil.txt", "malicious"}});
 
   LocalHttpServer server;
-  server.setBody(zipData);
+  server.set_body(zip_data);
 
   PJ::DownloadManager dm;
   QTemporaryDir tmp;
   ASSERT_TRUE(tmp.isValid());
 
-  QSignalSpy failedSpy(&dm, &PJ::DownloadManager::failed);
-  QSignalSpy finishedSpy(&dm, &PJ::DownloadManager::finished);
+  QSignalSpy failed_spy(&dm, &PJ::DownloadManager::failed);
+  QSignalSpy finished_spy(&dm, &PJ::DownloadManager::finished);
 
   dm.fetch(server.url(), {}, tmp.path());
 
-  EXPECT_TRUE(waitForSignal(failedSpy));
-  EXPECT_TRUE(finishedSpy.isEmpty());
+  EXPECT_TRUE(wait_for_signal(failed_spy));
+  EXPECT_TRUE(finished_spy.isEmpty());
 }
 
 TEST(DownloadManagerTest, CancelEmitsCancelled)
 {
   // Server that accepts connections but never sends a response — download hangs indefinitely.
-  QTcpServer hangingServer;
-  hangingServer.listen(QHostAddress::LocalHost, 0);
+  QTcpServer hanging_server;
+  hanging_server.listen(QHostAddress::LocalHost, 0);
 
   PJ::DownloadManager dm;
-  QSignalSpy cancelledSpy(&dm, &PJ::DownloadManager::cancelled);
-  QSignalSpy failedSpy(&dm, &PJ::DownloadManager::failed);
-  QSignalSpy finishedSpy(&dm, &PJ::DownloadManager::finished);
+  QSignalSpy cancelled_spy(&dm, &PJ::DownloadManager::cancelled);
+  QSignalSpy failed_spy(&dm, &PJ::DownloadManager::failed);
+  QSignalSpy finished_spy(&dm, &PJ::DownloadManager::finished);
 
   const int id = dm.fetch(
-      QUrl(QStringLiteral("http://127.0.0.1:%1/").arg(hangingServer.serverPort())), {}, {});
+      QUrl(QStringLiteral("http://127.0.0.1:%1/").arg(hanging_server.serverPort())), {}, {});
 
   QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
   dm.cancel(id);
 
-  EXPECT_TRUE(waitForSignal(cancelledSpy, 2000));
-  EXPECT_EQ(cancelledSpy.first().at(0).toInt(), id);
-  EXPECT_TRUE(failedSpy.isEmpty());
-  EXPECT_TRUE(finishedSpy.isEmpty());
+  EXPECT_TRUE(wait_for_signal(cancelled_spy, 2000));
+  EXPECT_EQ(cancelled_spy.first().at(0).toInt(), id);
+  EXPECT_TRUE(failed_spy.isEmpty());
+  EXPECT_TRUE(finished_spy.isEmpty());
 }
 
 TEST(DownloadManagerTest, MultipleOperationsHaveUniqueIds)

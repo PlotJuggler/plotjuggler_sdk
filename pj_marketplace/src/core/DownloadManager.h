@@ -21,40 +21,40 @@ class DownloadManager : public QObject
 public:
   explicit DownloadManager(QObject* parent = nullptr);
 
-  /// Starts the full pipeline: download url, verify expectedChecksum, extract to destinationDir.
+  /// Starts the full pipeline: download url, verify expected_checksum, extract to destination_dir.
   /// Returns a unique ID to track this operation.
-  int fetch(const QUrl& url, const QString& expectedChecksum, const QString& destinationDir);
+  int fetch(const QUrl& url, const QString& expected_checksum, const QString& destination_dir);
 
   /// Cancels an in-progress operation. No-op if the ID does not exist.
   void cancel(int id);
 
 signals:
   void started(int id);
-  void progress(int id, qint64 bytesReceived, qint64 bytesTotal);
+  void progress(int id, qint64 bytes_received, qint64 bytes_total);
   void finished(int id);
   void cancelled(int id);
   void failed(int id, const QString& error);
 
 private slots:
   void onReplyFinished(QNetworkReply* reply);
-  void onDownloadProgress(qint64 bytesReceived, qint64 bytesTotal);
+  void onDownloadProgress(qint64 bytes_received, qint64 bytes_total);
 
 private:
   struct Operation
   {
-    QString expectedChecksum;
-    QString destinationDir;
+    QString expected_checksum;
+    QString destination_dir;
   };
 
   QString calculateSha256(const QByteArray& data) const;
-  bool verifyChecksum(const QByteArray& data, const QString& expectedChecksum) const;
+  bool verifyChecksum(const QByteArray& data, const QString& expected_checksum) const;
   PJ::Expected<void, QString> extractFromMemory(const QByteArray& data,
-                                                 const QString& destinationDir) const;
+                                                 const QString& destination_dir) const;
 
-  QNetworkAccessManager* m_network;
-  QMap<int, QNetworkReply*> m_activeReplies;
-  QMap<int, Operation> m_operations;
-  int m_nextId = 1;
+  QNetworkAccessManager* network_;
+  QMap<int, QNetworkReply*> active_replies_;
+  QMap<int, Operation> operations_;
+  int next_id_ = 1;
 };
 
 }  // namespace PJ
