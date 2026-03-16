@@ -118,7 +118,9 @@ int DownloadManager::fetch(const QUrl& url,
 {
   const int id = next_id_++;
 
-  QNetworkReply* reply = network_->get(QNetworkRequest(url));
+  QNetworkRequest req(url);
+  req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+  QNetworkReply* reply = network_->get(req);
   reply->setProperty("operationId", id);
 
   active_replies_.insert(id, reply);

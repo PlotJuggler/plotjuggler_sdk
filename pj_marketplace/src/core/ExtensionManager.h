@@ -103,6 +103,8 @@ class ExtensionManager : public QObject {
   int pending_op_id_ = -1;
   // Ensures the disk-space check runs at most once per fetch operation.
   bool disk_space_checked_ = false;
+  // Set before calling cancel() to preserve the real reason shown to the user.
+  QString cancel_reason_;
 
   // Stored so we can disconnect cleanly after each operation completes.
   QMetaObject::Connection dl_progress_conn_;
