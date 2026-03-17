@@ -61,8 +61,8 @@
      <property name="widgetResizable"><bool>true</bool></property>
      <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
      <property name="styleSheet">
-      <string notr="true">QScrollArea { background: palette(window); }
-QScrollArea > QWidget > QWidget { background: palette(window); }</string>
+      <string notr="true">QScrollArea { background: palette(mid); }
+QScrollArea > QWidget > QWidget { background: palette(mid); }</string>
      </property>
      <widget class="QWidget" name="cards_container">
       <property name="geometry">

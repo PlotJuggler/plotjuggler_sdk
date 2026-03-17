@@ -173,10 +173,10 @@ void MarketplaceWindow::populateCards() {
     card->installEventFilter(this);
     card->setStyleSheet(
         "QFrame#extCard { background-color: palette(base);"
-        "                 border: 1px solid palette(mid);"
+        "                 border: 1px solid palette(shadow);"
         "                 border-radius: 6px; }"
         "QFrame#extCard:hover { background-color: palette(alternate-base);"
-        "                       border-color: palette(shadow); }");
+        "                       border-color: palette(dark); }");
 
     auto* card_layout = new QVBoxLayout(card);
     card_layout->setContentsMargins(10, 8, 10, 8);
@@ -196,7 +196,7 @@ void MarketplaceWindow::populateCards() {
         version_text = installed[ext.id].version + " \u2192 " + ext.version;
     }
     auto* version_lbl = new QLabel(version_text, card);
-    version_lbl->setStyleSheet("color: palette(mid);");
+    version_lbl->setStyleSheet("color: palette(text);");
 
     auto* btn_box = new QHBoxLayout();
     btn_box->setSpacing(6);
@@ -246,7 +246,7 @@ void MarketplaceWindow::populateCards() {
 
     auto* bottom_row = new QHBoxLayout();
     auto* desc_lbl = new QLabel(card);
-    desc_lbl->setStyleSheet("color: palette(mid); font-size: 11px;");
+    desc_lbl->setStyleSheet("color: palette(text); font-size: 11px;");
     QFontMetrics fm(desc_lbl->font());
     desc_lbl->setText(fm.elidedText(ext.description, Qt::ElideRight, 400));
     bottom_row->addWidget(desc_lbl);
