@@ -1,4 +1,4 @@
-#include "core/ExtensionManager.h"
+#include "pj_marketplace/extension_manager.hpp"
 
 #include <QDateTime>
 #include <QDir>
@@ -10,8 +10,8 @@
 #include <QStorageInfo>
 #include <QVersionNumber>
 
-#include "core/DownloadManager.h"
-#include "core/PlatformUtils.h"
+#include "pj_marketplace/download_manager.hpp"
+#include "pj_marketplace/platform_utils.hpp"
 
 namespace PJ {
 

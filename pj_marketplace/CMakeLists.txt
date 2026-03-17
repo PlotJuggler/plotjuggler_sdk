@@ -33,12 +33,15 @@ add_library(pj_marketplace STATIC
   src/core/ExtensionManager.cpp
   src/core/PlatformUtils.cpp
   src/core/RegistryManager.cpp
+  include/pj_marketplace/download_manager.hpp
+  include/pj_marketplace/extension_manager.hpp
+  include/pj_marketplace/registry_manager.hpp
 )
 
 set_target_properties(pj_marketplace PROPERTIES AUTOMOC ON)
 
 target_include_directories(pj_marketplace PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(pj_marketplace PUBLIC
@@ -47,6 +50,27 @@ target_link_libraries(pj_marketplace PUBLIC
   LibArchive::LibArchive
 )
 
+add_library(pj_marketplace_ui STATIC
+  src/ui/marketplace_window.cpp
+  src/ui/extension_detail_dialog.cpp
+  include/pj_marketplace/marketplace_window.hpp
+  include/pj_marketplace/extension_detail_dialog.hpp
+)
+
+set_target_properties(pj_marketplace_ui PROPERTIES
+  AUTOMOC ON
+  AUTOUIC ON
+  AUTORCC ON
+  AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+)
+
+target_include_directories(pj_marketplace_ui PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(pj_marketplace_ui PUBLIC
+  pj_marketplace
+)
 # pj_base provides expected.hpp (header-only for our usage).
 # When built as part of plotjuggler_core the target already exists;
 # in standalone mode we expose the include directory directly.
@@ -102,7 +126,6 @@ add_executable(registry_manager_test
   tests/registry_manager_test.cpp
 )
 
-target_include_directories(registry_manager_test PRIVATE src)
 target_link_libraries(registry_manager_test PRIVATE
   pj_marketplace
   Qt6::Network
@@ -119,7 +142,6 @@ add_executable(extension_manager_test
   tests/extension_manager_test.cpp
 )
 
-target_include_directories(extension_manager_test PRIVATE src)
 target_link_libraries(extension_manager_test PRIVATE
   pj_marketplace
   Qt6::Network
@@ -139,7 +161,6 @@ add_executable(extension_manager_check_plugin_management
   tests/extension_manager_check_plugin_management.cpp
 )
 
-target_include_directories(extension_manager_check_plugin_management PRIVATE src)
 target_link_libraries(extension_manager_check_plugin_management PRIVATE
   pj_marketplace
   Qt6::Network

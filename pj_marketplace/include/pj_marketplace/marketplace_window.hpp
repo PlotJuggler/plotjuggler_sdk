@@ -3,7 +3,7 @@
 #include <QDialog>
 #include <QSet>
 #include <QUrl>
-#include "models/Extension.h"
+#include "pj_marketplace/extension.hpp"
 
 namespace Ui { class MarketplaceWindow; }
 

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <QList>
-#include "core/RegistryManager.h"
-#include "models/Extension.h"
+#include "pj_marketplace/registry_manager.hpp"
+#include "pj_marketplace/extension.hpp"
 
 namespace PJ {
 

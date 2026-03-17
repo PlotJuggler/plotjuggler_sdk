@@ -1,9 +1,6 @@
 #include <QApplication>
 #include <QUrl>
-#include "core/DownloadManager.h"
-#include "core/ExtensionManager.h"
-#include "core/RegistryManager.h"
-#include "ui/marketplace_window.hpp"
+#include "pj_marketplace/marketplace_window.hpp"
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);

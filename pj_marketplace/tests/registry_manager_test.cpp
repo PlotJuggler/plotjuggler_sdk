@@ -17,7 +17,7 @@
 #include <QTcpSocket>
 #include <QUrl>
 
-#include "core/RegistryManager.h"
+#include "pj_marketplace/registry_manager.hpp"
 
 // ---------------------------------------------------------------------------
 // Minimal HTTP/1.1 server — serves one fixed JSON body per connection

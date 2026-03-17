@@ -15,6 +15,8 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 
+#include "pj_marketplace/marketplace_window.hpp"
+
 #include "pj_datastore/reader.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
 
