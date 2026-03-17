@@ -85,18 +85,19 @@ void MarketplaceWindow::setupSignals() {
       setStatus("Failed to load registry", true);
       return;
     }
+    extensions_ = registry_mgr_->extensions();
+    applyFilters();
+    setStatus("Ready — " + QString::number(extensions_.size()) + " extensions loaded");
+  });
 
-   connect(ext_mgr_, &ExtensionManager::installPendingRestart, this,
+
+  connect(ext_mgr_, &ExtensionManager::installPendingRestart, this,
         [this](const QString& id) {
           pending_restart_ids_.insert(id);
           ui_->progress_bar_->setVisible(false);
           populateCards();
           setStatus("Extension staged — will be active after restart");
-        });
-    extensions_ = registry_mgr_->extensions();
-    applyFilters();
-    setStatus("Ready — " + QString::number(extensions_.size()) + " extensions loaded");
-  });
+   });   
 
   connect(registry_mgr_, &RegistryManager::fetchError, this,
           [this](const QString& error) { setStatus("Registry error: " + error, true); });
