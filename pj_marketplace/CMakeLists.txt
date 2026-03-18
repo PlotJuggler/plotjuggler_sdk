@@ -38,7 +38,12 @@ add_library(pj_marketplace STATIC
   include/pj_marketplace/registry_manager.hpp
 )
 
-set_target_properties(pj_marketplace PROPERTIES AUTOMOC ON)
+set_target_properties(pj_marketplace PROPERTIES
+  AUTOMOC ON
+  AUTOUIC ON
+  AUTORCC ON
+  AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+)
 
 target_include_directories(pj_marketplace PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -47,6 +52,7 @@ target_include_directories(pj_marketplace PUBLIC
 target_link_libraries(pj_marketplace PUBLIC
   Qt6::Core
   Qt6::Network
+  Qt6::Widgets
   LibArchive::LibArchive
 )
 
@@ -72,6 +78,7 @@ target_link_libraries(pj_marketplace_ui PUBLIC
   pj_marketplace
   Qt6::Widgets
 )
+
 # pj_base provides expected.hpp (header-only for our usage).
 # When built as part of plotjuggler_core the target already exists;
 # in standalone mode we expose the include directory directly.
@@ -92,6 +99,13 @@ target_compile_options(pj_marketplace PRIVATE ${PJ_WARNING_FLAGS})
 add_executable(pj_marketplace_app
   main.cpp
 )
+set_target_properties(pj_marketplace_app PROPERTIES
+  AUTOMOC ON
+  AUTORCC ON
+  AUTOUIC ON
+  AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+)
+
 
 target_link_libraries(pj_marketplace_app PRIVATE
   pj_marketplace

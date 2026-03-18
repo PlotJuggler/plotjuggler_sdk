@@ -28,10 +28,12 @@ static constexpr const char* kDefaultRegistryUrl =
     "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry"
     "/refs/heads/development/registry.json";
 
-MarketplaceWindow::MarketplaceWindow(RegistryManager* registry_mgr, ExtensionManager* ext_mgr,
-                                     const QUrl& registry_url, QWidget* parent)
-    : QDialog(parent), ui_(new Ui::MarketplaceWindow),
-      registry_mgr_(registry_mgr), ext_mgr_(ext_mgr) {
+MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
+    : QDialog(parent), ui_(new Ui::MarketplaceWindow) {
+  download_mgr_ = new DownloadManager(this);
+  registry_mgr_ = new RegistryManager(this);
+  ext_mgr_ = new ExtensionManager(download_mgr_, PlatformUtils::extensionsDir(),
+                                   PlatformUtils::pendingDir(), this);
   QSettings settings("PlotJuggler", "Marketplace");
   const QString saved = settings.value("registry_url").toString();
   registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);

@@ -1,14 +1,11 @@
 #include <QApplication>
 #include <QUrl>
-#include "pj_marketplace/marketplace.hpp"
+#include "pj_marketplace/marketplace_window.hpp"
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
   const QUrl registry_url = QUrl("https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry/refs/heads/development/registry.json");
-  auto* registry   = new PJ::RegistryManager;
-  auto* downloader = new PJ::DownloadManager;
-  auto* ext_mgr    = new PJ::ExtensionManager(downloader);
-  PJ::MarketplaceWindow w(registry, ext_mgr, registry_url);
+  PJ::MarketplaceWindow w(registry_url);
   w.resize(700, 500);
   w.show();
   return app.exec();

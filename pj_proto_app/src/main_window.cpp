@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <limits>
@@ -37,11 +38,13 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
 
   auto* btn_load = new QPushButton("Load File");
   auto* btn_stream = new QPushButton("Start Stream");
+  auto* btn_marketplace = new QPushButton("Marketplace");
   auto* btn_clear_data = new QPushButton("Clear Data");
   auto* btn_clear_plots = new QPushButton("Clear Plots");
 
   toolbar->addWidget(btn_load);
   toolbar->addWidget(btn_stream);
+  toolbar->addWidget(btn_marketplace);
   toolbar->addSeparator();
   toolbar->addWidget(btn_clear_data);
   toolbar->addWidget(btn_clear_plots);
@@ -57,6 +60,7 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
 
   connect(btn_load, &QPushButton::clicked, this, &MainWindow::onLoadFile);
   connect(btn_stream, &QPushButton::clicked, this, &MainWindow::onStartStream);
+  connect(btn_marketplace, &QPushButton::clicked, this, &MainWindow::onOpenMarketplace);
   connect(btn_clear_data, &QPushButton::clicked, this, &MainWindow::onClearData);
   connect(btn_clear_plots, &QPushButton::clicked, this, &MainWindow::onClearPlots);
 
@@ -554,6 +558,14 @@ std::pair<PJ::Timestamp, PJ::Timestamp> MainWindow::computeVisibleRange() const 
   }
 
   return {global_min, global_max};
+}
+
+void MainWindow::onOpenMarketplace() {
+  const QUrl registry_url(
+      "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry/refs/heads/development/registry.json");
+  PJ::MarketplaceWindow window(registry_url, this);
+  window.resize(700, 500);
+  window.exec();
 }
 
 }  // namespace proto

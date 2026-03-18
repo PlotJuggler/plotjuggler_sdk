@@ -9,6 +9,7 @@ namespace Ui { class MarketplaceWindow; }
 
 namespace PJ {
 
+class DownloadManager;
 class ExtensionManager;
 class RegistryManager;
 
@@ -16,8 +17,7 @@ class MarketplaceWindow : public QDialog {
   Q_OBJECT
 
  public:
-  explicit MarketplaceWindow(RegistryManager* registry_mgr, ExtensionManager* ext_mgr,
-                             const QUrl& registry_url, QWidget* parent = nullptr);
+  explicit MarketplaceWindow(const QUrl& registry_url, QWidget* parent = nullptr);
   ~MarketplaceWindow() override;
 
   bool installationsChanged() const { return installations_changed_; }
@@ -44,6 +44,7 @@ class MarketplaceWindow : public QDialog {
   void processInstallQueue();
 
   Ui::MarketplaceWindow* ui_           = nullptr;
+  DownloadManager*       download_mgr_ = nullptr;
   RegistryManager*       registry_mgr_ = nullptr;
   ExtensionManager*      ext_mgr_      = nullptr;
   QUrl                   registry_url_;
