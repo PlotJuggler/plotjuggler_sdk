@@ -352,6 +352,9 @@ TEST_F(ExtensionManagerTest, UninstallUnknownExtensionEmitsError) {
 // update() backs up the current version and re-installs from the registry.
 // The new version is registered with the correct version string after completion.
 TEST_F(ExtensionManagerTest, UpdateReinstallsWithNewVersion) {
+  // Ensure clean backup state before test (in case previous run failed mid-test).
+  QDir(PlatformUtils::backupDir() + "/csv-loader-1.0.0").removeRecursively();
+
   server_.setBody(dummyPluginZip("csv-loader"));
   const Extension ext_v1 = makeExtension("csv-loader", "1.0.0", server_.url());
 
@@ -377,6 +380,9 @@ TEST_F(ExtensionManagerTest, UpdateReinstallsWithNewVersion) {
 // ext_dir is placed under the same filesystem root as backupDir() (~/.plotjuggler/)
 // so that QDir::rename() can do an atomic move without a cross-device copy.
 TEST_F(ExtensionManagerTest, UpdateBacksUpOldVersionOnSuccess) {
+  // Ensure clean backup state before test (in case previous run failed mid-test).
+  QDir(PlatformUtils::backupDir() + "/csv-loader-1.0.0").removeRecursively();
+
   // Place the extension directory on the same filesystem as backupDir().
   QTemporaryDir local_ext_dir(QDir(PlatformUtils::backupDir()).absoluteFilePath("../test_ext_XXXXXX"));
   ASSERT_TRUE(local_ext_dir.isValid());
