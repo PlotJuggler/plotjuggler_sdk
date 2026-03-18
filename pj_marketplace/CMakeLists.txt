@@ -70,6 +70,7 @@ target_include_directories(pj_marketplace_ui PRIVATE
 
 target_link_libraries(pj_marketplace_ui PUBLIC
   pj_marketplace
+  Qt6::Widgets
 )
 # pj_base provides expected.hpp (header-only for our usage).
 # When built as part of plotjuggler_core the target already exists;
