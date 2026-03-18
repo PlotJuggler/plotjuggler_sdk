@@ -1,4 +1,4 @@
-#include "core/PlatformUtils.h"
+#include "pj_marketplace/platform_utils.hpp"
 
 #include <QDir>
 #include <QStandardPaths>

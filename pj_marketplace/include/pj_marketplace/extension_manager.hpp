@@ -5,9 +5,9 @@
 #include <QObject>
 #include <QString>
 
-#include "core/PlatformUtils.h"
-#include "models/Extension.h"
-#include "models/InstalledExtension.h"
+#include "pj_marketplace/extension.hpp"
+#include "pj_marketplace/installed_extension.hpp"
+#include "pj_marketplace/platform_utils.hpp"
 
 namespace PJ {
 

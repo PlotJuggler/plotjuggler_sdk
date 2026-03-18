@@ -15,10 +15,10 @@
 #include <QSignalSpy>
 #include <QUrl>
 
-#include "core/DownloadManager.h"
-#include "core/ExtensionManager.h"
-#include "core/RegistryManager.h"
-#include "models/Extension.h"
+#include "pj_marketplace/download_manager.hpp"
+#include "pj_marketplace/extension_manager.hpp"
+#include "pj_marketplace/registry_manager.hpp"
+#include "pj_marketplace/extension.hpp"
 
 namespace PJ {
 namespace {

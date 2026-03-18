@@ -1,4 +1,4 @@
-#include "core/DownloadManager.h"
+#include "pj_marketplace/download_manager.hpp"
 
 #include <gtest/gtest.h>
 

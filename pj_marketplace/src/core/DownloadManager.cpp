@@ -1,4 +1,4 @@
-#include "DownloadManager.h"
+#include "pj_marketplace/download_manager.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>

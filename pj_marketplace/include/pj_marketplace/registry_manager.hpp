@@ -7,7 +7,7 @@
 #include <QString>
 #include <QUrl>
 
-#include "models/Extension.h"
+#include "pj_marketplace/extension.hpp"
 
 namespace PJ {
 

@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QTimer>
 
-#include "core/DownloadManager.h"
+#include "pj_marketplace/download_manager.hpp"
 
 namespace PJ {
 
