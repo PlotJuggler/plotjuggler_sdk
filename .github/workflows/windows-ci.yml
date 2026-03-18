@@ -20,6 +20,9 @@ jobs:
         with:
           cache_packages: true
 
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Conan install
         run: >
           conan install . --output-folder=build --build=missing
@@ -29,6 +32,8 @@ jobs:
         run: >
           cmake -S . -B build
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/build/conan_toolchain.cmake
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
 
       - name: Build
