@@ -1,4 +1,4 @@
-#include "core/RegistryManager.h"
+#include "pj_marketplace/registry_manager.hpp"
 
 #include <QJsonArray>
 #include <QJsonDocument>

@@ -4,8 +4,8 @@
 #include <QObject>
 #include <QTimer>
 
-#include "core/ExtensionManager.h"
-#include "models/InstalledExtension.h"
+#include "pj_marketplace/extension_manager.hpp"
+#include "pj_marketplace/installed_extension.hpp"
 
 namespace PJ {
 

@@ -31,10 +31,10 @@
 #include <archive.h>
 #include <archive_entry.h>
 
-#include "core/DownloadManager.h"
-#include "core/ExtensionManager.h"
-#include "core/PlatformUtils.h"
-#include "models/Extension.h"
+#include "pj_marketplace/download_manager.hpp"
+#include "pj_marketplace/extension_manager.hpp"
+#include "pj_marketplace/platform_utils.hpp"
+#include "pj_marketplace/extension.hpp"
 
 namespace PJ {
 namespace {

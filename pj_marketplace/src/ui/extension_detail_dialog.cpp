@@ -1,4 +1,4 @@
-#include "extension_detail_dialog.hpp"
+#include "pj_marketplace/extension_detail_dialog.hpp"
 #include "ui_extension_detail_dialog.h"
 
 #include <QDesktopServices>

@@ -33,18 +33,49 @@ add_library(pj_marketplace STATIC
   src/core/ExtensionManager.cpp
   src/core/PlatformUtils.cpp
   src/core/RegistryManager.cpp
+  include/pj_marketplace/download_manager.hpp
+  include/pj_marketplace/extension_manager.hpp
+  include/pj_marketplace/registry_manager.hpp
 )
 
-set_target_properties(pj_marketplace PROPERTIES AUTOMOC ON)
+set_target_properties(pj_marketplace PROPERTIES
+  AUTOMOC ON
+  AUTOUIC ON
+  AUTORCC ON
+  AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+)
 
 target_include_directories(pj_marketplace PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(pj_marketplace PUBLIC
   Qt6::Core
   Qt6::Network
+  Qt6::Widgets
   LibArchive::LibArchive
+)
+
+add_library(pj_marketplace_ui STATIC
+  src/ui/marketplace_window.cpp
+  src/ui/extension_detail_dialog.cpp
+  include/pj_marketplace/marketplace_window.hpp
+  include/pj_marketplace/extension_detail_dialog.hpp
+)
+
+set_target_properties(pj_marketplace_ui PROPERTIES
+  AUTOMOC ON
+  AUTOUIC ON
+  AUTORCC ON
+  AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+)
+
+target_include_directories(pj_marketplace_ui PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(pj_marketplace_ui PUBLIC
+  pj_marketplace
 )
 
 # pj_base provides expected.hpp (header-only for our usage).
@@ -66,10 +97,7 @@ target_compile_options(pj_marketplace PRIVATE ${PJ_WARNING_FLAGS})
 
 add_executable(pj_marketplace_app
   main.cpp
-  src/ui/marketplace_window.cpp
-  src/ui/extension_detail_dialog.cpp
 )
-
 set_target_properties(pj_marketplace_app PROPERTIES
   AUTOMOC ON
   AUTORCC ON
@@ -80,7 +108,7 @@ set_target_properties(pj_marketplace_app PROPERTIES
 
 target_link_libraries(pj_marketplace_app PRIVATE
   pj_marketplace
-  Qt6::Widgets
+  pj_marketplace_ui
 )
 
 target_compile_options(pj_marketplace_app PRIVATE ${PJ_WARNING_FLAGS})
@@ -102,7 +130,6 @@ add_executable(registry_manager_test
   tests/registry_manager_test.cpp
 )
 
-target_include_directories(registry_manager_test PRIVATE src)
 target_link_libraries(registry_manager_test PRIVATE
   pj_marketplace
   Qt6::Network
@@ -119,7 +146,6 @@ add_executable(extension_manager_test
   tests/extension_manager_test.cpp
 )
 
-target_include_directories(extension_manager_test PRIVATE src)
 target_link_libraries(extension_manager_test PRIVATE
   pj_marketplace
   Qt6::Network
@@ -139,7 +165,6 @@ add_executable(extension_manager_check_plugin_management
   tests/extension_manager_check_plugin_management.cpp
 )
 
-target_include_directories(extension_manager_check_plugin_management PRIVATE src)
 target_link_libraries(extension_manager_check_plugin_management PRIVATE
   pj_marketplace
   Qt6::Network

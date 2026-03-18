@@ -1,6 +1,6 @@
 #pragma once
 #include <QDialog>
-#include "models/Extension.h"
+#include "pj_marketplace/extension.hpp"
 
 namespace Ui { class ExtensionDetailDialog; }
 
