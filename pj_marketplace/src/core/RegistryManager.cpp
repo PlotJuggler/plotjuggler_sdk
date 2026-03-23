@@ -1,0 +1,160 @@
+#include "pj_marketplace/registry_manager.hpp"
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkRequest>
+
+namespace PJ {
+
+RegistryManager::RegistryManager(QObject* parent) : QObject(parent), network_(new QNetworkAccessManager(this)) {}
+
+void RegistryManager::fetchRegistry(const QUrl& url) {
+  // Cancel any in-flight request before starting a new one.
+  if (pending_reply_ && pending_reply_->isRunning()) {
+    pending_reply_->abort();
+  }
+
+  extensions_.clear();
+
+  emit fetchStarted();
+
+  QNetworkRequest request(url);
+  request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+
+  pending_reply_ = network_->get(request);
+
+  connect(pending_reply_, &QNetworkReply::finished, this, [this]() {
+    // Guard against a second invocation if the reply is reused.
+    auto* reply = pending_reply_;
+    pending_reply_ = nullptr;
+
+    if (reply->error() != QNetworkReply::NoError) {
+      emit fetchError(reply->errorString());
+      emit fetchFinished(false);
+      reply->deleteLater();
+      return;
+    }
+
+    const QByteArray data = reply->readAll();
+    reply->deleteLater();
+
+    const bool ok = parseJson(data);
+    emit fetchFinished(ok);
+  });
+}
+
+QList<Extension> RegistryManager::extensions() const {
+  return extensions_;
+}
+
+Extension RegistryManager::findById(const QString& id) const {
+  for (const Extension& ext : extensions_) {
+    if (ext.id == id) {
+      return ext;
+    }
+  }
+  return {};  // Default-constructed: id is empty, callers must check id.isEmpty()
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+bool RegistryManager::parseJson(const QByteArray& data) {
+  // Reads a required string field; emits fetchError() and returns nullopt if missing.
+  auto required_string = [this](const QJsonObject& obj, const QString& key)
+      -> std::optional<QString> {
+    if (!obj.contains(key) || !obj[key].isString()) {
+      emit fetchError(QString("Registry parse error: missing required field \"%1\"").arg(key));
+      return std::nullopt;
+    }
+    return obj[key].toString();
+  };
+
+  QJsonParseError parse_error;
+  const QJsonDocument doc = QJsonDocument::fromJson(data, &parse_error);
+
+  if (doc.isNull()) {
+    emit fetchError(QString("JSON parse error: %1").arg(parse_error.errorString()));
+    return false;
+  }
+
+  if (!doc.isObject()) {
+    emit fetchError("Registry JSON root must be an object");
+    return false;
+  }
+
+  const QJsonObject root = doc.object();
+
+  if (!root.contains("extensions") || !root["extensions"].isArray()) {
+    emit fetchError("Registry JSON missing \"extensions\" array");
+    return false;
+  }
+
+  QList<Extension> parsed;
+
+  for (const QJsonValue& value : root["extensions"].toArray()) {
+    if (!value.isObject()) {
+      emit fetchError("Each entry in \"extensions\" must be a JSON object");
+      return false;
+    }
+
+    const QJsonObject obj = value.toObject();
+    Extension ext;
+
+    // Required fields — abort the entire fetch if any are missing.
+    auto id = required_string(obj, "id");
+    auto name = required_string(obj, "name");
+    auto version = required_string(obj, "version");
+
+    if (!id || !name || !version) {
+      return false;
+    }
+
+    ext.id = *id;
+    ext.name = *name;
+    ext.version = *version;
+
+    // Optional fields — use empty string as sentinel when absent.
+    ext.description = obj["description"].toString();
+    ext.author = obj["author"].toString();
+    ext.publisher = obj["publisher"].toString();
+    ext.website = obj["website"].toString();
+    ext.repository = obj["repository"].toString();
+    ext.license = obj["license"].toString();
+    ext.icon_url = obj["icon_url"].toString();
+    ext.category = obj["category"].toString();
+    ext.min_plotjuggler_version = obj["min_plotjuggler_version"].toString();
+
+    for (const QJsonValue& tag : obj["tags"].toArray()) {
+      ext.tags.append(tag.toString());
+    }
+
+    // Platforms: { "linux-x86_64": { "url": "...", "checksum": "sha256:..." } }
+    const QJsonObject platforms = obj["platforms"].toObject();
+    for (auto it = platforms.begin(); it != platforms.end(); ++it) {
+      if (!it.value().isObject()) {
+        continue;
+      }
+      const QJsonObject artifact_obj = it.value().toObject();
+      Platform artifact;
+      artifact.url = artifact_obj["url"].toString();
+      artifact.checksum = artifact_obj["checksum"].toString();
+      ext.platforms.insert(it.key(), artifact);
+    }
+
+    // Changelog: { "1.0.0": "Initial release", "1.1.0": "Bug fixes" }
+    const QJsonObject changelog = obj["changelog"].toObject();
+    for (auto it = changelog.begin(); it != changelog.end(); ++it) {
+      ext.changelog.insert(it.key(), it.value().toString());
+    }
+
+    parsed.append(ext);
+  }
+
+  extensions_ = std::move(parsed);
+  return true;
+}
+
+}  // namespace PJ

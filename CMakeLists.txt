@@ -162,6 +162,7 @@ endif()
 add_subdirectory(pj_plugins)
 
 if(PJ_BUILD_DIALOG_ENGINE_QT)
+  add_subdirectory(pj_marketplace)
   find_package(Qt6 COMPONENTS Charts QUIET)
   if(Qt6Charts_FOUND)
     add_subdirectory(pj_proto_app)

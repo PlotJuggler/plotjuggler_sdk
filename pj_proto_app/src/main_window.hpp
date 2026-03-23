@@ -34,6 +34,7 @@ class MainWindow : public QMainWindow {
  private slots:
   void onLoadFile();
   void onStartStream();
+  void onOpenMarketplace();
   void onClearData();
   void onClearPlots();
   void onRefreshTimer();

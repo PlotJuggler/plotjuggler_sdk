@@ -65,7 +65,7 @@ Before committing, always run:
 ## Coding Conventions
 
 - **Formatting:** Google style via `.clang-format` — 2-space indent, 120-char limit
-- **Naming:** `CamelCase` classes, `lower_case` functions/variables, `lower_case_` members, `kCamelCase` constants
+- **Naming:** `CamelCase` classes, `camelBack` functions, `lower_case` variables, `lower_case_` members, `kCamelCase` constants
 - **Namespaces:** flat `PJ` namespace; `PJ::encoding` and `PJ::arrow_import` for internals
 - **Errors:** `PJ::Expected<T>` for fallible ops, `PJ_ASSERT(cond, msg)` for invariants
 - **Warnings:** `-Wall -Wextra -Werror` on all targets; pre-commit hooks enforce clang-format v17

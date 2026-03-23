@@ -1,7 +1,7 @@
 # PlotJuggler Marketplace — Architecture
 
 > **Version:** 1.0.0
-> **Last Updated:** 2026-03-04
+> **Last Updated:** 2026-03-16
 > **Purpose:** Document HOW the system is designed and built
 
 ---
@@ -30,9 +30,9 @@ rectangle "GitHub" {
 rectangle "PlotJuggler" {
   component "Marketplace UI" as ui
   component "Extension Manager" as em
-  database "installed.json" as local
+  folder "extensions/" as local
   ui --> em
-  em --> local
+  em --> local : scan manifest.json
 }
 
 reg ..> ui : HTTPS fetch
@@ -199,16 +199,16 @@ mocking `PlatformUtils`:
 
 ```cpp
 ExtensionManager(DownloadManager* downloader,
-                 ZipExtractor* extractor,
                  const QString& extensions_dir = PlatformUtils::extensionsDir(),
+                 const QString& pending_dir = PlatformUtils::pendingDir(),
                  QObject* parent = nullptr);
 ```
 
 **Design decisions:**
 - No `setExtensionsDir()` public setter — directory is fixed at construction time
 - No `detectPlatform()` private method — delegated to `PlatformUtils::currentPlatform()`
-- `ZipExtractor` is an explicit constructor dependency, not created internally
-- Local installation state (`QMap<QString, InstalledExtension>`) is a private member of `ExtensionManager` — loaded from `extensions_dir/installed.json` at construction via private `loadState()`/`saveState()` methods; testability is preserved via the `extensions_dir` parameter pointing to a temp directory
+- Local installation state (`QMap<QString, InstalledExtension>`) is a private member of `ExtensionManager` — populated at construction by scanning `extensions_dir` and reading each subdirectory's `manifest.json`; testability is preserved via the `extensions_dir` parameter pointing to a temp directory
+- No `installed.json` — disk is the source of truth; `manifest.json` inside each extension directory provides `id` and `version`
 
 ---
 
@@ -238,7 +238,7 @@ if (Checksum OK?) then (yes)
     :Backup current;
   endif
   :Move to extensions/;
-  :Update installed.json;
+  :Read manifest.json → register in memory;
 else (no)
   :Error: invalid checksum;
 endif
@@ -337,9 +337,8 @@ stop
 ├── .backup/                 # Rollback backups
 │   ├── ros2-streaming-1.2.2/
 │   └── csv-loader-0.9.0/
-├── .cache/                  # Registry cache
-│   └── registry.json
-└── installed.json           # Local state
+└── .cache/                  # Registry cache
+    └── registry.json
 ```
 
 ### 5.2 Extension ZIP Structure

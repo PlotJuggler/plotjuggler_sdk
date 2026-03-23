@@ -221,7 +221,6 @@ The four plugin families are:
 ```json
 {
   "registry_version": "1.0",
-  "plotjuggler_abi_version": "4.0",
   "last_updated": "2026-03-04T10:00:00Z",
   "extensions": [
     {
