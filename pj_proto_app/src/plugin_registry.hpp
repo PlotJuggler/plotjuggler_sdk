@@ -27,6 +27,7 @@ class PluginRegistry {
   explicit PluginRegistry(std::string_view plugin_dir);
 
   void scanDirectory();
+  void reload();
 
   [[nodiscard]] std::vector<LoadedDataSource*> fileImportSources();
   [[nodiscard]] std::vector<LoadedDataSource*> streamSources();

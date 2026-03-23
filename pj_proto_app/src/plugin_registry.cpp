@@ -92,6 +92,12 @@ void PluginRegistry::scanDirectory() {
   }
 }
 
+void PluginRegistry::reload() {
+  data_sources_.clear();
+  message_parsers_.clear();
+  scanDirectory();
+}
+
 std::vector<LoadedDataSource*> PluginRegistry::fileImportSources() {
   std::vector<LoadedDataSource*> result;
   for (auto& ds : data_sources_) {

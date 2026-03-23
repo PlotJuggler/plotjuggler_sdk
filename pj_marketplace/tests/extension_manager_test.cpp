@@ -683,19 +683,19 @@ TEST(PlatformDetectionTest, LinuxX86PlatformMatchesRegistryKey) {
   EXPECT_EQ(PlatformUtils::currentPlatform(), "linux-x86_64");
 }
 
-// The csv-loader entry from pj-plugin-registry/registry.json must be resolvable on
-// the running host — isWindows() is the gate used by install() to choose the staging path.
+// Verify that PlatformUtils::currentPlatform() returns a key that would exist
+// in a typical registry entry, so install() can resolve the download artifact.
 TEST(PlatformDetectionTest, CurrentPlatformResolvesRegistryArtifact) {
-  // Mirrors the csv-loader entry from pj-plugin-registry/registry.json verbatim.
+  // Test fixture with fake URLs - we only check that the platform key exists
   Extension ext;
-  ext.id = "csv-loader";
+  ext.id = "test-extension";
   ext.version = "1.0.0";
   ext.platforms["linux-x86_64"] = {
-      "https://cloud.ibrobotics.com/public.php/dav/files/9xBz6zdDn5WYJ6c/?accept=zip",
-      "sha256:324e8016b38bce3365d4f4b71035eb8e6518445e06a599f9dd2d7e2ecbc50c02"};
+      "https://example.com/test/extension-linux-x86_64.zip",
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000"};
   ext.platforms["windows-x86_64"] = {
-      "https://cloud.ibrobotics.com/public.php/dav/files/aQgzSYywW2onrB3/?accept=zip",
-      "sha256:324e8016b38bce3365d4f4b71035eb8e6518445e06a599f9dd2d7e2ecbc50c02"};
+      "https://example.com/test/extension-windows-x64.zip",
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000"};
 
   EXPECT_TRUE(ext.platforms.contains(PlatformUtils::currentPlatform()))
       << "Platform '" << PlatformUtils::currentPlatform().toStdString()
