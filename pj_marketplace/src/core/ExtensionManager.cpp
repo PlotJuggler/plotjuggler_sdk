@@ -27,6 +27,7 @@ ExtensionManager::ExtensionManager(DownloadManager* downloader, const QString& e
 }
 
 static constexpr const char* kManifestFileName = "manifest.json";
+static constexpr const char* kPendingUninstallMarker = ".pj_pending_uninstall";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -174,11 +175,17 @@ void ExtensionManager::uninstall(const QString& extension_id) {
   const QString dir_path = installed_[extension_id].path;
 
   if (!QDir(dir_path).removeRecursively()) {
-    // On Windows the DLL may still be mapped by the host process (F-14, staging deferred to April+).
-    // Report the error rather than corrupting the state file with a phantom entry.
-    emit uninstallError(
-        extension_id, QString("Could not remove directory \"%1\" — the plugin may still be loaded").arg(dir_path));
-    emit uninstallFinished(extension_id, false);
+    if (PlatformUtils::isWindows()) {
+      // The DLL is still mapped by the host process. Deregister the extension immediately
+      // and mark the directory for deletion at the next startup.
+      schedulePendingUninstall(dir_path);
+      installed_.remove(extension_id);
+      emit uninstallPendingRestart(extension_id);
+    } else {
+      emit uninstallError(
+          extension_id, QString("Could not remove directory \"%1\" — the plugin may still be loaded").arg(dir_path));
+      emit uninstallFinished(extension_id, false);
+    }
     return;
   }
 
@@ -269,6 +276,16 @@ void ExtensionManager::applyPendingInstalls() {
   }
 }
 
+void ExtensionManager::applyPendingUninstalls() {
+  const QDir dir(extensions_dir_);
+  for (const QFileInfo& entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+    if (!QFile::exists(entry.absoluteFilePath() + "/" + kPendingUninstallMarker)) {
+      continue;
+    }
+    QDir(entry.absoluteFilePath()).removeRecursively();
+  }
+}
+
 bool ExtensionManager::isInstalled(const QString& id) const {
   return installed_.contains(id);
 }
@@ -298,6 +315,11 @@ void ExtensionManager::disconnectDlConns() {
   disconnect(dl_finished_conn_);
   disconnect(dl_failed_conn_);
   disconnect(dl_cancelled_conn_);
+}
+
+void ExtensionManager::schedulePendingUninstall(const QString& path) {
+  QFile marker(path + "/" + kPendingUninstallMarker);
+  marker.open(QIODevice::WriteOnly);  // content irrelevant; existence is the signal
 }
 
 void ExtensionManager::savePendingMeta(const Extension& ext) {
