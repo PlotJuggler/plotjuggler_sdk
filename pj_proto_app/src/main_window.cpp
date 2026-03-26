@@ -566,6 +566,7 @@ void MainWindow::onOpenMarketplace() {
   PJ::MarketplaceWindow window(registry_url, this);
   window.resize(700, 500);
   window.exec();
+
   if (window.installationsChanged()) {
     registry_.reload();
   }

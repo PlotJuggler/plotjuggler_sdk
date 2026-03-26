@@ -9,7 +9,6 @@
 //   [6] applyPendingInstalls: simulates the Windows post-restart staging path
 //   [7] State persistence: installed state derived from disk across manager restarts
 //   [8] Platform detection: currentPlatform() format and registry key resolution
-//   [9] applyPendingUninstalls: deferred directory cleanup via marker file
 
 #include <gtest/gtest.h>
 
@@ -667,44 +666,6 @@ TEST_F(ExtensionManagerTest, FreshManagerHasNoInstalledExtensions) {
 }
 
 // ---------------------------------------------------------------------------
-// [9] applyPendingUninstalls — deferred directory cleanup simulation
-//
-// On Windows, uninstall() writes a .pj_pending_uninstall marker inside the
-// extension directory when removeRecursively() fails. On the next startup,
-// applyPendingUninstalls() removes every extension directory that carries that
-// marker. These tests create that state manually so the cleanup logic can be
-// verified on any platform.
-// ---------------------------------------------------------------------------
-
-// A directory containing the marker is removed by applyPendingUninstalls().
-TEST_F(ExtensionManagerTest, ApplyPendingUninstallsRemovesMarkedDirectory) {
-  const QString ext_path = ext_dir_.path() + "/csv-loader";
-  ASSERT_TRUE(QDir().mkpath(ext_path));
-  QFile marker(ext_path + "/.pj_pending_uninstall");
-  ASSERT_TRUE(marker.open(QIODevice::WriteOnly));
-  marker.close();
-
-  mgr_->applyPendingUninstalls();
-
-  EXPECT_FALSE(QDir(ext_path).exists());
-}
-
-// A directory without the marker is left untouched.
-TEST_F(ExtensionManagerTest, ApplyPendingUninstallsIgnoresUnmarkedDirectory) {
-  const QString ext_path = ext_dir_.path() + "/csv-loader";
-  ASSERT_TRUE(QDir().mkpath(ext_path));
-
-  mgr_->applyPendingUninstalls();
-
-  EXPECT_TRUE(QDir(ext_path).exists());
-}
-
-// applyPendingUninstalls() is a no-op when extensions_dir contains no sub-directories.
-TEST_F(ExtensionManagerTest, ApplyPendingUninstallsIsNoOpForEmptyDirectory) {
-  mgr_->applyPendingUninstalls();  // must not crash
-}
-
-// ---------------------------------------------------------------------------
 // [8] Platform detection
 // ---------------------------------------------------------------------------
 
@@ -722,19 +683,19 @@ TEST(PlatformDetectionTest, LinuxX86PlatformMatchesRegistryKey) {
   EXPECT_EQ(PlatformUtils::currentPlatform(), "linux-x86_64");
 }
 
-// The csv-loader entry from pj-plugin-registry/registry.json must be resolvable on
-// the running host — isWindows() is the gate used by install() to choose the staging path.
+// Verify that PlatformUtils::currentPlatform() returns a key that would exist
+// in a typical registry entry, so install() can resolve the download artifact.
 TEST(PlatformDetectionTest, CurrentPlatformResolvesRegistryArtifact) {
-  // Mirrors the csv-loader entry from pj-plugin-registry/registry.json verbatim.
+  // Test fixture with fake URLs - we only check that the platform key exists
   Extension ext;
-  ext.id = "csv-loader";
+  ext.id = "test-extension";
   ext.version = "1.0.0";
   ext.platforms["linux-x86_64"] = {
-      "https://cloud.ibrobotics.com/public.php/dav/files/9xBz6zdDn5WYJ6c/?accept=zip",
-      "sha256:324e8016b38bce3365d4f4b71035eb8e6518445e06a599f9dd2d7e2ecbc50c02"};
+      "https://example.com/test/extension-linux-x86_64.zip",
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000"};
   ext.platforms["windows-x86_64"] = {
-      "https://cloud.ibrobotics.com/public.php/dav/files/aQgzSYywW2onrB3/?accept=zip",
-      "sha256:324e8016b38bce3365d4f4b71035eb8e6518445e06a599f9dd2d7e2ecbc50c02"};
+      "https://example.com/test/extension-windows-x64.zip",
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000"};
 
   EXPECT_TRUE(ext.platforms.contains(PlatformUtils::currentPlatform()))
       << "Platform '" << PlatformUtils::currentPlatform().toStdString()

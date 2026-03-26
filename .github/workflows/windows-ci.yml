@@ -4,6 +4,7 @@ on:
     branches: [development, main]
   pull_request:
     branches: [development, main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: {}
 
 concurrency:
@@ -12,6 +13,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event.pull_request.draft == false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +21,9 @@ jobs:
       - uses: conan-io/setup-conan@v1
         with:
           cache_packages: true
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Conan install
         run: >
@@ -29,6 +34,8 @@ jobs:
         run: >
           cmake -S . -B build
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/build/conan_toolchain.cmake
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
 
       - name: Build

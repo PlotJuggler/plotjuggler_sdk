@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QString>
-#include <string>
 
 namespace PJ {
 
@@ -16,12 +15,6 @@ class PlatformUtils {
   static QString currentPlatform();
 
   static bool isWindows();
-
-  // Returns the shared library extension for the current platform:
-  //   Linux:   ".so"
-  //   Windows: ".dll"
-  //   macOS:   ".dylib"
-  static std::string pluginExtension();
 
   // Root of all PlotJuggler user data, using the OS-standard writable location:
   //   Linux:   ~/.local/share/plotjuggler/

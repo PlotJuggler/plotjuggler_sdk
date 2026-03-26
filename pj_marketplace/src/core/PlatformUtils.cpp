@@ -26,16 +26,6 @@ QString PlatformUtils::currentPlatform() {
   return os + "-" + arch;
 }
 
-std::string PlatformUtils::pluginExtension() {
-#if defined(Q_OS_WIN)
-  return ".dll";
-#elif defined(Q_OS_MACOS)
-  return ".dylib";
-#else
-  return ".so";
-#endif
-}
-
 bool PlatformUtils::isWindows() {
 #ifdef Q_OS_WIN
   return true;
