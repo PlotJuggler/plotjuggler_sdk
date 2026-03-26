@@ -1,6 +1,8 @@
 #include "plugin_registry.hpp"
 
 #include <algorithm>
+
+#include "pj_marketplace/platform_utils.hpp"
 #include <filesystem>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -79,7 +81,8 @@ void PluginRegistry::scanDirectory() {
   }
 
   for (const auto& entry : fs::recursive_directory_iterator(plugin_dir_)) {
-    if (!entry.is_regular_file() || entry.path().extension() != ".so") {
+    if (!entry.is_regular_file() ||
+        entry.path().extension() != PJ::PlatformUtils::pluginExtension()) {
       continue;
     }
     if (auto ds = tryLoadDataSource(entry.path())) {
@@ -100,10 +103,11 @@ void PluginRegistry::reload() {
     return;
   }
 
-  // Collect all .so files currently on disk
+  // Collect all plugin files currently on disk
   std::vector<fs::path> on_disk;
   for (const auto& entry : fs::recursive_directory_iterator(plugin_dir_)) {
-    if (entry.is_regular_file() && entry.path().extension() == ".so") {
+    if (entry.is_regular_file() &&
+        entry.path().extension() == PJ::PlatformUtils::pluginExtension()) {
       on_disk.push_back(entry.path());
     }
   }

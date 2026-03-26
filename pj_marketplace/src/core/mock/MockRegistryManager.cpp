@@ -7,8 +7,6 @@ MockRegistryManager::MockRegistryManager(QObject* parent) : RegistryManager(pare
     Extension e;
     e.id = "csv-loader"; e.name = "CSV Loader";
     e.description = "Load CSV/TSV files with automatic column detection and configurable delimiters.";
-
-
     e.author = "PlotJuggler Team"; e.publisher = "PlotJuggler";
     e.license = "MIT"; e.website = "https://github.com/facontidavide/PlotJuggler";
     e.category = "data_loader"; e.tags = {"csv", "tsv", "file"};
@@ -68,8 +66,6 @@ MockRegistryManager::MockRegistryManager(QObject* parent) : RegistryManager(pare
     Extension e;
     e.id = "ros-bundle"; e.name = "ROS Bundle";
     e.description = "All-in-one bundle: ROS 1 bag loader, ROS 2 streaming, and rosout log viewer.";
-
-
     e.author = "PlotJuggler Team"; e.publisher = "PlotJuggler";
     e.license = "LGPL-2.1"; e.website = "https://github.com/facontidavide/PlotJuggler";
     e.category = "bundle"; e.tags = {"ros", "ros2", "bag", "bundle"};
