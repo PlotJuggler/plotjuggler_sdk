@@ -1,5 +1,7 @@
 #include "plugin_registry.hpp"
 
+#include "pj_marketplace/platform_utils.hpp"
+
 #include <filesystem>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -21,7 +23,7 @@ void PluginRegistry::scanDirectory() {
       continue;
     }
     auto path = entry.path().string();
-    if (entry.path().extension() != ".so") {
+    if (entry.path().extension() != PJ::PlatformUtils::pluginExtension()) {
       continue;
     }
 
