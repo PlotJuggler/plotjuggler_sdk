@@ -33,7 +33,7 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
   download_mgr_ = new DownloadManager(this);
   registry_mgr_ = new RegistryManager(this);
   ext_mgr_ = new ExtensionManager(download_mgr_, PlatformUtils::extensionsDir(),
-                                   PlatformUtils::pendingDir(), this);
+                                    PlatformUtils::pendingDir(), this);
   QSettings settings("PlotJuggler", "Marketplace");
   const QString saved = settings.value("registry_url").toString();
   registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);
@@ -44,6 +44,21 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
   ext_mgr_->applyPendingInstalls();
   registry_mgr_->fetchRegistry(registry_url_);
   // extensions_ is now populated via the fetchFinished signal above.
+}
+
+MarketplaceWindow::MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& registry_url,
+                                     QWidget* parent)
+    : QDialog(parent), ui_(new Ui::MarketplaceWindow) {
+  registry_mgr_ = new RegistryManager(this);
+  ext_mgr_ = ext_mgr;
+  QSettings settings("PlotJuggler", "Marketplace");
+  const QString saved = settings.value("registry_url").toString();
+  registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);
+
+  ui_->setupUi(this);
+  setupUi();
+  setupSignals();
+  registry_mgr_->fetchRegistry(registry_url_);
 }
 
 MarketplaceWindow::~MarketplaceWindow() {

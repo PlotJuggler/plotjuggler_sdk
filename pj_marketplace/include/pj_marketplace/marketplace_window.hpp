@@ -18,6 +18,12 @@ class MarketplaceWindow : public QDialog {
 
  public:
   explicit MarketplaceWindow(const QUrl& registry_url, QWidget* parent = nullptr);
+
+  // Overload for callers that own an ExtensionManager and want to inject it.
+  // The window does not take ownership of ext_mgr.
+  explicit MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& registry_url,
+                             QWidget* parent = nullptr);
+
   ~MarketplaceWindow() override;
 
   bool installationsChanged() const { return installations_changed_; }
