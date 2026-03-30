@@ -110,17 +110,19 @@ void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
     s.line->replace(points);
   }
 
-  // Auto-scale axes
-  double x_min_s = static_cast<double>(t_min - first_timestamp_) / 1e9;
-  double x_max_s = static_cast<double>(t_max - first_timestamp_) / 1e9;
-  x_axis_->setRange(x_min_s, x_max_s);
+  // Auto-scale axes (skipped when user has manually panned)
+  if (!user_panned_) {
+    double x_min_s = static_cast<double>(t_min - first_timestamp_) / 1e9;
+    double x_max_s = static_cast<double>(t_max - first_timestamp_) / 1e9;
+    x_axis_->setRange(x_min_s, x_max_s);
 
-  if (y_min < y_max) {
-    double margin = (y_max - y_min) * 0.05;
-    if (margin == 0.0) {
-      margin = 1.0;
+    if (y_min < y_max) {
+      double margin = (y_max - y_min) * 0.05;
+      if (margin == 0.0) {
+        margin = 1.0;
+      }
+      y_axis_->setRange(y_min - margin, y_max + margin);
     }
-    y_axis_->setRange(y_min - margin, y_max + margin);
   }
 }
 
@@ -162,6 +164,44 @@ void ChartPanel::contextMenuEvent(QContextMenuEvent* event) {
     connect(action, &QAction::triggered, this, [this, i]() { removeSeries(static_cast<int>(i)); });
   }
   menu.exec(event->globalPos());
+}
+
+void ChartPanel::mousePressEvent(QMouseEvent* event) {
+  if (event->button() == Qt::MiddleButton) {
+    is_panning_ = true;
+    last_pan_pos_ = event->pos();
+    setCursor(Qt::ClosedHandCursor);
+    event->accept();
+    return;
+  }
+  QChartView::mousePressEvent(event);
+}
+
+void ChartPanel::mouseMoveEvent(QMouseEvent* event) {
+  if (is_panning_) {
+    QPoint delta = event->pos() - last_pan_pos_;
+    chart()->scroll(-delta.x(), delta.y());
+    last_pan_pos_ = event->pos();
+    user_panned_ = true;
+    event->accept();
+    return;
+  }
+  QChartView::mouseMoveEvent(event);
+}
+
+void ChartPanel::mouseReleaseEvent(QMouseEvent* event) {
+  if (event->button() == Qt::MiddleButton && is_panning_) {
+    is_panning_ = false;
+    setCursor(Qt::ArrowCursor);
+    event->accept();
+    return;
+  }
+  QChartView::mouseReleaseEvent(event);
+}
+
+void ChartPanel::mouseDoubleClickEvent(QMouseEvent* event) {
+  user_panned_ = false;
+  QChartView::mouseDoubleClickEvent(event);
 }
 
 }  // namespace proto
