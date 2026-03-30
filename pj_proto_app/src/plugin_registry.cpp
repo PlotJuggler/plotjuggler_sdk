@@ -53,8 +53,7 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
     auto manifest = nlohmann::json::parse(handle.manifest());
     loaded.name = manifest.value("name", so_path.stem().string());
     // "encoding" can be a string or an array of strings
-    if (manifest.contains("encoding")) {
-      const auto& enc = manifest["encoding"];
+    auto push_encoding = [&](const nlohmann::json& enc) {
       if (enc.is_string()) {
         loaded.encodings.push_back(enc.get<std::string>());
       } else if (enc.is_array()) {
@@ -64,6 +63,12 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
           }
         }
       }
+    };
+    if (manifest.contains("encoding")) {
+      push_encoding(manifest["encoding"]);
+    }
+    if (manifest.contains("additional_encodings")) {
+      push_encoding(manifest["additional_encodings"]);
     }
   } catch (...) {
     loaded.name = so_path.stem().string();
@@ -92,76 +97,6 @@ void PluginRegistry::scanDirectory() {
     } else {
       std::cerr << "Failed to load plugin: " << entry.path() << "\n";
     }
-
-    // Try as DataSource
-    auto ds_result = PJ::DataSourceLibrary::load(path);
-    if (ds_result) {
-      LoadedDataSource loaded;
-      loaded.library = std::move(*ds_result);
-
-      auto handle = loaded.library.createHandle();
-      loaded.capabilities = handle.capabilities();
-
-      auto manifest_str = handle.manifest();
-      try {
-        auto manifest = nlohmann::json::parse(manifest_str);
-        loaded.name = manifest.value("name", entry.path().stem().string());
-        if (manifest.contains("file_extensions")) {
-          for (const auto& ext : manifest["file_extensions"]) {
-            loaded.file_extensions.push_back(ext.get<std::string>());
-          }
-        }
-      } catch (...) {
-        loaded.name = entry.path().stem().string();
-      }
-
-      std::cerr << "Loaded DataSource: " << loaded.name << " from " << path << "\n";
-      data_sources_.push_back(std::move(loaded));
-      continue;
-    }
-
-    // Try as MessageParser
-    auto mp_result = PJ::MessageParserLibrary::load(path);
-    if (mp_result) {
-      LoadedMessageParser loaded;
-      loaded.library = std::move(*mp_result);
-
-      auto handle = loaded.library.createHandle();
-      auto manifest_str = handle.manifest();
-      try {
-        auto manifest = nlohmann::json::parse(manifest_str);
-        loaded.name = manifest.value("name", entry.path().stem().string());
-        // "encoding" can be a string or an array of strings
-        auto push_encoding = [&](const nlohmann::json& enc) {
-          if (enc.is_string()) {
-            loaded.encodings.push_back(enc.get<std::string>());
-          } else if (enc.is_array()) {
-            for (const auto& e : enc) {
-              if (e.is_string()) {
-                loaded.encodings.push_back(e.get<std::string>());
-              }
-            }
-          }
-        };
-        if (manifest.contains("encoding")) {
-          push_encoding(manifest["encoding"]);
-        }
-        if (manifest.contains("additional_encodings")) {
-          push_encoding(manifest["additional_encodings"]);
-        }
-      } catch (...) {
-        loaded.name = entry.path().stem().string();
-      }
-
-      std::cerr << "Loaded MessageParser: " << loaded.name << " from " << path << "\n";
-      message_parsers_.push_back(std::move(loaded));
-      continue;
-    }
-
-    // Neither DataSource nor MessageParser — log both errors for diagnostics.
-    std::cerr << "Failed to load plugin: " << path << "\n"
-              << "  as DataSource: " << ds_result.error() << "\n"
-              << "  as MessageParser: " << mp_result.error() << "\n";
   }
 }
 
