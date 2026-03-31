@@ -59,6 +59,16 @@ build_config() {
   conan install "$SCRIPT_DIR" --output-folder="$build_dir" --build=missing \
     -s build_type="$build_type" -s compiler.cppstd=20 \
     "${conan_extra[@]+"${conan_extra[@]}"}"
+
+  # Install dependencies from subdirectory conanfiles (e.g. pj_ported_plugins)
+  for sub_conan in "$SCRIPT_DIR"/pj_ported_plugins/conanfile.txt; do
+    if [[ -f "$sub_conan" ]]; then
+      echo "--- Installing deps from $(dirname "$sub_conan") ---"
+      conan install "$(dirname "$sub_conan")" --output-folder="$build_dir" --build=missing \
+        -s build_type="$build_type" -s compiler.cppstd=20 \
+        "${conan_extra[@]+"${conan_extra[@]}"}"
+    fi
+  done
   cmake -S "$SCRIPT_DIR" -B "$build_dir" \
     -DCMAKE_TOOLCHAIN_FILE="$build_dir/conan_toolchain.cmake" \
     -DCMAKE_BUILD_TYPE="$build_type" \
