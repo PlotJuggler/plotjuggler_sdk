@@ -19,9 +19,13 @@ class DownloadManager;
 //   - Resolves the correct download artifact for the current platform
 //   - On Linux: delegates the full pipeline (download + checksum + extraction) to
 //     DownloadManager, then registers the extension immediately
-//   - On Windows: extracts to a staging directory (.pending/) because in-use DLLs
-//     cannot be overwritten; the extension becomes active after the next restart
+//   - On Windows update: extracts to a staging directory (.pending/) because in-use
+//     DLLs cannot be overwritten; the extension becomes active after the next restart
+//   - On Windows fresh install: installs directly (no staging needed — no DLL loaded)
+//   - On Windows uninstall: if the directory cannot be removed (DLL still mapped),
+//     schedules it for deletion at the next startup via applyPendingUninstalls()
 //   - At startup: applies any pending staged installs via applyPendingInstalls()
+//     and deletes any directories deferred from a previous uninstall via applyPendingUninstalls()
 //   - Discovers installed extensions by scanning extensions_dir and reading manifest.json
 //
 // All constructor dependencies are injected, so tests can pass a DownloadManager stub
@@ -69,6 +73,11 @@ class ExtensionManager : public QObject {
   // because staging is never used, but it is safe to call on any platform.
   void applyPendingInstalls();
 
+  // Deletes any extension directories that could not be removed during a previous
+  // uninstall() because their DLL was still loaded (Windows only).
+  // Should be called once at application startup. Safe to call on any platform.
+  void applyPendingUninstalls();
+
   bool isInstalled(const QString& id) const;
 
   // Compares the registry version against the installed one using QVersionNumber,
@@ -90,15 +99,21 @@ class ExtensionManager : public QObject {
 
   void uninstallFinished(const QString& id, bool success);
   void uninstallError(const QString& id, const QString& error_message);
+  // Emitted on Windows when the extension is deregistered but its directory could not
+  // be removed (DLL still loaded). The directory will be deleted on the next startup
+  // via applyPendingUninstalls().
+  void uninstallPendingRestart(const QString& id);
 
  private:
   // Called by both constructors to finish setup after members are assigned.
   void initComponents();
 
+  void doInstall(const Extension& ext, bool staging);
   void loadState();
   void saveState();
   void disconnectDlConns();
   void savePendingMeta(const Extension& ext);
+  void schedulePendingUninstall(const QString& path);
 
   DownloadManager* downloader_ = nullptr;
   QString extensions_dir_;

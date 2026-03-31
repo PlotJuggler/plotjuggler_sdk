@@ -9,6 +9,7 @@
 //   [6] applyPendingInstalls: simulates the Windows post-restart staging path
 //   [7] State persistence: installed state derived from disk across manager restarts
 //   [8] Platform detection: currentPlatform() format and registry key resolution
+//   [9] applyPendingUninstalls: deferred directory cleanup via marker file
 
 #include <gtest/gtest.h>
 
@@ -663,6 +664,44 @@ TEST_F(ExtensionManagerTest, UninstallRemovesEntryFromPersistentState) {
 // extensions — no crash or undefined behaviour on first run.
 TEST_F(ExtensionManagerTest, FreshManagerHasNoInstalledExtensions) {
   EXPECT_TRUE(mgr_->installedExtensions().isEmpty());
+}
+
+// ---------------------------------------------------------------------------
+// [9] applyPendingUninstalls — deferred directory cleanup simulation
+//
+// On Windows, uninstall() writes a .pj_pending_uninstall marker inside the
+// extension directory when removeRecursively() fails. On the next startup,
+// applyPendingUninstalls() removes every extension directory that carries that
+// marker. These tests create that state manually so the cleanup logic can be
+// verified on any platform.
+// ---------------------------------------------------------------------------
+
+// A directory containing the marker is removed by applyPendingUninstalls().
+TEST_F(ExtensionManagerTest, ApplyPendingUninstallsRemovesMarkedDirectory) {
+  const QString ext_path = ext_dir_.path() + "/csv-loader";
+  ASSERT_TRUE(QDir().mkpath(ext_path));
+  QFile marker(ext_path + "/.pj_pending_uninstall");
+  ASSERT_TRUE(marker.open(QIODevice::WriteOnly));
+  marker.close();
+
+  mgr_->applyPendingUninstalls();
+
+  EXPECT_FALSE(QDir(ext_path).exists());
+}
+
+// A directory without the marker is left untouched.
+TEST_F(ExtensionManagerTest, ApplyPendingUninstallsIgnoresUnmarkedDirectory) {
+  const QString ext_path = ext_dir_.path() + "/csv-loader";
+  ASSERT_TRUE(QDir().mkpath(ext_path));
+
+  mgr_->applyPendingUninstalls();
+
+  EXPECT_TRUE(QDir(ext_path).exists());
+}
+
+// applyPendingUninstalls() is a no-op when extensions_dir contains no sub-directories.
+TEST_F(ExtensionManagerTest, ApplyPendingUninstallsIsNoOpForEmptyDirectory) {
+  mgr_->applyPendingUninstalls();  // must not crash
 }
 
 // ---------------------------------------------------------------------------
