@@ -29,6 +29,7 @@ ExtensionManager::ExtensionManager()
 ExtensionManager::ExtensionManager(DownloadManager* downloader, const QString& extensions_dir,
                                    const QString& pending_dir, QObject* parent)
     : QObject(parent), downloader_(downloader), extensions_dir_(extensions_dir), pending_dir_(pending_dir) {
+    initComponents();
 }
 
 void ExtensionManager::initComponents() {
