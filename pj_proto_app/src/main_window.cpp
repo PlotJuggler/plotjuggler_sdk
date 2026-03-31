@@ -31,6 +31,7 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   }
 
   registry_.scanDirectory();
+  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
 
   // --- Toolbar ---
   auto* toolbar = addToolBar("Main");
@@ -563,7 +564,7 @@ std::pair<PJ::Timestamp, PJ::Timestamp> MainWindow::computeVisibleRange() const 
 void MainWindow::onOpenMarketplace() {
   const QUrl registry_url(
       "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry/refs/heads/development/registry.json");
-  PJ::MarketplaceWindow window(registry_url, this);
+  PJ::MarketplaceWindow window(ext_mgr_.get(), registry_url, this);
   window.resize(700, 500);
   window.exec();
   if (window.installationsChanged()) {

@@ -37,6 +37,10 @@ class ExtensionManager : public QObject {
   Q_OBJECT
 
  public:
+  // Convenience constructor: creates an owned DownloadManager and uses the
+  // standard user paths. Equivalent to the injecting constructor with defaults.
+  ExtensionManager();
+
   // `extensions_dir` and `pending_dir` default to the standard user paths.
   // Pass QTemporaryDir paths in tests to get a clean, isolated state.
   explicit ExtensionManager(
@@ -100,13 +104,16 @@ class ExtensionManager : public QObject {
   void uninstallPendingRestart(const QString& id);
 
  private:
+  // Called by both constructors to finish setup after members are assigned.
+  void initComponents();
+
   void loadState();
   void saveState();
   void disconnectDlConns();
   void savePendingMeta(const Extension& ext);
   void schedulePendingUninstall(const QString& path);
 
-  DownloadManager* downloader_;
+  DownloadManager* downloader_ = nullptr;
   QString extensions_dir_;
   QString pending_dir_;
 

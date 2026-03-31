@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,15 +13,19 @@ namespace proto {
 
 struct LoadedDataSource {
   PJ::DataSourceLibrary library;
+  std::string path;
   std::string name;
   std::vector<std::string> file_extensions;
   uint64_t capabilities = 0;
+  std::filesystem::file_time_type loaded_mtime;
 };
 
 struct LoadedMessageParser {
   PJ::MessageParserLibrary library;
+  std::string path;
   std::string name;
   std::vector<std::string> encodings;
+  std::filesystem::file_time_type loaded_mtime;
 };
 
 class PluginRegistry {
@@ -38,6 +44,9 @@ class PluginRegistry {
   [[nodiscard]] LoadedMessageParser* findParserByEncoding(std::string_view encoding);
 
  private:
+  static std::optional<LoadedDataSource> tryLoadDataSource(const std::filesystem::path& so_path);
+  static std::optional<LoadedMessageParser> tryLoadMessageParser(const std::filesystem::path& so_path);
+
   std::string plugin_dir_;
   std::vector<LoadedDataSource> data_sources_;
   std::vector<LoadedMessageParser> message_parsers_;

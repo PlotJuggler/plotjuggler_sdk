@@ -14,6 +14,8 @@
 #include "plugin_registry.hpp"
 #include "series_tree_model.hpp"
 
+#include "pj_marketplace/extension_manager.hpp"
+
 namespace proto {
 
 class MainWindow : public QMainWindow {
@@ -55,6 +57,8 @@ class MainWindow : public QMainWindow {
   PluginRegistry registry_;
   std::vector<std::unique_ptr<DataSourceSession>> sessions_;
   SeriesTreeModel tree_model_;
+
+  std::unique_ptr<PJ::ExtensionManager> ext_mgr_;
 
   QTreeView* tree_view_ = nullptr;
   ChartPanel* chart_panel_ = nullptr;

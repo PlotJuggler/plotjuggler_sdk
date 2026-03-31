@@ -19,9 +19,23 @@ namespace PJ {
 // Construction
 // ---------------------------------------------------------------------------
 
+ExtensionManager::ExtensionManager()
+    : QObject(nullptr),
+      extensions_dir_(PlatformUtils::extensionsDir()),
+      pending_dir_(PlatformUtils::pendingDir()) {
+  initComponents();
+}
+
 ExtensionManager::ExtensionManager(DownloadManager* downloader, const QString& extensions_dir,
                                    const QString& pending_dir, QObject* parent)
     : QObject(parent), downloader_(downloader), extensions_dir_(extensions_dir), pending_dir_(pending_dir) {
+    initComponents();
+}
+
+void ExtensionManager::initComponents() {
+  if (!downloader_) {
+    downloader_ = new DownloadManager(this);
+  }
   QDir().mkpath(extensions_dir_);
   loadState();
 }
