@@ -43,7 +43,6 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
   setupSignals();
   ext_mgr_->applyPendingInstalls();
   registry_mgr_->fetchRegistry(registry_url_);
-  // extensions_ is now populated via the fetchFinished signal above.
 }
 
 MarketplaceWindow::MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& registry_url,
@@ -116,6 +115,15 @@ void MarketplaceWindow::setupSignals() {
           populateCards();
           setStatus("Extension staged — will be active after restart");
    });   
+
+
+  connect(ext_mgr_, &ExtensionManager::uninstallPendingRestart, this,
+        [this](const QString& id) {
+          pending_restart_ids_.insert(id);
+          ui_->progress_bar_->setVisible(false);
+          populateCards();
+          setStatus("Extension staged — will be uninstalled after restart");
+   });  
 
   connect(registry_mgr_, &RegistryManager::fetchError, this,
           [this](const QString& error) { setStatus("Registry error: " + error, true); });

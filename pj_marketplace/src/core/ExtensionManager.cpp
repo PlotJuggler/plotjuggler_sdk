@@ -41,12 +41,17 @@ void ExtensionManager::initComponents() {
 }
 
 static constexpr const char* kManifestFileName = "manifest.json";
+static constexpr const char* kPendingUninstallMarker = ".pj_pending_uninstall";
 
 // ---------------------------------------------------------------------------
 // Public interface
 // ---------------------------------------------------------------------------
 
 void ExtensionManager::install(const Extension& ext) {
+  doInstall(ext, /*staging=*/false);
+}
+
+void ExtensionManager::doInstall(const Extension& ext, bool staging) {
   if (!pending_id_.isEmpty()) {
     emit installError(ext.id, QString("Install of \"%1\" is already in progress").arg(pending_id_));
     emit installFinished(ext.id, false);
@@ -68,9 +73,8 @@ void ExtensionManager::install(const Extension& ext) {
   }
   const Platform& artifact = ext.platforms[platform];
 
-  // On Windows, DLLs that are currently loaded cannot be overwritten. Extract to a
-  // staging directory (.pending/) instead and let the user restart to activate.
-  const bool staging = PlatformUtils::isWindows();
+  // When staging (Windows update), DLLs that are currently loaded cannot be overwritten.
+  // Extract to a staging directory (.pending/) and let the user restart to activate.
   const QString dest_dir = staging ? pending_dir_ : extensions_dir_;
 
   pending_id_ = ext.id;
@@ -188,11 +192,17 @@ void ExtensionManager::uninstall(const QString& extension_id) {
   const QString dir_path = installed_[extension_id].path;
 
   if (!QDir(dir_path).removeRecursively()) {
-    // On Windows the DLL may still be mapped by the host process (F-14, staging deferred to April+).
-    // Report the error rather than corrupting the state file with a phantom entry.
-    emit uninstallError(
-        extension_id, QString("Could not remove directory \"%1\" — the plugin may still be loaded").arg(dir_path));
-    emit uninstallFinished(extension_id, false);
+    if (PlatformUtils::isWindows()) {
+      // The DLL is still mapped by the host process. Deregister the extension immediately
+      // and mark the directory for deletion at the next startup.
+      schedulePendingUninstall(dir_path);
+      installed_.remove(extension_id);
+      emit uninstallPendingRestart(extension_id);
+    } else {
+      emit uninstallError(
+          extension_id, QString("Could not remove directory \"%1\" — the plugin may still be loaded").arg(dir_path));
+      emit uninstallFinished(extension_id, false);
+    }
     return;
   }
 
@@ -238,7 +248,7 @@ void ExtensionManager::update(const Extension& ext) {
         Qt::SingleShotConnection);
   }
 
-  install(ext);
+  doInstall(ext, PlatformUtils::isWindows());
 }
 
 void ExtensionManager::applyPendingInstalls() {
@@ -283,6 +293,25 @@ void ExtensionManager::applyPendingInstalls() {
   }
 }
 
+void ExtensionManager::applyPendingUninstalls() {
+  const QDir dir(extensions_dir_);
+  for (const QFileInfo& entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+    if (!QFile::exists(entry.absoluteFilePath() + "/" + kPendingUninstallMarker)) {
+      continue;
+    }
+    QFile manifest_file(entry.absoluteFilePath() + "/" + kManifestFileName);
+    QString id;
+    if (manifest_file.open(QIODevice::ReadOnly)) {
+      id = QJsonDocument::fromJson(manifest_file.readAll()).object()["id"].toString();
+      manifest_file.close();
+    }
+    if (QDir(entry.absoluteFilePath()).removeRecursively() && !id.isEmpty()) {
+      installed_.remove(id);
+    }
+  }
+}
+
+
 bool ExtensionManager::isInstalled(const QString& id) const {
   return installed_.contains(id);
 }
@@ -314,6 +343,11 @@ void ExtensionManager::disconnectDlConns() {
   disconnect(dl_cancelled_conn_);
 }
 
+void ExtensionManager::schedulePendingUninstall(const QString& path) {
+  QFile marker(path + "/" + kPendingUninstallMarker);
+  marker.open(QIODevice::WriteOnly);  // content irrelevant; existence is the signal
+}
+
 void ExtensionManager::savePendingMeta(const Extension& ext) {
   QJsonObject obj;
   obj["id"] = ext.id;
@@ -334,6 +368,10 @@ void ExtensionManager::loadState() {
   const QDir dir(extensions_dir_);
   for (const QFileInfo& entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
     const QString ext_root = entry.absoluteFilePath();
+
+    if (QFile::exists(ext_root + "/" + kPendingUninstallMarker)) {
+      continue;
+    }
 
     QFile manifest_file(ext_root + "/" + kManifestFileName);
     if (!manifest_file.open(QIODevice::ReadOnly)) {
