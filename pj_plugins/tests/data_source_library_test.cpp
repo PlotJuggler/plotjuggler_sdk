@@ -67,6 +67,10 @@ struct MinimalRuntimeHost {
   static bool pushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t) {
     return true;
   }
+
+  static int showMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) {
+    return PJ_MSG_BTN_OK;
+  }
 };
 
 PJ_source_write_host_t makeWriteHost() {
@@ -97,6 +101,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost() {
       .request_stop = MinimalRuntimeHost::requestStop,
       .ensure_parser_binding = MinimalRuntimeHost::ensureParserBinding,
       .push_raw_message = MinimalRuntimeHost::pushRawMessage,
+      .show_message_box = MinimalRuntimeHost::showMessageBox,
   };
   return PJ_data_source_runtime_host_t{.ctx = reinterpret_cast<void*>(0x2), .vtable = &vtable};
 }

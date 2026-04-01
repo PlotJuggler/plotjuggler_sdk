@@ -66,6 +66,29 @@ typedef enum {
   PJ_DATA_SOURCE_MESSAGE_ERROR = 2,
 } PJ_data_source_message_level_t;
 
+/** Type of message box to display. Determines the icon shown. */
+typedef enum {
+  PJ_MESSAGE_BOX_INFO = 0,     /**< Information icon (i). */
+  PJ_MESSAGE_BOX_WARNING = 1,  /**< Warning icon (!). */
+  PJ_MESSAGE_BOX_ERROR = 2,    /**< Error/critical icon (X). */
+  PJ_MESSAGE_BOX_QUESTION = 3, /**< Question icon (?). */
+} PJ_message_box_type_t;
+
+/**
+ * Standard buttons for message boxes.
+ * Combine with bitwise OR: PJ_MSG_BTN_OK | PJ_MSG_BTN_CANCEL
+ */
+typedef enum {
+  PJ_MSG_BTN_OK = 0x01,
+  PJ_MSG_BTN_CANCEL = 0x02,
+  PJ_MSG_BTN_YES = 0x04,
+  PJ_MSG_BTN_NO = 0x08,
+  PJ_MSG_BTN_CONTINUE = 0x10,
+  PJ_MSG_BTN_ABORT = 0x20,
+  PJ_MSG_BTN_RETRY = 0x40,
+  PJ_MSG_BTN_IGNORE = 0x80,
+} PJ_message_box_buttons_t;
+
 /**
  * Capability flags returned by the plugin's capabilities() function.
  * Combine with bitwise OR. The host uses these to decide which features to
@@ -150,6 +173,28 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    */
   bool (*push_raw_message)(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_bytes_view_t payload);
+
+  /**
+   * Display a modal message box to the user and wait for their response.
+   *
+   * This function BLOCKS until the user closes the dialog. The host is
+   * responsible for showing the dialog on the UI thread in a thread-safe manner.
+   *
+   * @param ctx      Host context.
+   * @param type     Dialog type (determines icon): info, warning, error, question.
+   * @param title    Window title for the dialog.
+   * @param message  Message text to display (may contain newlines).
+   * @param buttons  Bitmask of PJ_message_box_buttons_t values.
+   *
+   * @return The button that was clicked (a single PJ_message_box_buttons_t value),
+   *         or -1 if the host does not support modal dialogs (e.g., headless mode).
+   *
+   * @note If buttons == 0, the host should use PJ_MSG_BTN_OK as default.
+   * @note In headless mode, the host may return the "positive" button by default
+   *       (OK, Yes, Continue) or -1.
+   */
+  int (*show_message_box)(
+      void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons);
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

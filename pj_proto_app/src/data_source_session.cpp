@@ -131,6 +131,19 @@ bool rhPushRawMessage(void* ctx, PJ_parser_binding_handle_t handle, int64_t time
   return it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size));
 }
 
+int rhShowMessageBox(
+    void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons) {
+  auto* state = static_cast<RuntimeHostState*>(ctx);
+  if (!state->show_message_box_callback) {
+    // No callback bound - return positive default (headless mode)
+    if (buttons & PJ_MSG_BTN_CONTINUE) return PJ_MSG_BTN_CONTINUE;
+    if (buttons & PJ_MSG_BTN_YES) return PJ_MSG_BTN_YES;
+    return PJ_MSG_BTN_OK;
+  }
+  return state->show_message_box_callback(
+      type, std::string_view(title.data, title.size), std::string_view(message.data, message.size), buttons);
+}
+
 }  // namespace
 
 PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostState* state) {
@@ -147,6 +160,7 @@ PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostStat
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
       .push_raw_message = rhPushRawMessage,
+      .show_message_box = rhShowMessageBox,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }

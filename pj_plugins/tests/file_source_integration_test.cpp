@@ -121,6 +121,10 @@ bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_
   return true;
 }
 
+int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) {
+  return PJ_MSG_BTN_OK;
+}
+
 // ---------------------------------------------------------------------------
 // Host factory helpers
 // ---------------------------------------------------------------------------
@@ -153,6 +157,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state) {
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
       .push_raw_message = rhPushRawMessage,
+      .show_message_box = rhShowMessageBox,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }

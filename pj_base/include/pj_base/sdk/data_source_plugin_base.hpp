@@ -40,6 +40,34 @@ enum class DataSourceMessageLevel : uint32_t {
   kError = PJ_DATA_SOURCE_MESSAGE_ERROR,
 };
 
+/// Type of message box to display (determines icon).
+enum class MessageBoxType : uint32_t {
+  kInfo = PJ_MESSAGE_BOX_INFO,
+  kWarning = PJ_MESSAGE_BOX_WARNING,
+  kError = PJ_MESSAGE_BOX_ERROR,
+  kQuestion = PJ_MESSAGE_BOX_QUESTION,
+};
+
+/// Standard buttons for message boxes (combinable with |).
+enum class MessageBoxButton : int {
+  kOk = PJ_MSG_BTN_OK,
+  kCancel = PJ_MSG_BTN_CANCEL,
+  kYes = PJ_MSG_BTN_YES,
+  kNo = PJ_MSG_BTN_NO,
+  kContinue = PJ_MSG_BTN_CONTINUE,
+  kAbort = PJ_MSG_BTN_ABORT,
+  kRetry = PJ_MSG_BTN_RETRY,
+  kIgnore = PJ_MSG_BTN_IGNORE,
+};
+
+/// Allow combining MessageBoxButton values with |.
+inline int operator|(MessageBoxButton a, MessageBoxButton b) {
+  return static_cast<int>(a) | static_cast<int>(b);
+}
+inline int operator|(int a, MessageBoxButton b) {
+  return a | static_cast<int>(b);
+}
+
 /// @name Capability flag constants
 /// @{
 constexpr uint64_t kCapabilityFiniteImport = PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT;
@@ -172,6 +200,61 @@ class DataSourceRuntimeHostView {
       return unexpected(std::string(lastError()));
     }
     return okStatus();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Modal message box API
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Display a modal message box and wait for user response.
+   * @param type    Dialog type (determines icon).
+   * @param title   Window title.
+   * @param message Message text (may contain newlines).
+   * @param buttons Bitmask of MessageBoxButton values.
+   * @return The button clicked, or MessageBoxButton::kOk if host doesn't support dialogs.
+   */
+  [[nodiscard]] MessageBoxButton showMessageBox(
+      MessageBoxType type, std::string_view title, std::string_view message, int buttons = 0) const {
+    if (!valid() || host_.vtable->show_message_box == nullptr) {
+      // Host doesn't support message boxes — return positive default
+      if (buttons & static_cast<int>(MessageBoxButton::kContinue)) return MessageBoxButton::kContinue;
+      if (buttons & static_cast<int>(MessageBoxButton::kYes)) return MessageBoxButton::kYes;
+      return MessageBoxButton::kOk;
+    }
+    int result = host_.vtable->show_message_box(
+        host_.ctx, static_cast<PJ_message_box_type_t>(type), sdk::toAbiString(title), sdk::toAbiString(message),
+        buttons == 0 ? PJ_MSG_BTN_OK : buttons);
+    return static_cast<MessageBoxButton>(result);
+  }
+
+  /// Show an information message box with OK button.
+  void showInfo(std::string_view title, std::string_view message) const {
+    (void)showMessageBox(MessageBoxType::kInfo, title, message, static_cast<int>(MessageBoxButton::kOk));
+  }
+
+  /// Show a warning message box with OK button.
+  void showWarning(std::string_view title, std::string_view message) const {
+    (void)showMessageBox(MessageBoxType::kWarning, title, message, static_cast<int>(MessageBoxButton::kOk));
+  }
+
+  /// Show an error message box with OK button.
+  void showError(std::string_view title, std::string_view message) const {
+    (void)showMessageBox(MessageBoxType::kError, title, message, static_cast<int>(MessageBoxButton::kOk));
+  }
+
+  /// Show a question dialog with Continue/Abort buttons. Returns true if user chose Continue.
+  [[nodiscard]] bool askContinue(std::string_view title, std::string_view message) const {
+    auto result =
+        showMessageBox(MessageBoxType::kQuestion, title, message, MessageBoxButton::kContinue | MessageBoxButton::kAbort);
+    return result == MessageBoxButton::kContinue;
+  }
+
+  /// Show a question dialog with Yes/No buttons. Returns true if user chose Yes.
+  [[nodiscard]] bool askYesNo(std::string_view title, std::string_view message) const {
+    auto result =
+        showMessageBox(MessageBoxType::kQuestion, title, message, MessageBoxButton::kYes | MessageBoxButton::kNo);
+    return result == MessageBoxButton::kYes;
   }
 
   /// Access the underlying C ABI struct.

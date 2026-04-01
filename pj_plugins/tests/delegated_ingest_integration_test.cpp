@@ -177,6 +177,10 @@ struct BridgeRuntimeHost {
     }
     return self->parser_handle->parse(host_timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size));
   }
+
+  static int showMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) {
+    return PJ_MSG_BTN_OK;
+  }
 };
 
 PJ_data_source_runtime_host_t makeBridgeRuntimeHost(BridgeRuntimeHost* bridge) {
@@ -193,6 +197,7 @@ PJ_data_source_runtime_host_t makeBridgeRuntimeHost(BridgeRuntimeHost* bridge) {
       .request_stop = BridgeRuntimeHost::requestStop,
       .ensure_parser_binding = BridgeRuntimeHost::ensureParserBinding,
       .push_raw_message = BridgeRuntimeHost::pushRawMessage,
+      .show_message_box = BridgeRuntimeHost::showMessageBox,
   };
   return PJ_data_source_runtime_host_t{.ctx = bridge, .vtable = &vtable};
 }
