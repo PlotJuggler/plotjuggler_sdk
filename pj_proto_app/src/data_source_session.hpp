@@ -46,6 +46,7 @@ struct RuntimeHostState {
   int progress_finishes = 0;
   std::atomic<bool> stop_requested{false};
   std::unordered_map<std::string, DedupMessage> messages;
+  std::string last_error;
 
   // Delegated ingest bridge state
   PJ::DataEngine* engine = nullptr;

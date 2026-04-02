@@ -10,8 +10,9 @@ namespace proto {
 
 namespace {
 
-const char* rhGetLastError(void*) {
-  return nullptr;
+const char* rhGetLastError(void* ctx) {
+  auto* s = static_cast<RuntimeHostState*>(ctx);
+  return s->last_error.empty() ? nullptr : s->last_error.c_str();
 }
 
 void rhReportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t msg) {
@@ -68,14 +69,16 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
 
   auto* parser_entry = state->registry->findParserByEncoding(encoding);
   if (parser_entry == nullptr) {
-    std::cerr << "[bridge] no parser found for encoding '" << encoding << "'\n";
+    state->last_error = "no parser found for encoding '" + std::string(encoding) + "'";
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
   // Create parser instance
   auto parser = std::make_unique<PJ::MessageParserHandle>(parser_entry->library.createHandle());
   if (!parser->valid()) {
-    std::cerr << "[bridge] failed to create parser instance for '" << encoding << "'\n";
+    state->last_error = "failed to create parser instance for '" + std::string(encoding) + "'";
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
@@ -83,7 +86,8 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
   auto topic_result =
       state->engine->createTopic(state->dataset_id, PJ::TopicDescriptor{.name = std::string(topic_name)});
   if (!topic_result) {
-    std::cerr << "[bridge] failed to create topic '" << topic_name << "': " << topic_result.error() << "\n";
+    state->last_error = "failed to create topic '" + std::string(topic_name) + "': " + topic_result.error();
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
@@ -94,7 +98,8 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
 
   // Bind write host to parser
   if (!parser->bindWriteHost(write_host->raw())) {
-    std::cerr << "[bridge] failed to bind write host to parser\n";
+    state->last_error = "failed to bind write host to parser";
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
@@ -102,6 +107,7 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
   if (request->schema.size > 0) {
     PJ::Span<const uint8_t> schema_span(request->schema.data, request->schema.size);
     if (!parser->bindSchema(type_name, schema_span)) {
+      state->last_error = "failed to parse " + std::string(type_name) + ": " + parser->lastError();
       std::cerr << "[bridge] parser schema binding failed for type '" << type_name << "': " << parser->lastError()
                 << "\n";
       return false;
