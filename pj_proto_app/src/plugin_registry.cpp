@@ -52,9 +52,8 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
     loaded.name = manifest.value("name", so_path.stem().string());
-    // "encoding" can be a string or an array of strings
-    if (manifest.contains("encoding")) {
-      const auto& enc = manifest["encoding"];
+    // Helper to push encoding(s) from a JSON value (string or array of strings)
+    auto push_encodings = [&](const nlohmann::json& enc) {
       if (enc.is_string()) {
         loaded.encodings.push_back(enc.get<std::string>());
       } else if (enc.is_array()) {
@@ -64,6 +63,14 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
           }
         }
       }
+    };
+    // Primary encoding field
+    if (manifest.contains("encoding")) {
+      push_encodings(manifest["encoding"]);
+    }
+    // Additional encoding aliases (e.g., "ros1"/"ros2" for ROS parser)
+    if (manifest.contains("additional_encodings")) {
+      push_encodings(manifest["additional_encodings"]);
     }
   } catch (...) {
     loaded.name = so_path.stem().string();
