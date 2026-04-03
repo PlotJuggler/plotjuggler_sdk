@@ -198,6 +198,7 @@ PJ_data_source_runtime_host_t makeBridgeRuntimeHost(BridgeRuntimeHost* bridge) {
       .ensure_parser_binding = BridgeRuntimeHost::ensureParserBinding,
       .push_raw_message = BridgeRuntimeHost::pushRawMessage,
       .show_message_box = BridgeRuntimeHost::showMessageBox,
+      .list_available_encodings = nullptr,
   };
   return PJ_data_source_runtime_host_t{.ctx = bridge, .vtable = &vtable};
 }

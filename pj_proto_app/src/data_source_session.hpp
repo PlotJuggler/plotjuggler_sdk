@@ -57,6 +57,9 @@ struct RuntimeHostState {
 
   // Qt-layer callback for showing message boxes (bound at runtime by host app)
   ShowMessageBoxCallback show_message_box_callback;
+
+  // Cached JSON array for list_available_encodings (lifetime: until next call)
+  std::string available_encodings_cache;
 };
 
 class DataSourceSession : public QObject {

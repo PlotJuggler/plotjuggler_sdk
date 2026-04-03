@@ -195,6 +195,21 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    */
   int (*show_message_box)(
       void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons);
+
+  /**
+   * List all available parser encodings.
+   *
+   * @param ctx Host context.
+   * @return JSON array string of encoding names, e.g. ["json","cbor","protobuf"].
+   *         Host-owned string, valid until the next call to this function.
+   *         Returns NULL if no parsers are loaded.
+   *
+   * @note Plugins can use this to dynamically populate encoding selection UI
+   *       instead of hardcoding a static list.
+   * @note Check struct_size >= offsetof(..., list_available_encodings) + sizeof(ptr)
+   *       before calling, as older hosts may not have this field.
+   */
+  const char* (*list_available_encodings)(void* ctx);
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

@@ -257,6 +257,37 @@ class DataSourceRuntimeHostView {
     return result == MessageBoxButton::kYes;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Dynamic parser discovery API
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * List all available parser encodings.
+   *
+   * Returns a JSON array string of encoding names, e.g. ["json","cbor","protobuf"].
+   * Plugins can use this to dynamically populate encoding selection UI instead
+   * of hardcoding a static list.
+   *
+   * @return JSON array string, or empty string if host doesn't support this or no parsers loaded.
+   * @note Check that the host vtable has this method (newer hosts only).
+   */
+  [[nodiscard]] std::string_view listAvailableEncodings() const {
+    if (!valid()) {
+      return {};
+    }
+    // Check struct_size to see if this field exists (forward compatibility)
+    constexpr size_t field_offset =
+        offsetof(PJ_data_source_runtime_host_vtable_t, list_available_encodings);
+    if (host_.vtable->struct_size < field_offset + sizeof(void*)) {
+      return {};  // Older host without this method
+    }
+    if (host_.vtable->list_available_encodings == nullptr) {
+      return {};
+    }
+    const char* result = host_.vtable->list_available_encodings(host_.ctx);
+    return result == nullptr ? std::string_view{} : std::string_view(result);
+  }
+
   /// Access the underlying C ABI struct.
   [[nodiscard]] const PJ_data_source_runtime_host_t& raw() const {
     return host_;

@@ -150,6 +150,15 @@ int rhShowMessageBox(
       type, std::string_view(title.data, title.size), std::string_view(message.data, message.size), buttons);
 }
 
+const char* rhListAvailableEncodings(void* ctx) {
+  auto* state = static_cast<RuntimeHostState*>(ctx);
+  if (state->registry == nullptr) {
+    return nullptr;
+  }
+  state->available_encodings_cache = state->registry->listAvailableEncodings();
+  return state->available_encodings_cache.c_str();
+}
+
 }  // namespace
 
 PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostState* state) {
@@ -167,6 +176,7 @@ PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostStat
       .ensure_parser_binding = rhEnsureParserBinding,
       .push_raw_message = rhPushRawMessage,
       .show_message_box = rhShowMessageBox,
+      .list_available_encodings = rhListAvailableEncodings,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }

@@ -158,6 +158,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state) {
       .ensure_parser_binding = rhEnsureParserBinding,
       .push_raw_message = rhPushRawMessage,
       .show_message_box = rhShowMessageBox,
+      .list_available_encodings = nullptr,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }
