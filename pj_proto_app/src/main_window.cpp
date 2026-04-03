@@ -263,13 +263,12 @@ void MainWindow::onLoadFile() {
     source = sources[idx];
   }
 
-  std::string config;
-
   // Restore last-used config for this plugin (preserves user choices across sessions)
   auto settings_key = QString("PluginConfig/%1").arg(QString::fromStdString(source->name));
   std::string saved_config = settings.value(settings_key, "").toString().toStdString();
 
   // Merge the new filepath into the saved config (or create a fresh one)
+  std::string config;
   {
     auto base = saved_config.empty() ? nlohmann::json::object() : nlohmann::json::parse(saved_config, nullptr, false);
     if (base.is_discarded()) {
@@ -279,14 +278,24 @@ void MainWindow::onLoadFile() {
     config = base.dump();
   }
 
-  // Dialog flow
+  auto display_name = QFileInfo(file_path).fileName().toStdString();
+
+  // Create session early so the dialog can call listAvailableEncodings()
+  auto session =
+      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
+  session->setMessageBoxCallback(makeMessageBoxCallback(this));
+
+  // Bind runtime host early so the dialog can call listAvailableEncodings()
+  session->bindRuntimeHostForDialog();
+
+  // Load merged config (filepath + last-used settings) so the dialog is pre-populated
+  (void)session->handle().loadConfig(config);
+
+  // Dialog flow — use the session's own handle
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {
-      auto temp_handle = source->library.createHandle();
-      // Load merged config (filepath + last-used settings) so the dialog is pre-populated
-      (void)temp_handle.loadConfig(config);
-      auto* dialog_ctx = temp_handle.dialogContext();
+      auto* dialog_ctx = session->handle().dialogContext();
       if (dialog_ctx != nullptr) {
         auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, dialog_ctx);
         PJ::DialogEngine dialog_engine(std::move(dialog_handle));
@@ -298,11 +307,6 @@ void MainWindow::onLoadFile() {
     }
   }
 
-  auto display_name = QFileInfo(file_path).fileName().toStdString();
-
-  auto session =
-      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
-  session->setMessageBoxCallback(makeMessageBoxCallback(this));
   session->startFileImport(config);
   sessions_.push_back(std::move(session));
 
@@ -339,7 +343,7 @@ void MainWindow::onStartStream() {
 
   QSettings settings;
   auto settings_key = QString("PluginConfig/%1").arg(QString::fromStdString(source->name));
-  std::string config = settings.value(settings_key, "").toString().toStdString();
+  std::string saved_config = settings.value(settings_key, "").toString().toStdString();
 
   // Create session first so the dialog runs on the SAME handle that will stream.
   // This matches the original plugin architecture: one object, one socket.
@@ -347,12 +351,16 @@ void MainWindow::onStartStream() {
       std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, source->name, &registry_, this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
 
+  // Bind runtime host early so the dialog can call listAvailableEncodings()
+  session->bindRuntimeHostForDialog();
+
   // Restore saved config so the dialog remembers previous choices
-  if (!config.empty()) {
-    (void)session->handle().loadConfig(config);
+  if (!saved_config.empty()) {
+    (void)session->handle().loadConfig(saved_config);
   }
 
   // Dialog flow — use the session's own handle, not a temp handle
+  std::string config = saved_config;
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {

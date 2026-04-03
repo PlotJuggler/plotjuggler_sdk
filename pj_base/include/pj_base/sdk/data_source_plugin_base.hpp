@@ -14,6 +14,7 @@
 #include <exception>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
@@ -262,16 +263,15 @@ class DataSourceRuntimeHostView {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * List all available parser encodings.
+   * List all available parser encodings as a JSON string.
    *
    * Returns a JSON array string of encoding names, e.g. ["json","cbor","protobuf"].
-   * Plugins can use this to dynamically populate encoding selection UI instead
-   * of hardcoding a static list.
+   * Prefer using listAvailableEncodings() which returns a parsed vector.
    *
    * @return JSON array string, or empty string if host doesn't support this or no parsers loaded.
    * @note Check that the host vtable has this method (newer hosts only).
    */
-  [[nodiscard]] std::string_view listAvailableEncodings() const {
+  [[nodiscard]] std::string_view listAvailableEncodingsJson() const {
     if (!valid()) {
       return {};
     }
@@ -287,6 +287,69 @@ class DataSourceRuntimeHostView {
     const char* result = host_.vtable->list_available_encodings(host_.ctx);
     return result == nullptr ? std::string_view{} : std::string_view(result);
   }
+
+  /**
+   * List all available parser encodings.
+   *
+   * Returns a vector of encoding names, e.g. {"json", "cbor", "protobuf"}.
+   * Plugins can use this to dynamically populate encoding selection UI instead
+   * of hardcoding a static list.
+   *
+   * @return Vector of encoding names, or empty vector if host doesn't support this.
+   */
+  [[nodiscard]] std::vector<std::string> listAvailableEncodings() const {
+    auto json = listAvailableEncodingsJson();
+    return parseJsonStringArray(json);
+  }
+
+ private:
+  /// Parse a simple JSON array of strings: ["a","b","c"] -> {"a","b","c"}
+  /// Handles escaped quotes within strings. Returns empty vector on malformed input.
+  static std::vector<std::string> parseJsonStringArray(std::string_view json) {
+    std::vector<std::string> result;
+    if (json.empty()) return result;
+
+    size_t i = 0;
+    // Skip whitespace and find opening bracket
+    while (i < json.size() && (json[i] == ' ' || json[i] == '\t' || json[i] == '\n')) ++i;
+    if (i >= json.size() || json[i] != '[') return result;
+    ++i;
+
+    while (i < json.size()) {
+      // Skip whitespace
+      while (i < json.size() && (json[i] == ' ' || json[i] == '\t' || json[i] == '\n' || json[i] == ',')) ++i;
+      if (i >= json.size() || json[i] == ']') break;
+
+      // Expect opening quote
+      if (json[i] != '"') return {};  // Malformed
+      ++i;
+
+      // Parse string content (handle escaped quotes)
+      std::string str;
+      while (i < json.size() && json[i] != '"') {
+        if (json[i] == '\\' && i + 1 < json.size()) {
+          ++i;  // Skip backslash
+          if (json[i] == '"' || json[i] == '\\') {
+            str += json[i];
+          } else {
+            str += '\\';
+            str += json[i];
+          }
+        } else {
+          str += json[i];
+        }
+        ++i;
+      }
+      if (i >= json.size()) return {};  // Unclosed string
+      ++i;  // Skip closing quote
+
+      result.push_back(std::move(str));
+    }
+
+    return result;
+  }
+
+ public:
 
   /// Access the underlying C ABI struct.
   [[nodiscard]] const PJ_data_source_runtime_host_t& raw() const {

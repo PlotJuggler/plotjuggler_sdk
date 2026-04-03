@@ -186,13 +186,24 @@ TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsEmptyWhenNullptr) {
   EXPECT_TRUE(encodings.empty());
 }
 
-TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsJsonArray) {
+TEST(RuntimeHostViewTest, ListAvailableEncodingsJsonReturnsJsonArray) {
+  auto host = makeRuntimeHostWithEncodings();
+  PJ::DataSourceRuntimeHostView view(host);
+
+  auto json = view.listAvailableEncodingsJson();
+  EXPECT_FALSE(json.empty());
+  EXPECT_EQ(json, R"(["json","cbor","protobuf"])");
+}
+
+TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsParsedVector) {
   auto host = makeRuntimeHostWithEncodings();
   PJ::DataSourceRuntimeHostView view(host);
 
   auto encodings = view.listAvailableEncodings();
-  EXPECT_FALSE(encodings.empty());
-  EXPECT_EQ(encodings, R"(["json","cbor","protobuf"])");
+  ASSERT_EQ(encodings.size(), 3u);
+  EXPECT_EQ(encodings[0], "json");
+  EXPECT_EQ(encodings[1], "cbor");
+  EXPECT_EQ(encodings[2], "protobuf");
 }
 
 TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsEmptyForOldHost) {
