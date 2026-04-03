@@ -192,6 +192,16 @@ DataSourceSession::DataSourceSession(
       registry_(registry),
       handle_(library.createHandle()) {}
 
+void DataSourceSession::bindRuntimeHostForDialog() {
+  // Bind a minimal runtime host so the dialog can call listAvailableEncodings().
+  // Only registry is needed for that callback; engine/dataset_id are set later in setupAndStart().
+  runtime_state_.registry = registry_;
+  runtime_state_.engine = nullptr;
+  runtime_state_.dataset_id = 0;
+
+  (void)handle_.bindRuntimeHost(makeRuntimeHost(&runtime_state_));
+}
+
 bool DataSourceSession::setupAndStart(const std::string& config_json) {
   auto ds_result = engine_.createDataset(PJ::DatasetDescriptor{.source_name = source_name_, .time_domain_id = td_id_});
   if (!ds_result) {

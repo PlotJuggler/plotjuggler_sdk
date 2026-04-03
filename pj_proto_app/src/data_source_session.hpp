@@ -70,6 +70,10 @@ class DataSourceSession : public QObject {
       PJ::DataEngine& engine, PJ::DataSourceLibrary& library, PJ::TimeDomainId td_id, std::string source_name,
       PluginRegistry* registry, QObject* parent = nullptr);
 
+  /// Bind a minimal runtime host so the dialog can call listAvailableEncodings().
+  /// Must be called before showing the dialog. setupAndStart() will complete the binding.
+  void bindRuntimeHostForDialog();
+
   bool startFileImport(const std::string& config_json);
   bool startStream(const std::string& config_json);
   void stopStream();
