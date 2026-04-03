@@ -76,39 +76,6 @@
     </widget>
    </item>
 
-   <!-- Separator -->
-   <item>
-    <widget class="QFrame" name="separator2">
-     <property name="frameShape"><enum>QFrame::HLine</enum></property>
-     <property name="frameShadow"><enum>QFrame::Sunken</enum></property>
-    </widget>
-   </item>
-
-   <!-- Changelog section -->
-   <item>
-    <widget class="QLabel" name="changelog_header">
-     <property name="text"><string>Changelog</string></property>
-     <property name="styleSheet">
-      <string notr="true">font-weight: bold; color: palette(mid);</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QTextBrowser" name="changelog_browser">
-     <property name="maximumSize">
-      <size><width>16777215</width><height>120</height></size>
-     </property>
-     <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
-     <property name="openLinks"><bool>false</bool></property>
-     <property name="styleSheet">
-      <string notr="true">QTextBrowser { background: palette(alternate-base);
-  border: 1px solid palette(mid);
-  border-radius: 4px;
-  padding: 6px; }</string>
-     </property>
-    </widget>
-   </item>
-
    <!-- Vertical stretch -->
    <item>
     <spacer name="main_stretch">
@@ -122,7 +89,7 @@
     <layout class="QHBoxLayout" name="btn_layout">
      <item>
       <widget class="QPushButton" name="github_btn">
-       <property name="text"><string>View on GitHub</string></property>
+       <property name="text"><string>Visit Website</string></property>
        <property name="styleSheet">
         <string notr="true">QPushButton { border: 1px solid palette(mid); border-radius: 4px; padding: 4px 14px; }
 QPushButton:hover { background: palette(mid); }
