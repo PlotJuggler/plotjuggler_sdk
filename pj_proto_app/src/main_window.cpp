@@ -19,13 +19,29 @@
 #include "pj_marketplace/extension_manager.hpp"
 #include "pj_marketplace/marketplace_window.hpp"
 
-
 #include "pj_datastore/reader.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
+#include "plugin_registry.hpp"
 
 namespace proto {
 
 namespace {
+
+/// Creates a callback to resolve parser dialog vtables by encoding.
+/// Used by DialogEngine to inject parser options UI into transport dialogs.
+PJ::QueryParserDialogFn makeParserDialogProvider(PluginRegistry* registry) {
+  return [registry](const std::string& encoding) -> const PJ_dialog_vtable_t* {
+    auto* parser = registry->findParserByEncoding(encoding);
+    if (parser == nullptr) {
+      return nullptr;
+    }
+    auto vtable_result = parser->library.resolveDialogVtable();
+    if (!vtable_result) {
+      return nullptr;  // Parser doesn't export a dialog
+    }
+    return *vtable_result;
+  };
+}
 
 /// Creates a callback that shows a QMessageBox.
 /// Assumes caller is on GUI thread (protoapp calls plugin methods from GUI thread).
@@ -298,7 +314,9 @@ void MainWindow::onLoadFile() {
       auto* dialog_ctx = session->handle().dialogContext();
       if (dialog_ctx != nullptr) {
         auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, dialog_ctx);
-        PJ::DialogEngine dialog_engine(std::move(dialog_handle));
+        PJ::DialogEngineConfig engine_config;
+        engine_config.parser_dialog_provider = makeParserDialogProvider(&registry_);
+        PJ::DialogEngine dialog_engine(std::move(dialog_handle), engine_config);
         if (dialog_engine.showDialog(this) == PJ::DialogResult::kRejected) {
           return;
         }
@@ -343,7 +361,9 @@ void MainWindow::onStartStream() {
 
   QSettings settings;
   auto settings_key = QString("PluginConfig/%1").arg(QString::fromStdString(source->name));
+  auto parser_settings_key = QString("ParserConfig/%1").arg(QString::fromStdString(source->name));
   std::string saved_config = settings.value(settings_key, "").toString().toStdString();
+  std::string saved_parser_config = settings.value(parser_settings_key, "").toString().toStdString();
 
   // Create session first so the dialog runs on the SAME handle that will stream.
   // This matches the original plugin architecture: one object, one socket.
@@ -360,19 +380,29 @@ void MainWindow::onStartStream() {
 
   // Dialog flow — use the session's own handle, not a temp handle
   std::string config = saved_config;
+  std::string parser_config = saved_parser_config;
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {
       auto* dialog_ctx = session->handle().dialogContext();
       if (dialog_ctx != nullptr) {
         auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, dialog_ctx);
-        PJ::DialogEngine dialog_engine(std::move(dialog_handle));
+        PJ::DialogEngineConfig engine_config;
+        engine_config.parser_dialog_provider = makeParserDialogProvider(&registry_);
+        engine_config.initial_parser_config = saved_parser_config;
+        PJ::DialogEngine dialog_engine(std::move(dialog_handle), engine_config);
         if (dialog_engine.showDialog(this) == PJ::DialogResult::kRejected) {
           return;
         }
         config = dialog_engine.savedConfig();
+        parser_config = dialog_engine.parserConfig();
       }
     }
+  }
+
+  // Pass parser config to session for delegated ingest schema binding
+  if (!parser_config.empty()) {
+    session->setParserConfig(parser_config);
   }
 
   if (!session->startStream(config)) {
@@ -380,8 +410,9 @@ void MainWindow::onStartStream() {
   }
   sessions_.push_back(std::move(session));
 
-  // Persist the config
+  // Persist configs
   settings.setValue(settings_key, QString::fromStdString(config));
+  settings.setValue(parser_settings_key, QString::fromStdString(parser_config));
 
   streaming_active_ = true;
   if (!refresh_timer_.isActive()) {

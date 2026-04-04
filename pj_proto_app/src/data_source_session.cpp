@@ -103,7 +103,7 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
     return false;
   }
 
-  // Bind schema if provided
+  // Bind schema if provided by request
   if (request->schema.size > 0) {
     PJ::Span<const uint8_t> schema_span(request->schema.data, request->schema.size);
     if (!parser->bindSchema(type_name, schema_span)) {
@@ -114,10 +114,21 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
     }
   }
 
-  // Load parser config if provided
+  // Load parser config: prefer request config, fall back to dialog config
+  std::string_view parser_config;
   if (request->parser_config_json.size > 0) {
-    std::string_view config(request->parser_config_json.data, request->parser_config_json.size);
-    (void)parser->loadConfig(config);
+    parser_config = std::string_view(request->parser_config_json.data, request->parser_config_json.size);
+  } else if (!state->parser_config_json.empty()) {
+    parser_config = state->parser_config_json;
+  }
+
+  if (!parser_config.empty()) {
+    auto status = parser->loadConfig(parser_config);
+    if (!status) {
+      state->last_error = "failed to load parser config: " + parser->lastError();
+      std::cerr << "[bridge] " << state->last_error << "\n";
+      return false;
+    }
   }
 
   uint32_t binding_id = state->next_binding_id++;
@@ -132,9 +143,14 @@ bool rhPushRawMessage(void* ctx, PJ_parser_binding_handle_t handle, int64_t time
   auto* state = static_cast<RuntimeHostState*>(ctx);
   auto it = state->parser_bindings.find(handle.id);
   if (it == state->parser_bindings.end()) {
+    state->last_error = "invalid parser binding handle";
     return false;
   }
-  return it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size));
+  if (!it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size))) {
+    state->last_error = it->second.parser->lastError();
+    return false;
+  }
+  return true;
 }
 
 int rhShowMessageBox(

@@ -79,6 +79,11 @@ class WidgetEvent {
     return getString("file_selected");
   }
 
+  /// Folder picker: folder selected
+  std::optional<std::string> folderSelected() const {
+    return getString("folder_selected");
+  }
+
   /// QTabWidget: tab changed
   std::optional<int> tabIndex() const {
     return getInt("tab_index");

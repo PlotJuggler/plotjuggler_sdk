@@ -90,6 +90,12 @@ class WidgetData {
     return *this;
   }
 
+  // --- QPlainTextEdit ---
+  WidgetData& setPlainText(std::string_view name, std::string_view text) {
+    entry(name)["plain_text"] = text;
+    return *this;
+  }
+
   // --- QLabel ---
   WidgetData& setLabel(std::string_view name, std::string_view text) {
     entry(name)["label"] = text;
@@ -108,6 +114,14 @@ class WidgetData {
     e["button_text"] = button_text;
     e["action"] = "file_picker";
     e["filter"] = filter;
+    e["title"] = title;
+    return *this;
+  }
+
+  WidgetData& setFolderPicker(std::string_view name, std::string_view button_text, std::string_view title) {
+    auto& e = entry(name);
+    e["button_text"] = button_text;
+    e["action"] = "folder_picker";
     e["title"] = title;
     return *this;
   }
