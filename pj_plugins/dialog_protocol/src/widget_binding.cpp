@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSignalBlocker>
@@ -45,6 +46,17 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
     }
     if (auto v = view.readOnly(name)) {
       le->setReadOnly(*v);
+    }
+    return;
+  }
+
+  // --- QPlainTextEdit ---
+  if (auto* pte = qobject_cast<QPlainTextEdit*>(w)) {
+    if (auto v = view.plainText(name)) {
+      pte->setPlainText(QString::fromStdString(*v));
+    }
+    if (auto v = view.readOnly(name)) {
+      pte->setReadOnly(*v);
     }
     return;
   }

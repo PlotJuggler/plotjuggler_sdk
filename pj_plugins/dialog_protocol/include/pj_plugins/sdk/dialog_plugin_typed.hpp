@@ -47,6 +47,10 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  virtual bool onFolderSelected(std::string_view /*widget_name*/, std::string_view /*path*/) {
+    return false;
+  }
+
   virtual bool onTabChanged(std::string_view /*widget_name*/, int /*index*/) {
     return false;
   }
@@ -71,6 +75,9 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.fileSelected()) {
       return onFileSelected(widget_name, *v);
+    }
+    if (auto v = event.folderSelected()) {
+      return onFolderSelected(widget_name, *v);
     }
     if (event.clicked()) {
       return onClicked(widget_name);
