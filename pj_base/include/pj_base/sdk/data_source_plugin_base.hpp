@@ -270,6 +270,7 @@ class DataSourceRuntimeHostView {
    *
    * @return JSON array string, or empty string if host doesn't support this or no parsers loaded.
    * @note Check that the host vtable has this method (newer hosts only).
+   * @see pj_plugins/sdk/encoding_utils.hpp for parseEncodingsJson() helper.
    */
   [[nodiscard]] std::string_view listAvailableEncodings() const {
     if (!valid()) {
