@@ -110,8 +110,8 @@ void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
     s.line->replace(points);
   }
 
-  // Auto-scale x-axis only when the user has not zoomed manually
-  if (!user_zoom_) {
+  // Auto-scale x-axis (skipped when user has manually zoomed or panned)
+  if (!user_zoom_ && !user_panned_) {
     double x_min_s = static_cast<double>(t_min - first_timestamp_) / 1e9;
     double x_max_s = static_cast<double>(t_max - first_timestamp_) / 1e9;
     x_axis_->setRange(x_min_s, x_max_s);
@@ -175,6 +175,7 @@ void ChartPanel::wheelEvent(QWheelEvent* event) {
 
 void ChartPanel::mouseDoubleClickEvent(QMouseEvent* event) {
   user_zoom_ = false;
+  user_panned_ = false;
   emit seriesDropped();  // triggers MainWindow to redraw with the full data range
   QChartView::mouseDoubleClickEvent(event);
 }
@@ -191,6 +192,39 @@ void ChartPanel::contextMenuEvent(QContextMenuEvent* event) {
     connect(action, &QAction::triggered, this, [this, i]() { removeSeries(static_cast<int>(i)); });
   }
   menu.exec(event->globalPos());
+}
+
+void ChartPanel::mousePressEvent(QMouseEvent* event) {
+  if (event->button() == Qt::MiddleButton) {
+    is_panning_ = true;
+    last_pan_pos_ = event->pos();
+    setCursor(Qt::ClosedHandCursor);
+    event->accept();
+    return;
+  }
+  QChartView::mousePressEvent(event);
+}
+
+void ChartPanel::mouseMoveEvent(QMouseEvent* event) {
+  if (is_panning_) {
+    QPoint delta = event->pos() - last_pan_pos_;
+    chart()->scroll(-delta.x(), delta.y());
+    last_pan_pos_ = event->pos();
+    user_panned_ = true;
+    event->accept();
+    return;
+  }
+  QChartView::mouseMoveEvent(event);
+}
+
+void ChartPanel::mouseReleaseEvent(QMouseEvent* event) {
+  if (event->button() == Qt::MiddleButton && is_panning_) {
+    is_panning_ = false;
+    setCursor(Qt::ArrowCursor);
+    event->accept();
+    return;
+  }
+  QChartView::mouseReleaseEvent(event);
 }
 
 }  // namespace proto

@@ -74,6 +74,13 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// Folder picker: folder selected
+  [[nodiscard]] static std::string folderSelected(std::string_view path) {
+    nlohmann::json j;
+    j["folder_selected"] = path;
+    return j.dump();
+  }
+
   /// QTabWidget: tab changed
   [[nodiscard]] static std::string tabChanged(int index) {
     nlohmann::json j;

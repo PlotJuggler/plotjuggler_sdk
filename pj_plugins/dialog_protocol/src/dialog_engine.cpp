@@ -1,7 +1,9 @@
 #include <QBuffer>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QGroupBox>
 #include <QSettings>
 #include <QTimer>
 #include <QUiLoader>
@@ -127,6 +129,185 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   // Task 7: detect parser slot widget
   stats_.has_parser_slot = loaded->findChild<QWidget*>("pj_parser_slot") != nullptr;
 
+  // --- Parser slot injection state ---
+  QWidget* parser_slot = nullptr;
+  QWidget* parser_slot_container = nullptr;  // Parent GroupBox to show/hide
+  QVBoxLayout* parser_slot_layout = nullptr;
+  QWidget* parser_dialog_widget = nullptr;
+  std::unique_ptr<PJ::DialogHandle> parser_dialog_handle;
+  nlohmann::json parser_prev_data = nlohmann::json::object();
+
+  // Parameterized file/folder picker handlers (work for any dialog handle)
+  auto show_file_picker_for = [&](const std::string& widget_name, PJ::DialogHandle* handle, QWidget* target_widget,
+                                  nlohmann::json& target_prev_data) {
+    if (!config_.enable_file_picker || !handle) {
+      return;
+    }
+    PJ::WidgetDataView view(handle->widget_data());
+    if (!view.isFilePicker(widget_name)) {
+      return;
+    }
+    auto filter = view.filePickerFilter(widget_name).value_or("");
+    auto title = view.filePickerTitle(widget_name).value_or("Select File");
+    QString path =
+        QFileDialog::getOpenFileName(dialog, QString::fromStdString(title), QString(), QString::fromStdString(filter));
+    if (!path.isEmpty()) {
+      if (handle->sendEvent(widget_name, PJ::WidgetEventBuilder::fileSelected(path.toStdString()))) {
+        std::string raw = handle->widget_data();
+        nlohmann::json new_data = nlohmann::json::parse(raw, nullptr, false);
+        if (!new_data.is_discarded()) {
+          new_data.erase("__request_accept");
+          new_data.erase("__request_sub_dialog");
+          PJ::WidgetDataView v(raw);
+          applyWidgetData(target_widget, v);
+          target_prev_data = std::move(new_data);
+        }
+      }
+    }
+  };
+
+  auto show_folder_picker_for = [&](const std::string& widget_name, PJ::DialogHandle* handle, QWidget* target_widget,
+                                    nlohmann::json& target_prev_data) {
+    if (!config_.enable_file_picker || !handle) {
+      return;
+    }
+    PJ::WidgetDataView view(handle->widget_data());
+    if (!view.isFolderPicker(widget_name)) {
+      return;
+    }
+    auto title = view.folderPickerTitle(widget_name).value_or("Select Folder");
+    QString path = QFileDialog::getExistingDirectory(dialog, QString::fromStdString(title));
+    if (!path.isEmpty()) {
+      if (handle->sendEvent(widget_name, PJ::WidgetEventBuilder::folderSelected(path.toStdString()))) {
+        std::string raw = handle->widget_data();
+        nlohmann::json new_data = nlohmann::json::parse(raw, nullptr, false);
+        if (!new_data.is_discarded()) {
+          new_data.erase("__request_accept");
+          new_data.erase("__request_sub_dialog");
+          PJ::WidgetDataView v(raw);
+          applyWidgetData(target_widget, v);
+          target_prev_data = std::move(new_data);
+        }
+      }
+    }
+  };
+
+  // Lambda: inject parser dialog for the given encoding
+  auto inject_parser_dialog = [&](const QString& encoding) {
+    // 1. Clear previous parser dialog
+    if (parser_dialog_widget) {
+      parser_slot_layout->removeWidget(parser_dialog_widget);
+      delete parser_dialog_widget;
+      parser_dialog_widget = nullptr;
+    }
+    parser_dialog_handle.reset();
+    parser_prev_data = nlohmann::json::object();
+
+    // 2. Query parser dialog vtable via provider
+    if (!config_.parser_dialog_provider) {
+      if (parser_slot_container) {
+        parser_slot_container->setVisible(false);
+      }
+      return;
+    }
+
+    const PJ_dialog_vtable_t* vtable = config_.parser_dialog_provider(encoding.toStdString());
+    if (vtable == nullptr) {
+      // Parser has no dialog - hide the container
+      if (parser_slot_container) {
+        parser_slot_container->setVisible(false);
+      }
+      return;
+    }
+
+    // 3. Create parser dialog handle
+    parser_dialog_handle = std::make_unique<PJ::DialogHandle>(vtable);
+
+    // 3b. Load initial parser config if provided (restores previous state)
+    if (!config_.initial_parser_config.empty()) {
+      (void)parser_dialog_handle->load_config(config_.initial_parser_config);
+    }
+
+    // 4. Load parser dialog UI
+    std::string parser_ui = parser_dialog_handle->ui_content();
+    QByteArray parser_data(parser_ui.data(), static_cast<int>(parser_ui.size()));
+    QBuffer parser_buffer(&parser_data);
+    parser_buffer.open(QIODevice::ReadOnly);
+
+    QUiLoader parser_loader;
+    parser_dialog_widget = parser_loader.load(&parser_buffer, parser_slot);
+    if (!parser_dialog_widget) {
+      parser_dialog_handle.reset();
+      if (parser_slot_container) {
+        parser_slot_container->setVisible(false);
+      }
+      return;
+    }
+
+    // 5. Insert into slot and show container
+    parser_slot_layout->addWidget(parser_dialog_widget);
+    if (parser_slot_container) {
+      parser_slot_container->setVisible(true);
+    }
+    stats_.parser_dialog_injected = true;
+
+    // 6. Apply initial parser widget data
+    std::string parser_initial_raw = parser_dialog_handle->widget_data();
+    parser_prev_data = nlohmann::json::parse(parser_initial_raw, nullptr, false);
+    if (parser_prev_data.is_discarded()) {
+      parser_prev_data = nlohmann::json::object();
+    }
+    {
+      PJ::WidgetDataView view(parser_initial_raw);
+      applyWidgetData(parser_dialog_widget, view);
+    }
+
+    // 7. Wire parser dialog signals (events go to parser handle)
+    connectWidgetSignals(parser_dialog_widget, [&](const std::string& name, const std::string& event_json) {
+      stats_.event_count++;
+      if (parser_dialog_handle && parser_dialog_handle->sendEvent(name, event_json)) {
+        // Re-apply parser widget data
+        std::string raw = parser_dialog_handle->widget_data();
+        nlohmann::json new_data = nlohmann::json::parse(raw, nullptr, false);
+        if (!new_data.is_discarded()) {
+          new_data.erase("__request_accept");
+          new_data.erase("__request_sub_dialog");
+          if (config_.enable_diff) {
+            nlohmann::json diff = compute_diff(parser_prev_data, new_data);
+            if (!diff.empty()) {
+              PJ::WidgetDataView view(diff.dump());
+              applyWidgetData(parser_dialog_widget, view);
+            }
+          } else {
+            PJ::WidgetDataView view(raw);
+            applyWidgetData(parser_dialog_widget, view);
+          }
+          parser_prev_data = std::move(new_data);
+        }
+      }
+
+      // Handle file/folder pickers in parser dialog
+      show_file_picker_for(name, parser_dialog_handle.get(), parser_dialog_widget, parser_prev_data);
+      show_folder_picker_for(name, parser_dialog_handle.get(), parser_dialog_widget, parser_prev_data);
+    });
+  };
+
+  // Setup parser slot if detected and provider is available
+  if (stats_.has_parser_slot && config_.parser_dialog_provider) {
+    parser_slot = loaded->findChild<QWidget*>("pj_parser_slot");
+    if (parser_slot) {
+      parser_slot_container = parser_slot->parentWidget();  // Usually a QGroupBox
+      parser_slot_layout = new QVBoxLayout(parser_slot);
+      parser_slot_layout->setContentsMargins(0, 0, 0, 0);
+
+      // Connect encoding combo to trigger parser dialog injection
+      if (auto* combo = loaded->findChild<QComboBox*>("comboBoxProtocol")) {
+        QObject::connect(combo, &QComboBox::currentTextChanged, inject_parser_dialog);
+        // Note: initial injection happens AFTER widget_data is applied (see below)
+      }
+    }
+  }
+
   QWidget* binding_root = loaded;
 
   // 3. Apply initial widget data
@@ -138,6 +319,13 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   {
     PJ::WidgetDataView view(initial_raw);
     applyWidgetData(binding_root, view);
+  }
+
+  // 3b. Trigger initial parser dialog injection now that combo is populated
+  if (parser_slot != nullptr) {
+    if (auto* combo = loaded->findChild<QComboBox*>("comboBoxProtocol")) {
+      inject_parser_dialog(combo->currentText());
+    }
   }
 
   // Helper: open a sub-dialog from UI XML (nested modal inside parent)
@@ -175,27 +363,6 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     delete sub_dialog;
   };
 
-  // 4. Handle file picker actions
-  auto maybe_show_file_picker = [&](const std::string& widget_name) {
-    if (!config_.enable_file_picker) {
-      return;
-    }
-    PJ::WidgetDataView view(handle_.widget_data());
-    if (!view.isFilePicker(widget_name)) {
-      return;
-    }
-    auto filter = view.filePickerFilter(widget_name).value_or("");
-    auto title = view.filePickerTitle(widget_name).value_or("Select File");
-    QString path =
-        QFileDialog::getOpenFileName(dialog, QString::fromStdString(title), QString(), QString::fromStdString(filter));
-    if (!path.isEmpty()) {
-      if (handle_.sendEvent(widget_name, PJ::WidgetEventBuilder::fileSelected(path.toStdString()))) {
-        auto ar = apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
-        maybe_open_sub_dialog(ar);
-      }
-    }
-  };
-
   // 5. Wire signals
   connectWidgetSignals(binding_root, [&](const std::string& name, const std::string& event_json) {
     stats_.event_count++;
@@ -207,7 +374,8 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
       }
       maybe_open_sub_dialog(ar);
     }
-    maybe_show_file_picker(name);
+    show_file_picker_for(name, &handle_, binding_root, prev_data);
+    show_folder_picker_for(name, &handle_, binding_root, prev_data);
   });
 
   // 6. Start tick timer
@@ -230,9 +398,16 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   DialogResult dr;
   if (result == QDialog::Accepted) {
     handle_.accept(handle_.save_config());
+    // Save parser config if a parser dialog was shown
+    if (parser_dialog_handle) {
+      parser_config_ = parser_dialog_handle->save_config();
+    } else {
+      parser_config_.clear();
+    }
     dr = DialogResult::kAccepted;
   } else {
     handle_.reject();
+    parser_config_.clear();
     dr = DialogResult::kRejected;
   }
   // Save dialog geometry for next time
@@ -251,6 +426,10 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
 
 std::string DialogEngine::savedConfig() const {
   return handle_.save_config();
+}
+
+std::string DialogEngine::parserConfig() const {
+  return parser_config_;
 }
 
 std::string DialogEngine::runHeadless(int max_ticks) {

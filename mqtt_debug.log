@@ -1,0 +1,28 @@
+Loaded MessageParser: ROS CDR Parser from ./build/pj_ported_plugins/bin/libparser_ros_plugin.so
+Loaded MessageParser: DataTamer Parser from ./build/pj_ported_plugins/bin/libparser_data_tamer_plugin.so
+Loaded DataSource: Foxglove Bridge from ./build/pj_ported_plugins/bin/libfoxglove_source_plugin.so
+Loaded MessageParser: JSON Parser from ./build/pj_ported_plugins/bin/libparser_json_plugin.so
+Loaded MessageParser: Protobuf Parser from ./build/pj_ported_plugins/bin/libparser_protobuf_plugin.so
+Loaded DataSource: PlotJuggler Bridge from ./build/pj_ported_plugins/bin/libpj_bridge_source_plugin.so
+Loaded DataSource: Parquet Loader from ./build/pj_ported_plugins/bin/libparquet_source_plugin.so
+Loaded DataSource: ULog Loader from ./build/pj_ported_plugins/bin/libulog_source_plugin.so
+Loaded DataSource: MCAP Loader from ./build/pj_ported_plugins/bin/libmcap_source_plugin.so
+Loaded DataSource: CSV Loader from ./build/pj_ported_plugins/bin/libcsv_source_plugin.so
+Loaded DataSource: MQTT Subscriber from ./build/pj_ported_plugins/bin/libmqtt_source_plugin.so
+Loaded DataSource: Dummy Streamer from ./build/pj_ported_plugins/bin/libdummy_stream_plugin.so
+Loaded DataSource: ZMQ Subscriber from ./build/pj_ported_plugins/bin/libzmq_source_plugin.so
+[MW] Calling loadConfig()...
+[MQTT] loadConfig() BEGIN, config size=0
+[MQTT] Calling listAvailableEncodings()...
+[MQTT] Got 11 encodings
+[MQTT] Calling setAvailableEncodings()...
+[MQTT] setAvailableEncodings() done
+[MQTT] loadConfig() END
+[MW] loadConfig() done
+[MW] Resolving dialog vtable...
+[MW] Getting dialog context...
+[MW] dialog_ctx = 0x5905687ff7f0
+[MW] Creating DialogHandle...
+[MW] Creating DialogEngine...
+[MW] Calling showDialog()...
+Qt WebEngine seems to be initialized from a plugin. Please set Qt::AA_ShareOpenGLContexts using QCoreApplication::setAttribute and QSGRendererInterface::OpenGLRhi using QQuickWindow::setGraphicsApi before constructing QGuiApplication.

@@ -21,7 +21,7 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   }
   return reinterpret_cast<void*>(module);
 #else
-  void* handle = dlopen(std::string(path).c_str(), RTLD_NOW | RTLD_LOCAL);
+  void* handle = dlopen(std::string(path).c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
   if (handle == nullptr) {
     return unexpected(std::string(dlerror()));
   }

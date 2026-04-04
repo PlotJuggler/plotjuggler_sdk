@@ -119,6 +119,11 @@ class WidgetDataView {
     return result;
   }
 
+  // --- QPlainTextEdit ---
+  [[nodiscard]] std::optional<std::string> plainText(std::string_view name) const {
+    return getString(name, "plain_text");
+  }
+
   // --- QLabel ---
   [[nodiscard]] std::optional<std::string> label(std::string_view name) const {
     return getString(name, "label");
@@ -143,6 +148,20 @@ class WidgetDataView {
     return getString(name, "filter");
   }
   [[nodiscard]] std::optional<std::string> filePickerTitle(std::string_view name) const {
+    return getString(name, "title");
+  }
+
+  // --- Folder picker ---
+  [[nodiscard]] bool isFolderPicker(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return false;
+    }
+    auto it = w->find("action");
+    return it != w->end() && it->is_string() && it->get<std::string>() == "folder_picker";
+  }
+
+  [[nodiscard]] std::optional<std::string> folderPickerTitle(std::string_view name) const {
     return getString(name, "title");
   }
 

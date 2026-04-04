@@ -48,16 +48,6 @@ ExtensionDetailDialog::ExtensionDetailDialog(const Extension& ext, const QString
   // ── Description ────────────────────────────────────────────────────────────
   ui_->desc_lbl->setText(ext.description);
 
-  // ── Changelog ──────────────────────────────────────────────────────────────
-  QString changelog_html;
-  const auto keys = ext.changelog.keys();
-  for (int i = static_cast<int>(keys.size()) - 1; i >= 0; --i) {
-    const QString& ver = keys[i];
-    changelog_html += "<b>v" + ver + "</b><br/>";
-    changelog_html += ext.changelog[ver] + "<br/><br/>";
-  }
-  ui_->changelog_browser->setHtml(changelog_html);
-
   // ── Buttons ── state-dependent visibility and style ────────────────────────
   const bool installed  = !installed_version.isEmpty();
   const bool has_update = installed && installed_version != ext.version;
