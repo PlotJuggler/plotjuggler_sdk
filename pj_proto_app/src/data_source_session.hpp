@@ -60,6 +60,9 @@ struct RuntimeHostState {
 
   // Cached JSON array for list_available_encodings (lifetime: until next call)
   std::string available_encodings_cache;
+
+  // Parser dialog config (used for binding schemas)
+  std::string parser_config_json;
 };
 
 class DataSourceSession : public QObject {
@@ -114,6 +117,11 @@ class DataSourceSession : public QObject {
   /// Bind the message box callback from the Qt layer. Must be called before start.
   void setMessageBoxCallback(ShowMessageBoxCallback callback) {
     runtime_state_.show_message_box_callback = std::move(callback);
+  }
+
+  /// Set the parser dialog config (for schema binding in delegated ingest).
+  void setParserConfig(std::string config) {
+    runtime_state_.parser_config_json = std::move(config);
   }
 
  signals:
