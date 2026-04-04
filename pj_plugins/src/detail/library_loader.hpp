@@ -21,7 +21,15 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   }
   return reinterpret_cast<void*>(module);
 #else
-  void* handle = dlopen(std::string(path).c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+  // RTLD_DEEPBIND prevents symbol conflicts (e.g. Conan OpenSSL vs system libcrypto)
+  // but is a glibc extension — not available on macOS or musl.
+  // TODO: consider a Platform abstraction class (like pj_marketplace/PlatformUtils)
+  //       to centralize OS-specific behavior.
+  int flags = RTLD_NOW | RTLD_LOCAL;
+#if defined(__linux__) && defined(RTLD_DEEPBIND)
+  flags |= RTLD_DEEPBIND;
+#endif
+  void* handle = dlopen(std::string(path).c_str(), flags);
   if (handle == nullptr) {
     return unexpected(std::string(dlerror()));
   }
