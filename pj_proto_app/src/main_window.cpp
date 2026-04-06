@@ -121,9 +121,9 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   }
 
   ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
+  ext_mgr_->applyPendingInstalls();
   ext_mgr_->applyPendingUninstalls();
   registry_.scanDirectory();
-  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
 
   // --- Toolbar ---
   auto* toolbar = addToolBar("Main");
