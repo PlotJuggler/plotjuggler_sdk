@@ -10,6 +10,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
@@ -325,6 +326,25 @@ void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
       });
       continue;
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// installButtonShortcuts — create QShortcuts for buttons declaring a shortcut
+// ---------------------------------------------------------------------------
+
+void installButtonShortcuts(QWidget* root, const PJ::WidgetDataView& view) {
+  for (const auto& name : view.widgetNames()) {
+    auto sc = view.shortcut(name);
+    if (!sc) {
+      continue;
+    }
+    auto* btn = root->findChild<QPushButton*>(QString::fromStdString(name));
+    if (!btn) {
+      continue;
+    }
+    auto* shortcut = new QShortcut(QKeySequence(QString::fromStdString(*sc)), root);
+    QObject::connect(shortcut, &QShortcut::activated, btn, &QPushButton::click);
   }
 }
 

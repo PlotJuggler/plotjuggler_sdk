@@ -378,6 +378,12 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     show_folder_picker_for(name, &handle_, binding_root, prev_data);
   });
 
+  // 5b. Install button keyboard shortcuts declared in widget data
+  {
+    PJ::WidgetDataView shortcut_view(handle_.widget_data());
+    installButtonShortcuts(dialog, shortcut_view);
+  }
+
   // 6. Start tick timer
   QTimer tick_timer;
   tick_timer.setInterval(config_.tick_interval_ms);

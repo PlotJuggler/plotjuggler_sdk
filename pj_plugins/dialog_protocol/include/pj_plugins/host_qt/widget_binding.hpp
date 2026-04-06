@@ -19,4 +19,9 @@ void applyWidgetData(QWidget* root, const PJ::WidgetDataView& view);
 /// an event JSON string built by WidgetEventBuilder.
 void connectWidgetSignals(QWidget* root, WidgetEventCallback callback);
 
+/// Create QShortcut objects for QPushButtons that declare a "shortcut" key
+/// in the widget data. Each shortcut triggers click() on the target button.
+/// Call once after the dialog is fully constructed and signals are connected.
+void installButtonShortcuts(QWidget* root, const PJ::WidgetDataView& view);
+
 }  // namespace PJ

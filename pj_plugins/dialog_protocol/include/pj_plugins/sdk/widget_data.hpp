@@ -108,6 +108,13 @@ class WidgetData {
     return *this;
   }
 
+  /// Assign a keyboard shortcut to a QPushButton (e.g. "Ctrl+A", "Ctrl+Shift+A").
+  /// The host creates a QShortcut that triggers click() on the button.
+  WidgetData& setShortcut(std::string_view name, std::string_view key_sequence) {
+    entry(name)["shortcut"] = key_sequence;
+    return *this;
+  }
+
   WidgetData& setFilePicker(
       std::string_view name, std::string_view button_text, std::string_view filter, std::string_view title) {
     auto& e = entry(name);

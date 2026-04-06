@@ -134,6 +134,10 @@ class WidgetDataView {
     return getString(name, "button_text");
   }
 
+  [[nodiscard]] std::optional<std::string> shortcut(std::string_view name) const {
+    return getString(name, "shortcut");
+  }
+
   // --- File picker ---
   [[nodiscard]] bool isFilePicker(std::string_view name) const {
     const nlohmann::json* w = widget(name);
