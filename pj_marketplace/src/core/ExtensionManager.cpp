@@ -316,6 +316,30 @@ bool ExtensionManager::isInstalled(const QString& id) const {
   return installed_.contains(id);
 }
 
+bool ExtensionManager::hasPendingInstall(const QString& id) const {
+  const QDir pending(pending_dir_);
+  if (!pending.exists()) {
+    return false;
+  }
+  for (const QFileInfo& entry : pending.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+    QFile manifest_file(entry.absoluteFilePath() + "/" + kManifestFileName);
+    if (!manifest_file.open(QIODevice::ReadOnly)) {
+      continue;
+    }
+    const QString manifest_id = QJsonDocument::fromJson(manifest_file.readAll()).object()["id"].toString();
+    if (manifest_id == id) {
+      emit const_cast<ExtensionManager*>(this)->installPendingRestart(id);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ExtensionManager::hasPendingUninstall(const QString& id) const {
+    const QString path = extensions_dir_ + "/" + id;                                                                                                                  
+    return QFile::exists(path + "/" + kPendingUninstallMarker);  
+}
+
 bool ExtensionManager::hasUpdate(const Extension& ext) const {
   if (!installed_.contains(ext.id)) {
     return false;
