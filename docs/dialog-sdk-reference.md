@@ -2,7 +2,7 @@
 
 Quick reference for `PJ::WidgetData` setters and `PJ::DialogPluginTyped` event handlers.
 
-For the full tutorial, see [dialog-plugin-guide.md](dialog-plugin-guide.md).
+For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-plugin-guide.md).
 
 ---
 
