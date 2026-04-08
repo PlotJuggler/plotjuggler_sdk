@@ -69,10 +69,6 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
     if (manifest.contains("encoding")) {
       push_encodings(manifest["encoding"]);
     }
-    // Additional encoding aliases (e.g., "ros1"/"ros2" for ROS parser)
-    if (manifest.contains("additional_encodings")) {
-      push_encodings(manifest["additional_encodings"]);
-    }
   } catch (...) {
     loaded.name = so_path.stem().string();
   }
