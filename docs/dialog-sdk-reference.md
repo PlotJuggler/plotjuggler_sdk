@@ -178,17 +178,6 @@ DialogEngine engine(dialog_handle, config);
 3. The parser dialog's events and `widget_data()` are handled independently
 4. On accept, both configs are saved: `engine.savedConfig()` + `engine.parserConfig()`
 
----
-
-## New Features (IBRobotics Contributions)
-
-| Feature | PR | Description |
-|---------|----|-----------  |
-| `setShortcut()` | core #33 | Keyboard shortcuts for buttons without Qt code |
-| `setFolderPicker()` / `onFolderSelected()` | core #30 | Folder picker (complements file picker) |
-| `setDisabledRows()` | core #35 | Non-selectable greyed-out rows in tables |
-| `setPlainText()` | core #30 | QPlainTextEdit support |
-| Parser dialog injection | core #30 | Embed parser options in data source dialogs |
 
 ---
 
