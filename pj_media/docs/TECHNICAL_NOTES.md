@@ -187,7 +187,57 @@ consumption.
 
 ---
 
-## 5. Streaming Protocols
+## 5. Implementation Insights
+
+Lessons from the standalone pj_media experiment and the mcap_player prototype.
+
+### Timestamp Unit Conversion
+
+FFmpeg internally uses stream `time_base` (e.g., 1/90000 for MPEG-TS,
+1/1000 for MKV), not nanoseconds. pj_media uses nanoseconds consistently
+(matching pj_datastore). Conversion must happen at the codec interface using
+`av_rescale_q(pts, stream_time_base, {1, 1'000'000'000})` for numerically
+accurate results. Avoid manual multiplication — it loses precision for
+non-power-of-two time bases.
+
+### Seeking Requires Decoding Forward
+
+After seeking to the nearest keyframe before the target timestamp, the
+decoder must decode forward — discarding all intermediate frames — until it
+reaches the target. For a GOP of 30 frames this means up to 29 wasted
+decodes. For long GOPs (250+ frames) this can take hundreds of milliseconds.
+
+This is why short GOPs matter for interactive scrubbing. Foxglove recommends
+keyframes every ~1 second. LeRobot uses GOP=2 (keyframe every 2 frames),
+achieving near-random-access with significant compression.
+
+### Clock-Based Playback Scheduling
+
+For smooth file playback, the display timer maintains a playback clock:
+
+- On play: record `wall_start = steady_clock::now()` and `pts_start`
+- Each tick: `expected_pts = pts_start + (now - wall_start)`
+- Present the frame whose PTS is nearest-before `expected_pts`
+
+Live mode skips the clock entirely — always show the latest frame, drop
+older ones. This is the fundamental behavioral split between file and
+streaming playback.
+
+### Zoom and Pan via GPU Transform
+
+With QRhiWidget rendering, zoom and pan require only a view transform matrix
+in the vertex shader (scale + translate). No pixel reprocessing.
+
+Cursor-anchored zoom (keeps the point under the cursor fixed):
+```
+pan += cursor_pos * (1/new_zoom - 1/old_zoom)
+```
+
+When zoom <= 1.0, reset pan to zero (video fits entirely in widget).
+
+---
+
+## 6. Streaming Protocols
 
 ### Latency Characteristics
 
@@ -220,7 +270,7 @@ nanosecond timestamps, using Annex B encoding.
 
 ---
 
-## 6. Lazy Handle Implementations
+## 7. Lazy Handle Implementations
 
 How the lazy handle model (REQUIREMENTS.md section 4.2) maps to concrete
 backends:
@@ -264,7 +314,7 @@ backends:
 
 ---
 
-## 7. Reference Documents
+## 8. Reference Documents
 
 - [dataset_format_comparison.md](dataset_format_comparison.md) — detailed
   comparison of MCAP, RLDS, LeRobot, and Zarr formats covering data models,
@@ -275,7 +325,7 @@ backends:
 
 ---
 
-## 8. Open Design Questions
+## 9. Open Design Questions
 
 These questions are identified but intentionally unresolved. They will be
 addressed during architecture design.

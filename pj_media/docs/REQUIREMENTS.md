@@ -128,6 +128,9 @@ A single interface used by viewers to obtain decoded frames:
   not invalidate the cache.
 - For per-frame codecs (JPEG, PNG), decode cost dominates over I/O. The lazy
   model saves memory; the LRU cache saves decode cost.
+- The viewer must support zoom (mouse wheel) and pan (mouse drag) on the
+  rendered frame. With GPU rendering this is essentially free via a view
+  transform matrix in the vertex shader.
 
 ### 4.5 Time Synchronization
 
