@@ -30,6 +30,11 @@ struct DialogEngineConfig {
   /// Initial parser config to restore when injecting the parser dialog.
   /// If non-empty, the parser dialog's loadConfig() is called with this.
   std::string initial_parser_config;
+
+  /// If true, the dialog is shown non-modally (Qt::NonModal) so the parent
+  /// window remains interactive. Required for drag-and-drop from the host UI
+  /// into the dialog. Defaults to false (modal).
+  bool non_modal = false;
 };
 
 /// Orchestrates the full dialog lifecycle for a plugin:

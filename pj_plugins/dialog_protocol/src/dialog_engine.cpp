@@ -2,6 +2,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QGroupBox>
 #include <QSettings>
@@ -396,8 +397,19 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   });
   tick_timer.start();
 
-  // 7. Run dialog
-  int result = dialog->exec();
+  // 7. Run dialog (modal or non-modal)
+  int result;
+  if (config_.non_modal) {
+    dialog->setWindowModality(Qt::NonModal);
+    dialog->show();
+    dialog->activateWindow();
+    QEventLoop loop;
+    QObject::connect(dialog, &QDialog::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+    result = dialog->result();
+  } else {
+    result = dialog->exec();
+  }
   tick_timer.stop();
 
   // 8. Notify plugin and clean up

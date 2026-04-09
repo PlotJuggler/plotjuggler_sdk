@@ -51,7 +51,8 @@ typedef enum {
  * Combine with bitwise OR.
  */
 enum {
-  PJ_TOOLBOX_CAPABILITY_HAS_DIALOG = 1ull << 0, /**< Plugin provides a persistent UI panel. */
+  PJ_TOOLBOX_CAPABILITY_HAS_DIALOG = 1ull << 0,       /**< Plugin provides a persistent UI panel. */
+  PJ_TOOLBOX_CAPABILITY_NON_MODAL_DIALOG = 1ull << 1, /**< Dialog should be shown non-modally so the host window remains interactive (e.g. for drag-and-drop). */
 };
 
 /**

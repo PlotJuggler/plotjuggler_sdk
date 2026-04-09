@@ -31,6 +31,7 @@ enum class ToolboxMessageLevel : uint32_t {
 /// @name Capability flag constants
 /// @{
 constexpr uint64_t kToolboxCapabilityHasDialog = PJ_TOOLBOX_CAPABILITY_HAS_DIALOG;
+constexpr uint64_t kToolboxCapabilityNonModalDialog = PJ_TOOLBOX_CAPABILITY_NON_MODAL_DIALOG;
 /// @}
 
 /**
