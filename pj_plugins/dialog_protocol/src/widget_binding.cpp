@@ -16,7 +16,9 @@
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QVBoxLayout>
 #include <pj_plugins/host/widget_event_builder.hpp>
+#include <pj_plugins/host_qt/chart_preview_widget.hpp>
 #include <pj_plugins/host_qt/widget_binding.hpp>
 #include <set>
 
@@ -230,10 +232,35 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
     return;
   }
 
-  // Containers (QFrame, QGroupBox, QWidget) — only generic properties applied above.
+  // --- QFrame with chart_series → ChartPreviewWidget ---
+  if (auto* frame = qobject_cast<QFrame*>(w)) {
+    if (auto series_data = view.chartSeries(name)) {
+      // Find or create the ChartPreviewWidget inside this frame.
+      auto* chart = frame->findChild<PJ::ChartPreviewWidget*>();
+      if (!chart) {
+        auto* layout = frame->layout();
+        if (!layout) {
+          layout = new QVBoxLayout(frame);
+          layout->setContentsMargins(0, 0, 0, 0);
+        }
+        chart = new PJ::ChartPreviewWidget(frame);
+        layout->addWidget(chart);
+      }
+      // Convert WidgetDataView series to ChartPreviewWidget series.
+      std::vector<PJ::ChartPreviewWidget::Series> chart_series;
+      chart_series.reserve(series_data->size());
+      for (const auto& s : *series_data) {
+        chart_series.push_back({s.label, s.points});
+      }
+      chart->setSeries(chart_series);
+    }
+    return;
+  }
+
+  // Containers (QGroupBox, QWidget) — only generic properties applied above.
   // Warn about widget types that have data in the view but aren't handled.
   // Skip known container types that only use generic enabled/visible properties.
-  if (!qobject_cast<QFrame*>(w) && !qobject_cast<QGroupBox*>(w) && !qobject_cast<QSplitter*>(w)) {
+  if (!qobject_cast<QGroupBox*>(w) && !qobject_cast<QSplitter*>(w)) {
     qWarning(
         "WidgetBinding: unsupported widget type '%s' for '%s'; "
         "see dialog-plugin-guide.md for supported types",

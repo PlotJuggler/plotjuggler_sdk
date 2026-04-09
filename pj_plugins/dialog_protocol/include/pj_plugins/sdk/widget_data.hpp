@@ -7,6 +7,18 @@
 
 namespace PJ {
 
+/// A single point in a chart series (used by setChartSeries).
+struct ChartPoint {
+  double x;
+  double y;
+};
+
+/// A named series of XY points for chart display (used by setChartSeries).
+struct ChartSeries {
+  std::string label;
+  std::vector<ChartPoint> points;
+};
+
 /// Builder for the JSON string returned by get_widget_data().
 /// Each method targets an existing widget in the .ui file by its objectName.
 class WidgetData {
@@ -135,6 +147,30 @@ class WidgetData {
     e["button_text"] = button_text;
     e["action"] = "folder_picker";
     e["title"] = title;
+    return *this;
+  }
+
+  // --- Chart (QFrame used as chart container) ---
+
+  /// Set chart series data on a QFrame widget. The host will create or update
+  /// a chart view inside the frame, displaying one QLineSeries per entry.
+  WidgetData& setChartSeries(std::string_view name, const std::vector<ChartSeries>& series) {
+    auto& e = entry(name);
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& s : series) {
+      nlohmann::json pts = nlohmann::json::array();
+      for (const auto& p : s.points) {
+        pts.push_back({p.x, p.y});
+      }
+      arr.push_back({{"label", s.label}, {"points", std::move(pts)}});
+    }
+    e["chart_series"] = std::move(arr);
+    return *this;
+  }
+
+  /// Remove all series from the chart inside the named QFrame.
+  WidgetData& clearChart(std::string_view name) {
+    entry(name)["chart_series"] = nlohmann::json::array();
     return *this;
   }
 

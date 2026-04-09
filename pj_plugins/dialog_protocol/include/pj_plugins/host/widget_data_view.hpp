@@ -138,6 +138,47 @@ class WidgetDataView {
     return result;
   }
 
+  // --- Chart (QFrame used as chart container) ---
+
+  struct ChartSeriesView {
+    std::string label;
+    std::vector<std::pair<double, double>> points;  // {x, y}
+  };
+
+  [[nodiscard]] std::optional<std::vector<ChartSeriesView>> chartSeries(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("chart_series");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<ChartSeriesView> result;
+    result.reserve(it->size());
+    for (const auto& s : *it) {
+      if (!s.is_object()) {
+        continue;
+      }
+      ChartSeriesView sv;
+      auto label_it = s.find("label");
+      if (label_it != s.end() && label_it->is_string()) {
+        sv.label = label_it->get<std::string>();
+      }
+      auto pts_it = s.find("points");
+      if (pts_it != s.end() && pts_it->is_array()) {
+        sv.points.reserve(pts_it->size());
+        for (const auto& pt : *pts_it) {
+          if (pt.is_array() && pt.size() == 2 && pt[0].is_number() && pt[1].is_number()) {
+            sv.points.emplace_back(pt[0].get<double>(), pt[1].get<double>());
+          }
+        }
+      }
+      result.push_back(std::move(sv));
+    }
+    return result;
+  }
+
   // --- QPlainTextEdit ---
   [[nodiscard]] std::optional<std::string> plainText(std::string_view name) const {
     return getString(name, "plain_text");
