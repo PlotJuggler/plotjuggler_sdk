@@ -81,6 +81,29 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
   return true;
 }
 
+bool PluginRegistry::loadAndRegisterToolbox(const std::filesystem::path& so_path) {
+  auto result = PJ::ToolboxLibrary::load(so_path.string());
+  if (!result) {
+    return false;
+  }
+  LoadedToolbox loaded;
+  loaded.library = std::move(*result);
+  loaded.path = so_path.string();
+  loaded.loaded_mtime = std::filesystem::last_write_time(so_path);
+
+  auto handle = loaded.library.createHandle();
+  loaded.capabilities = handle.capabilities();
+  try {
+    auto manifest = nlohmann::json::parse(handle.manifest());
+    loaded.name = manifest.value("name", so_path.stem().string());
+  } catch (...) {
+    loaded.name = so_path.stem().string();
+  }
+  std::cerr << "Loaded Toolbox: " << loaded.name << " from " << loaded.path << "\n";
+  toolbox_plugins_.push_back(std::move(loaded));
+  return true;
+}
+
 void PluginRegistry::scanDirectory() {
   namespace fs = std::filesystem;
 
@@ -95,7 +118,8 @@ void PluginRegistry::scanDirectory() {
       continue;
     }
     if (!loadAndRegisterDataSource(entry.path()) &&
-        !loadAndRegisterMessageParser(entry.path())) {
+        !loadAndRegisterMessageParser(entry.path()) &&
+        !loadAndRegisterToolbox(entry.path())) {
       std::cerr << "Failed to load plugin: " << entry.path() << "\n";
     }
   }
@@ -137,6 +161,13 @@ void PluginRegistry::reload() {
     }
     return false;
   });
+  std::erase_if(toolbox_plugins_, [&](const LoadedToolbox& tb) {
+    if (is_gone(tb.path)) {
+      std::cerr << "Unloaded Toolbox (removed): " << tb.path << "\n";
+      return true;
+    }
+    return false;
+  });
 
   // Load new .so files; reload modified ones
   for (const auto& so_path : on_disk) {
@@ -160,11 +191,22 @@ void PluginRegistry::reload() {
         }
         std::cerr << "Reloading updated MessageParser: " << path_str << "\n";
         message_parsers_.erase(mp_it);
+      } else {
+        auto tb_it = std::find_if(toolbox_plugins_.begin(), toolbox_plugins_.end(),
+                                  [&](const LoadedToolbox& tb) { return tb.path == path_str; });
+        if (tb_it != toolbox_plugins_.end()) {
+          if (disk_mtime <= tb_it->loaded_mtime) {
+            continue;
+          }
+          std::cerr << "Reloading updated Toolbox: " << path_str << "\n";
+          toolbox_plugins_.erase(tb_it);
+        }
       }
     }
 
     if (!loadAndRegisterDataSource(so_path) &&
-        !loadAndRegisterMessageParser(so_path)) {
+        !loadAndRegisterMessageParser(so_path) &&
+        !loadAndRegisterToolbox(so_path)) {
       std::cerr << "Failed to load plugin: " << path_str << "\n";
     }
   }

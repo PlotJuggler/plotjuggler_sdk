@@ -20,6 +20,7 @@ target_link_libraries(pj_proto_app PRIVATE
   pj_datastore
   pj_data_source_host
   pj_message_parser_host
+  pj_toolbox_host
   pj_dialog_engine_qt
   pj_marketplace
   pj_marketplace_ui
