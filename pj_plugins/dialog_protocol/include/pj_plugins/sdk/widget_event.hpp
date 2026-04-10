@@ -94,6 +94,11 @@ class WidgetEvent {
     return getInt("item_double_clicked_index");
   }
 
+  /// Code editor: code changed
+  std::optional<std::string> codeChanged() const {
+    return getString("code_changed");
+  }
+
   /// Check if a key exists in the event data
   bool has(std::string_view key) const {
     return data_.contains(std::string(key));
