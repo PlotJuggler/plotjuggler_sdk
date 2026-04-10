@@ -59,11 +59,18 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  virtual bool onCodeChanged(std::string_view /*widget_name*/, std::string_view /*code*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
 
+    if (auto v = event.codeChanged()) {
+      return onCodeChanged(widget_name, *v);
+    }
     if (auto v = event.text()) {
       return onTextChanged(widget_name, *v);
     }
