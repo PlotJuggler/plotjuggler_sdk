@@ -184,6 +184,14 @@ class WidgetDataView {
     return getString(name, "plain_text");
   }
 
+  // --- Code editor ---
+  [[nodiscard]] std::optional<std::string> codeContent(std::string_view name) const {
+    return getString(name, "code_content");
+  }
+  [[nodiscard]] std::optional<std::string> codeLanguage(std::string_view name) const {
+    return getString(name, "code_language");
+  }
+
   // --- QLabel ---
   [[nodiscard]] std::optional<std::string> label(std::string_view name) const {
     return getString(name, "label");
