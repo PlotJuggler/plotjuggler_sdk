@@ -28,7 +28,7 @@ retention, §4 owning handles + `EntryTimestampsView` + `RetentionBudget`,
 `PJ_object_write_host_vtable_t`). Those extensions were driven by the
 requirements below and are now consistent across both documents.
 
-**One prerequisite remains outstanding:**
+**Two prerequisites remain outstanding:**
 
 - **`TimelineCursor` interface in `pj_base`** — a small read-only
   interface that pj_media widgets subscribe to for current-time
@@ -36,6 +36,16 @@ requirements below and are now consistent across both documents.
   header. Signatures are out of scope for this document and will be
   defined when `pj_base` is extended. pj_media's contract: widgets
   only *subscribe*, never drive.
+
+- **`pj_plugins` ABI v2 — two-host `parse()` signature** — the
+  current `message_parser_protocol.h` defines `parse(ctx, ts, payload)`
+  with a single write host bound once at setup via `bind_write_host`.
+  pj_media's parser contract (§4.4) requires `parse()` to receive
+  **both** a scalar write host and an object write host (either may be
+  NULL). This is an ABI-breaking change to `PJ_message_parser_vtable_t`
+  requiring a protocol version bump. `pj_plugins/docs/REQUIREMENTS.md`
+  and `pj_plugins/docs/ARCHITECTURE.md` must be updated to reflect the
+  new signature before any media-capable parser can be implemented.
 
 **Note on keyframe tracking**: pj_media does NOT ask ObjectStore to
 know anything about keyframes. Per `OBJECT_STORE_DESIGN.md §3.6`,

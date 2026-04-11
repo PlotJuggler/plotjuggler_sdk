@@ -524,6 +524,14 @@ void (*get_object_bytes)(
 void (*release_object_bytes)(
     PJ_object_bytes_handle_t handle);
 
+/// Look up a registered object topic by name. Returns the topic
+/// handle, or 0 if no topic with that name exists. This is how a
+/// toolbox or transformer plugin resolves a name from
+/// list_object_topics into a handle usable with read_object_*.
+PJ_object_topic_handle_t (*lookup_object_topic)(
+    void* ctx,
+    const char* topic_name);
+
 /// List all registered object topics in this store.
 /// Returns a JSON array: [{"topic":"...","metadata":{...}}, ...]
 /// The returned string is owned by the host and valid until the
