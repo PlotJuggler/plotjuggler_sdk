@@ -142,9 +142,9 @@ class MultiChannelWindow : public QMainWindow {
       bool is_depth =
           chan_ptr->topic.find("depth") != std::string::npos || chan_ptr->topic.find("Depth") != std::string::npos;
       if (is_depth) {
-        ch.pipeline = PJ::makeCdrDepthPipeline();
+        ch.pipeline = PJ::makeDepthPipeline();
       } else {
-        ch.pipeline = PJ::makeCdrJpegPipeline();
+        ch.pipeline = PJ::makeJpegPipeline();
       }
 
       ch.widget = new PJ::MediaViewerWidget(splitter_);

@@ -336,13 +336,13 @@ Expected<DecodedFrame> SegmentationPalette::decode(const DecodedFrame& input) co
 // Pipeline builders
 // ---------------------------------------------------------------------------
 
-std::unique_ptr<CodecPipeline> makeCdrJpegPipeline() {
+std::unique_ptr<CodecPipeline> makeJpegPipeline() {
   auto p = std::make_unique<CodecPipeline>();
   p->addStage(std::make_unique<JpegCodec>());
   return p;
 }
 
-std::unique_ptr<CodecPipeline> makeCdrDepthPipeline() {
+std::unique_ptr<CodecPipeline> makeDepthPipeline() {
   auto p = std::make_unique<CodecPipeline>();
   p->addStage(std::make_unique<CompressedDepthStripper>());
   p->addStage(std::make_unique<PngCodec>());

@@ -11,8 +11,10 @@ namespace PJ {
 
 /// Stateless image decoder: JPEG via turbojpeg, PNG via libpng, raw pixels via memcpy.
 ///
-/// One instance per image layer. Multiple instances are safe (no shared state).
-/// See ARCHITECTURE.md §4.2.
+/// Convenience API for direct decode (e.g. in demos or tests). For
+/// pipeline-based decode, use CodecStage subclasses (JpegCodec, PngCodec)
+/// which accept DecodedFrame input. Note: decodePng() strips 16-bit to
+/// 8-bit; PngCodec preserves mono16 for downstream stages like DepthToGrayscale.
 class ImageDecoder {
  public:
   ImageDecoder();
