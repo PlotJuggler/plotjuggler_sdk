@@ -221,12 +221,49 @@ DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
   int h = sw_frame->height;
   auto src_fmt = static_cast<AVPixelFormat>(sw_frame->format);
 
-  // Recreate sws context if dimensions or format changed
+  // Output YUV420P — no color conversion on CPU.
+  // The GPU shader handles YUV→RGB with the correct BT.709 matrix.
+  if (src_fmt == AV_PIX_FMT_YUV420P) {
+    // Already YUV420P — just copy planes to contiguous buffer
+    int y_size = w * h;
+    int uv_size = (w / 2) * (h / 2);
+    auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(y_size + 2 * uv_size));
+    uint8_t* dst = pixels->data();
+
+    // Y plane
+    for (int row = 0; row < h; ++row) {
+      std::memcpy(dst + row * w, sw_frame->data[0] + row * sw_frame->linesize[0], static_cast<size_t>(w));
+    }
+    // U plane
+    for (int row = 0; row < h / 2; ++row) {
+      std::memcpy(
+          dst + y_size + row * (w / 2), sw_frame->data[1] + row * sw_frame->linesize[1], static_cast<size_t>(w / 2));
+    }
+    // V plane
+    for (int row = 0; row < h / 2; ++row) {
+      std::memcpy(
+          dst + y_size + uv_size + row * (w / 2), sw_frame->data[2] + row * sw_frame->linesize[2],
+          static_cast<size_t>(w / 2));
+    }
+
+    if (tmp_frame != nullptr) {
+      av_frame_free(&tmp_frame);
+    }
+
+    DecodedFrame result;
+    result.pixels = std::move(pixels);
+    result.width = w;
+    result.height = h;
+    result.format = PixelFormat::kYUV420P;
+    return result;
+  }
+
+  // Non-YUV420P (NV12, etc.) — convert to YUV420P via sws_scale
   if (sws_ctx_ == nullptr || w != sws_src_w_ || h != sws_src_h_ || static_cast<int>(src_fmt) != sws_src_fmt_) {
     if (sws_ctx_ != nullptr) {
       sws_freeContext(sws_ctx_);
     }
-    sws_ctx_ = sws_getContext(w, h, src_fmt, w, h, AV_PIX_FMT_RGB24, SWS_BILINEAR, nullptr, nullptr, nullptr);
+    sws_ctx_ = sws_getContext(w, h, src_fmt, w, h, AV_PIX_FMT_YUV420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
     sws_src_w_ = w;
     sws_src_h_ = h;
     sws_src_fmt_ = static_cast<int>(src_fmt);
@@ -239,11 +276,12 @@ DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
     return {};
   }
 
-  // Convert to RGB24
-  auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(w) * static_cast<size_t>(h) * 3);
-  uint8_t* dst_data[1] = {pixels->data()};
-  int dst_linesize[1] = {w * 3};
-  sws_scale(sws_ctx_, sw_frame->data, sw_frame->linesize, 0, h, dst_data, dst_linesize);
+  int y_size = w * h;
+  int uv_size = (w / 2) * (h / 2);
+  auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(y_size + 2 * uv_size));
+  uint8_t* dst_planes[3] = {pixels->data(), pixels->data() + y_size, pixels->data() + y_size + uv_size};
+  int dst_linesize[3] = {w, w / 2, w / 2};
+  sws_scale(sws_ctx_, sw_frame->data, sw_frame->linesize, 0, h, dst_planes, dst_linesize);
 
   if (tmp_frame != nullptr) {
     av_frame_free(&tmp_frame);
@@ -253,7 +291,7 @@ DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
   result.pixels = std::move(pixels);
   result.width = w;
   result.height = h;
-  result.format = PixelFormat::kRGB888;
+  result.format = PixelFormat::kYUV420P;
   return result;
 }
 

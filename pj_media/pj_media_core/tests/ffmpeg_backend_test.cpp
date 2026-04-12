@@ -1066,5 +1066,265 @@ TEST_F(FfmpegBackendTest, BackwardScrubDenseDelivery4K) {
   EXPECT_NEAR(hd_positions.back(), 30.0, 3.0);
 }
 
+// -----------------------------------------------------------------------
+// Test 20: Backward scrub responsiveness — display must track slider
+// The display position must stay within 2.0s of the seek target.
+// Catches the "completions-only" regression where the display lags
+// several seconds behind the slider during backward drag.
+// -----------------------------------------------------------------------
+
+TEST_F(FfmpegBackendTest, BackwardScrubResponsiveness1920) {
+  if (!std::filesystem::exists(kTestVideo1920)) {
+    GTEST_SKIP() << "video_1920.mp4 not found";
+  }
+
+  FfmpegBackend bf_backend;
+  std::vector<std::pair<double, double>> seek_vs_display;  // {seek_target, displayed_position}
+  double latest_display = -1;
+  bf_backend.setPositionCallback([&](double s) { latest_display = s; });
+  bf_backend.setFrameCallback([](const DecodedFrame&) {});
+  bool bf_loaded = false;
+  bf_backend.setFileLoadedCallback([&]() { bf_loaded = true; });
+  bf_backend.setDurationCallback([](double) {});
+
+  ASSERT_TRUE(bf_backend.open(kTestVideo1920));
+  auto deadline = Clock::now() + milliseconds(5000);
+  while (!bf_loaded && Clock::now() < deadline) {
+    bf_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+  ASSERT_TRUE(bf_loaded);
+
+  // Seek to 20.0s, wait for display to catch up.
+  // Also wait for thumbnail cache to build (~1.3s for 30s 1920p video).
+  bf_backend.seek(20.0);
+  deadline = Clock::now() + milliseconds(5000);
+  while (latest_display < 0 && Clock::now() < deadline) {
+    bf_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+  // Give the cache thread time to finish building
+  std::this_thread::sleep_for(milliseconds(2000));
+
+  // Backward scrub: 19.5 → 19.0 → ... → 10.0 (20 seeks, 35ms apart)
+  // Record {seek_target, displayed_position} after each seek
+  for (double t = 19.5; t >= 10.0; t -= 0.5) {
+    bf_backend.seek(t);
+    auto poll_end = Clock::now() + milliseconds(35);
+    while (Clock::now() < poll_end) {
+      bf_backend.processEvents();
+      std::this_thread::sleep_for(milliseconds(5));
+    }
+    seek_vs_display.emplace_back(t, latest_display);
+  }
+
+  // Wait for settle
+  deadline = Clock::now() + milliseconds(2000);
+  while (Clock::now() < deadline) {
+    bf_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+
+  std::cout << "  BackwardScrubResponsiveness1920:" << std::endl;
+  double max_lag = 0;
+  for (const auto& [target, display] : seek_vs_display) {
+    double lag = display - target;  // positive = display is ahead of target
+    if (lag > max_lag) {
+      max_lag = lag;
+    }
+    std::cout << "    target=" << std::round(target * 10) / 10 << " display=" << std::round(display * 100) / 100
+              << " lag=" << std::round(lag * 100) / 100 << std::endl;
+  }
+
+  // The display must not lag more than 2.0s behind the slider target.
+  // "Lag" here means display shows a position AHEAD of where the slider
+  // is (because the slider moved backward but display hasn't caught up).
+  EXPECT_LT(max_lag, 2.0) << "Backward scrub display lags too far behind slider (max lag " << max_lag << "s)";
+}
+
+// -----------------------------------------------------------------------
+// Test 21: Forward scrub settle — position must not jump backward on stop
+// After forward scrub, when seeks stop, the position must not rewind.
+// Catches the bug where releasing the slider causes a backward jump
+// followed by forward replay.
+// -----------------------------------------------------------------------
+
+TEST_F(FfmpegBackendTest, ForwardScrubSettle) {
+  ASSERT_TRUE(openAndWait());
+
+  // Forward scrub: 0.5 → 1.0 → ... → 4.0 (8 seeks, 35ms apart)
+  backend.seek(0.5);
+  pollUntilFrame(3000);
+  positions.clear();
+
+  for (double t = 1.0; t <= 4.0; t += 0.5) {
+    backend.seek(t);
+    pollFor(35);
+  }
+
+  // Record the last position during scrub
+  ASSERT_FALSE(positions.empty());
+  double last_scrub_pos = positions.back();
+
+  // Now STOP — no more seeks. Wait and collect positions for 1 second.
+  positions.clear();
+  pollFor(1000);
+
+  std::cout << "  ForwardScrubSettle: last_scrub=" << last_scrub_pos << " settle:";
+  for (double p : positions) {
+    std::cout << " " << p;
+  }
+  std::cout << std::endl;
+
+  // No position should jump backward from last_scrub_pos by more than 0.5s
+  for (size_t i = 0; i < positions.size(); ++i) {
+    double backward_jump = last_scrub_pos - positions[i];
+    EXPECT_LT(backward_jump, 0.5) << "Position jumped backward after forward scrub settle at index " << i << ": "
+                                  << last_scrub_pos << " -> " << positions[i];
+  }
+}
+
+// -----------------------------------------------------------------------
+// Test 22: Forward scrub settle with B-frames (1920p) — must not rewind
+// -----------------------------------------------------------------------
+
+TEST_F(FfmpegBackendTest, ForwardScrubSettle1920) {
+  if (!std::filesystem::exists(kTestVideo1920)) {
+    GTEST_SKIP() << "video_1920.mp4 not found";
+  }
+
+  FfmpegBackend bf_backend;
+  std::vector<double> bf_positions;
+  bf_backend.setPositionCallback([&](double s) { bf_positions.push_back(s); });
+  bf_backend.setFrameCallback([](const DecodedFrame&) {});
+  bool bf_loaded = false;
+  bf_backend.setFileLoadedCallback([&]() { bf_loaded = true; });
+  bf_backend.setDurationCallback([](double) {});
+
+  ASSERT_TRUE(bf_backend.open(kTestVideo1920));
+  auto deadline = Clock::now() + milliseconds(5000);
+  while (!bf_loaded && Clock::now() < deadline) {
+    bf_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+  ASSERT_TRUE(bf_loaded);
+
+  // Wait for thumbnail cache
+  std::this_thread::sleep_for(milliseconds(2000));
+
+  // Forward scrub: 1.0 → 1.5 → ... → 4.0 (7 seeks, 35ms apart)
+  bf_backend.seek(0.5);
+  deadline = Clock::now() + milliseconds(3000);
+  while (bf_positions.empty() && Clock::now() < deadline) {
+    bf_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+  bf_positions.clear();
+
+  for (double t = 1.0; t <= 4.0; t += 0.5) {
+    bf_backend.seek(t);
+    auto poll_end = Clock::now() + milliseconds(35);
+    while (Clock::now() < poll_end) {
+      bf_backend.processEvents();
+      std::this_thread::sleep_for(milliseconds(5));
+    }
+  }
+
+  ASSERT_FALSE(bf_positions.empty());
+  double last_scrub_pos = bf_positions.back();
+
+  // Stop seeking — wait 1 second, collect settle positions
+  bf_positions.clear();
+  deadline = Clock::now() + milliseconds(1000);
+  while (Clock::now() < deadline) {
+    bf_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+
+  std::cout << "  ForwardScrubSettle1920: last_scrub=" << last_scrub_pos << " settle:";
+  for (double p : bf_positions) {
+    std::cout << " " << p;
+  }
+  std::cout << std::endl;
+
+  // No position should jump backward from last_scrub_pos by more than 0.5s
+  for (size_t i = 0; i < bf_positions.size(); ++i) {
+    double backward_jump = last_scrub_pos - bf_positions[i];
+    EXPECT_LT(backward_jump, 0.5) << "Rewind after forward scrub at index " << i << ": was at " << last_scrub_pos
+                                  << ", jumped to " << bf_positions[i];
+  }
+}
+
+// -----------------------------------------------------------------------
+// Test 23: Forward scrub settle with 4K — must not rewind
+// -----------------------------------------------------------------------
+
+TEST_F(FfmpegBackendTest, ForwardScrubSettle4K) {
+  if (!std::filesystem::exists(kTestVideo4k)) {
+    GTEST_SKIP() << "video_4k.mp4 not found";
+  }
+
+  FfmpegBackend hd_backend;
+  std::vector<double> hd_positions;
+  hd_backend.setPositionCallback([&](double s) { hd_positions.push_back(s); });
+  hd_backend.setFrameCallback([](const DecodedFrame&) {});
+  bool hd_loaded = false;
+  hd_backend.setFileLoadedCallback([&]() { hd_loaded = true; });
+  hd_backend.setDurationCallback([](double) {});
+
+  ASSERT_TRUE(hd_backend.open(kTestVideo4k));
+  auto deadline = Clock::now() + milliseconds(10000);
+  while (!hd_loaded && Clock::now() < deadline) {
+    hd_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+  ASSERT_TRUE(hd_loaded);
+
+  // Wait for some cache frames
+  std::this_thread::sleep_for(milliseconds(3000));
+
+  // Forward scrub from 0.5 to 4.0 (matching user's pattern)
+  hd_backend.seek(0.5);
+  deadline = Clock::now() + milliseconds(5000);
+  while (hd_positions.empty() && Clock::now() < deadline) {
+    hd_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+  hd_positions.clear();
+
+  // Slow forward scrub: 0.5 → 1.0 → ... → 4.0 (every 100ms like the user)
+  for (double t = 0.5; t <= 4.0; t += 0.07) {
+    hd_backend.seek(t);
+    auto poll_end = Clock::now() + milliseconds(40);
+    while (Clock::now() < poll_end) {
+      hd_backend.processEvents();
+      std::this_thread::sleep_for(milliseconds(5));
+    }
+  }
+
+  ASSERT_FALSE(hd_positions.empty());
+  double last_scrub_pos = hd_positions.back();
+
+  // Stop — collect settle positions for 2 seconds
+  hd_positions.clear();
+  deadline = Clock::now() + milliseconds(2000);
+  while (Clock::now() < deadline) {
+    hd_backend.processEvents();
+    std::this_thread::sleep_for(milliseconds(5));
+  }
+
+  std::cout << "  ForwardScrubSettle4K: last_scrub=" << last_scrub_pos << " settle:";
+  for (double p : hd_positions) {
+    std::cout << " " << std::round(p * 1000) / 1000;
+  }
+  std::cout << std::endl;
+
+  for (size_t i = 0; i < hd_positions.size(); ++i) {
+    double backward_jump = last_scrub_pos - hd_positions[i];
+    EXPECT_LT(backward_jump, 0.5) << "Rewind after 4K forward scrub at index " << i << ": was at " << last_scrub_pos
+                                  << ", jumped to " << hd_positions[i];
+  }
+}
+
 }  // namespace
 }  // namespace PJ

@@ -59,8 +59,7 @@ class VideoPlayerWindow : public QMainWindow {
       auto ffmpeg = std::make_unique<PJ::FfmpegBackend>();
       ffmpeg->setFrameCallback([this](const PJ::DecodedFrame& frame) {
         if (rhi_widget_ != nullptr && !frame.isNull()) {
-          QImage img(frame.pixels->data(), frame.width, frame.height, frame.width * 3, QImage::Format_RGB888);
-          rhi_widget_->setFrame(img.copy());
+          rhi_widget_->setFrame(frame);
         }
       });
       backend_ = std::move(ffmpeg);
@@ -108,9 +107,9 @@ class VideoPlayerWindow : public QMainWindow {
     connect(slider_, &QSlider::sliderPressed, this, [this]() { slider_dragging_ = true; });
     connect(slider_, &QSlider::sliderReleased, this, [this]() {
       slider_dragging_ = false;
-      // Always fire the final seek on release — throttle may have suppressed it
-      activeBackend()->seek(pending_seek_);
-      last_seek_fired_ = pending_seek_;
+      // Don't fire a seek on release — the decoder already has the right frame
+      // from the last throttled seek, and may have decoded ahead (forward threshold).
+      // Seeking to pending_seek_ would go backward from the display, causing a bounce.
     });
     connect(throttle_timer_, &QTimer::timeout, this, [this]() {
       if (pending_seek_ != last_seek_fired_) {

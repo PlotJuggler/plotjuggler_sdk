@@ -1,12 +1,23 @@
 #include "pj_media_qt/media_viewer_widget.h"
 
 #include <algorithm>
+#include <cstring>
 
 void pjMediaQtInitResources() {
   Q_INIT_RESOURCE(shaders);
 }
 
 namespace PJ {
+
+// BT.709 color matrix (HD video standard)
+// clang-format off
+static constexpr float kBT709[] = {
+    1.0f,    1.0f,      1.0f,    0.0f,
+    0.0f,   -0.18732f,  1.8556f, 0.0f,
+    1.5748f, -0.46812f,  0.0f,   0.0f,
+    0.0f,    0.0f,      0.0f,    1.0f
+};
+// clang-format on
 
 MediaViewerWidget::MediaViewerWidget(QWidget* parent) : QRhiWidget(parent) {
   setApi(Api::OpenGL);
@@ -18,14 +29,26 @@ MediaViewerWidget::MediaViewerWidget(QWidget* parent) : QRhiWidget(parent) {
   (void)resources_initialized;
 }
 
+void MediaViewerWidget::setFrame(const DecodedFrame& frame) {
+  if (frame.isNull()) {
+    return;
+  }
+  std::lock_guard lock(frame_mutex_);
+  pending_decoded_ = frame;
+  pending_is_yuv_ = (frame.format == PixelFormat::kYUV420P);
+  pending_qimage_ = QImage();  // clear any pending QImage
+  has_pending_ = true;
+  if (pipeline_ != nullptr) {
+    update();
+  }
+}
+
 void MediaViewerWidget::setFrame(const QImage& img) {
   std::lock_guard lock(frame_mutex_);
-  pending_frame_ = img;
+  pending_qimage_ = img;
+  pending_is_yuv_ = false;
+  pending_decoded_ = {};  // clear any pending DecodedFrame
   has_pending_ = true;
-  // Only request repaint if the pipeline is initialized.
-  // Before init, calling update() floods Qt's render cycle
-  // with "No QRhi" errors and prevents initialization from completing.
-  // Qt will paint the widget naturally once the RHI backend is ready.
   if (pipeline_ != nullptr) {
     update();
   }
@@ -43,8 +66,12 @@ void MediaViewerWidget::releaseResources() {
   pipeline_ = nullptr;
   delete srb_;
   srb_ = nullptr;
-  delete texture_;
-  texture_ = nullptr;
+  delete tex_y_;
+  tex_y_ = nullptr;
+  delete tex_u_;
+  tex_u_ = nullptr;
+  delete tex_v_;
+  tex_v_ = nullptr;
   delete sampler_;
   sampler_ = nullptr;
   delete uniform_buf_;
@@ -59,39 +86,47 @@ void MediaViewerWidget::initialize(QRhiCommandBuffer* /*cb*/) {
     return;
   }
 
-  // Detect QRhi change (reparenting, window move, etc.) — all GPU
-  // resources belong to the old QRhi and must be recreated.
   if (rhi_cached_ != r) {
     releaseResources();
     rhi_cached_ = r;
   }
 
-  // Already initialized for this QRhi instance.
   if (pipeline_ != nullptr) {
     return;
   }
 
-  auto vert = loadShader(":/shaders/texture.vert.qsb");
-  auto frag = loadShader(":/shaders/texture.frag.qsb");
+  // Use YUV→RGB shader (handles both YUV and RGBA passthrough)
+  auto vert = loadShader(":/shaders/yuv_to_rgb.vert.qsb");
+  auto frag = loadShader(":/shaders/yuv_to_rgb.frag.qsb");
   if (!vert.isValid() || !frag.isValid()) {
-    qWarning("MediaViewerWidget: failed to load shaders");
+    qWarning("MediaViewerWidget: failed to load yuv_to_rgb shaders");
     return;
   }
 
-  uniform_buf_ = r->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 64);
+  // Uniform buffer: viewTransform (64) + colorMatrix (64) + pixelFormat (4) + padding (12) = 144
+  uniform_buf_ = r->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, kUniformBufSize);
   uniform_buf_->create();
 
   sampler_ = r->newSampler(
       QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None, QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
   sampler_->create();
 
-  texture_ = r->newTexture(QRhiTexture::RGBA8, QSize(1, 1));
-  texture_->create();
+  // Create placeholder textures (1x1) — resized on first frame
+  tex_y_ = r->newTexture(QRhiTexture::R8, QSize(1, 1));
+  tex_y_->create();
+  tex_u_ = r->newTexture(QRhiTexture::R8, QSize(1, 1));
+  tex_u_->create();
+  tex_v_ = r->newTexture(QRhiTexture::R8, QSize(1, 1));
+  tex_v_->create();
 
   srb_ = r->newShaderResourceBindings();
-  srb_->setBindings(
-      {QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, uniform_buf_),
-       QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, texture_, sampler_)});
+  srb_->setBindings({
+      QRhiShaderResourceBinding::uniformBuffer(
+          0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniform_buf_),
+      QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, tex_y_, sampler_),
+      QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tex_u_, sampler_),
+      QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, tex_v_, sampler_),
+  });
   srb_->create();
 
   pipeline_ = r->newGraphicsPipeline();
@@ -108,7 +143,6 @@ void MediaViewerWidget::initialize(QRhiCommandBuffer* /*cb*/) {
     return;
   }
 
-  // Pick up any frames that were queued before initialization completed.
   if (has_pending_) {
     update();
   }
@@ -129,36 +163,109 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
 
   {
     std::lock_guard lock(frame_mutex_);
-    if (has_pending_ && !pending_frame_.isNull()) {
-      QImage img = pending_frame_.convertToFormat(QImage::Format_RGBA8888);
-      QSize img_size = img.size();
+    if (has_pending_) {
+      if (pending_is_yuv_ && !pending_decoded_.isNull()) {
+        // YUV420P path: upload 3 planes to separate R8 textures
+        int w = pending_decoded_.width;
+        int h = pending_decoded_.height;
+        int uv_w = w / 2;
+        int uv_h = h / 2;
+        const uint8_t* pixel_data = pending_decoded_.pixels->data();
+        int y_size = w * h;
+        int uv_size = uv_w * uv_h;
 
-      if (img_size != QSize(tex_width_, tex_height_)) {
-        texture_->destroy();
-        texture_->setPixelSize(img_size);
-        texture_->create();
+        if (w != tex_width_ || h != tex_height_ || current_pixel_format_ != 0) {
+          // Recreate textures at correct size
+          tex_y_->destroy();
+          tex_y_->setFormat(QRhiTexture::R8);
+          tex_y_->setPixelSize(QSize(w, h));
+          tex_y_->create();
 
-        srb_->destroy();
-        srb_->setBindings(
-            {QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, uniform_buf_),
-             QRhiShaderResourceBinding::sampledTexture(
-                 1, QRhiShaderResourceBinding::FragmentStage, texture_, sampler_)});
-        srb_->create();
+          tex_u_->destroy();
+          tex_u_->setFormat(QRhiTexture::R8);
+          tex_u_->setPixelSize(QSize(uv_w, uv_h));
+          tex_u_->create();
 
-        tex_width_ = img_size.width();
-        tex_height_ = img_size.height();
+          tex_v_->destroy();
+          tex_v_->setFormat(QRhiTexture::R8);
+          tex_v_->setPixelSize(QSize(uv_w, uv_h));
+          tex_v_->create();
+
+          // Rebuild SRB with new textures
+          srb_->destroy();
+          srb_->setBindings({
+              QRhiShaderResourceBinding::uniformBuffer(
+                  0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniform_buf_),
+              QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, tex_y_, sampler_),
+              QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tex_u_, sampler_),
+              QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, tex_v_, sampler_),
+          });
+          srb_->create();
+
+          tex_width_ = w;
+          tex_height_ = h;
+          current_pixel_format_ = 0;
+        }
+
+        // Upload Y plane
+        QRhiTextureSubresourceUploadDescription y_desc(pixel_data, y_size);
+        y_desc.setSourceSize(QSize(w, h));
+        updates->uploadTexture(tex_y_, QRhiTextureUploadDescription({0, 0, y_desc}));
+
+        // Upload U plane
+        QRhiTextureSubresourceUploadDescription u_desc(pixel_data + y_size, uv_size);
+        u_desc.setSourceSize(QSize(uv_w, uv_h));
+        updates->uploadTexture(tex_u_, QRhiTextureUploadDescription({0, 0, u_desc}));
+
+        // Upload V plane
+        QRhiTextureSubresourceUploadDescription v_desc(pixel_data + y_size + uv_size, uv_size);
+        v_desc.setSourceSize(QSize(uv_w, uv_h));
+        updates->uploadTexture(tex_v_, QRhiTextureUploadDescription({0, 0, v_desc}));
+
+        frame_aspect_ = static_cast<float>(w) / static_cast<float>(h);
+
+      } else if (!pending_qimage_.isNull()) {
+        // RGB path: upload single RGBA texture (backward compat)
+        QImage img = pending_qimage_.convertToFormat(QImage::Format_RGBA8888);
+        QSize img_size = img.size();
+
+        if (img_size.width() != tex_width_ || img_size.height() != tex_height_ || current_pixel_format_ != 2) {
+          tex_y_->destroy();
+          tex_y_->setFormat(QRhiTexture::RGBA8);
+          tex_y_->setPixelSize(img_size);
+          tex_y_->create();
+
+          // Rebuild SRB
+          srb_->destroy();
+          srb_->setBindings({
+              QRhiShaderResourceBinding::uniformBuffer(
+                  0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniform_buf_),
+              QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, tex_y_, sampler_),
+              QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tex_u_, sampler_),
+              QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, tex_v_, sampler_),
+          });
+          srb_->create();
+
+          tex_width_ = img_size.width();
+          tex_height_ = img_size.height();
+          current_pixel_format_ = 2;
+        }
+
+        QRhiTextureSubresourceUploadDescription sub_desc(img);
+        updates->uploadTexture(tex_y_, QRhiTextureUploadDescription({0, 0, sub_desc}));
+        frame_aspect_ = static_cast<float>(tex_width_) / static_cast<float>(tex_height_);
       }
 
-      QRhiTextureSubresourceUploadDescription sub_desc(img);
-      updates->uploadTexture(texture_, QRhiTextureUploadDescription({0, 0, sub_desc}));
-
       has_pending_ = false;
-      frame_aspect_ = static_cast<float>(tex_width_) / static_cast<float>(tex_height_);
     }
   }
 
+  // Update uniforms
   QMatrix4x4 view = buildViewTransform(output_size);
   updates->updateDynamicBuffer(uniform_buf_, 0, 64, view.constData());
+  updates->updateDynamicBuffer(uniform_buf_, 64, 64, kBT709);
+  int32_t fmt = current_pixel_format_;
+  updates->updateDynamicBuffer(uniform_buf_, 128, 4, &fmt);
 
   cb->beginPass(rt, QColor::fromRgbF(0.0f, 0.0f, 0.0f, 1.0f), {1.0f, 0}, updates);
   cb->setGraphicsPipeline(pipeline_);

@@ -86,12 +86,16 @@ bool FfmpegBackend::open(const std::string& path) {
   running_.store(true);
   paused_.store(true);
   position_sec_.store(0.0);
+  file_path_ = path;
   thread_ = std::thread(&FfmpegBackend::decodeThread, this);
+
+  thumbnail_cache_.buildAsync(path, duration_sec_);
 
   return true;
 }
 
 void FfmpegBackend::close() {
+  thumbnail_cache_.stop();
   if (running_.load()) {
     running_.store(false);
     paused_.store(false);  // unblock the wait
@@ -326,10 +330,22 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
   static constexpr int kFullDecodeIntervalMs = 30;
   static constexpr int kMinDecodeTimeMs = 60;
 
-  // Backward scrub: publish ONLY completions (target reached).
-  // No partials, no keyframe — completions are always the exact target,
-  // guaranteeing monotonically decreasing positions.
+  // Backward scrub: publish cached thumbnail eagerly for instant feedback.
+  // Completions are filtered — only published if they don't jump forward
+  // from the thumbnail (prevents settle flicker).
   // Forward scrub: publish periodic partials for smooth feedback.
+  // Only publish thumbnail if genuinely moving backward from current display.
+  // Prevents false triggers from rounding differences on slider release.
+  if (scrub_backward_) {
+    double target_sec = static_cast<double>(target_pts) * time_base_;
+    if (last_published_pos_ < 0 || target_sec < last_published_pos_ - 0.1) {
+      auto cached = thumbnail_cache_.lookup(target_sec);
+      if (cached.has_value()) {
+        cached->pts = target_pts;
+        publishFrame(*cached);
+      }
+    }
+  }
 
   bool published = false;
   bool broke_early = false;
@@ -377,8 +393,12 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
         last_full_decode = Clock::now();
 
         if (result->pts >= target_pts) {
-          // Completion: always publish (this is the exact target frame)
-          publishFrame(*result);
+          // Completion: publish unless it would jump forward from the
+          // thumbnail during backward scrub (prevents settle flicker).
+          double completion_pos = static_cast<double>(result->pts) * time_base_;
+          if (!scrub_backward_ || last_published_pos_ < 0 || completion_pos < last_published_pos_) {
+            publishFrame(*result);
+          }
           published = true;
           broke_early = true;
           break;

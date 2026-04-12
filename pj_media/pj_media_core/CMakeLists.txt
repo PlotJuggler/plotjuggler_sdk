@@ -19,7 +19,7 @@ set(PJ_MEDIA_CORE_SOURCES
 )
 
 if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
-  list(APPEND PJ_MEDIA_CORE_SOURCES src/ffmpeg_decoder.cpp src/ffmpeg_backend.cpp)
+  list(APPEND PJ_MEDIA_CORE_SOURCES src/ffmpeg_decoder.cpp src/ffmpeg_backend.cpp src/thumbnail_cache.cpp)
 endif()
 
 add_library(pj_media_core STATIC ${PJ_MEDIA_CORE_SOURCES})

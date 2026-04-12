@@ -11,6 +11,7 @@
 
 #include "pj_media_core/cancel_token.h"
 #include "pj_media_core/ffmpeg_decoder.h"
+#include "pj_media_core/thumbnail_cache.h"
 #include "pj_media_core/video_backend.h"
 
 struct AVFormatContext;
@@ -106,6 +107,11 @@ class FfmpegBackend : public VideoBackend {
   DurationCallback on_duration_;
   FileLoadedCallback on_file_loaded_;
   FrameCallback on_frame_;
+
+  // Pre-decoded JPEG thumbnail cache for instant scrub feedback.
+  // Built on a background thread at open() time, 1 frame per second.
+  ThumbnailCache thumbnail_cache_;
+  std::string file_path_;  // needed for cache rebuild
 };
 
 }  // namespace PJ
