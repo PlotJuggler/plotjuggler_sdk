@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="shaders/texture.vert.qsb">texture.vert.qsb</file>
+    <file alias="shaders/texture.frag.qsb">texture.frag.qsb</file>
+  </qresource>
+</RCC>

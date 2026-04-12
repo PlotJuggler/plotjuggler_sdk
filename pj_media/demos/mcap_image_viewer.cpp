@@ -6,7 +6,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMainWindow>
-#include <QPainter>
 #include <QPushButton>
 #include <QSlider>
 #include <QTimer>
@@ -17,9 +16,16 @@
 #include <string>
 #include <vector>
 
-#include "image_widget.hpp"
 #include "pj_datastore/object_store.hpp"
 #include "pj_media_core/image_decoder.h"
+
+#ifdef PJ_HAS_RHI_WIDGET
+#include "pj_media_qt/media_viewer_widget.h"
+using ViewerWidget = PJ::MediaViewerWidget;
+#else
+#include "image_widget.hpp"
+using ViewerWidget = ImageWidget;
+#endif
 
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
@@ -206,7 +212,9 @@ class ImageViewerWindow : public QMainWindow {
     load_button_ = new QPushButton("Load MCAP", this);
     layout->addWidget(load_button_);
 
-    image_widget_ = new ImageWidget(this);
+    image_widget_ = new ViewerWidget(this);
+    image_widget_->setMinimumSize(320, 240);
+    image_widget_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     layout->addWidget(image_widget_, 1);
 
     auto* controls = new QHBoxLayout();
@@ -347,7 +355,7 @@ class ImageViewerWindow : public QMainWindow {
   McapObjectStoreLoader loader_;
   PJ::ImageDecoder decoder_;
 
-  ImageWidget* image_widget_ = nullptr;
+  ViewerWidget* image_widget_ = nullptr;
   QSlider* slider_ = nullptr;
   QPushButton* load_button_ = nullptr;
   QPushButton* play_button_ = nullptr;
