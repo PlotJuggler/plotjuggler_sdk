@@ -16,7 +16,10 @@ then video, then streaming.
 | cleanup | `6a592b7` | Scrub throttle 60 Hz, VideoViewerWidget returns VideoBackend* (not MpvBackend*) |
 | review fixes | `d90807d` | ARCHITECTURE.md updated for mpv/VideoBackend v1 strategy. PNG decode added to ImageDecoder |
 | M11 | `7866fa8` | Dual-store test: ObjectStore + DataEngine from same MCAP. Multi-channel demo (color + depth) |
-| arch update | *pending* | CodecPipeline concept: envelope, decode, visualization as composable codec stages |
+| CodecPipeline | `10f86b3` | CodecPipeline + codecs + split pj_media_qt libs |
+| QRhi fix | `dd101e7` | Multi-instance QRhiWidget init (bootstrap widget + lifecycle) |
+| simplify | `31a8ef7` | Codex + agent review — rename pipelines, remove dead files |
+| M13 | *pending* | Streaming: 4 tests (retention window, memory cap, pause/scrub, concurrent) + simulated_stream demo |
 
 ### Build notes
 

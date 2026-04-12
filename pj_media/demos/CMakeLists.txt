@@ -31,6 +31,14 @@ if(TARGET pj_media_qt)
     pj_media_qt pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
   )
 
+  # --- Qt demo: simulated live stream (M13) ---
+  add_executable(simulated_stream simulated_stream.cpp)
+  target_compile_features(simulated_stream PRIVATE cxx_std_20)
+  target_compile_options(simulated_stream PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(simulated_stream PRIVATE
+    pj_media_qt pj_media_core pj_datastore PkgConfig::TURBOJPEG
+  )
+
   # --- QRhiWidget multi-instance diagnostic test ---
   add_executable(rhi_test rhi_test.cpp)
   target_compile_features(rhi_test PRIVATE cxx_std_20)

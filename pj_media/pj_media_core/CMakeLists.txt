@@ -56,6 +56,12 @@ if(PJ_BUILD_TESTS)
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   )
 
+  # Streaming test: push + retention + concurrent read (M13)
+  add_executable(streaming_test tests/streaming_test.cpp)
+  target_link_libraries(streaming_test PRIVATE pj_media_core pj_datastore GTest::gtest_main)
+  target_compile_options(streaming_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
+  add_test(NAME streaming_test COMMAND streaming_test)
+
   # Dual-store test: ObjectStore + DataEngine from same MCAP (M11)
   add_executable(dual_store_test tests/dual_store_test.cpp)
   target_link_libraries(dual_store_test PRIVATE
