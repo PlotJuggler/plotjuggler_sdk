@@ -12,14 +12,25 @@
 
 namespace PJ {
 
+/// GPU-accelerated image viewer using QRhiWidget.
+///
+/// Renders decoded images via custom GLSL shaders (texture upload → GPU
+/// display). Supports zoom (mouse wheel, cursor-anchored) and pan (mouse
+/// drag) via a view transform matrix in the vertex shader — no CPU-side
+/// pixel processing. See ARCHITECTURE.md §7.
+///
+/// Thread-safe: setFrame() may be called from any thread; the frame is
+/// uploaded to the GPU on the next render tick.
 class MediaViewerWidget : public QRhiWidget {
   Q_OBJECT
 
  public:
   explicit MediaViewerWidget(QWidget* parent = nullptr);
 
+  /// Set the image to display. Thread-safe (mutex-protected).
   void setFrame(const QImage& img);
 
+  /// Reset zoom to 1x and pan to origin.
   void resetView();
 
  signals:
@@ -35,7 +46,7 @@ class MediaViewerWidget : public QRhiWidget {
   void mouseDoubleClickEvent(QMouseEvent* e) override;
 
  private:
-  QMatrix4x4 buildViewTransform(QSize output_size) const;
+  [[nodiscard]] QMatrix4x4 buildViewTransform(QSize output_size) const;
   static QShader loadShader(const QString& path);
 
   bool initialized_ = false;

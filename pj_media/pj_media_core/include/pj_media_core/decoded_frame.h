@@ -6,6 +6,7 @@
 
 namespace PJ {
 
+/// Pixel format tag for decoded image data.
 enum class PixelFormat : uint8_t {
   kRGB888,
   kRGBA8888,
@@ -17,6 +18,7 @@ enum class PixelFormat : uint8_t {
   kNV12,
 };
 
+/// Decoded pixel buffer produced by ImageDecoder or VideoDecoder.
 struct DecodedFrame {
   std::shared_ptr<std::vector<uint8_t>> pixels;
   int width = 0;

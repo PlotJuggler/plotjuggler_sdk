@@ -5,6 +5,12 @@
 
 namespace PJ {
 
+/// Cooperative cancellation flag shared between a requester and a decoder.
+///
+/// The requester calls cancel(); the decoder polls isCancelled() between
+/// decode units (NAL packets, JPEG scans, etc.) and returns early when set.
+/// Shared via shared_ptr so both sides can hold it independently.
+/// See ARCHITECTURE.md §3.3.
 class CancelToken {
  public:
   [[nodiscard]] bool isCancelled() const {

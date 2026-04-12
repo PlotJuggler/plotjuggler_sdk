@@ -11,7 +11,8 @@ then video, then streaming.
 | M1 (includes M2-M4) | `4102de8` | ObjectStore: register, push, query, concurrency, iteration, retention. 32 tests |
 | M6 | `71ca718` | FrameSlot + CancelToken + DecodedFrame. 9 tests |
 | M7 | `88dd423` | ImageDecoder (turbojpeg + raw). 6 tests |
-| M8 + M15 | *pending* | MCAP→ObjectStore integration (4 tests) + pj_media_qt with QRhiWidget (MediaViewerWidget: GPU rendering, zoom/pan, pre-compiled shaders) + demo binary. M15 merged into M8 |
+| M8 + M15 | `0dd0160` | MCAP→ObjectStore integration (4 tests) + pj_media_qt with QRhiWidget (MediaViewerWidget: GPU rendering, zoom/pan, pre-compiled shaders) + demo binary. M15 merged into M8 |
+| M9 + M10 | *pending* | VideoBackend abstraction + MpvBackend (libmpv) + VideoViewerWidget + mp4_video_viewer demo. API doc comments added to all public headers |
 
 ### Build notes
 
@@ -19,8 +20,11 @@ then video, then streaming.
   Pass `-DQt6_DIR=/path/to/Qt/6.8.3/gcc_64/lib/cmake/Qt6` to cmake.
 - Shaders are pre-compiled `.qsb` files (no ShaderTools build dep).
   Re-run `qsb --glsl 440 --hlsl 50 --msl 12` if shaders change.
-- `dialog_engine_test` may fail ("Not Run") when building with
-  Qt 6.8 instead of Qt 6.4. Unrelated to pj_media changes.
+- `dialog_engine_test` works with Qt 6.8 but may not build during
+  partial builds. Run full `cmake --build` to ensure all targets.
+- **Future**: compare system libmpv vs locally-built latest mpv
+  (git submodule) for performance. VideoBackend abstraction allows
+  swapping without widget changes.
 
 ## Test data
 
