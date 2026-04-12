@@ -1,5 +1,6 @@
 #include "pj_media_core/image_decoder.h"
 
+#include <png.h>
 #include <turbojpeg.h>
 
 #include <algorithm>
@@ -49,6 +50,97 @@ Expected<DecodedFrame> ImageDecoder::decodeJpeg(const uint8_t* data, size_t size
   frame.width = width;
   frame.height = height;
   frame.format = PixelFormat::kRGB888;
+  return frame;
+}
+
+namespace {
+
+struct PngReadContext {
+  const uint8_t* data;
+  size_t size;
+  size_t offset;
+};
+
+void pngReadCallback(png_structp png, png_bytep out, png_size_t count) {
+  auto* ctx = static_cast<PngReadContext*>(png_get_io_ptr(png));
+  if (ctx->offset + count > ctx->size) {
+    png_error(png, "read past end of buffer");
+    return;
+  }
+  std::memcpy(out, ctx->data + ctx->offset, count);
+  ctx->offset += count;
+}
+
+}  // namespace
+
+Expected<DecodedFrame> ImageDecoder::decodePng(const uint8_t* data, size_t size) {
+  if (data == nullptr || size < 8) {
+    return unexpected("empty input");
+  }
+  if (png_sig_cmp(data, 0, 8) != 0) {
+    return unexpected("not a PNG file");
+  }
+
+  png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (png == nullptr) {
+    return unexpected("png_create_read_struct failed");
+  }
+  png_infop info = png_create_info_struct(png);
+  if (info == nullptr) {
+    png_destroy_read_struct(&png, nullptr, nullptr);
+    return unexpected("png_create_info_struct failed");
+  }
+
+  if (setjmp(png_jmpbuf(png))) {
+    png_destroy_read_struct(&png, &info, nullptr);
+    return unexpected("PNG decode failed");
+  }
+
+  PngReadContext ctx{data, size, 0};
+  png_set_read_fn(png, &ctx, pngReadCallback);
+  png_read_info(png, info);
+
+  auto width = static_cast<int>(png_get_image_width(png, info));
+  auto height = static_cast<int>(png_get_image_height(png, info));
+  png_byte color_type = png_get_color_type(png, info);
+  png_byte bit_depth = png_get_bit_depth(png, info);
+
+  // Normalize to 8-bit RGB or RGBA
+  if (bit_depth == 16) {
+    png_set_strip_16(png);
+  }
+  if (color_type == PNG_COLOR_TYPE_PALETTE) {
+    png_set_palette_to_rgb(png);
+  }
+  if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) {
+    png_set_expand_gray_1_2_4_to_8(png);
+  }
+  if (png_get_valid(png, info, PNG_INFO_tRNS) != 0) {
+    png_set_tRNS_to_alpha(png);
+  }
+  if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
+    png_set_gray_to_rgb(png);
+  }
+  png_read_update_info(png, info);
+
+  bool has_alpha = (png_get_color_type(png, info) & PNG_COLOR_MASK_ALPHA) != 0;
+  int channels = has_alpha ? 4 : 3;
+  auto row_bytes = static_cast<size_t>(width * channels);
+
+  auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(height) * row_bytes);
+  std::vector<png_bytep> row_ptrs(static_cast<size_t>(height));
+  for (int y = 0; y < height; ++y) {
+    row_ptrs[static_cast<size_t>(y)] = pixels->data() + static_cast<size_t>(y) * row_bytes;
+  }
+
+  png_read_image(png, row_ptrs.data());
+  png_destroy_read_struct(&png, &info, nullptr);
+
+  DecodedFrame frame;
+  frame.pixels = std::move(pixels);
+  frame.width = width;
+  frame.height = height;
+  frame.format = has_alpha ? PixelFormat::kRGBA8888 : PixelFormat::kRGB888;
   return frame;
 }
 

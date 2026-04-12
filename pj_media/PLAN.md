@@ -12,7 +12,9 @@ then video, then streaming.
 | M6 | `71ca718` | FrameSlot + CancelToken + DecodedFrame. 9 tests |
 | M7 | `88dd423` | ImageDecoder (turbojpeg + raw). 6 tests |
 | M8 + M15 | `0dd0160` | MCAP→ObjectStore integration (4 tests) + pj_media_qt with QRhiWidget (MediaViewerWidget: GPU rendering, zoom/pan, pre-compiled shaders) + demo binary. M15 merged into M8 |
-| M9 + M10 | *pending* | VideoBackend abstraction + MpvBackend (libmpv) + VideoViewerWidget + mp4_video_viewer demo. API doc comments added to all public headers |
+| M9 + M10 | `59ab9e3` | VideoBackend abstraction + MpvBackend (libmpv) + VideoViewerWidget + mp4_video_viewer demo. API doc comments on all public headers |
+| cleanup | `6a592b7` | Scrub throttle 60 Hz, VideoViewerWidget returns VideoBackend* (not MpvBackend*) |
+| review fixes | *pending* | ARCHITECTURE.md updated for mpv/VideoBackend v1 strategy. PNG decode added to ImageDecoder |
 
 ### Build notes
 

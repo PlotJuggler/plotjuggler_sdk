@@ -9,7 +9,7 @@
 
 namespace PJ {
 
-/// Stateless image decoder: JPEG via turbojpeg, raw pixels via memcpy.
+/// Stateless image decoder: JPEG via turbojpeg, PNG via libpng, raw pixels via memcpy.
 ///
 /// One instance per image layer. Multiple instances are safe (no shared state).
 /// See ARCHITECTURE.md §4.2.
@@ -25,6 +25,9 @@ class ImageDecoder {
 
   /// Decode JPEG data to RGB888. Checks cancel token between header parse and pixel decode.
   Expected<DecodedFrame> decodeJpeg(const uint8_t* data, size_t size, const CancelTokenPtr& cancel = nullptr) const;
+
+  /// Decode PNG data to RGB888 or RGBA8888 (depending on source alpha channel).
+  static Expected<DecodedFrame> decodePng(const uint8_t* data, size_t size);
 
   /// Wrap raw pixel data (mono8, rgb8, rgba8, etc.) into a DecodedFrame. No decoding, just copy.
   static Expected<DecodedFrame> decodeRaw(const uint8_t* data, size_t size, int width, int height, PixelFormat format);

@@ -33,7 +33,7 @@ Pure C++ library. Contains everything that does not touch Qt:
 |-----------|-----------|------|
 | `FrameSlot` | `frame_slot.h` | Single-slot latest-wins mailbox (§3) |
 | `PlaybackController` | `playback_controller.h` | Per-widget orchestrator: owns decoders, worker thread(s), FrameSlot (§5) |
-| `VideoDecoder` | `video_decoder.h` | FFmpeg wrapper with HW-accel detection and software fallback (§4) |
+| `VideoBackend` | `video_backend.h` | Abstract video playback interface; v1 uses libmpv, future: custom FFmpeg (§4) |
 | `ImageDecoder` | `image_decoder.h` | turbojpeg / libpng / raw-pixel dispatch (§4) |
 | `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) |
 | `MediaIndexRegistry` | `media_index_registry.h` | Per-topic keyframe timestamp index sidechannel (§6) |
@@ -52,9 +52,11 @@ Qt widget library built on top of `pj_media_core`:
 
 | Component | Header(s) | Role |
 |-----------|-----------|------|
-| `MediaViewerWidget` | `media_viewer_widget.h` | `QRhiWidget` subclass: GPU rendering, zoom/pan, shader pipeline (§7) |
+| `MediaViewerWidget` | `media_viewer_widget.h` | `QRhiWidget` subclass: GPU rendering for images, zoom/pan, shader pipeline (§7) |
+| `VideoViewerWidget` | `video_viewer_widget.h` | `QOpenGLWidget` that owns a `VideoBackend`; mpv renders into its FBO (§4.1) |
+| `MpvBackend` | `mpv_backend.h` | libmpv `VideoBackend` implementation (v1 video backend) |
 | `MediaViewerFactory` | `media_viewer_factory.h` | Creates the right viewer type from topic `metadata_json` |
-| YUV shaders | `shaders/yuv_to_rgb.{vert,frag}` | BT.601/BT.709 color conversion in fragment shader |
+| Texture shaders | `shaders/texture.{vert,frag}` | RGBA texture display with view transform matrix |
 
 The Qt layer is thin — it owns the GPU surface and polls the
 `PlaybackController`'s `FrameSlot` at render rate. All decode logic,
@@ -258,46 +260,34 @@ Decoders are built-in C++ classes in `pj_media_core`. They are NOT
 plugins — codec state is per-viewer, per-layer, and adding new codecs
 requires a pj_media code change.
 
-### 4.1 VideoDecoder
+### 4.1 Video: VideoBackend abstraction
 
-Stateful. One instance per video layer per widget. Wraps FFmpeg's
-`AVCodecContext`.
+Video playback uses a `VideoBackend` abstract interface defined in
+`pj_media_core`. Concrete backends handle file I/O, decoding,
+seeking, and HW acceleration internally. The widget layer calls
+`open()`, `seek()`, `setPaused()`, and `renderFrame()` without
+knowing which backend is active.
 
-**Initialization**: at construction, probes for HW-accel backends in
-platform priority order (see `TECHNICAL_NOTES.md §3`). If none
-succeeds, falls back to software decode. The backend choice is
-logged but not exposed in the public API.
+**V1 backend: libmpv (`MpvBackend`).**  mpv handles all codec,
+container, HW-accel, keyframe seeking, and frame caching internally.
+This means §6 (`MediaIndexRegistry`) and the keyframe-seek algorithm
+described there are **not used for video in v1** — mpv manages its
+own keyframe index. The `VideoViewerWidget` (a `QOpenGLWidget`)
+owns a `MpvBackend` and renders via mpv's OpenGL FBO API.
 
-**Decode cycle** (called by `PlaybackController` per render tick):
+**Future backend: custom FFmpeg pipeline.**  If profiling shows mpv's
+overhead is too high, a direct FFmpeg `AVCodecContext` wrapper can
+be implemented as a second `VideoBackend`. That backend would use
+`MediaIndexRegistry` for keyframe seeking, `CancelToken` for
+cooperative cancellation, and `FrameSlot` for frame delivery — the
+full pipeline described in §3 and §6. The `VideoBackend` abstraction
+ensures this swap does not change the widget or controller.
 
-1. Receive raw bytes (owning `shared_ptr`) from ObjectStore via
-   `latestAt`.
-2. If the requested timestamp requires a seek (the entry is not the
-   next sequential frame): consult the keyframe index (§6), find the
-   keyframe at-or-before the target, call `avcodec_flush_buffers`,
-   then decode forward from the keyframe through intermediate P/B
-   frames to the target.
-3. Feed bytes via `avcodec_send_packet`. Retrieve decoded frame via
-   `avcodec_receive_frame`.
-4. Poll `CancelToken` between each `avcodec_receive_frame` call.
-5. If the decode completes, return the `DecodedFrame` (YUV planes
-   still in decoder-native format — YUV420P, NV12, or P010).
-
-**ENOMEM recovery**: if `avcodec_send_packet` returns
-`AVERROR(ENOMEM)` (HW surface pool exhaustion), call
-`avcodec_flush_buffers` and retry once. If it fails again, propagate
-the error to the widget's last-error state.
-
-**EOF flush**: when the DataSource signals end-of-data, the
-`PlaybackController` calls `VideoDecoder::flush()` — sends a NULL
-packet to drain buffered frames from the codec's internal queue.
-
-**Forward-decode threshold**: if the target timestamp is within
-roughly one GOP duration of the last decoded timestamp, decode forward
-without seeking. Beyond that threshold, seek to the nearest keyframe
-first. The threshold is configurable; the default is approximately
-one GOP (~5 seconds at 30 fps). This avoids unnecessary seeks during
-sequential playback and small forward scrub steps.
+**Design note**: `VideoBackend` uses `double seconds` for seek and
+position rather than `int64_t` nanoseconds. This matches libmpv's
+native API. The application-level `TimelineCursor` (§9) uses
+nanoseconds; the conversion happens at the boundary between
+`PlaybackController` and `VideoBackend`.
 
 ### 4.2 ImageDecoder
 
