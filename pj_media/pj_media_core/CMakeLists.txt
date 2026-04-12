@@ -18,8 +18,8 @@ set(PJ_MEDIA_CORE_SOURCES
   src/codecs.cpp
 )
 
-if(LIBAVCODEC_FOUND)
-  list(APPEND PJ_MEDIA_CORE_SOURCES src/ffmpeg_decoder.cpp)
+if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
+  list(APPEND PJ_MEDIA_CORE_SOURCES src/ffmpeg_decoder.cpp src/ffmpeg_backend.cpp)
 endif()
 
 add_library(pj_media_core STATIC ${PJ_MEDIA_CORE_SOURCES})
@@ -33,9 +33,9 @@ target_link_libraries(pj_media_core
   PRIVATE PkgConfig::TURBOJPEG PkgConfig::LIBPNG
 )
 
-if(LIBAVCODEC_FOUND)
+if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
   target_link_libraries(pj_media_core PRIVATE
-    PkgConfig::LIBAVCODEC PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
+    PkgConfig::LIBAVCODEC PkgConfig::LIBAVFORMAT PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
   )
   target_compile_definitions(pj_media_core PUBLIC PJ_HAS_FFMPEG)
   message(STATUS "pj_media_core: FFmpeg found → building FfmpegDecoder")

@@ -4,17 +4,18 @@
 #include <functional>
 #include <string>
 
+#include "pj_media_core/decoded_frame.h"
+
 namespace PJ {
 
 /// Abstract interface for video playback backends.
 ///
-/// Concrete implementations (MpvBackend, future FFmpeg backend) handle
-/// file I/O, decoding, seeking, and HW acceleration internally. The
-/// widget layer uses this interface to control playback and receive
-/// frames via renderFrame() into an OpenGL FBO.
+/// Two concrete implementations:
+/// - MpvBackend: renders to OpenGL FBO via renderFrame()
+/// - FfmpegBackend: delivers decoded frames via frameReady callback
 ///
-/// Designed so libmpv can be swapped for a custom pipeline later
-/// without changing the widget or controller. See ARCHITECTURE.md §4.1.
+/// The widget layer picks the right display strategy based on which
+/// delivery mechanism the backend supports. See ARCHITECTURE.md §4.1.
 class VideoBackend {
  public:
   virtual ~VideoBackend() = default;
@@ -44,16 +45,27 @@ class VideoBackend {
   using PositionCallback = std::function<void(double seconds)>;
   using DurationCallback = std::function<void(double seconds)>;
   using FileLoadedCallback = std::function<void()>;
+  using FrameCallback = std::function<void(const DecodedFrame&)>;
 
   virtual void setPositionCallback(PositionCallback cb) = 0;
   virtual void setDurationCallback(DurationCallback cb) = 0;
   virtual void setFileLoadedCallback(FileLoadedCallback cb) = 0;
 
-  /// Render the current frame into the given OpenGL FBO.
-  virtual void renderFrame(int fbo_id, int width, int height) = 0;
+  /// Set callback for decoded frame delivery (used by FfmpegBackend).
+  /// MpvBackend ignores this — it renders via renderFrame() instead.
+  virtual void setFrameCallback(FrameCallback /*cb*/) {}
+
+  /// Render the current frame into the given OpenGL FBO (MpvBackend).
+  /// FfmpegBackend does nothing here — it delivers via FrameCallback.
+  virtual void renderFrame(int /*fbo_id*/, int /*width*/, int /*height*/) {}
 
   /// Process pending backend events (call from Qt event loop).
   virtual void processEvents() = 0;
+
+  /// Does this backend render to FBO (true) or deliver frames via callback (false)?
+  [[nodiscard]] virtual bool rendersToFbo() const {
+    return true;
+  }
 
  protected:
   VideoBackend() = default;

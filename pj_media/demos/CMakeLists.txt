@@ -39,19 +39,31 @@ if(TARGET pj_media_qt)
     pj_media_qt pj_media_core pj_datastore PkgConfig::TURBOJPEG
   )
 
+  # --- Qt demo: MP4 stream buffer (mpv SW decode → ObjectStore → scrub) ---
+  if(TARGET pj_media_qt_video)
+    add_executable(mp4_stream_buffer mp4_stream_buffer.cpp)
+    target_compile_features(mp4_stream_buffer PRIVATE cxx_std_20)
+    target_compile_options(mp4_stream_buffer PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(mp4_stream_buffer PRIVATE
+      pj_media_qt pj_media_core pj_datastore PkgConfig::MPV
+    )
+  endif()
+
   # --- QRhiWidget multi-instance diagnostic test ---
   add_executable(rhi_test rhi_test.cpp)
   target_compile_features(rhi_test PRIVATE cxx_std_20)
   target_compile_options(rhi_test PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(rhi_test PRIVATE pj_media_qt)
 
-  # --- Qt demo: MP4 video player with libmpv ---
+  # --- Qt demo: MP4 video player (mpv + ffmpeg switchable via --ffmpeg) ---
+  set(_mp4_viewer_libs pj_media_qt pj_media_core)
   if(TARGET pj_media_qt_video)
-    add_executable(mp4_video_viewer mp4_video_viewer.cpp)
-    target_compile_features(mp4_video_viewer PRIVATE cxx_std_20)
-    target_compile_options(mp4_video_viewer PRIVATE ${PJ_WARNING_FLAGS})
-    target_link_libraries(mp4_video_viewer PRIVATE pj_media_qt_video)
+    list(APPEND _mp4_viewer_libs pj_media_qt_video)
   endif()
+  add_executable(mp4_video_viewer mp4_video_viewer.cpp)
+  target_compile_features(mp4_video_viewer PRIVATE cxx_std_20)
+  target_compile_options(mp4_video_viewer PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(mp4_video_viewer PRIVATE ${_mp4_viewer_libs})
 elseif(PJ_BUILD_DIALOG_ENGINE_QT)
   find_package(Qt6 REQUIRED COMPONENTS Widgets)
   set(CMAKE_AUTOMOC ON)
