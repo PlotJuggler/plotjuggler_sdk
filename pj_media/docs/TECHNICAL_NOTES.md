@@ -36,15 +36,52 @@ the bridge between a custom decode pipeline and Qt's rendering:
 
 ### QRhiWidget — Primary Render Path
 
-`QRhiWidget` with custom YUV-to-RGB shaders is the recommended primary path:
+`QRhiWidget` with custom shaders is the primary render path:
 
 - QRhi abstracts over Vulkan, Metal, D3D11, OpenGL
-- Upload YUV plane textures (Y, U, V or Y+UV for NV12)
-- Custom fragment shader for BT.601/BT.709 color space conversion
+- Upload RGBA8 texture per frame, display via fullscreen-triangle shader
+- Zoom (mouse wheel) and pan (mouse drag) via view transform matrix in
+  vertex shader — zero CPU-side pixel processing
 - Optional zero-copy: import HW-decoded GPU surfaces directly as QRhi
   textures via `QRhiTexture::createFrom({nativeHandle, 0})`
-- Zoom (mouse wheel) and pan (mouse drag) via view transform matrix in
-  vertex shader
+
+### QRhiWidget Multi-Instance Lifecycle (Qt 6.8)
+
+Qt 6.8 `QRhiWidget` has a critical initialization requirement: the
+top-level window's backing store must be RHI-capable from its first
+`show()`. If no `QRhiWidget` exists as a child when the window is
+first shown, Qt creates a regular (non-RHI) backing store. Any
+`QRhiWidget` added dynamically after that point will **never** get an
+RHI instance — `rhi()` returns null permanently, producing continuous
+"QRhiWidget: No QRhi" errors.
+
+**Workaround**: add a zero-size bootstrap `QRhiWidget` in the window's
+constructor, before `show()`:
+
+```cpp
+// Forces Qt to create an RHI-backed backing store for this window.
+auto* bootstrap = new MediaViewerWidget(parent);
+bootstrap->setMaximumSize(0, 0);
+layout->addWidget(bootstrap);
+```
+
+Dynamically added `QRhiWidget` instances will then initialize
+successfully.
+
+**Additional lifecycle rules**:
+
+- Override `releaseResources()` (Qt virtual) to delete all QRhi
+  resources (pipeline, textures, buffers). Qt calls this when the
+  underlying QRhi instance changes (reparenting, window move).
+- Track `QRhi* rhi_cached_` in `initialize()`. If `rhi() != cached`,
+  call `releaseResources()` and reinitialize — resources from the old
+  QRhi are invalid.
+- In `setFrame()` (or any method that calls `update()`), guard with
+  `if (pipeline_ != nullptr)` — calling `update()` before init floods
+  Qt with render requests that can't be fulfilled and starves the
+  initialization path.
+- At the end of `initialize()`, call `update()` if a frame is pending
+  — otherwise the first frame set before init completes is lost.
 
 ### QVideoSink Threading
 
