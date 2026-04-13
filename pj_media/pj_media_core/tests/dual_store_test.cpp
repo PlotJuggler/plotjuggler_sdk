@@ -65,9 +65,11 @@ DualStoreResult loadPotato(ObjectStore& obj_store, DataEngine& engine) {
     if (chan_ptr == nullptr) {
       continue;
     }
+    // schemas() returns by value — cache to avoid dangling iterator
     std::string schema_name;
-    auto schema_it = shared_reader->schemas().find(chan_ptr->schemaId);
-    if (schema_it != shared_reader->schemas().end() && schema_it->second != nullptr) {
+    auto schemas = shared_reader->schemas();
+    auto schema_it = schemas.find(chan_ptr->schemaId);
+    if (schema_it != schemas.end() && schema_it->second != nullptr) {
       schema_name = schema_it->second->name;
     }
 

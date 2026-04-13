@@ -51,8 +51,9 @@ struct McapObjectStoreLoader {
       }
 
       std::string schema_name;
-      auto schema_it = reader->schemas().find(chan_ptr->schemaId);
-      if (schema_it != reader->schemas().end() && schema_it->second != nullptr) {
+      auto schemas = reader->schemas();
+      auto schema_it = schemas.find(chan_ptr->schemaId);
+      if (schema_it != schemas.end() && schema_it->second != nullptr) {
         schema_name = schema_it->second->name;
       }
 

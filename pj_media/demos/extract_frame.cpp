@@ -82,8 +82,9 @@ int main(int argc, char* argv[]) {
     if (chan_ptr == nullptr) {
       continue;
     }
-    auto schema_it = reader.schemas().find(chan_ptr->schemaId);
-    if (schema_it != reader.schemas().end() && schema_it->second != nullptr) {
+    auto schemas = reader.schemas();
+    auto schema_it = schemas.find(chan_ptr->schemaId);
+    if (schema_it != schemas.end() && schema_it->second != nullptr) {
       const auto& schema_name = schema_it->second->name;
       if (schema_name.find("CompressedImage") != std::string::npos) {
         target_chan = chan_id;
