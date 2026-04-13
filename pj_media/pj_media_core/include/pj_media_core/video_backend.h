@@ -10,11 +10,11 @@ namespace PJ {
 
 /// Abstract interface for video playback backends.
 ///
-/// Primary implementation: FfmpegBackend (delivers decoded frames via callback).
-/// MpvBackend (renders to OpenGL FBO) is deprecated — see ARCHITECTURE.md §4.1.
+/// Primary implementation: FfmpegBackend (delivers decoded frames via
+/// FrameCallback, polled by processEvents on the main thread).
 ///
-/// New code should use FileVideoSource (MediaSource adapter) rather than
-/// VideoBackend directly.
+/// New code should use FileVideoSource (MediaSource adapter) rather
+/// than VideoBackend directly. See ARCHITECTURE.md §5.2.
 class VideoBackend {
  public:
   virtual ~VideoBackend() = default;
@@ -49,16 +49,10 @@ class VideoBackend {
   virtual void setPositionCallback(PositionCallback cb) = 0;
   virtual void setDurationCallback(DurationCallback cb) = 0;
   virtual void setFileLoadedCallback(FileLoadedCallback cb) = 0;
-  virtual void setFrameCallback(FrameCallback /*cb*/) {}
+  virtual void setFrameCallback(FrameCallback cb) = 0;
 
   /// Process pending backend events (call from Qt event loop).
   virtual void processEvents() = 0;
-
-  // --- Deprecated MpvBackend methods (kept for compilation only) ---
-  virtual void renderFrame(int /*fbo_id*/, int /*width*/, int /*height*/) {}
-  [[nodiscard]] virtual bool rendersToFbo() const {
-    return false;
-  }
 
  protected:
   VideoBackend() = default;

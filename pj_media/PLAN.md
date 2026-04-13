@@ -62,11 +62,10 @@ then video, then streaming.
 4. SceneDecoder (CDR/Protobuf annotations) — deferred.
 5. H.265/AV1 NAL utils — extend when needed.
 
-**Deprecated:**
+**Removed:**
 
-- **MpvBackend / VideoViewerWidget** — superseded by FfmpegBackend +
-  FileVideoSource, which provides better scrub control. Source files
-  remain in the tree but are unused by demos.
+- **MpvBackend / VideoViewerWidget / pj_media_qt_video** — removed.
+  FfmpegBackend + FileVideoSource is the only video path.
 
 ### Design note: MediaSource replaces PlaybackController
 
@@ -95,9 +94,8 @@ callbacks.
   Re-run `qsb --glsl 440 --hlsl 50 --msl 12` if shaders change.
 - `dialog_engine_test` works with Qt 6.8 but may not build during
   partial builds. Run full `cmake --build` to ensure all targets.
-- **MpvBackend is deprecated.** FfmpegBackend + FileVideoSource is the
-  primary video path. MpvBackend/VideoViewerWidget source files remain
-  in the tree but are unused by demos.
+- **MpvBackend has been removed.** FfmpegBackend + FileVideoSource is
+  the only video path.
 
 ## Test data
 
@@ -522,7 +520,7 @@ pj_media/
 | Dependency | Source | Used by |
 |------------|--------|---------|
 | turbojpeg | system pkg or conan | pj_media_core (ImageDecoder, ThumbnailCache) |
-| libmpv | system pkg (`pkg_check_modules`) | pj_media_qt (MpvBackend) — **deprecated** |
+| ~~libmpv~~ | ~~system pkg~~ | ~~removed~~ |
 | FFmpeg (libavcodec, libavformat, libavutil, libswscale) | system pkg | pj_media_core (FfmpegDecoder, FfmpegBackend) |
 
 ### .gitignore additions

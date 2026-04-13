@@ -49,10 +49,6 @@ class FfmpegBackend : public VideoBackend {
 
   void processEvents() override;
 
-  [[nodiscard]] bool rendersToFbo() const override {
-    return false;
-  }
-
  private:
   struct FrameIndex {
     int64_t pts;

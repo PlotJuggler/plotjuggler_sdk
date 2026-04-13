@@ -33,31 +33,3 @@ foreach(_dir ${_qt6_gui_dir})
     break()
   endif()
 endforeach()
-
-# --- pj_media_qt_video: video viewer (libmpv), separate to avoid GL conflicts ---
-find_package(PkgConfig QUIET)
-set(PJ_HAS_MPV OFF)
-if(PkgConfig_FOUND)
-  pkg_check_modules(MPV IMPORTED_TARGET mpv)
-  if(MPV_FOUND)
-    set(PJ_HAS_MPV ON)
-    message(STATUS "pj_media_qt: libmpv found → building pj_media_qt_video")
-
-    find_package(Qt6 COMPONENTS OpenGLWidgets QUIET)
-
-    add_library(pj_media_qt_video STATIC
-      src/mpv_backend.cpp
-      src/video_viewer_widget.cpp
-      include/pj_media_qt/mpv_backend.h
-      include/pj_media_qt/video_viewer_widget.h
-    )
-    target_include_directories(pj_media_qt_video PUBLIC include)
-    target_compile_features(pj_media_qt_video PUBLIC cxx_std_20)
-    target_compile_options(pj_media_qt_video PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
-    target_link_libraries(pj_media_qt_video
-      PUBLIC pj_media_core Qt6::Widgets Qt6::Gui Qt6::OpenGLWidgets
-      PRIVATE PkgConfig::MPV
-    )
-    target_compile_definitions(pj_media_qt_video PUBLIC PJ_HAS_MPV)
-  endif()
-endif()

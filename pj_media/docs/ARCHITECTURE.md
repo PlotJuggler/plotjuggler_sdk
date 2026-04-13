@@ -61,8 +61,6 @@ Qt widget library built on top of `pj_media_core`:
 | Component | Header(s) | Role |
 |-----------|-----------|------|
 | `MediaViewerWidget` | `media_viewer_widget.h` | `QRhiWidget` subclass: GPU rendering via BT.709 YUV->RGB fragment shader (3 R8 textures for YUV420P), zoom/pan, RGB DecodedFrame path, backward-compatible QImage path. Integrates with `MediaSource` via `setMediaSource()` + `setTimestamp()` (§7) |
-| `VideoViewerWidget` | `video_viewer_widget.h` | **Deprecated.** `QOpenGLWidget` for mpv FBO rendering. Superseded by `MediaViewerWidget` + `FileVideoSource` |
-| `MpvBackend` | `mpv_backend.h` | **Deprecated.** libmpv `VideoBackend`. Superseded by `FfmpegBackend` + `FileVideoSource` |
 | Texture shaders | `shaders/texture.{vert,frag}` | RGBA texture display with view transform matrix |
 | YUV shaders | `shaders/yuv_to_rgb.{vert,frag}` | BT.709 YUV420P->RGB conversion via 3 R8 textures |
 
@@ -376,13 +374,6 @@ features:
   MediaViewerWidget renders via BT.709 fragment shader with 3 R8
   textures. 75% GPU memory reduction vs RGBA8.
 
-**`MpvBackend`** (**deprecated**): libmpv handles all codec, container,
-HW-accel, keyframe seeking, and frame caching internally. The
-`VideoViewerWidget` (a `QOpenGLWidget`) owns a `MpvBackend` and
-renders via mpv's OpenGL FBO API. Superseded by `FfmpegBackend` +
-`FileVideoSource`, which provides better scrub control and integrates
-with the `MediaSource` interface. Source files remain in the tree but
-are unused by demos.
 
 **`StreamingVideoDecoder`** (streaming / ObjectStore-based): decodes
 H.264 VideoFrame entries from ObjectStore. Described in §4.4. Wrapped
@@ -482,7 +473,6 @@ Which component to use depends on the data source:
 | Streaming VideoFrame (ROS 2, RTSP) | StreamingVideoDecoder | Yes | Encoded packets in ObjectStore with retention budget. |
 | File-based MCAP with CompressedVideo | StreamingVideoDecoder | Yes (lazy) | DataSource pushes encoded packets at open time. |
 | ML datasets (LeRobot, RLDS) | FfmpegBackend | No | MP4 per camera; Parquet scalars go to DataEngine. Episodes map to DatasetId. |
-| Quick preview / fallback | MpvBackend | No | Simpler, no custom scrub control. |
 
 **File-based video does not go through ObjectStore** — the file itself is
 the random-access store. ObjectStore adds value only for streaming, where
