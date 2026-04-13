@@ -11,6 +11,8 @@ add_executable(pj_proto_app
   src/series_tree_model.cpp
   src/chart_panel.cpp
   src/time_range_slider.cpp
+  src/preferences_dialog.cpp
+  src/toolbox_session.cpp
 )
 
 target_compile_features(pj_proto_app PRIVATE cxx_std_20)

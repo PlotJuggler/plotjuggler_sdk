@@ -135,7 +135,7 @@ endif()
 # --- Qt Dialog Engine (optional — requires Qt6) ---
 
 if(PJ_BUILD_DIALOG_ENGINE_QT)
-  find_package(Qt6 REQUIRED COMPONENTS Widgets UiTools Charts)
+  find_package(Qt6 REQUIRED COMPONENTS Widgets UiTools Charts SvgWidgets)
   qt_standard_project_setup()
 
   # Workaround: Qt 6.5 links AGL framework which was removed in macOS 15+ SDK.
@@ -163,7 +163,7 @@ if(PJ_BUILD_DIALOG_ENGINE_QT)
   )
   target_compile_options(pj_dialog_engine_qt PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(pj_dialog_engine_qt
-    PUBLIC pj_dialog_host Qt6::Widgets Qt6::UiTools Qt6::Charts
+    PUBLIC pj_dialog_host Qt6::Widgets Qt6::UiTools Qt6::Charts Qt6::SvgWidgets
   )
   target_include_directories(pj_dialog_engine_qt PUBLIC include)
 

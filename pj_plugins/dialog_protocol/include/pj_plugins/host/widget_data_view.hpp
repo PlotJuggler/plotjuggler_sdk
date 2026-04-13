@@ -184,6 +184,14 @@ class WidgetDataView {
     return getString(name, "plain_text");
   }
 
+  // --- Code editor ---
+  [[nodiscard]] std::optional<std::string> codeContent(std::string_view name) const {
+    return getString(name, "code_content");
+  }
+  [[nodiscard]] std::optional<std::string> codeLanguage(std::string_view name) const {
+    return getString(name, "code_language");
+  }
+
   // --- QLabel ---
   [[nodiscard]] std::optional<std::string> label(std::string_view name) const {
     return getString(name, "label");
@@ -192,6 +200,10 @@ class WidgetDataView {
   // --- QPushButton ---
   [[nodiscard]] std::optional<std::string> buttonText(std::string_view name) const {
     return getString(name, "button_text");
+  }
+
+  [[nodiscard]] std::optional<std::string> buttonIconSvg(std::string_view name) const {
+    return getString(name, "button_icon_svg");
   }
 
   [[nodiscard]] std::optional<std::string> shortcut(std::string_view name) const {

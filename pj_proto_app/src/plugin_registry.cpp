@@ -207,6 +207,8 @@ void PluginRegistry::reload() {
     }
   }
 }
+
+
 std::vector<LoadedDataSource*> PluginRegistry::fileImportSources() {
   std::vector<LoadedDataSource*> result;
   for (auto& ds : data_sources_) {

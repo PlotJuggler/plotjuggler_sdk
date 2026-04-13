@@ -13,6 +13,9 @@
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QSvgRenderer>
+#include <QPainter>
+#include <QPixmap>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -20,6 +23,7 @@
 #include <pj_plugins/host/widget_event_builder.hpp>
 #include <pj_plugins/host_qt/chart_preview_widget.hpp>
 #include <pj_plugins/host_qt/widget_binding.hpp>
+#include "lua_syntax_highlighter.hpp"
 #include <set>
 
 namespace PJ {
@@ -55,8 +59,23 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QPlainTextEdit ---
   if (auto* pte = qobject_cast<QPlainTextEdit*>(w)) {
-    if (auto v = view.plainText(name)) {
-      pte->setPlainText(QString::fromStdString(*v));
+    if (auto code = view.codeContent(name)) {
+      // Code editor mode: only update if content actually differs (preserve cursor).
+      QString new_text = QString::fromStdString(*code);
+      if (pte->toPlainText() != new_text) {
+        pte->setPlainText(new_text);
+      }
+      // Install syntax highlighter on first use.
+      if (auto lang = view.codeLanguage(name)) {
+        if (!pte->property("_pj_code_lang").isValid()) {
+          pte->setProperty("_pj_code_lang", QString::fromStdString(*lang));
+          if (*lang == "lua") {
+            new PJ::LuaSyntaxHighlighter(pte->document());
+          }
+        }
+      }
+    } else if (auto pt = view.plainText(name)) {
+      pte->setPlainText(QString::fromStdString(*pt));
     }
     if (auto v = view.readOnly(name)) {
       pte->setReadOnly(*v);
@@ -211,6 +230,18 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
     if (auto v = view.buttonText(name)) {
       btn->setText(QString::fromStdString(*v));
     }
+    if (auto svg = view.buttonIconSvg(name)) {
+      QByteArray svg_data = QByteArray::fromStdString(*svg);
+      QSvgRenderer renderer(svg_data);
+      if (renderer.isValid()) {
+        int sz = btn->iconSize().height() > 0 ? btn->iconSize().height() : 16;
+        QPixmap pix(sz, sz);
+        pix.fill(Qt::transparent);
+        QPainter painter(&pix);
+        renderer.render(&painter);
+        btn->setIcon(QIcon(pix));
+      }
+    }
     return;
   }
 
@@ -300,6 +331,15 @@ void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
       QObject::connect(le, &QLineEdit::textChanged, le, [callback, name](const QString& text) {
         callback(name, WidgetEventBuilder::textChanged(text.toStdString()));
       });
+      continue;
+    }
+    if (auto* pte = qobject_cast<QPlainTextEdit*>(w)) {
+      // Only wire code editors (marked by _pj_code_lang property), not read-only plain text.
+      if (pte->property("_pj_code_lang").isValid()) {
+        QObject::connect(pte, &QPlainTextEdit::textChanged, pte, [callback, name, pte]() {
+          callback(name, WidgetEventBuilder::codeChanged(pte->toPlainText().toStdString()));
+        });
+      }
       continue;
     }
     if (auto* cb = qobject_cast<QComboBox*>(w)) {

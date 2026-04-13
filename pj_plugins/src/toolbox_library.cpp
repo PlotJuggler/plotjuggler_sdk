@@ -2,6 +2,12 @@
 
 #include <utility>
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 #include "detail/library_loader.hpp"
 
 namespace PJ {
@@ -79,6 +85,32 @@ Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
   }
 
   return ToolboxLibrary(*handle, vtable, std::string(path));
+}
+
+Expected<const PJ_dialog_vtable_t*> ToolboxLibrary::resolveDialogVtable() const {
+  if (handle_ == nullptr) {
+    return unexpected(std::string("library not loaded"));
+  }
+#if defined(_WIN32)
+  auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle_), "PJ_get_dialog_vtable");
+  if (symbol == nullptr) {
+    return unexpected(std::string("PJ_get_dialog_vtable not found"));
+  }
+  auto fn = reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
+#else
+  dlerror();
+  void* symbol = dlsym(handle_, "PJ_get_dialog_vtable");
+  const char* err = dlerror();
+  if (err != nullptr) {
+    return unexpected(std::string(err));
+  }
+  auto fn = reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
+#endif
+  const PJ_dialog_vtable_t* vtable = fn();
+  if (vtable == nullptr) {
+    return unexpected(std::string("PJ_get_dialog_vtable returned null"));
+  }
+  return vtable;
 }
 
 void ToolboxLibrary::reset() {
