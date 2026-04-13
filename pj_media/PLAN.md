@@ -46,21 +46,49 @@ then video, then streaming.
 
 ### Remaining roadmap (prioritized for PlotJuggler integration)
 
+**Next:**
+
+1. **WebRTC live streaming demo** — end-to-end live video from a local
+   webcam via WebRTC, displayed in MediaViewerWidget.
+
+   **Phase A — Webcam capture DataSource (no WebRTC yet):**
+   A demo that captures from the local webcam (`/dev/video0` on Linux)
+   via FFmpeg's `avdevice` (v4l2 input), encodes H.264 on-the-fly,
+   pushes annex-B NAL units into ObjectStore at real-time rate, and
+   displays via `StreamingVideoSource` + `MediaViewerWidget`. This
+   validates the live streaming pipeline end-to-end without network
+   complexity. Retention buffer enables scrub-back on paused stream.
+
+   **Phase B — WebRTC/WHEP receiver:**
+   A WHEP client DataSource (using `libdatachannel`) that connects to
+   a WebRTC endpoint, depacketizes H.264 RTP → annex-B, and pushes
+   into ObjectStore. The display side is identical to Phase A. The
+   webcam is served by an external WHEP sender (e.g., GStreamer
+   `webrtcsink` or a simple test server).
+
+   **Phase C — Integrated WebRTC demo:**
+   Single demo binary that captures webcam (Phase A), optionally
+   serves it via WebRTC, and displays locally. Can also connect to
+   a remote WHEP endpoint.
+
+   Demo: `webcam_viewer` — opens local camera, shows live feed with
+   pause/scrub into retained buffer.
+
 **High priority:**
 
-1. **pj_plugins integration** — wire ObjectStore write host to DataSource
+2. **pj_plugins integration** — wire ObjectStore write host to DataSource
    plugins for MCAP/ROS2 video and image ingest.
 
 **Medium priority:**
 
-2. **MediaIndexRegistry** — centralized keyframe index for file-backed
+3. **MediaIndexRegistry** — centralized keyframe index for file-backed
    CompressedVideo topics (C ABI `publish_keyframe_index`).
 
 **Low priority (deferred):**
 
-3. Compositor (multi-layer overlay) — deferred until annotation test data.
-4. SceneDecoder (CDR/Protobuf annotations) — deferred.
-5. H.265/AV1 NAL utils — extend when needed.
+4. Compositor (multi-layer overlay) — deferred until annotation test data.
+5. SceneDecoder (CDR/Protobuf annotations) — deferred.
+6. H.265/AV1 NAL utils — extend when needed.
 
 **Removed:**
 
