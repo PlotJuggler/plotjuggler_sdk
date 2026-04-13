@@ -160,6 +160,7 @@ if(PJ_BUILD_DIALOG_ENGINE_QT)
     src/dialog_engine.cpp
     src/chart_preview_widget.cpp
     include/pj_plugins/host_qt/chart_preview_widget.hpp
+    include/pj_plugins/host_qt/drop_event_filter.hpp
   )
   target_compile_options(pj_dialog_engine_qt PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(pj_dialog_engine_qt

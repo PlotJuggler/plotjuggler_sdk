@@ -12,6 +12,7 @@
 #include <pj_plugins/host/widget_data_view.hpp>
 #include <pj_plugins/host/widget_event_builder.hpp>
 #include <pj_plugins/host_qt/dialog_engine.hpp>
+#include <pj_plugins/host_qt/drop_event_filter.hpp>
 #include <pj_plugins/host_qt/widget_binding.hpp>
 
 namespace PJ {
@@ -383,6 +384,30 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   {
     PJ::WidgetDataView shortcut_view(handle_.widget_data());
     installButtonShortcuts(dialog, shortcut_view);
+  }
+
+  // 5c. Install drop event filter for declared drop targets
+  {
+    PJ::WidgetDataView drop_view(initial_raw);
+    auto targets = drop_view.dropTargets();
+    if (!targets.empty()) {
+      auto* drop_filter =
+          new DropEventFilter(dialog, [&](const std::string& name, const std::string& event_json) {
+            stats_.event_count++;
+            if (handle_.sendEvent(name, event_json)) {
+              auto ar =
+                  apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+              if (ar.wants_accept) {
+                dialog->accept();
+                return;
+              }
+              maybe_open_sub_dialog(ar);
+            }
+          });
+      for (const auto& t : targets) {
+        drop_filter->addTarget(t);
+      }
+    }
   }
 
   // 6. Start tick timer

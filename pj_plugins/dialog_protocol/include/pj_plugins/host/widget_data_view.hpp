@@ -247,6 +247,26 @@ class WidgetDataView {
     return getInt(name, "tab_index");
   }
 
+  // --- Drop target ---
+  [[nodiscard]] bool isDropTarget(std::string_view name) const {
+    return getBool(name, "drop_target").value_or(false);
+  }
+
+  /// Return all widget names that declare drop_target: true.
+  [[nodiscard]] std::vector<std::string> dropTargets() const {
+    std::vector<std::string> result;
+    if (!data_.is_object()) return result;
+    for (const auto& [key, val] : data_.items()) {
+      if (val.is_object()) {
+        auto it = val.find("drop_target");
+        if (it != val.end() && it->is_boolean() && it->get<bool>()) {
+          result.push_back(key);
+        }
+      }
+    }
+    return result;
+  }
+
   // --- Generic (any widget) ---
   [[nodiscard]] std::optional<bool> enabled(std::string_view name) const {
     return getBool(name, "enabled");

@@ -218,6 +218,15 @@ class WidgetData {
     return *this;
   }
 
+  // --- Drop target ---
+
+  /// Mark a widget as a drag-and-drop target for field curves.
+  /// The DialogEngine reads this on init and installs a DropEventFilter for it.
+  WidgetData& setDropTarget(std::string_view name, bool is_target = true) {
+    entry(name)["drop_target"] = is_target;
+    return *this;
+  }
+
   // --- Dialog-level commands ---
 
   /// Request that the dialog accept (close with OK) after applying this widget data.
