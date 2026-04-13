@@ -10,12 +10,11 @@ namespace PJ {
 
 /// Abstract interface for video playback backends.
 ///
-/// Two concrete implementations:
-/// - MpvBackend: renders to OpenGL FBO via renderFrame()
-/// - FfmpegBackend: delivers decoded frames via frameReady callback
+/// Primary implementation: FfmpegBackend (delivers decoded frames via callback).
+/// MpvBackend (renders to OpenGL FBO) is deprecated — see ARCHITECTURE.md §4.1.
 ///
-/// The widget layer picks the right display strategy based on which
-/// delivery mechanism the backend supports. See ARCHITECTURE.md §4.1.
+/// New code should use FileVideoSource (MediaSource adapter) rather than
+/// VideoBackend directly.
 class VideoBackend {
  public:
   virtual ~VideoBackend() = default;
@@ -50,21 +49,15 @@ class VideoBackend {
   virtual void setPositionCallback(PositionCallback cb) = 0;
   virtual void setDurationCallback(DurationCallback cb) = 0;
   virtual void setFileLoadedCallback(FileLoadedCallback cb) = 0;
-
-  /// Set callback for decoded frame delivery (used by FfmpegBackend).
-  /// MpvBackend ignores this — it renders via renderFrame() instead.
   virtual void setFrameCallback(FrameCallback /*cb*/) {}
-
-  /// Render the current frame into the given OpenGL FBO (MpvBackend).
-  /// FfmpegBackend does nothing here — it delivers via FrameCallback.
-  virtual void renderFrame(int /*fbo_id*/, int /*width*/, int /*height*/) {}
 
   /// Process pending backend events (call from Qt event loop).
   virtual void processEvents() = 0;
 
-  /// Does this backend render to FBO (true) or deliver frames via callback (false)?
+  // --- Deprecated MpvBackend methods (kept for compilation only) ---
+  virtual void renderFrame(int /*fbo_id*/, int /*width*/, int /*height*/) {}
   [[nodiscard]] virtual bool rendersToFbo() const {
-    return true;
+    return false;
   }
 
  protected:

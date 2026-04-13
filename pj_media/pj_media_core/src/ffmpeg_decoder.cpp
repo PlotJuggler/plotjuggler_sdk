@@ -120,9 +120,16 @@ Expected<DecodedFrame> FfmpegDecoder::decode(
     avcodec_flush_buffers(codec_ctx_);
     ret = avcodec_send_packet(codec_ctx_, pkt);
   }
+  if (ret == AVERROR(EAGAIN)) {
+    // Decoder input full — drain a frame first, then retry the packet
+    AVFrame* drain_frame = av_frame_alloc();
+    avcodec_receive_frame(codec_ctx_, drain_frame);
+    av_frame_free(&drain_frame);
+    ret = avcodec_send_packet(codec_ctx_, pkt);
+  }
   av_packet_free(&pkt);
 
-  if (ret < 0 && ret != AVERROR(EAGAIN)) {
+  if (ret < 0) {
     return unexpected("avcodec_send_packet failed");
   }
 
@@ -141,7 +148,9 @@ Expected<DecodedFrame> FfmpegDecoder::decode(
   }
 
   auto result = avFrameToDecodedFrame(frame);
-  result.pts = frame->pts;
+  if (result.has_value()) {
+    result->pts = frame->pts;
+  }
   av_frame_free(&frame);
   return result;
 }
@@ -188,7 +197,11 @@ std::vector<DecodedFrame> FfmpegDecoder::drain() {
 
   AVFrame* frame = av_frame_alloc();
   while (avcodec_receive_frame(codec_ctx_, frame) >= 0) {
-    frames.push_back(avFrameToDecodedFrame(frame));
+    auto result = avFrameToDecodedFrame(frame);
+    if (result.has_value()) {
+      result->pts = frame->pts;
+      frames.push_back(std::move(*result));
+    }
     av_frame_unref(frame);
   }
   av_frame_free(&frame);
@@ -203,7 +216,7 @@ int FfmpegDecoder::height() const {
   return codec_ctx_ != nullptr ? codec_ctx_->height : 0;
 }
 
-DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
+Expected<DecodedFrame> FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
   AVFrame* sw_frame = frame;
   AVFrame* tmp_frame = nullptr;
 
@@ -212,7 +225,7 @@ DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
     tmp_frame = av_frame_alloc();
     if (av_hwframe_transfer_data(tmp_frame, frame, 0) < 0) {
       av_frame_free(&tmp_frame);
-      return {};
+      return unexpected("HW frame transfer failed");
     }
     sw_frame = tmp_frame;
   }
@@ -276,7 +289,7 @@ DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
     if (tmp_frame != nullptr) {
       av_frame_free(&tmp_frame);
     }
-    return {};
+    return unexpected("sws_getContext failed for pixel format conversion");
   }
 
   int uv_w = (w + 1) / 2;

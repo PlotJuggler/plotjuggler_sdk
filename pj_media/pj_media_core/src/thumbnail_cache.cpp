@@ -24,6 +24,11 @@ ThumbnailCache::~ThumbnailCache() {
 
 void ThumbnailCache::buildAsync(const std::string& video_path, double duration_sec) {
   stop();
+  {
+    std::lock_guard lock(mutex_);
+    frames_.clear();
+    total_bytes_ = 0;
+  }
   running_.store(true);
   thread_ = std::thread(&ThumbnailCache::buildThread, this, video_path, duration_sec);
 }
@@ -98,7 +103,11 @@ void ThumbnailCache::buildThread(std::string video_path, double duration_sec) {
     running_.store(false);
     return;
   }
-  avformat_find_stream_info(fmt_ctx, nullptr);
+  if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
+    avformat_close_input(&fmt_ctx);
+    running_.store(false);
+    return;
+  }
 
   int video_idx = -1;
   for (unsigned i = 0; i < fmt_ctx->nb_streams; ++i) {
@@ -130,7 +139,17 @@ void ThumbnailCache::buildThread(std::string video_path, double duration_sec) {
 
   // Open decoder with VAAPI
   const AVCodec* codec = avcodec_find_decoder(stream->codecpar->codec_id);
+  if (codec == nullptr) {
+    avformat_close_input(&fmt_ctx);
+    running_.store(false);
+    return;
+  }
   AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
+  if (codec_ctx == nullptr) {
+    avformat_close_input(&fmt_ctx);
+    running_.store(false);
+    return;
+  }
   avcodec_parameters_to_context(codec_ctx, stream->codecpar);
 
   AVBufferRef* hw_ctx = nullptr;
@@ -138,7 +157,15 @@ void ThumbnailCache::buildThread(std::string video_path, double duration_sec) {
     codec_ctx->hw_device_ctx = av_buffer_ref(hw_ctx);
   }
   codec_ctx->thread_count = 2;
-  avcodec_open2(codec_ctx, codec, nullptr);
+  if (avcodec_open2(codec_ctx, codec, nullptr) < 0) {
+    avcodec_free_context(&codec_ctx);
+    if (hw_ctx != nullptr) {
+      av_buffer_unref(&hw_ctx);
+    }
+    avformat_close_input(&fmt_ctx);
+    running_.store(false);
+    return;
+  }
 
   // sws for scaling + format conversion
   SwsContext* sws = nullptr;

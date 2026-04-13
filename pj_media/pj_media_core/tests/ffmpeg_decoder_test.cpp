@@ -69,8 +69,52 @@ TEST_F(FfmpegDecoderTest, DecodeFirstFrame) {
   ASSERT_FALSE(frame.isNull()) << "no frame decoded after " << packets_sent << " packets";
   EXPECT_EQ(frame.width, 640);
   EXPECT_EQ(frame.height, 480);
-  EXPECT_EQ(frame.format, PixelFormat::kRGB888);
-  EXPECT_EQ(frame.pixels->size(), static_cast<size_t>(640 * 480 * 3));
+  EXPECT_EQ(frame.format, PixelFormat::kYUV420P);
+  EXPECT_EQ(frame.pixels->size(), expectedBufferSize(640, 480, PixelFormat::kYUV420P));
+  EXPECT_TRUE(frame.isValid());
+}
+
+// C2 contract: decode() must never return has_value() with isNull() frame.
+// Every successful decode must produce a valid frame.
+TEST_F(FfmpegDecoderTest, SuccessfulDecodeNeverReturnsNullFrame) {
+  AVFormatContext* fmt_ctx = nullptr;
+  ASSERT_GE(avformat_open_input(&fmt_ctx, kTestVideo.c_str(), nullptr, nullptr), 0);
+  ASSERT_GE(avformat_find_stream_info(fmt_ctx, nullptr), 0);
+
+  int video_idx = -1;
+  for (unsigned i = 0; i < fmt_ctx->nb_streams; ++i) {
+    if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+      video_idx = static_cast<int>(i);
+      break;
+    }
+  }
+  ASSERT_GE(video_idx, 0);
+
+  FfmpegDecoder decoder;
+  ASSERT_TRUE(decoder.open(fmt_ctx->streams[video_idx]->codecpar));
+
+  AVPacket* pkt = av_packet_alloc();
+  int total_results = 0;
+
+  while (av_read_frame(fmt_ctx, pkt) >= 0 && total_results < 30) {
+    if (pkt->stream_index != video_idx) {
+      av_packet_unref(pkt);
+      continue;
+    }
+
+    auto result = decoder.decode(pkt->data, static_cast<size_t>(pkt->size), pkt->pts);
+    av_packet_unref(pkt);
+
+    if (result.has_value()) {
+      // Contract: if decode returns success, the frame must not be null
+      EXPECT_FALSE(result->isNull()) << "decode() returned success but null frame at result #" << total_results;
+      ++total_results;
+    }
+  }
+  av_packet_free(&pkt);
+  avformat_close_input(&fmt_ctx);
+
+  EXPECT_GT(total_results, 0) << "should have decoded at least one frame";
 }
 
 TEST_F(FfmpegDecoderTest, DecodeMultipleFrames) {

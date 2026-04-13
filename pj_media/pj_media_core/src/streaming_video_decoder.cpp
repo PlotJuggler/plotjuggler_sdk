@@ -93,7 +93,9 @@ Expected<DecodedFrame> StreamingVideoDecoder::decodeRange(size_t start_idx, size
   for (size_t i = start_idx; i <= target_idx; ++i) {
     auto entry = store_->at(topic_, i);
     if (!entry.has_value()) {
-      continue;
+      // Missing entry mid-GOP — the decode chain is broken.
+      // Return error rather than producing corrupt output.
+      return unexpected("entry evicted mid-GOP (index " + std::to_string(i) + ")");
     }
     // Track position by ObjectStore timestamp (= DTS for B-frame videos).
     last_sent_ts_ = entry->timestamp;

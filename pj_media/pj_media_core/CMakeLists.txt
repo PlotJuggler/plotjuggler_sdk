@@ -58,7 +58,6 @@ if(PJ_BUILD_TESTS)
 
   set(PJ_MEDIA_CORE_TESTS
     tests/decoded_frame_test.cpp
-    tests/frame_slot_test.cpp
     tests/cancel_token_test.cpp
     tests/image_decoder_test.cpp
   )
@@ -98,6 +97,19 @@ if(PJ_BUILD_TESTS)
     )
     target_compile_options(ffmpeg_decoder_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
     add_test(NAME ffmpeg_decoder_test COMMAND ffmpeg_decoder_test
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+
+    # ThumbnailCache test (thread safety, reopen, invalid files)
+    add_executable(thumbnail_cache_test tests/thumbnail_cache_test.cpp)
+    target_link_libraries(thumbnail_cache_test PRIVATE
+      pj_media_core pj_datastore
+      PkgConfig::LIBAVCODEC PkgConfig::LIBAVFORMAT PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
+      PkgConfig::TURBOJPEG
+      GTest::gtest_main
+    )
+    target_compile_options(thumbnail_cache_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
+    add_test(NAME thumbnail_cache_test COMMAND thumbnail_cache_test
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 

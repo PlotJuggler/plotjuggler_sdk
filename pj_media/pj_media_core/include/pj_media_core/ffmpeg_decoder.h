@@ -57,7 +57,7 @@ class FfmpegDecoder {
   [[nodiscard]] int height() const;
 
  private:
-  DecodedFrame avFrameToDecodedFrame(AVFrame* frame);
+  Expected<DecodedFrame> avFrameToDecodedFrame(AVFrame* frame);
 
   AVCodecContext* codec_ctx_ = nullptr;
   AVBufferRef* hw_device_ctx_ = nullptr;
