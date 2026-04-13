@@ -22,8 +22,16 @@ class StreamingVideoDecoder;
 /// for the latest decoded result. Latest-wins semantics — if a new
 /// timestamp arrives while the worker is busy, it picks up the new
 /// request after completing the current decode.
+///
+/// Thread safety: setTimestamp() and takeFrame() must be called from
+/// the main thread only. The worker thread is internal.
+///
+/// Ownership: `store` is NOT owned (must outlive this object).
+/// See ARCHITECTURE.md §5.3.
 class StreamingVideoSource : public MediaSource {
  public:
+  /// @param store  ObjectStore containing video entries (not owned)
+  /// @param topic  Topic ID with H.264 VideoFrame entries
   StreamingVideoSource(ObjectStore* store, ObjectTopicId topic);
   ~StreamingVideoSource() override;
 

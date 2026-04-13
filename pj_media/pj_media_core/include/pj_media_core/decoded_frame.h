@@ -47,19 +47,28 @@ enum class PixelFormat : uint8_t {
   return 0;
 }
 
-/// Decoded pixel buffer produced by ImageDecoder or VideoDecoder.
+/// Decoded pixel buffer produced by decoders (ImageDecoder, FfmpegDecoder)
+/// and consumed by MediaViewerWidget for GPU upload.
+///
+/// Ownership: `pixels` is shared via shared_ptr, enabling zero-copy
+/// handoff between pipeline stages and latest-wins FrameSlot patterns.
+///
+/// For YUV420P: pixels contains Y plane (w*h), then U plane
+/// ((w+1)/2 * (h+1)/2), then V plane (same size) — contiguous.
+/// Use expectedBufferSize() for correct allocation.
 struct DecodedFrame {
-  std::shared_ptr<std::vector<uint8_t>> pixels;
-  int width = 0;
-  int height = 0;
-  PixelFormat format = PixelFormat::kRGB888;
-  int64_t pts = -1;  // presentation timestamp from decoder (stream time_base units)
+  std::shared_ptr<std::vector<uint8_t>> pixels;  ///< Pixel data (contiguous, layout depends on format)
+  int width = 0;                                 ///< Image width in pixels
+  int height = 0;                                ///< Image height in pixels
+  PixelFormat format = PixelFormat::kRGB888;     ///< Pixel layout in the buffer
+  int64_t pts = -1;                              ///< Presentation timestamp (-1 if unknown)
 
+  /// True if no pixel data is present (null or empty buffer).
   [[nodiscard]] bool isNull() const noexcept {
     return pixels == nullptr || pixels->empty();
   }
 
-  /// Check that pixels, dimensions, and format are mutually consistent.
+  /// True if pixels, dimensions, and format are mutually consistent.
   [[nodiscard]] bool isValid() const noexcept {
     return !isNull() && width > 0 && height > 0 && pixels->size() == expectedBufferSize(width, height, format);
   }

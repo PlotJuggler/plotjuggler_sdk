@@ -32,13 +32,14 @@ class FileVideoSource : public MediaSource {
 
   // --- Additional API beyond MediaSource (for slider/transport UI) ---
 
-  [[nodiscard]] double duration() const;
-  [[nodiscard]] double position() const;
-  void setPaused(bool paused);
-  [[nodiscard]] bool isPaused() const;
-  void stepForward();
-  void stepBackward();
+  [[nodiscard]] double duration() const;  ///< Total duration in seconds
+  [[nodiscard]] double position() const;  ///< Current playback position in seconds
+  void setPaused(bool paused);            ///< Pause/resume playback
+  [[nodiscard]] bool isPaused() const;    ///< True if paused (starts paused after open)
+  void stepForward();                     ///< Advance by one frame
+  void stepBackward();                    ///< Go back by one frame
 
+  /// Callbacks fired from takeFrame() (via processEvents) on the main thread.
   void setPositionCallback(VideoBackend::PositionCallback cb);
   void setDurationCallback(VideoBackend::DurationCallback cb);
   void setFileLoadedCallback(VideoBackend::FileLoadedCallback cb);

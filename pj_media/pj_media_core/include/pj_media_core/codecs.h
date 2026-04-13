@@ -36,21 +36,22 @@ class JpegCodec : public CodecStage {
   void* tj_ = nullptr;
 };
 
-/// PNG → RGB888 or RGBA8888 or Mono16 via libpng.
+/// PNG → RGB888 (8-bit) or RGBA8888 (with alpha) or Mono16 (16-bit grayscale).
+/// Preserves Mono16 for downstream stages (e.g. DepthToGrayscale).
 class PngCodec : public CodecStage {
  public:
   Expected<DecodedFrame> decode(const DecodedFrame& input) const override;
 };
 
-/// Mono16 depth → RGB888 grayscale (normalized min/max).
-/// Preserves width/height from the input frame.
+/// Mono16 depth → RGB888 grayscale. Normalizes to [min, max] range.
+/// Input must be kMono16 with pixels->size() >= width*height*2.
 class DepthToGrayscale : public CodecStage {
  public:
   Expected<DecodedFrame> decode(const DecodedFrame& input) const override;
 };
 
-/// Mono8 segmentation class IDs → RGB888 with distinct colors per class.
-/// Preserves width/height from the input frame.
+/// Mono8 class IDs → RGB888 false-color. Each class ID (0-255) maps to
+/// a distinct hue. Input must be kMono8 with pixels->size() >= width*height.
 class SegmentationPalette : public CodecStage {
  public:
   Expected<DecodedFrame> decode(const DecodedFrame& input) const override;
@@ -58,8 +59,8 @@ class SegmentationPalette : public CodecStage {
 
 // --- Pipeline builders ---
 
-std::unique_ptr<CodecPipeline> makeJpegPipeline();
-std::unique_ptr<CodecPipeline> makeCdrJpegPipeline();
-std::unique_ptr<CodecPipeline> makeDepthPipeline();
+std::unique_ptr<CodecPipeline> makeJpegPipeline();     ///< JpegCodec only (raw JPEG input)
+std::unique_ptr<CodecPipeline> makeCdrJpegPipeline();  ///< CdrImageStripper → JpegCodec
+std::unique_ptr<CodecPipeline> makeDepthPipeline();    ///< CompressedDepthStripper → PngCodec → DepthToGrayscale
 
 }  // namespace PJ
