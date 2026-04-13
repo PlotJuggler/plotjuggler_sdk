@@ -35,6 +35,9 @@ then video, then streaming.
 | Medium review fixes | `18bead3` | DepthToGrayscale + SegmentationPalette validate buffer size and format. ImagePipelineSource deduplicates same-timestamp requests. FfmpegDecoder header doc corrected to YUV420P |
 | Final review fixes | `699736b` | Widget UV plane sizing fixed to `(w+1)/2`. BGR/BGRA→RGBA channel swap. MCAP test dangling iterator fix (`schemas()` returns by value) |
 | ASAN infrastructure | `f616213` | Skip RTLD_DEEPBIND under ASAN via `PJ_ASAN_ACTIVE` define. 10 plugin tests fixed. ASAN results: 57/58 (was 45/58) |
+| Docs update | `6a26139` | PLAN.md milestones + roadmap updated. ARCHITECTURE.md FileVideoSource/StreamingVideoSource marked planned. TECHNICAL_NOTES.md §11 Lessons Learned |
+| FileVideoSource + StreamingVideoSource | `e2db9b5` | FileVideoSource wraps FfmpegBackend (4 tests). StreamingVideoSource wraps StreamingVideoDecoder + worker thread (3 tests). mp4_video_viewer + video_stream_demo migrated. All 5 demos use MediaSource uniformly |
+| LSAN suppression | `461cbd0` | Suppress VAAPI driver av_malloc leak in ffmpeg_decoder_test. 60/60 ASAN, 60/60 release |
 
 ### Known limitations
 
@@ -45,26 +48,19 @@ then video, then streaming.
 
 **High priority:**
 
-1. **FileVideoSource + StreamingVideoSource** — remaining MediaSource
-   implementations. `FileVideoSource` wraps FfmpegBackend (file-based
-   MP4). `StreamingVideoSource` wraps StreamingVideoDecoder + worker
-   thread (ObjectStore-based H.264 streams). Migrate `mp4_video_viewer`
-   and `video_stream_demo` demos. (`MediaSource` interface,
-   `ImagePipelineSource`, widget integration, and image demo migrations
-   are already done — see completed milestones.)
-2. **pj_plugins integration** — wire ObjectStore write host to DataSource
+1. **pj_plugins integration** — wire ObjectStore write host to DataSource
    plugins for MCAP/ROS2 video and image ingest.
 
 **Medium priority:**
 
-3. **MediaIndexRegistry** — centralized keyframe index for file-backed
+2. **MediaIndexRegistry** — centralized keyframe index for file-backed
    CompressedVideo topics (C ABI `publish_keyframe_index`).
 
 **Low priority (deferred):**
 
-4. Compositor (multi-layer overlay) — deferred until annotation test data.
-5. SceneDecoder (CDR/Protobuf annotations) — deferred.
-6. H.265/AV1 NAL utils — extend when needed.
+3. Compositor (multi-layer overlay) — deferred until annotation test data.
+4. SceneDecoder (CDR/Protobuf annotations) — deferred.
+5. H.265/AV1 NAL utils — extend when needed.
 
 **Deprecated:**
 

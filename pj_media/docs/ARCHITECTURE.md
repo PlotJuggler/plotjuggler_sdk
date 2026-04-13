@@ -33,8 +33,8 @@ Pure C++ library. Contains everything that does not touch Qt:
 |-----------|-----------|------|
 | `MediaSource` | `media_source.h` | Abstract frame-delivery interface: `setTimestamp` + `takeFrame` (§5) |
 | `ImagePipelineSource` | `image_pipeline_source.h` | `MediaSource` for images: wraps CodecPipeline + ObjectStore, synchronous decode (§5.1) |
-| `FileVideoSource` | `file_video_source.h` | `MediaSource` for file-based video: wraps FfmpegBackend (§5.2) — **planned** |
-| `StreamingVideoSource` | `streaming_video_source.h` | `MediaSource` for streaming video: wraps StreamingVideoDecoder + worker thread (§5.3) — **planned** |
+| `FileVideoSource` | `file_video_source.h` | `MediaSource` for file-based video: wraps FfmpegBackend (§5.2) |
+| `StreamingVideoSource` | `streaming_video_source.h` | `MediaSource` for streaming video: wraps StreamingVideoDecoder + worker thread (§5.3) |
 | `FrameSlot` | `frame_slot.h` | Single-slot latest-wins mailbox (§3) |
 | `VideoBackend` | `video_backend.h` | Abstract video playback interface (§4) |
 | `FfmpegBackend` | `ffmpeg_backend.h` | FFmpeg-based `VideoBackend`: seek, scrub, play with CancelToken, forward threshold, decodeSkip, thumbnail cache (§4.1) |
