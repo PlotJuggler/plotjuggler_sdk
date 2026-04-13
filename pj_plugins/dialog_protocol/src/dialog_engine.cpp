@@ -102,7 +102,11 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(loaded);
+  }
 
+  // Wire buttonBox signals — works whether the loaded widget was a QDialog
+  // or a plain QWidget. Needed so Close/OK/Cancel buttons function correctly.
+  {
     auto* button_box = loaded->findChild<QDialogButtonBox*>("buttonBox");
     if (button_box) {
       QObject::connect(button_box, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
