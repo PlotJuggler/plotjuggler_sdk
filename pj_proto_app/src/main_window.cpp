@@ -1,6 +1,11 @@
 #include "main_window.hpp"
+#include "preferences_dialog.hpp"
 
 #include <QAction>
+#include <QApplication>
+#include <QDesktopServices>
+#include <QDockWidget>
+#include <QHeaderView>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
@@ -114,7 +119,8 @@ ShowMessageBoxCallback makeMessageBoxCallback(QWidget* parent) {
 }  // namespace
 
 MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
-    : QMainWindow(parent), registry_(plugin_dir), tree_model_(engine_) {
+    : QMainWindow(parent), plugin_dir_str_(QString::fromStdString(plugin_dir)),
+      registry_(plugin_dir), tree_model_(engine_) {
   auto td_result = engine_.createTimeDomain("default");
   if (td_result) {
     default_td_id_ = *td_result;
@@ -186,6 +192,8 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
     chart_panel_->updateData(begin, end);
   });
   connect(&refresh_timer_, &QTimer::timeout, this, &MainWindow::onRefreshTimer);
+
+  setupMenuBar();
 
   setWindowTitle("PlotJuggler Proto");
 }
@@ -689,6 +697,183 @@ void MainWindow::onOpenMarketplace() {
   window.exec();
   if (window.installationsChanged()) {
     registry_.reload();
+  }
+}
+
+void MainWindow::onShowPreferences() {
+  PreferencesDialog dlg(plugin_dir_str_, this);
+  dlg.exec();
+}
+
+void MainWindow::setupMenuBar() {
+  // --- App ---
+  auto* app_menu = menuBar()->addMenu("&App");
+
+  auto* act_clear_points = app_menu->addAction("Clear Data &Points", this, &MainWindow::onClearData);
+  act_clear_points->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_C);
+
+  auto* act_delete_all = app_menu->addAction("&Delete Everything", this, [this]() {
+    onClearData();
+    onClearPlots();
+  });
+  act_delete_all->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_X);
+
+  app_menu->addSeparator();
+
+  auto* act_prefs = app_menu->addAction("&Preferences...", this, &MainWindow::onShowPreferences);
+  act_prefs->setShortcut(Qt::CTRL | Qt::Key_Comma);
+
+  app_menu->addSeparator();
+
+  auto* act_exit = app_menu->addAction("E&xit", this, &QMainWindow::close);
+  act_exit->setShortcut(QKeySequence::Quit);
+
+  // --- Tools ---
+  auto* tools_menu = menuBar()->addMenu("&Tools");
+
+  auto* act_stylesheet = tools_menu->addAction("Load &Stylesheet...", this, [this]() {
+    QSettings settings;
+    auto last_dir = settings.value("ProtoApp/lastStylesheetDir", "").toString();
+    auto path = QFileDialog::getOpenFileName(this, "Load Stylesheet", last_dir, "Stylesheets (*.qss);;All files (*)");
+    if (path.isEmpty()) return;
+    settings.setValue("ProtoApp/lastStylesheetDir", QFileInfo(path).absolutePath());
+    QFile file(path);
+    if (file.open(QFile::ReadOnly | QFile::Text)) {
+      qApp->setStyleSheet(QString::fromUtf8(file.readAll()));
+    }
+  });
+  (void)act_stylesheet;
+
+  tools_menu->addSeparator();
+
+  // Toolbox plugins discovered dynamically (e.g. ColorMap Editor)
+  setupToolboxPanels(tools_menu);
+
+  tools_menu->addSeparator();
+
+  auto* act_fft = tools_menu->addAction("&Fast Fourier Transform");
+  act_fft->setEnabled(false);
+
+  auto* act_quat = tools_menu->addAction("&Quaternion to RPY");
+  act_quat->setEnabled(false);
+
+  auto* act_lua = tools_menu->addAction("&Reactive Script Editor");
+  act_lua->setEnabled(false);
+
+  // --- Help ---
+  auto* help_menu = menuBar()->addMenu("&Help");
+
+  auto* act_cheatsheet = help_menu->addAction("&Cheatsheet", this, [this]() {
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle("Cheatsheet");
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->resize(480, 400);
+
+    struct Row {
+      QString shortcut;
+      QString action;
+    };
+    const std::vector<Row> rows = {
+        {"Ctrl+O", "Load File"},
+        {"Ctrl+R", "Start Stream"},
+        {"Ctrl+Shift+C", "Clear Data Points"},
+        {"Ctrl+Shift+X", "Delete Everything"},
+        {"Ctrl+,", "Preferences"},
+        {"Ctrl+Z", "Undo"},
+        {"Ctrl+Shift+Z", "Redo"},
+        {"F1", "Cheatsheet"},
+    };
+
+    auto* table = new QTableWidget(static_cast<int>(rows.size()), 2, dlg);
+    table->setHorizontalHeaderLabels({"Shortcut", "Action"});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->verticalHeader()->setVisible(false);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionMode(QAbstractItemView::NoSelection);
+    table->setAlternatingRowColors(true);
+
+    for (int i = 0; i < static_cast<int>(rows.size()); ++i) {
+      table->setItem(i, 0, new QTableWidgetItem(rows[i].shortcut));
+      table->setItem(i, 1, new QTableWidgetItem(rows[i].action));
+    }
+    table->resizeColumnToContents(0);
+
+    auto* layout = new QVBoxLayout(dlg);
+    layout->addWidget(table);
+    dlg->exec();
+  });
+  act_cheatsheet->setShortcut(Qt::Key_F1);
+
+  help_menu->addSeparator();
+
+  auto* act_support = help_menu->addAction("&Support PlotJuggler", this, []() {
+    QDesktopServices::openUrl(QUrl("https://github.com/facontidavide/PlotJuggler"));
+  });
+  (void)act_support;
+
+  auto* act_love = help_menu->addAction(
+      QApplication::style()->standardIcon(QStyle::SP_DialogApplyButton), "Share the &Love", this, []() {
+        QDesktopServices::openUrl(QUrl("https://github.com/facontidavide/PlotJuggler/stargazers"));
+      });
+  (void)act_love;
+
+  auto* act_report = help_menu->addAction(
+      QApplication::style()->standardIcon(QStyle::SP_MessageBoxWarning), "&Report a Problem", this, []() {
+        QDesktopServices::openUrl(QUrl("https://github.com/facontidavide/PlotJuggler/issues"));
+      });
+  (void)act_report;
+
+  help_menu->addSeparator();
+
+  help_menu->addAction("&About...", this, [this]() {
+    QMessageBox::about(this, "About PlotJuggler Proto",
+                       "<b>PlotJuggler Proto</b><br>"
+                       "Prototype application for testing PlotJuggler plugins.<br><br>"
+                       "Part of the <i>plotjuggler-core</i> project.");
+  });
+}
+
+void MainWindow::setupToolboxPanels(QMenu* tools_menu) {
+  for (const auto& tb : registry_.allToolboxes()) {
+    auto session =
+        std::make_unique<ToolboxSession>(engine_, const_cast<PJ::ToolboxLibrary&>(tb.library), tb.name, this);
+    if (!session->init()) {
+      continue;
+    }
+
+    connect(session.get(), &ToolboxSession::dataChanged, this, [this]() {
+      auto [begin, end] = computeVisibleRange();
+      chart_panel_->updateData(begin, end);
+      tree_model_.rebuildIfChanged();
+    });
+
+    // Forward visible-range updates from the main chart to the plugin's toolbox host,
+    // so plugins can implement zoom-aware features (e.g. FFT's "only zoomed area" mode).
+    ToolboxSession* session_ptr = session.get();
+    connect(chart_panel_, &ChartPanel::visibleRangeChanged, session_ptr,
+            [session_ptr](PJ::Timestamp t_min, PJ::Timestamp t_max) {
+              session_ptr->setVisibleRange(t_min, t_max);
+            });
+    // Seed with the current range so plugins started after data was loaded see a valid range.
+    {
+      auto [t_min, t_max] = computeVisibleRange();
+      session_ptr->setVisibleRange(t_min, t_max);
+    }
+
+    ToolboxSession* raw_session = session.get();
+
+    // Add menu action that opens the dialog directly (like PJ 3.x)
+    tools_menu->addAction(QString::fromStdString(tb.name), this, [this, raw_session]() {
+      if (raw_session->hasDialog()) {
+        if (raw_session->runDialog(this)) {
+          auto [begin, end] = computeVisibleRange();
+          chart_panel_->updateData(begin, end);
+          tree_model_.rebuildIfChanged();
+        }
+      }
+    });
+
+    toolbox_sessions_.push_back(std::move(session));
   }
 }
 

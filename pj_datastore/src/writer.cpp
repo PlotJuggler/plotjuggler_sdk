@@ -472,6 +472,55 @@ void DataWriter::appendScalar(const ScalarSeriesHandle& handle, Timestamp t, Num
 }
 
 // ---------------------------------------------------------------------------
+// Scatter XY convenience API
+// ---------------------------------------------------------------------------
+
+Expected<ScatterXYSeriesHandle> DataWriter::registerScatterXYSeries(DatasetId dataset_id,
+                                                                      std::string_view topic_name) {
+  TopicDescriptor desc;
+  desc.name = std::string(topic_name);
+  desc.schema_id = 0;
+
+  auto topic_id_or = impl_->engine.createTopic(dataset_id, std::move(desc));
+  if (!topic_id_or.has_value()) {
+    return PJ::unexpected(topic_id_or.error());
+  }
+  TopicId topic_id = *topic_id_or;
+
+  ColumnDescriptor x_desc;
+  x_desc.field_id = 0;
+  x_desc.logical_type = PJ::PrimitiveType::kFloat64;
+  x_desc.field_path = "x";
+
+  ColumnDescriptor y_desc;
+  y_desc.field_id = 1;
+  y_desc.logical_type = PJ::PrimitiveType::kFloat64;
+  y_desc.field_path = "y";
+
+  std::vector<ColumnDescriptor> columns = {x_desc, y_desc};
+  impl_->topic_columns[topic_id] = columns;
+
+  if (auto* storage = impl_->engine.getTopicStorage(topic_id)) {
+    storage->setColumnDescriptors(std::move(columns));
+  }
+
+  return ScatterXYSeriesHandle{topic_id, 0, 1};
+}
+
+void DataWriter::appendScatterXY(const ScatterXYSeriesHandle& handle, double x, double y) {
+  auto& builder = getOrCreateBuilder(handle.topic_id);
+  const auto synthetic_t = static_cast<Timestamp>(builder.rowCount());
+  builder.beginRow(synthetic_t);
+  builder.set(static_cast<std::size_t>(handle.x_field), x);
+  builder.set(static_cast<std::size_t>(handle.y_field), y);
+  builder.finishRow();
+
+  if (builder.isFull()) {
+    autoSeal(handle.topic_id);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Flush
 // ---------------------------------------------------------------------------
 

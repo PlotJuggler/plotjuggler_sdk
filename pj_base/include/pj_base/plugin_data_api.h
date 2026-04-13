@@ -188,6 +188,14 @@ typedef struct {
   const PJ_parser_write_host_vtable_t* vtable;
 } PJ_parser_write_host_t;
 
+/** Handle returned by register_scatter_xy_series — identifies a two-column (x, y)
+ *  topic registered for convenience ScatterXY ingest. */
+typedef struct {
+  PJ_topic_handle_t topic;
+  uint32_t x_field_id;
+  uint32_t y_field_id;
+} PJ_scatter_xy_handle_t;
+
 typedef struct PJ_toolbox_host_vtable_t {
   uint32_t abi_version;
   uint32_t struct_size;
@@ -206,6 +214,15 @@ typedef struct PJ_toolbox_host_vtable_t {
       void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column);
   bool (*acquire_catalog_snapshot)(void* ctx, PJ_catalog_snapshot_t* out_snapshot);
   bool (*read_series)(void* ctx, PJ_field_handle_t field, PJ_materialized_series_t* out_series);
+  /** Register a two-column (x, y) ScatterXY topic. Timestamps are synthetic
+   *  row indices — use for non-time-indexed outputs (e.g. FFT frequency spectrum). */
+  bool (*register_scatter_xy_series)(
+      void* ctx, PJ_data_source_handle_t source, PJ_string_view_t topic_name, PJ_scatter_xy_handle_t* out_handle);
+  /** Append one (x, y) point to a ScatterXY topic. */
+  bool (*append_scatter_xy)(void* ctx, PJ_scatter_xy_handle_t handle, double x, double y);
+  /** Query the current visible time range from the host's main chart, in ns.
+   *  Returns false if no range is currently available (e.g. no data loaded). */
+  bool (*get_visible_range)(void* ctx, int64_t* out_t_min, int64_t* out_t_max);
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {

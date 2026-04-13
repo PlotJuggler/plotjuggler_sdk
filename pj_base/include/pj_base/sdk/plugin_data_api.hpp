@@ -1,6 +1,7 @@
 #pragma once
 
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -561,6 +562,46 @@ class ToolboxHostView {
       return unexpected(std::string(lastError()));
     }
     return MaterializedSeries(raw);
+  }
+
+  /// Register a two-column (x, y) ScatterXY topic. Use for non-time-indexed outputs
+  /// (e.g. FFT frequency spectrum: x=Hz, y=amplitude). Timestamps are synthetic row indices.
+  [[nodiscard]] Expected<PJ_scatter_xy_handle_t> registerScatterXYSeries(
+      DataSourceHandle source, std::string_view topic_name) const {
+    PJ_scatter_xy_handle_t handle{};
+    if (host_.vtable->register_scatter_xy_series == nullptr) {
+      return unexpected(std::string("register_scatter_xy_series not supported by this host"));
+    }
+    if (!host_.vtable->register_scatter_xy_series(host_.ctx, source, toAbiString(topic_name), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  /// Append one (x, y) point to a ScatterXY topic registered via registerScatterXYSeries.
+  [[nodiscard]] Status appendScatterXY(PJ_scatter_xy_handle_t handle, double x, double y) const {
+    if (host_.vtable->append_scatter_xy == nullptr) {
+      return unexpected(std::string("append_scatter_xy not supported by this host"));
+    }
+    if (!host_.vtable->append_scatter_xy(host_.ctx, handle, x, y)) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  /// Query the current visible time range (in nanoseconds) from the host's main chart.
+  /// Returns std::nullopt if no range is currently available (no data loaded yet, or
+  /// the host does not support visible-range reporting).
+  [[nodiscard]] std::optional<std::pair<int64_t, int64_t>> visibleRange() const {
+    if (host_.vtable->get_visible_range == nullptr) {
+      return std::nullopt;
+    }
+    int64_t t_min = 0;
+    int64_t t_max = 0;
+    if (!host_.vtable->get_visible_range(host_.ctx, &t_min, &t_max)) {
+      return std::nullopt;
+    }
+    return std::make_pair(t_min, t_max);
   }
 
   [[nodiscard]] std::string_view lastError() const {

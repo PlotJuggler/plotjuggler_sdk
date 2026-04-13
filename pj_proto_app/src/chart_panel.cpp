@@ -170,6 +170,7 @@ void ChartPanel::wheelEvent(QWheelEvent* event) {
   double x_max = x_axis_->max();
   x_axis_->setRange(mouse_x_s - (mouse_x_s - x_min) * factor, mouse_x_s + (x_max - mouse_x_s) * factor);
   user_zoom_ = true;
+  emitVisibleRange();
   event->accept();
 }
 
@@ -221,10 +222,17 @@ void ChartPanel::mouseReleaseEvent(QMouseEvent* event) {
   if (event->button() == Qt::MiddleButton && is_panning_) {
     is_panning_ = false;
     setCursor(Qt::ArrowCursor);
+    emitVisibleRange();
     event->accept();
     return;
   }
   QChartView::mouseReleaseEvent(event);
+}
+
+void ChartPanel::emitVisibleRange() {
+  auto t_min = first_timestamp_ + static_cast<PJ::Timestamp>(x_axis_->min() * 1e9);
+  auto t_max = first_timestamp_ + static_cast<PJ::Timestamp>(x_axis_->max() * 1e9);
+  emit visibleRangeChanged(t_min, t_max);
 }
 
 }  // namespace proto

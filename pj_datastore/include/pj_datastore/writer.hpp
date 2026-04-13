@@ -36,6 +36,14 @@ struct ScalarSeriesHandle {
   PJ::FieldId value_field;
 };
 
+/// Handle for scatter XY convenience API — two columns (x, y) with no semantic timestamp.
+/// Timestamps are synthetic (row index), so the series is indexed by position, not time.
+struct ScatterXYSeriesHandle {
+  PJ::TopicId topic_id;
+  PJ::FieldId x_field;  ///< Column index 0 ("x")
+  PJ::FieldId y_field;  ///< Column index 1 ("y")
+};
+
 /// Describes one column's data for bulk appendColumns().
 struct ColumnData {
   /// Column index in topic schema.
@@ -148,6 +156,14 @@ class DataWriter {
       PJ::DatasetId dataset_id, std::string_view topic_name, PJ::NumericType value_type);
   /// Append one scalar sample.
   void appendScalar(const ScalarSeriesHandle& handle, PJ::Timestamp t, PJ::NumericValue value);
+
+  // ---- Scatter XY convenience API ----
+  /// Create/register a two-column (x, y) topic with synthetic timestamps.
+  /// Use this for data that has no meaningful time axis, e.g. FFT spectrum (Hz vs amplitude).
+  [[nodiscard]] PJ::Expected<ScatterXYSeriesHandle> registerScatterXYSeries(
+      PJ::DatasetId dataset_id, std::string_view topic_name);
+  /// Append one (x, y) pair. Timestamp is assigned automatically as the row index.
+  void appendScatterXY(const ScatterXYSeriesHandle& handle, double x, double y);
 
   // ---- Dynamic column addition ----
   /// Ensure a column with `field_path` and `type` exists for `topic_id`.

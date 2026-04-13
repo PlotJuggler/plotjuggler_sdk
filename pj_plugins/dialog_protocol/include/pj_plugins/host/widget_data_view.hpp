@@ -143,6 +143,7 @@ class WidgetDataView {
   struct ChartSeriesView {
     std::string label;
     std::vector<std::pair<double, double>> points;  // {x, y}
+    std::string color;  // optional hex "#rrggbb"; empty means use chart theme default
   };
 
   [[nodiscard]] std::optional<std::vector<ChartSeriesView>> chartSeries(std::string_view name) const {
@@ -174,6 +175,10 @@ class WidgetDataView {
           }
         }
       }
+      auto color_it = s.find("color");
+      if (color_it != s.end() && color_it->is_string()) {
+        sv.color = color_it->get<std::string>();
+      }
       result.push_back(std::move(sv));
     }
     return result;
@@ -182,6 +187,14 @@ class WidgetDataView {
   // --- QPlainTextEdit ---
   [[nodiscard]] std::optional<std::string> plainText(std::string_view name) const {
     return getString(name, "plain_text");
+  }
+
+  // --- Code editor ---
+  [[nodiscard]] std::optional<std::string> codeContent(std::string_view name) const {
+    return getString(name, "code_content");
+  }
+  [[nodiscard]] std::optional<std::string> codeLanguage(std::string_view name) const {
+    return getString(name, "code_language");
   }
 
   // --- QLabel ---

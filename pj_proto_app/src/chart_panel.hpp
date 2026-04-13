@@ -37,6 +37,8 @@ class ChartPanel : public QChartView {
 
  signals:
   void seriesDropped();
+  /// Emitted when the user zooms or pans the chart. Values are absolute timestamps.
+  void visibleRangeChanged(PJ::Timestamp t_min, PJ::Timestamp t_max);
 
  protected:
   void dragEnterEvent(QDragEnterEvent* event) override;
@@ -50,6 +52,8 @@ class ChartPanel : public QChartView {
   void mouseDoubleClickEvent(QMouseEvent* event) override;
 
  private:
+  void emitVisibleRange();
+
   const PJ::DataEngine& engine_;
   QValueAxis* x_axis_;
   QValueAxis* y_axis_;

@@ -58,6 +58,13 @@ class DatastoreToolboxHost {
   [[nodiscard]] PJ_toolbox_host_t raw() noexcept;
   void flushPending();
 
+  /// Update the visible time range reported to plugins via get_visible_range (in ns).
+  /// Called by the application whenever the main chart's viewport changes.
+  void setVisibleRange(int64_t t_min_ns, int64_t t_max_ns);
+
+  /// Clear the visible range (subsequent get_visible_range calls will return false).
+  void clearVisibleRange();
+
  private:
   std::unique_ptr<DatastoreToolboxHostState> state_;
 };
