@@ -142,8 +142,16 @@ This fundamental difference drives separate storage and query semantics:
 
 ### Codec rules
 
-**No B-frames.** Only I-frames and P-frames are supported. This guarantees presentation
-order equals decode order, eliminating the need for separate DTS/PTS and reorder buffers.
+**Recommended: I+P only (no B-frames).** This guarantees presentation order
+equals decode order, simplifying seeking, eviction, and mid-stream join.
+Foxglove and Rerun follow this convention. New streaming sources (ROS 2,
+RTSP) should encode with `-bf 0` to avoid B-frames.
+
+**B-frames are tolerated** when ingesting from container formats (MP4, MKV,
+LeRobot datasets) that use them. The decoder handles reordering internally
+via FFmpeg's reorder buffer. B-frames add startup latency (reorder buffer
+fill time: ~30–100 frames depending on encoder settings) and complicate
+seeking, so I+P is preferred for interactive use.
 
 Each message must contain exactly enough data to decode **exactly one frame**.
 
@@ -157,6 +165,16 @@ Each message must contain exactly enough data to decode **exactly one frame**.
 Keyframes are self-contained: a decoder can be fully initialized from any keyframe
 message without prior state. Delta frames require the decoder to have processed
 the preceding keyframe and all intermediate frames.
+
+### Timestamp semantics (PTS vs DTS)
+
+- **I+P only (no B-frames)**: PTS == DTS. Use either as the ObjectStore
+  entry timestamp.
+- **With B-frames**: PTS (presentation order) is non-monotonic. DTS
+  (decode order) is always monotonic. The DataSource must use **DTS** as
+  the ObjectStore entry timestamp to satisfy monotonicity. The decoded
+  output's `AVFrame::pts` gives the correct presentation timestamp for
+  display and timeline synchronization.
 
 ### No explicit keyframe flag
 

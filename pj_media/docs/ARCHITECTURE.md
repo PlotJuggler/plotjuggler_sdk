@@ -340,14 +340,10 @@ seeking, and HW acceleration internally. The widget layer calls
 `open()`, `seek()`, `setPaused()`, and `renderFrame()` without
 knowing which backend is active.
 
-**Two backends are implemented:**
+**Three video components exist**, serving different use cases:
 
-**`MpvBackend`** (libmpv): mpv handles all codec, container,
-HW-accel, keyframe seeking, and frame caching internally. The
-`VideoViewerWidget` (a `QOpenGLWidget`) owns a `MpvBackend` and
-renders via mpv's OpenGL FBO API.
-
-**`FfmpegBackend`** (FFmpeg AVCodecContext): custom decode pipeline
+**`FfmpegBackend`** (primary, file-based): opens MP4/MKV files
+directly via `AVFormatContext`. Custom decode pipeline
 with full scrub control. Uses `FfmpegDecoder` for decode,
 `CancelToken` for cooperative cancellation, and `FrameSlot` for
 frame delivery via `processEvents()` (no Qt event queue). Key
@@ -382,6 +378,15 @@ features:
   YUV420P planes directly. No CPU-side RGB conversion. The
   MediaViewerWidget renders via BT.709 fragment shader with 3 R8
   textures. 75% GPU memory reduction vs RGBA8.
+
+**`MpvBackend`** (fallback, file-based): libmpv handles all codec,
+container, HW-accel, keyframe seeking, and frame caching internally.
+The `VideoViewerWidget` (a `QOpenGLWidget`) owns a `MpvBackend` and
+renders via mpv's OpenGL FBO API. Simpler than FfmpegBackend but
+offers no custom scrub control.
+
+**`StreamingVideoDecoder`** (streaming / ObjectStore-based): decodes
+H.264 VideoFrame entries from ObjectStore. Described in §4.4.
 
 **Design note**: `VideoBackend` uses `double seconds` for seek and
 position rather than `int64_t` nanoseconds. This matches libmpv's
@@ -467,6 +472,30 @@ evicted by retention while the decoder continues forward. The forward
 path does not require the keyframe — the decoder already has the
 correct codec state from previous sequential decodes. Only backward
 seeks require a keyframe still present in the store.
+
+### 4.5 Video Pipeline Summary
+
+Which component to use depends on the data source:
+
+| Scenario | Component | ObjectStore? | Notes |
+|----------|-----------|-------------|-------|
+| File-based MP4/MKV playback | FfmpegBackend | No | Direct file access via AVFormatContext. Best scrub performance. |
+| Streaming VideoFrame (ROS 2, RTSP) | StreamingVideoDecoder | Yes | Encoded packets in ObjectStore with retention budget. |
+| File-based MCAP with CompressedVideo | StreamingVideoDecoder | Yes (lazy) | DataSource pushes encoded packets at open time. |
+| ML datasets (LeRobot, RLDS) | FfmpegBackend | No | MP4 per camera; Parquet scalars go to DataEngine. Episodes map to DatasetId. |
+| Quick preview / fallback | MpvBackend | No | Simpler, no custom scrub control. |
+
+**File-based video does not go through ObjectStore** — the file itself is
+the random-access store. ObjectStore adds value only for streaming, where
+it provides the retention buffer. PlaybackController (§5) dispatches to
+the right decoder based on the topic's `media_class` metadata.
+
+**Multi-modal datasets** (video + scalars from the same recording): the
+DataSource plugin populates both stores — `DataEngine` for plottable
+time-series and `ObjectStore` for media. Both share the same timestamp
+domain and are driven by the same global timeline cursor. Episodes in ML
+datasets (e.g., LeRobot episodes) map to PlotJuggler's `DatasetId` —
+each episode is a separate dataset with its own time range.
 
 ---
 
@@ -598,7 +627,8 @@ When `VideoDecoder` needs to seek to timestamp `T` (using the
 3. `ObjectStore::at(topic, i)` → gets the keyframe bytes. Decode it
    after calling `avcodec_flush_buffers` to reset decoder state.
 4. Iterate `ObjectStore::at(topic, i+1)`, `at(topic, i+2)`, ...
-   decoding each P/B frame until reaching the entry at timestamp `T`.
+   decoding each subsequent frame (using `decodeSkip` for intermediates)
+   until reaching the entry at timestamp `T`.
 
 Because live and scrub modes are mutually exclusive (§R4.3), the buffer
 is frozen during this seek — no entry can be evicted between steps 2

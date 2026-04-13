@@ -27,11 +27,38 @@ then video, then streaming.
 | thumbnail cache | `d67cdb8` | ThumbnailCache: background thread pre-decodes 1 frame/sec at open. Auto-scales to max 1920px for 4K. JPEG quality 85 (~90KB/frame 1080p). YUV420P throughout. Instant backward scrub feedback |
 | scrub refinement | `bb23e16` | Target refinement within same GOP for backward scrub. Keyframe-then-refine strategy eliminates forward jumps |
 | integration tests | `b7b6490` | 23 integration tests: play, forward/backward scrub at 480p/1080p/4K/1920p-B-frames, pause/unpause, bidirectional, close safety, responsiveness, settle behavior |
-| M17: streaming video | pending | StreamingVideoDecoder: ObjectStore + FfmpegDecoder bridge. H.264 NAL utils, annex-B keyframe detection, incremental keyframe index, forward-path + same-timestamp cache, eviction-resilient live decode. 23 tests (5 h264_utils + 18 streaming_video_decoder). M18: video_stream_demo (live/scrub toggle, 500-frame buffer) |
+| M17+M18: streaming video | `0601835` | StreamingVideoDecoder: ObjectStore + FfmpegDecoder bridge. H.264 NAL utils (isH264Keyframe, extractH264SpsPps, makeH264CodecParams). Incremental keyframe index, forward-path optimization, same-timestamp cache, eviction-resilient live decode. video_stream_demo with live/scrub toggle, 500-frame buffer. 23 tests (5 h264_utils + 18 streaming_video_decoder) |
+| B-frame support | `b1cfbd6` | DTS-keyed ObjectStore storage for B-frame videos. Removed drain() from seek path (was O(n²) with B-frame reorder). Negative DTS fix via std::optional sentinels. Startup burst for instant B-frame playback. 6 additional tests |
 
 ### Known limitations
 
 - **4K backward scrub density**: still limited by GOP size. With typical 2-second GOPs, backward scrub at 4K shows cached thumbnails (1920px) between keyframes. Acceptable for interactive use.
+- **H.264 only** in StreamingVideoDecoder. H.265 and AV1 keyframe detection not yet implemented (FfmpegDecoder can decode anything FFmpeg supports, but NAL utils are H.264-specific).
+
+### Remaining roadmap (prioritized for PlotJuggler integration)
+
+**High priority:**
+
+1. **PlaybackController** — unified per-widget orchestrator. Dispatches
+   to StreamingVideoDecoder (video from ObjectStore) or CodecPipeline
+   (images). Owns worker thread, FrameSlot, mode switching (live ↔ scrub).
+2. **pj_plugins integration** — wire ObjectStore write host to DataSource
+   plugins for MCAP/ROS2 video and image ingest.
+3. **TimelineCursor in pj_base** — shared interface for global timeline
+   synchronization between DataEngine (scalars) and ObjectStore (media).
+
+**Medium priority:**
+
+4. **CodecPipeline for images** — wire CdrStripper + JpegCodec into
+   PlaybackController for MCAP CompressedImage topics.
+5. **MediaIndexRegistry** — centralized keyframe index for file-backed
+   CompressedVideo topics (C ABI `publish_keyframe_index`).
+
+**Low priority (deferred):**
+
+6. Compositor (multi-layer overlay) — deferred until annotation test data.
+7. SceneDecoder (CDR/Protobuf annotations) — deferred.
+8. H.265/AV1 NAL utils — extend when needed.
 
 ### Build notes
 
