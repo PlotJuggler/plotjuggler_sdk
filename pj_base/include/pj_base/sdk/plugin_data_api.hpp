@@ -1,6 +1,7 @@
 #pragma once
 
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -561,6 +562,31 @@ class ToolboxHostView {
       return unexpected(std::string(lastError()));
     }
     return MaterializedSeries(raw);
+  }
+
+  /// Register a two-column (x, y) ScatterXY topic. Use for non-time-indexed outputs
+  /// (e.g. FFT frequency spectrum: x=Hz, y=amplitude). Timestamps are synthetic row indices.
+  [[nodiscard]] Expected<PJ_scatter_xy_handle_t> registerScatterXYSeries(
+      DataSourceHandle source, std::string_view topic_name) const {
+    PJ_scatter_xy_handle_t handle{};
+    if (host_.vtable->register_scatter_xy_series == nullptr) {
+      return unexpected(std::string("register_scatter_xy_series not supported by this host"));
+    }
+    if (!host_.vtable->register_scatter_xy_series(host_.ctx, source, toAbiString(topic_name), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  /// Append one (x, y) point to a ScatterXY topic registered via registerScatterXYSeries.
+  [[nodiscard]] Status appendScatterXY(PJ_scatter_xy_handle_t handle, double x, double y) const {
+    if (host_.vtable->append_scatter_xy == nullptr) {
+      return unexpected(std::string("append_scatter_xy not supported by this host"));
+    }
+    if (!host_.vtable->append_scatter_xy(host_.ctx, handle, x, y)) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
   }
 
   [[nodiscard]] std::string_view lastError() const {
