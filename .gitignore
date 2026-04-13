@@ -5,3 +5,4 @@ pj_media/testdata/
 /pj_media/mcap_player/build/*
 /plugins/dialog_protocol/build/*
 /perf.data*
+/.qt/

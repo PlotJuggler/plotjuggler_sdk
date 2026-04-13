@@ -173,20 +173,20 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
   const QSize output_size = rt->pixelSize();
   QRhiResourceUpdateBatch* updates = r->nextResourceUpdateBatch();
 
-  // Poll MediaSource if attached
-  if (media_source_ != nullptr) {
-    auto frame = media_source_->takeFrame();
-    if (frame && !frame->isNull()) {
-      // Feed into the pending frame path (no lock needed — same thread)
-      pending_decoded_ = std::move(*frame);
-      pending_is_yuv_ = (pending_decoded_.format == PixelFormat::kYUV420P);
-      pending_qimage_ = QImage();
-      has_pending_ = true;
-    }
-  }
-
   {
     std::lock_guard lock(frame_mutex_);
+
+    // Poll MediaSource if attached
+    if (media_source_ != nullptr) {
+      auto frame = media_source_->takeFrame();
+      if (frame && !frame->isNull()) {
+        pending_decoded_ = std::move(*frame);
+        pending_is_yuv_ = (pending_decoded_.format == PixelFormat::kYUV420P);
+        pending_qimage_ = QImage();
+        has_pending_ = true;
+      }
+    }
+
     if (has_pending_) {
       if (pending_is_yuv_ && !pending_decoded_.isNull()) {
         // YUV420P path: upload 3 planes to separate R8 textures

@@ -225,25 +225,28 @@ DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
   // The GPU shader handles YUV→RGB with the correct BT.709 matrix.
   if (src_fmt == AV_PIX_FMT_YUV420P) {
     // Already YUV420P — just copy planes to contiguous buffer
-    int y_size = w * h;
-    int uv_size = (w / 2) * (h / 2);
-    auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(y_size + 2 * uv_size));
+    int uv_w = (w + 1) / 2;
+    int uv_h = (h + 1) / 2;
+    auto buf_size = expectedBufferSize(w, h, PixelFormat::kYUV420P);
+    auto pixels = std::make_shared<std::vector<uint8_t>>(buf_size);
     uint8_t* dst = pixels->data();
+    int y_size = w * h;
+    int uv_size = uv_w * uv_h;
 
     // Y plane
     for (int row = 0; row < h; ++row) {
       std::memcpy(dst + row * w, sw_frame->data[0] + row * sw_frame->linesize[0], static_cast<size_t>(w));
     }
     // U plane
-    for (int row = 0; row < h / 2; ++row) {
+    for (int row = 0; row < uv_h; ++row) {
       std::memcpy(
-          dst + y_size + row * (w / 2), sw_frame->data[1] + row * sw_frame->linesize[1], static_cast<size_t>(w / 2));
+          dst + y_size + row * uv_w, sw_frame->data[1] + row * sw_frame->linesize[1], static_cast<size_t>(uv_w));
     }
     // V plane
-    for (int row = 0; row < h / 2; ++row) {
+    for (int row = 0; row < uv_h; ++row) {
       std::memcpy(
-          dst + y_size + uv_size + row * (w / 2), sw_frame->data[2] + row * sw_frame->linesize[2],
-          static_cast<size_t>(w / 2));
+          dst + y_size + uv_size + row * uv_w, sw_frame->data[2] + row * sw_frame->linesize[2],
+          static_cast<size_t>(uv_w));
     }
 
     if (tmp_frame != nullptr) {
@@ -276,11 +279,13 @@ DecodedFrame FfmpegDecoder::avFrameToDecodedFrame(AVFrame* frame) {
     return {};
   }
 
+  int uv_w = (w + 1) / 2;
+  int uv_h = (h + 1) / 2;
   int y_size = w * h;
-  int uv_size = (w / 2) * (h / 2);
-  auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(y_size + 2 * uv_size));
+  int uv_size = uv_w * uv_h;
+  auto pixels = std::make_shared<std::vector<uint8_t>>(expectedBufferSize(w, h, PixelFormat::kYUV420P));
   uint8_t* dst_planes[3] = {pixels->data(), pixels->data() + y_size, pixels->data() + y_size + uv_size};
-  int dst_linesize[3] = {w, w / 2, w / 2};
+  int dst_linesize[3] = {w, uv_w, uv_w};
   sws_scale(sws_ctx_, sw_frame->data, sw_frame->linesize, 0, h, dst_planes, dst_linesize);
 
   if (tmp_frame != nullptr) {

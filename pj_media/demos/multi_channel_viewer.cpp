@@ -16,21 +16,21 @@
 #include <vector>
 
 #include "pj_datastore/object_store.hpp"
-#include "pj_media_core/codec_pipeline.h"
 #include "pj_media_core/codecs.h"
+#include "pj_media_core/image_pipeline_source.h"
 #include "pj_media_qt/media_viewer_widget.h"
 
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
 
 // ---------------------------------------------------------------------------
-// Channel info — each channel has its own codec pipeline
+// Channel info — each channel has its own MediaSource
 // ---------------------------------------------------------------------------
 
 struct ChannelView {
   PJ::ObjectTopicId topic_id{};
   std::string topic_name;
-  std::unique_ptr<PJ::CodecPipeline> pipeline;
+  std::unique_ptr<PJ::ImagePipelineSource> source;
   PJ::MediaViewerWidget* widget = nullptr;
   size_t entry_count = 0;
 };
@@ -101,6 +101,7 @@ class MultiChannelWindow : public QMainWindow {
     setCursor(Qt::WaitCursor);
 
     for (auto& ch : channels_) {
+      ch.widget->setMediaSource(nullptr);
       delete ch.widget;
     }
     channels_.clear();
@@ -141,15 +142,20 @@ class MultiChannelWindow : public QMainWindow {
       // Pick codec pipeline based on topic name
       bool is_depth =
           chan_ptr->topic.find("depth") != std::string::npos || chan_ptr->topic.find("Depth") != std::string::npos;
+      std::unique_ptr<PJ::CodecPipeline> pipeline;
       if (is_depth) {
-        ch.pipeline = PJ::makeDepthPipeline();
+        pipeline = PJ::makeDepthPipeline();
       } else {
-        ch.pipeline = PJ::makeJpegPipeline();
+        pipeline = PJ::makeJpegPipeline();
       }
 
       ch.widget = new PJ::MediaViewerWidget(splitter_);
       ch.widget->setMinimumSize(200, 150);
       splitter_->addWidget(ch.widget);
+
+      // Create MediaSource and attach to widget
+      ch.source = std::make_unique<PJ::ImagePipelineSource>(store_.get(), ch.topic_id, std::move(pipeline));
+      ch.widget->setMediaSource(ch.source.get());
 
       image_chan_map_[chan_id] = channels_.size();
       channels_.push_back(std::move(ch));
@@ -171,8 +177,6 @@ class MultiChannelWindow : public QMainWindow {
 
       // Push lazy entry that strips CDR at resolve time, storing only
       // the media payload in ObjectStore (JPEG bytes or depth PNG).
-      // In the proper architecture, the DataSource/parser does this at
-      // ingest time -- we do it here because v1 uses direct ingest.
       store_->pushLazy(ch.topic_id, ts, [reader, chan_id, ts]() -> std::vector<uint8_t> {
         mcap::ReadMessageOptions read_opts;
         read_opts.startTime = static_cast<mcap::Timestamp>(ts);
@@ -276,30 +280,15 @@ class MultiChannelWindow : public QMainWindow {
  private:
   void showFrame(size_t index) {
     for (auto& ch : channels_) {
-      if (index >= ch.entry_count || ch.pipeline == nullptr) {
+      if (index >= ch.entry_count || ch.source == nullptr) {
         continue;
       }
       auto entry = store_->at(ch.topic_id, index);
-      if (!entry.has_value() || !entry->data || entry->data->empty()) {
+      if (!entry.has_value()) {
         continue;
       }
-
-      // Run the codec pipeline: envelope strip → decode → visualization
-      auto frame_or = ch.pipeline->decode(entry->data->data(), entry->data->size());
-      if (!frame_or.has_value()) {
-        continue;
-      }
-
-      const auto& frame = *frame_or;
-      if (frame.isNull() || frame.width == 0) {
-        continue;
-      }
-
-      bool has_alpha = (frame.format == PJ::PixelFormat::kRGBA8888);
-      int bpp = has_alpha ? 4 : 3;
-      auto qt_fmt = has_alpha ? QImage::Format_RGBA8888 : QImage::Format_RGB888;
-      QImage img(frame.pixels->data(), frame.width, frame.height, frame.width * bpp, qt_fmt);
-      ch.widget->setFrame(img.copy());
+      ch.widget->setTimestamp(entry->timestamp);
+      ch.widget->update();
     }
 
     info_label_->setText(QString("%1 / %2").arg(index + 1).arg(max_index_));

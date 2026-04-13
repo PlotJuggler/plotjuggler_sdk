@@ -59,6 +59,7 @@ class SegmentationPalette : public CodecStage {
 // --- Pipeline builders ---
 
 std::unique_ptr<CodecPipeline> makeJpegPipeline();
+std::unique_ptr<CodecPipeline> makeCdrJpegPipeline();
 std::unique_ptr<CodecPipeline> makeDepthPipeline();
 
 }  // namespace PJ

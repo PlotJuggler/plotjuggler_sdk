@@ -342,6 +342,13 @@ std::unique_ptr<CodecPipeline> makeJpegPipeline() {
   return p;
 }
 
+std::unique_ptr<CodecPipeline> makeCdrJpegPipeline() {
+  auto p = std::make_unique<CodecPipeline>();
+  p->addStage(std::make_unique<CdrImageStripper>());
+  p->addStage(std::make_unique<JpegCodec>());
+  return p;
+}
+
 std::unique_ptr<CodecPipeline> makeDepthPipeline() {
   auto p = std::make_unique<CodecPipeline>();
   p->addStage(std::make_unique<CompressedDepthStripper>());

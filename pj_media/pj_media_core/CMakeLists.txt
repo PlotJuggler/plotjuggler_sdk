@@ -57,6 +57,7 @@ if(PJ_BUILD_TESTS)
   find_package(nlohmann_json REQUIRED)
 
   set(PJ_MEDIA_CORE_TESTS
+    tests/decoded_frame_test.cpp
     tests/frame_slot_test.cpp
     tests/cancel_token_test.cpp
     tests/image_decoder_test.cpp

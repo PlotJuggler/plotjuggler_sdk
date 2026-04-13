@@ -18,7 +18,8 @@
 #include <vector>
 
 #include "pj_datastore/object_store.hpp"
-#include "pj_media_core/image_decoder.h"
+#include "pj_media_core/codecs.h"
+#include "pj_media_core/image_pipeline_source.h"
 #include "pj_media_qt/media_viewer_widget.h"
 
 namespace {
@@ -92,6 +93,10 @@ class StreamWindow : public QMainWindow {
     topic_ = *id_or;
     store_->setRetentionBudget(topic_, {.time_window_ns = 3'000'000'000, .max_memory_bytes = 0});
 
+    // MediaSource: raw JPEG pipeline (no CDR envelope)
+    source_ = std::make_unique<PJ::ImagePipelineSource>(store_.get(), topic_, PJ::makeJpegPipeline());
+    viewer_->setMediaSource(source_.get());
+
     // Simulated camera: push a frame every 33 ms
     push_timer_ = new QTimer(this);
     push_timer_->setInterval(33);
@@ -110,12 +115,18 @@ class StreamWindow : public QMainWindow {
     auto jpeg = makeSyntheticJpeg(640, 480, frame_num_++);
     store_->pushOwned(topic_, ts, std::move(jpeg));
 
+    auto count = store_->entryCount(topic_);
+
     if (is_live_) {
-      showLatest();
+      auto [t_min, t_max] = store_->timeRange(topic_);
+      viewer_->setTimestamp(t_max);
+      viewer_->update();
+
+      info_label_->setText(
+          QString("Live | %1 frames | %2 MB").arg(count).arg(store_->memoryUsage(topic_) / (1024 * 1024)));
     }
 
     // Update slider range
-    auto count = store_->entryCount(topic_);
     if (count > 0) {
       slider_->blockSignals(true);
       slider_->setRange(0, static_cast<int>(count - 1));
@@ -131,51 +142,28 @@ class StreamWindow : public QMainWindow {
     slider_->setEnabled(!live);
     live_button_->setText(live ? "Live" : "Scrub");
     if (live) {
-      showLatest();
+      auto [t_min, t_max] = store_->timeRange(topic_);
+      viewer_->setTimestamp(t_max);
+      viewer_->update();
     }
   }
 
   void onSliderChanged(int value) {
     if (!is_live_) {
-      showIndex(static_cast<size_t>(value));
+      auto entry = store_->at(topic_, static_cast<size_t>(value));
+      if (entry.has_value()) {
+        viewer_->setTimestamp(entry->timestamp);
+        viewer_->update();
+      }
+      auto count = store_->entryCount(topic_);
+      info_label_->setText(QString("Scrub %1/%2").arg(value + 1).arg(count));
     }
   }
 
  private:
-  void showLatest() {
-    auto [t_min, t_max] = store_->timeRange(topic_);
-    auto entry = store_->latestAt(topic_, t_max);
-    if (!entry.has_value() || entry->data->empty()) {
-      return;
-    }
-    decodeAndDisplay(*entry->data);
-    auto count = store_->entryCount(topic_);
-    info_label_->setText(
-        QString("Live | %1 frames | %2 MB").arg(count).arg(store_->memoryUsage(topic_) / (1024 * 1024)));
-  }
-
-  void showIndex(size_t index) {
-    auto entry = store_->at(topic_, index);
-    if (!entry.has_value() || entry->data->empty()) {
-      return;
-    }
-    decodeAndDisplay(*entry->data);
-    auto count = store_->entryCount(topic_);
-    info_label_->setText(QString("Scrub %1/%2").arg(index + 1).arg(count));
-  }
-
-  void decodeAndDisplay(const std::vector<uint8_t>& jpeg) {
-    auto frame = decoder_.decodeJpeg(jpeg.data(), jpeg.size());
-    if (!frame.has_value()) {
-      return;
-    }
-    QImage img(frame->pixels->data(), frame->width, frame->height, frame->width * 3, QImage::Format_RGB888);
-    viewer_->setFrame(img.copy());
-  }
-
   std::unique_ptr<PJ::ObjectStore> store_;
   PJ::ObjectTopicId topic_{};
-  PJ::ImageDecoder decoder_;
+  std::unique_ptr<PJ::ImagePipelineSource> source_;
   int frame_num_ = 0;
   bool is_live_ = true;
 

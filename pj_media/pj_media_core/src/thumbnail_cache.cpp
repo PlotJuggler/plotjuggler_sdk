@@ -57,9 +57,7 @@ std::optional<DecodedFrame> ThumbnailCache::lookup(double seconds) const {
 
   int w = it->width;
   int h = it->height;
-  int y_size = w * h;
-  int uv_size = (w / 2) * (h / 2);
-  auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(y_size + 2 * uv_size));
+  auto pixels = std::make_shared<std::vector<uint8_t>>(expectedBufferSize(w, h, PixelFormat::kYUV420P));
 
   int ret = tjDecompressToYUV2(
       tj_decompress_, it->jpeg_data.data(), static_cast<unsigned long>(it->jpeg_data.size()), pixels->data(), w, 1, h,
@@ -211,11 +209,13 @@ void ThumbnailCache::buildThread(std::string video_path, double duration_sec) {
           src_w, src_h, src_fmt, dst_w, dst_h, AV_PIX_FMT_YUV420P, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
     }
 
+    int dst_uv_w = (dst_w + 1) / 2;
+    int dst_uv_h = (dst_h + 1) / 2;
     int y_size = dst_w * dst_h;
-    int uv_size = (dst_w / 2) * (dst_h / 2);
-    std::vector<uint8_t> yuv_buf(static_cast<size_t>(y_size + 2 * uv_size));
+    int uv_size = dst_uv_w * dst_uv_h;
+    std::vector<uint8_t> yuv_buf(expectedBufferSize(dst_w, dst_h, PixelFormat::kYUV420P));
     uint8_t* planes[3] = {yuv_buf.data(), yuv_buf.data() + y_size, yuv_buf.data() + y_size + uv_size};
-    int strides[3] = {dst_w, dst_w / 2, dst_w / 2};
+    int strides[3] = {dst_w, dst_uv_w, dst_uv_w};
     sws_scale(sws, sw_frame->data, sw_frame->linesize, 0, src_h, planes, strides);
 
     if (tmp != nullptr) {

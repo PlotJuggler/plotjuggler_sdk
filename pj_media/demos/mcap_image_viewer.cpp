@@ -9,59 +9,17 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "pj_datastore/object_store.hpp"
-#include "pj_media_core/image_decoder.h"
-
-#ifdef PJ_HAS_RHI_WIDGET
+#include "pj_media_core/codecs.h"
+#include "pj_media_core/image_pipeline_source.h"
 #include "pj_media_qt/media_viewer_widget.h"
-using ViewerWidget = PJ::MediaViewerWidget;
-#else
-#include "image_widget.hpp"
-using ViewerWidget = ImageWidget;
-#endif
 
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
-
-// ---------------------------------------------------------------------------
-// CDR envelope helper — extracts JPEG bytes from sensor_msgs/CompressedImage
-// ---------------------------------------------------------------------------
-
-namespace {
-
-struct CdrImageExtractor {
-  static std::pair<const uint8_t*, size_t> extractJpeg(const uint8_t* raw, size_t size) {
-    if (size < 24) {
-      return {nullptr, 0};
-    }
-    // Find JPEG SOI marker (FF D8 FF) anywhere in the CDR blob.
-    // CompressedImage has exactly one JPEG payload preceded by a
-    // CDR uint32 length field. We locate the marker, then back up
-    // 4 bytes to read the length for an exact boundary.
-    for (size_t i = 0; i + 2 < size; ++i) {
-      if (raw[i] == 0xFF && raw[i + 1] == 0xD8 && raw[i + 2] == 0xFF) {
-        // Read the uint32 length that sits right before the JPEG data
-        if (i >= 4) {
-          uint32_t data_len = 0;
-          std::memcpy(&data_len, raw + i - 4, 4);
-          if (data_len > 0 && i + data_len <= size) {
-            return {raw + i, data_len};
-          }
-        }
-        // Fallback: from marker to end of buffer
-        return {raw + i, size - i};
-      }
-    }
-    return {nullptr, 0};
-  }
-};
-
-}  // namespace
 
 // ---------------------------------------------------------------------------
 // McapObjectStoreLoader — loads MCAP image topic into ObjectStore
@@ -99,7 +57,6 @@ struct McapObjectStoreLoader {
       }
 
       bool is_image = schema_name.find("CompressedImage") != std::string::npos;
-      // Also match by topic name pattern if schema is missing
       if (!is_image) {
         is_image = chan_ptr->topic.find("image") != std::string::npos &&
                    chan_ptr->topic.find("compressed") != std::string::npos;
@@ -107,7 +64,6 @@ struct McapObjectStoreLoader {
       if (!is_image) {
         continue;
       }
-      // Skip depth images
       if (chan_ptr->topic.find("Depth") != std::string::npos || chan_ptr->topic.find("depth") != std::string::npos) {
         continue;
       }
@@ -145,6 +101,8 @@ struct McapObjectStoreLoader {
       }
       auto ts = static_cast<PJ::Timestamp>(it->message.logTime);
 
+      // Push raw CDR bytes — the ImagePipelineSource's CdrJpeg pipeline
+      // handles envelope stripping + JPEG decode at display time.
       store.pushLazy(topic_id, ts, [local_reader, local_topic, ts, target_chan]() -> std::vector<uint8_t> {
         mcap::ReadMessageOptions read_opts;
         read_opts.startTime = static_cast<mcap::Timestamp>(ts);
@@ -174,6 +132,10 @@ class ImageViewerWindow : public QMainWindow {
 
  public:
   void loadFile(const QString& path) {
+    // Detach old source before destroying the store it points to
+    image_widget_->setMediaSource(nullptr);
+    source_.reset();
+
     setCursor(Qt::WaitCursor);
     store_ = std::make_unique<PJ::ObjectStore>();
     loader_ = McapObjectStoreLoader{};
@@ -189,6 +151,10 @@ class ImageViewerWindow : public QMainWindow {
       setWindowTitle("No image topic found");
       return;
     }
+
+    // Create MediaSource with CDR+JPEG pipeline
+    source_ = std::make_unique<PJ::ImagePipelineSource>(store_.get(), loader_.topic_id, PJ::makeCdrJpegPipeline());
+    image_widget_->setMediaSource(source_.get());
 
     setWindowTitle(QString("Loaded %1 frames").arg(loader_.message_count));
     slider_->setRange(0, static_cast<int>(loader_.message_count - 1));
@@ -209,7 +175,12 @@ class ImageViewerWindow : public QMainWindow {
     load_button_ = new QPushButton("Load MCAP", this);
     layout->addWidget(load_button_);
 
-    image_widget_ = new ViewerWidget(this);
+    // Bootstrap QRhiWidget
+    auto* bootstrap = new PJ::MediaViewerWidget(this);
+    bootstrap->setMaximumSize(0, 0);
+    layout->addWidget(bootstrap);
+
+    image_widget_ = new PJ::MediaViewerWidget(this);
     image_widget_->setMinimumSize(320, 240);
     image_widget_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     layout->addWidget(image_widget_, 1);
@@ -292,56 +263,16 @@ class ImageViewerWindow : public QMainWindow {
 
  private:
   void showFrame(size_t index) {
-    if (!store_) {
+    if (!store_ || source_ == nullptr) {
       return;
     }
     auto entry = store_->at(loader_.topic_id, index);
-    if (!entry.has_value() || !entry->data || entry->data->empty()) {
-      qWarning("showFrame(%zu): resolve failed", index);
+    if (!entry.has_value()) {
       return;
     }
 
-    const auto& raw = *entry->data;
-
-    // Extract JPEG from CDR envelope
-    const uint8_t* jpeg_data = nullptr;
-    size_t jpeg_size = 0;
-
-    if (loader_.encoding == "ros2msg" || loader_.encoding == "cdr") {
-      auto [ptr, sz] = CdrImageExtractor::extractJpeg(raw.data(), raw.size());
-      jpeg_data = ptr;
-      jpeg_size = sz;
-      if (ptr == nullptr && index == 0) {
-        qWarning(
-            "CDR extract failed. raw size=%zu, first bytes: %02x %02x %02x %02x", raw.size(), raw[0], raw[1], raw[2],
-            raw[3]);
-      }
-    }
-
-    // Fallback: raw JPEG
-    if (jpeg_data == nullptr && raw.size() >= 2 && raw[0] == 0xFF && raw[1] == 0xD8) {
-      jpeg_data = raw.data();
-      jpeg_size = raw.size();
-    }
-
-    if (jpeg_data == nullptr) {
-      if (index == 0) {
-        qWarning("No JPEG found in frame 0 (encoding=%s, raw_size=%zu)", loader_.encoding.c_str(), raw.size());
-      }
-      return;
-    }
-
-    auto frame_or = decoder_.decodeJpeg(jpeg_data, jpeg_size);
-    if (!frame_or.has_value()) {
-      if (index == 0) {
-        qWarning("JPEG decode failed: %s", frame_or.error().c_str());
-      }
-      return;
-    }
-
-    auto& frame = *frame_or;
-    QImage img(frame.pixels->data(), frame.width, frame.height, frame.width * 3, QImage::Format_RGB888);
-    image_widget_->setFrame(img.copy());
+    image_widget_->setTimestamp(entry->timestamp);
+    image_widget_->update();
 
     time_label_->setText(QString("%1 / %2").arg(index + 1).arg(loader_.message_count));
   }
@@ -350,9 +281,9 @@ class ImageViewerWindow : public QMainWindow {
 
   std::unique_ptr<PJ::ObjectStore> store_;
   McapObjectStoreLoader loader_;
-  PJ::ImageDecoder decoder_;
+  std::unique_ptr<PJ::ImagePipelineSource> source_;
 
-  ViewerWidget* image_widget_ = nullptr;
+  PJ::MediaViewerWidget* image_widget_ = nullptr;
   QSlider* slider_ = nullptr;
   QPushButton* load_button_ = nullptr;
   QPushButton* play_button_ = nullptr;
