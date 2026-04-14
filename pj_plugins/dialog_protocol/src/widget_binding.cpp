@@ -7,6 +7,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPainter>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
@@ -14,6 +16,7 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QSvgRenderer>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -226,6 +229,18 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
   if (auto* btn = qobject_cast<QPushButton*>(w)) {
     if (auto v = view.buttonText(name)) {
       btn->setText(QString::fromStdString(*v));
+    }
+    if (auto svg = view.buttonIconSvg(name)) {
+      QByteArray svg_data = QByteArray::fromStdString(*svg);
+      QSvgRenderer renderer(svg_data);
+      if (renderer.isValid()) {
+        int sz = btn->iconSize().height() > 0 ? btn->iconSize().height() : 16;
+        QPixmap pix(sz, sz);
+        pix.fill(Qt::transparent);
+        QPainter painter(&pix);
+        renderer.render(&painter);
+        btn->setIcon(QIcon(pix));
+      }
     }
     return;
   }

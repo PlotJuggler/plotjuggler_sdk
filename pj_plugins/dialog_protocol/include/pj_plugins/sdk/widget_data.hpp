@@ -171,6 +171,13 @@ class WidgetData {
     return *this;
   }
 
+  /// Set an icon on a QPushButton from inline SVG data.
+  /// The SVG string is stored as-is and rendered by the host via QSvgRenderer.
+  WidgetData& setButtonIcon(std::string_view name, std::string_view svg_data) {
+    entry(name)["button_icon_svg"] = svg_data;
+    return *this;
+  }
+
   /// Assign a keyboard shortcut to a QPushButton (e.g. "Ctrl+A", "Ctrl+Shift+A").
   /// The host creates a QShortcut that triggers click() on the button.
   WidgetData& setShortcut(std::string_view name, std::string_view key_sequence) {

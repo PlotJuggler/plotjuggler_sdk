@@ -207,6 +207,10 @@ class WidgetDataView {
     return getString(name, "button_text");
   }
 
+  [[nodiscard]] std::optional<std::string> buttonIconSvg(std::string_view name) const {
+    return getString(name, "button_icon_svg");
+  }
+
   [[nodiscard]] std::optional<std::string> shortcut(std::string_view name) const {
     return getString(name, "shortcut");
   }
