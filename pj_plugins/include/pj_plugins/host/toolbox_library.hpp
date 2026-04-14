@@ -15,6 +15,7 @@
 #pragma once
 
 #include <pj_base/toolbox_protocol.h>
+#include <pj_plugins/dialog_protocol.h>
 
 #include <pj_plugins/host/toolbox_handle.hpp>
 #include <string>
@@ -59,6 +60,9 @@ class ToolboxLibrary {
   [[nodiscard]] ToolboxHandle createHandle() const {
     return ToolboxHandle(vtable_);
   }
+
+  /// Resolve the dialog vtable from this .so. Returns error if not exported.
+  [[nodiscard]] Expected<const PJ_dialog_vtable_t*> resolveDialogVtable() const;
 
   /// Filesystem path the library was loaded from.
   [[nodiscard]] std::string path() const {

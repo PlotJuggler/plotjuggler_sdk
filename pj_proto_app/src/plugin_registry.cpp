@@ -55,14 +55,15 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
     loaded.name = manifest.value("name", so_path.stem().string());
     // Helper to push encoding(s) from a JSON value (string or array of strings)
     auto push_encodings = [&](const nlohmann::json& enc) {
-      if (enc.is_string()) {
-        loaded.encodings.push_back(enc.get<std::string>());
-      } else if (enc.is_array()) {
+    if (enc.is_array()) {
         for (const auto& e : enc) {
           if (e.is_string()) {
             loaded.encodings.push_back(e.get<std::string>());
           }
         }
+      }
+      else {
+        std::cerr << "Error: 'encoding' field must be an array in plugin '" << loaded.name << "' (" << so_path.string() << "). Single string format is no longer supported." << std::endl;
       }
     };
     // Primary encoding field
@@ -207,6 +208,8 @@ void PluginRegistry::reload() {
     }
   }
 }
+
+
 std::vector<LoadedDataSource*> PluginRegistry::fileImportSources() {
   std::vector<LoadedDataSource*> result;
   for (auto& ds : data_sources_) {

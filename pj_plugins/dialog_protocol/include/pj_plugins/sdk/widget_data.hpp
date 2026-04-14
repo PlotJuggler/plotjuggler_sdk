@@ -14,9 +14,12 @@ struct ChartPoint {
 };
 
 /// A named series of XY points for chart display (used by setChartSeries).
+/// If `color` is non-empty (e.g. "#ff7f0e"), it overrides the chart theme color
+/// for this series; otherwise the Qt Charts theme picks one.
 struct ChartSeries {
   std::string label;
   std::vector<ChartPoint> points;
+  std::string color;  // optional hex "#rrggbb"
 };
 
 /// Builder for the JSON string returned by get_widget_data().
@@ -119,7 +122,11 @@ class WidgetData {
       for (const auto& p : s.points) {
         pts.push_back({p.x, p.y});
       }
-      arr.push_back({{"label", s.label}, {"points", std::move(pts)}});
+      nlohmann::json entry = {{"label", s.label}, {"points", std::move(pts)}};
+      if (!s.color.empty()) {
+        entry["color"] = s.color;
+      }
+      arr.push_back(std::move(entry));
     }
     e["chart_series"] = std::move(arr);
     return *this;
@@ -137,6 +144,21 @@ class WidgetData {
     return *this;
   }
 
+  // --- Code editor (QPlainTextEdit with syntax highlighting) ---
+
+  /// Set the code content of a QPlainTextEdit used as a code editor.
+  /// Unlike setPlainText (read-only), this enables editing and wires onCodeChanged events.
+  WidgetData& setCodeContent(std::string_view name, std::string_view code) {
+    entry(name)["code_content"] = code;
+    return *this;
+  }
+
+  /// Set the language for syntax highlighting (e.g. "lua", "python").
+  WidgetData& setCodeLanguage(std::string_view name, std::string_view lang) {
+    entry(name)["code_language"] = lang;
+    return *this;
+  }
+
   // --- QLabel ---
   WidgetData& setLabel(std::string_view name, std::string_view text) {
     entry(name)["label"] = text;
@@ -146,6 +168,13 @@ class WidgetData {
   // --- QPushButton ---
   WidgetData& setButtonText(std::string_view name, std::string_view text) {
     entry(name)["button_text"] = text;
+    return *this;
+  }
+
+  /// Set an icon on a QPushButton from inline SVG data.
+  /// The SVG string is stored as-is and rendered by the host via QSvgRenderer.
+  WidgetData& setButtonIcon(std::string_view name, std::string_view svg_data) {
+    entry(name)["button_icon_svg"] = svg_data;
     return *this;
   }
 

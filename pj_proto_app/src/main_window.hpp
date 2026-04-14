@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QMenu>
+#include <QMenuBar>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTimer>
@@ -13,6 +15,7 @@
 #include "pj_datastore/engine.hpp"
 #include "plugin_registry.hpp"
 #include "series_tree_model.hpp"
+#include "toolbox_session.hpp"
 
 #include "pj_marketplace/extension_manager.hpp"
 
@@ -43,6 +46,8 @@ class MainWindow : public QMainWindow {
   void onTreeContextMenu(const QPoint& pos);
 
  private:
+  void setupToolboxPanels(QMenu* tools_menu);
+
   /// Compute the current visible time range based on data and streaming state.
   std::pair<PJ::Timestamp, PJ::Timestamp> computeVisibleRange() const;
 
@@ -66,6 +71,8 @@ class MainWindow : public QMainWindow {
   QTimer refresh_timer_;
   int refresh_tick_ = 0;
   bool streaming_active_ = false;
+
+  std::vector<std::unique_ptr<ToolboxSession>> toolbox_sessions_;
 };
 
 }  // namespace proto

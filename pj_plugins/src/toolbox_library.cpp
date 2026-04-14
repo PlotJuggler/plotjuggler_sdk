@@ -5,27 +5,6 @@
 #include "detail/library_loader.hpp"
 
 namespace PJ {
-namespace {
-
-Expected<PJ_get_toolbox_vtable_fn> loadEntryPoint(void* handle) {
-#if defined(_WIN32)
-  auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle), "PJ_get_toolbox_vtable");
-  if (symbol == nullptr) {
-    return unexpected(std::string("PJ_get_toolbox_vtable not found"));
-  }
-  return reinterpret_cast<PJ_get_toolbox_vtable_fn>(symbol);
-#else
-  dlerror();
-  void* symbol = dlsym(handle, "PJ_get_toolbox_vtable");
-  const char* err = dlerror();
-  if (err != nullptr) {
-    return unexpected(std::string(err));
-  }
-  return reinterpret_cast<PJ_get_toolbox_vtable_fn>(symbol);
-#endif
-}
-
-}  // namespace
 
 ToolboxLibrary::ToolboxLibrary(void* handle, const PJ_toolbox_vtable_t* vtable, std::string path)
     : handle_(handle), vtable_(vtable), path_(std::move(path)) {}
@@ -58,13 +37,14 @@ Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
     return unexpected(handle.error());
   }
 
-  auto entry = loadEntryPoint(*handle);
-  if (!entry) {
+  auto sym = detail::resolveSymbol(*handle, "PJ_get_toolbox_vtable");
+  if (!sym) {
     detail::closeLibraryHandle(*handle);
-    return unexpected(entry.error());
+    return unexpected(sym.error());
   }
+  auto entry = reinterpret_cast<PJ_get_toolbox_vtable_fn>(*sym);
 
-  const PJ_toolbox_vtable_t* vtable = (*entry)();
+  const PJ_toolbox_vtable_t* vtable = entry();
   if (vtable == nullptr) {
     detail::closeLibraryHandle(*handle);
     return unexpected(std::string("PJ_get_toolbox_vtable returned null"));
@@ -79,6 +59,25 @@ Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
   }
 
   return ToolboxLibrary(*handle, vtable, std::string(path));
+}
+
+Expected<const PJ_dialog_vtable_t*> ToolboxLibrary::resolveDialogVtable() const {
+  auto sym = detail::resolveSymbol(handle_, "PJ_get_dialog_vtable");
+  if (!sym) {
+    return unexpected(sym.error());
+  }
+  auto fn = reinterpret_cast<PJ_get_dialog_vtable_fn>(*sym);
+  const PJ_dialog_vtable_t* vt = fn();
+  if (vt == nullptr) {
+    return unexpected(std::string("PJ_get_dialog_vtable returned null"));
+  }
+  if (vt->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
+    return unexpected(std::string("Dialog protocol version mismatch"));
+  }
+  if (vt->struct_size < sizeof(PJ_dialog_vtable_t)) {
+    return unexpected(std::string("Dialog vtable is smaller than expected"));
+  }
+  return vt;
 }
 
 void ToolboxLibrary::reset() {

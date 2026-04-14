@@ -22,6 +22,7 @@ class ChartPreviewWidget : public QChartView {
   struct Series {
     std::string label;
     std::vector<std::pair<double, double>> points;
+    std::string color;  // optional hex "#rrggbb"; empty means use chart theme default
   };
 
   void setSeries(const std::vector<Series>& series);
