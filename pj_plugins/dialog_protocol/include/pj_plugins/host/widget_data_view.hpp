@@ -143,6 +143,7 @@ class WidgetDataView {
   struct ChartSeriesView {
     std::string label;
     std::vector<std::pair<double, double>> points;  // {x, y}
+    std::string color;  // optional hex "#rrggbb"; empty means use chart theme default
   };
 
   [[nodiscard]] std::optional<std::vector<ChartSeriesView>> chartSeries(std::string_view name) const {
@@ -173,6 +174,10 @@ class WidgetDataView {
             sv.points.emplace_back(pt[0].get<double>(), pt[1].get<double>());
           }
         }
+      }
+      auto color_it = s.find("color");
+      if (color_it != s.end() && color_it->is_string()) {
+        sv.color = color_it->get<std::string>();
       }
       result.push_back(std::move(sv));
     }

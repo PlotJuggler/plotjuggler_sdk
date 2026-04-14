@@ -14,9 +14,12 @@ struct ChartPoint {
 };
 
 /// A named series of XY points for chart display (used by setChartSeries).
+/// If `color` is non-empty (e.g. "#ff7f0e"), it overrides the chart theme color
+/// for this series; otherwise the Qt Charts theme picks one.
 struct ChartSeries {
   std::string label;
   std::vector<ChartPoint> points;
+  std::string color;  // optional hex "#rrggbb"
 };
 
 /// Builder for the JSON string returned by get_widget_data().
@@ -119,7 +122,11 @@ class WidgetData {
       for (const auto& p : s.points) {
         pts.push_back({p.x, p.y});
       }
-      arr.push_back({{"label", s.label}, {"points", std::move(pts)}});
+      nlohmann::json entry = {{"label", s.label}, {"points", std::move(pts)}};
+      if (!s.color.empty()) {
+        entry["color"] = s.color;
+      }
+      arr.push_back(std::move(entry));
     }
     e["chart_series"] = std::move(arr);
     return *this;

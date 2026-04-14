@@ -266,7 +266,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
       std::vector<PJ::ChartPreviewWidget::Series> chart_series;
       chart_series.reserve(series_data->size());
       for (const auto& s : *series_data) {
-        chart_series.push_back({s.label, s.points});
+        chart_series.push_back({s.label, s.points, s.color});
       }
       chart->setSeries(chart_series);
     }
