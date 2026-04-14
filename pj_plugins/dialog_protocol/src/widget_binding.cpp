@@ -24,6 +24,7 @@
 #include <pj_plugins/host_qt/chart_preview_widget.hpp>
 #include <pj_plugins/host_qt/widget_binding.hpp>
 #include "lua_syntax_highlighter.hpp"
+#include "python_syntax_highlighter.hpp"
 #include <set>
 
 namespace PJ {
@@ -65,12 +66,19 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
       if (pte->toPlainText() != new_text) {
         pte->setPlainText(new_text);
       }
-      // Install syntax highlighter on first use.
+      // Install or swap syntax highlighter when the language changes.
       if (auto lang = view.codeLanguage(name)) {
-        if (!pte->property("_pj_code_lang").isValid()) {
-          pte->setProperty("_pj_code_lang", QString::fromStdString(*lang));
+        QString current = pte->property("_pj_code_lang").toString();
+        QString requested = QString::fromStdString(*lang);
+        if (current != requested) {
+          pte->setProperty("_pj_code_lang", requested);
+          if (auto* old = pte->document()->findChild<QSyntaxHighlighter*>()) {
+            delete old;
+          }
           if (*lang == "lua") {
             new PJ::LuaSyntaxHighlighter(pte->document());
+          } else if (*lang == "python") {
+            new PJ::PythonSyntaxHighlighter(pte->document());
           }
         }
       }
