@@ -8,6 +8,7 @@ add_executable(pj_proto_app
   src/main_window.cpp
   src/plugin_registry.cpp
   src/data_source_session.cpp
+  src/toolbox_session.cpp
   src/series_tree_model.cpp
   src/chart_panel.cpp
   src/time_range_slider.cpp
