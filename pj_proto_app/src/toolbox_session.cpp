@@ -98,10 +98,13 @@ bool ToolboxSession::runDialog(QWidget* parent) {
   auto result = dialog_engine.showDialog(parent);
   dialog_running_ = false;
 
-  if (result == PJ::DialogResult::kRejected) return false;
-
+  // Always persist the plugin's config after the dialog closes, regardless of
+  // whether the user clicked OK or Close/X. Toolbox dialogs (unlike file-open
+  // dialogs) are persistent workspaces — closing them should not discard state.
   (void)handle_.loadConfig(dialog_engine.savedConfig());
   flushPending();
+
+  if (result == PJ::DialogResult::kRejected) return false;
   return true;
 }
 
