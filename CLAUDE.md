@@ -2,14 +2,40 @@
 
 ## Project Overview
 
-PlotJuggler Core — C++20 foundation in four modules:
+PlotJuggler Core — C++20 foundation libraries that will host the full PlotJuggler 4.x application.
+
+### Existing modules (substrate for the application)
 
 - **pj_base** — vocabulary types, plugin SDK headers (zero external deps)
-- **pj_datastore** — columnar storage engine (fmt, tsl::robin_map, nanoarrow)
-- **pj_plugins** — plugin protocol, host-side loaders, dialog SDK (Qt 6.8.3 optional)
-- **pj_proto_app** — prototype Qt application for testing plugins (Qt 6.8.3 required)
+- **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
+- **pj_plugins** — C-ABI plugin protocol, host-side loaders, dialog SDK (Qt 6.8.3 optional); four plugin families: DataSource, MessageParser, Dialog, Toolbox
+- **pj_media** — 2D/video visualization on top of `ObjectStore` (QRhi rendering, Qt 6.8+)
+- **pj_marketplace** — extension discovery, download, install (GitHub-hosted registry)
 
-Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (independent of each other). `pj_proto_app` → all modules.
+### Planned modules (PlotJuggler 4.x application — see `PJ4_PLAN.md` and `docs/APP_IMPLEMENTATION_PLAN.md`)
+
+- **pj_scripting** — language-agnostic scripting engine (Lua today via sol2; Python pluggable). Decoupled from the GUI; depends only on pj_base + pj_datastore.
+- **pj_app_core** — headless business services (SessionManager, PlaybackEngine, WorkspaceManager, TransformRegistry, ToolboxManager, UndoManager, etc.). **Qt allowed (QObject/QTimer/QSettings/signals), no QWidget/QDialog.**
+- **pj_plot_widgets** — Qwt-based plot widgets, lifted wholesale from PlotJuggler 3.x.
+- **pj_media_widgets_qt** — 2D viewer widgets wrapping pj_media / pj_media_qt.
+- **pj_3d_widgets** — placeholder for future 3D (renderer TBD; `IDataWidget` contract reserved).
+- **pj_app** — main-window shell, Qt Advanced Docking, menus, wiring.
+
+The three widget families (plot / 2D / 3D) are **independent by design** — each owns its own rendering and input world. Cross-widget coordination flows through `pj_app_core` services (global tracker, catalog, workspace).
+
+### Dependency graph
+
+- `pj_datastore` → `pj_base`
+- `pj_plugins` → `pj_base`
+- `pj_media` → `pj_datastore`, `pj_base`
+- `pj_scripting` → `pj_base`, `pj_datastore` (uses `ISISOTransform` / `IMIMOTransform`)
+- `pj_app_core` → `pj_datastore`, `pj_plugins`, `pj_scripting`, `pj_media`
+- `pj_plot_widgets`, `pj_media_widgets_qt`, `pj_3d_widgets` → `pj_app_core` + Qt (never each other)
+- `pj_app` → all the above + `pj_marketplace`
+
+### Deprecated
+
+- **pj_proto_app** — throwaway prototype; being replaced by the planned app modules above. Do not evolve it as the final app.
 
 ## Key Documentation
 
@@ -18,6 +44,9 @@ Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (inde
 | Document | Content |
 |----------|---------|
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
+| `PJ4_PLAN.md` | Strategic plan for the PlotJuggler 4.x application architecture |
+| `docs/APP_IMPLEMENTATION_PLAN.md` | Tactical implementation plan for the 4.x application layer |
+| `docs/toolbox-porting-gap-analysis.md` | SDK gaps identified when porting PJ3 toolboxes (being addressed) |
 
 **Datastore** (`pj_datastore/docs/`):
 
@@ -26,6 +55,7 @@ Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (inde
 | `REQUIREMENTS.md` | Goals, data model, ingest contract, schema evolution (dynamic columns, variable-length sequences), query, derived series |
 | `ARCHITECTURE.md` | Internals: domain model, layers, data flow, encoding (constant, FoR, dictionary, packed bool), DerivedEngine |
 | `USER_GUIDE.md` | Plugin author's guide: write patterns (named vs bound vs Arrow IPC), read API, pitfalls, ValueRef, TypedNull |
+| `OBJECT_STORE_DESIGN.md` | ObjectStore: lazy-fetch media blobs, retention, concurrent access |
 
 **Plugin system** (`pj_plugins/docs/`):
 
@@ -37,6 +67,24 @@ Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (inde
 | `message-parser-guide.md` | SDK tutorial: parse(), schema binding, dialog integration for parsers |
 | `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
 | `toolbox-guide.md` | SDK tutorial: read+write access, catalog, notifyDataChanged |
+
+**Media** (`pj_media/docs/`):
+
+| Document | Content |
+|----------|---------|
+| `REQUIREMENTS.md` | Goals for 2D/video visualization, data types, retention |
+| `ARCHITECTURE.md` | Decoder pipeline, MediaSource abstraction, QRhi rendering, file vs streaming video |
+| `TECHNICAL_NOTES.md` | FFmpeg integration details, HW acceleration, B-frame handling, scrub optimizations |
+| `datatypes_2D.md` | Self-contained image/video/annotation/scene types |
+| `dataset_format_comparison.md` | How pj_media compares to Rerun and Foxglove |
+
+**Marketplace** (`pj_marketplace/documentation/`):
+
+| Document | Content |
+|----------|---------|
+| `REQUIREMENTS.md` | Goals, discovery model, install flow, packaging format |
+| `ARCHITECTURE.md` | Client/registry model, registry JSON, ZIP packaging, integration point |
+| `plotjuggler-marketplace-spec-v1.0.0-en.md` | Versioned protocol spec |
 
 ## Build & Test
 
