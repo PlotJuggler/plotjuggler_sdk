@@ -187,6 +187,10 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   });
   connect(&refresh_timer_, &QTimer::timeout, this, &MainWindow::onRefreshTimer);
 
+  // --- Tools menu ---
+  auto* tools_menu = menuBar()->addMenu("&Tools");
+  setupToolboxPanels(tools_menu);
+
   setWindowTitle("PlotJuggler Proto");
 }
 
@@ -689,6 +693,36 @@ void MainWindow::onOpenMarketplace() {
   window.exec();
   if (window.installationsChanged()) {
     registry_.reload();
+  }
+}
+
+void MainWindow::setupToolboxPanels(QMenu* tools_menu) {
+  for (const auto& tb : registry_.allToolboxes()) {
+    auto session =
+        std::make_unique<ToolboxSession>(engine_, const_cast<PJ::ToolboxLibrary&>(tb.library), tb.name, this);
+    if (!session->init()) {
+      continue;
+    }
+
+    connect(session.get(), &ToolboxSession::dataChanged, this, [this]() {
+      auto [begin, end] = computeVisibleRange();
+      chart_panel_->updateData(begin, end);
+      tree_model_.rebuildIfChanged();
+    });
+
+    ToolboxSession* raw_session = session.get();
+
+    tools_menu->addAction(QString::fromStdString(tb.name), this, [this, raw_session]() {
+      if (raw_session->hasDialog()) {
+        if (raw_session->runDialog(this)) {
+          auto [begin, end] = computeVisibleRange();
+          chart_panel_->updateData(begin, end);
+          tree_model_.rebuildIfChanged();
+        }
+      }
+    });
+
+    toolbox_sessions_.push_back(std::move(session));
   }
 }
 
