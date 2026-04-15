@@ -200,8 +200,8 @@ Accepts **multiple simultaneous curves**.
 
 **SDK equivalent needed:** `WidgetData::setAcceptDrops(name, true)` for chart widgets, with a new event:
 ```cpp
-virtual bool onCurvesDropped(std::string_view widget_name,
-    const std::vector<std::string>& curve_names);
+virtual bool onItemsDropped(std::string_view widget_name,
+    const std::vector<std::string>& items);
 ```
 
 ### 5.2 · Drop on QLineEdit → fill field + smart auto-fill (HIGH — Quaternion)
@@ -216,8 +216,8 @@ This is the most ergonomic feature of the Quaternion toolbox. Example: dropping 
 
 **SDK equivalent needed:** `WidgetData::setAcceptDrops(name, true)` for `QLineEdit` or `QComboBox`, with:
 ```cpp
-virtual bool onCurvesDropped(std::string_view widget_name,
-    const std::vector<std::string>& curve_names);
+virtual bool onItemsDropped(std::string_view widget_name,
+    const std::vector<std::string>& items);
 // Plugin implements auto-fill logic in this handler
 ```
 
@@ -232,7 +232,7 @@ Lua editor installs an `eventFilter` on all three `QCodeEditor` widgets. On drop
 
 Accepts multiple curves; each becomes one line. This allows users to quickly reference series in their Lua code without typing.
 
-**SDK equivalent needed:** Same `onCurvesDropped` event, but on code editor widgets.
+**SDK equivalent needed:** Same `onItemsDropped` event, but on code editor widgets.
 
 ---
 
@@ -417,8 +417,8 @@ WidgetData& setChartAcceptDrops(std::string_view name, bool accept);
 virtual bool onChartViewChanged(std::string_view name,
                                 double x_min, double x_max,
                                 double y_min, double y_max);
-virtual bool onCurvesDroppedOnChart(std::string_view name,
-                                    const std::vector<std::string>& curve_names);
+virtual bool onItemsDroppedOnChart(std::string_view name,
+                                   const std::vector<std::string>& items);
 ```
 
 ### 9.2 Drag-and-drop on standard widgets
@@ -428,8 +428,8 @@ virtual bool onCurvesDroppedOnChart(std::string_view name,
 WidgetData& setAcceptDrops(std::string_view name, bool accept);
 
 // DialogPluginTyped event handler:
-virtual bool onCurvesDropped(std::string_view widget_name,
-                             const std::vector<std::string>& curve_names);
+virtual bool onItemsDropped(std::string_view widget_name,
+                            const std::vector<std::string>& items);
 // Plugin implements auto-fill or insertion logic in this handler
 ```
 

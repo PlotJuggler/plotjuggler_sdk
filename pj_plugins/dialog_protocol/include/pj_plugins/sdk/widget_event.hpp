@@ -99,6 +99,22 @@ class WidgetEvent {
     return getString("code_changed");
   }
 
+  /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
+  std::optional<std::vector<std::string>> itemsDropped() const {
+    auto it = data_.find("items_dropped");
+    if (it == data_.end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      if (item.is_string()) {
+        result.push_back(item.get<std::string>());
+      }
+    }
+    return result;
+  }
+
   /// Check if a key exists in the event data
   bool has(std::string_view key) const {
     return data_.contains(std::string(key));

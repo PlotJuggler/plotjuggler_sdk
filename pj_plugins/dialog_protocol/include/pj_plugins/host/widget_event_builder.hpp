@@ -101,6 +101,13 @@ struct WidgetEventBuilder {
     j["code_changed"] = code;
     return j.dump();
   }
+
+  /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
+  [[nodiscard]] static std::string itemsDropped(const std::vector<std::string>& labels) {
+    nlohmann::json j;
+    j["items_dropped"] = labels;
+    return j.dump();
+  }
 };
 
 }  // namespace PJ
