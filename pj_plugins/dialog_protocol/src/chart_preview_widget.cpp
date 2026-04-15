@@ -29,6 +29,11 @@ const std::vector<QColor>& kDefaultPalette() {
 ChartPreviewWidget::ChartPreviewWidget(QWidget* parent) : QChartView(new QChart(), parent) {
   setRenderHint(QPainter::Antialiasing);
 
+  // Let drag events pass through to the parent frame so the dialog-level
+  // DropEventFilter can handle them. QGraphicsView accepts drops by default.
+  setAcceptDrops(false);
+  viewport()->setAcceptDrops(false);
+
   x_axis_ = new QValueAxis();
   y_axis_ = new QValueAxis();
   chart()->addAxis(x_axis_, Qt::AlignBottom);
