@@ -184,6 +184,11 @@ class WidgetDataView {
     return result;
   }
 
+  /// Returns whether interactive zoom is enabled on this chart widget.
+  [[nodiscard]] std::optional<bool> chartZoomEnabled(std::string_view name) const {
+    return getBool(name, "chart_zoom_enabled");
+  }
+
   // --- QPlainTextEdit ---
   [[nodiscard]] std::optional<std::string> plainText(std::string_view name) const {
     return getString(name, "plain_text");

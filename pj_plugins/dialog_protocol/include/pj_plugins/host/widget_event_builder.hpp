@@ -108,6 +108,16 @@ struct WidgetEventBuilder {
     j["items_dropped"] = labels;
     return j.dump();
   }
+
+  /// ChartPreviewWidget: visible range changed via zoom or pan.
+  [[nodiscard]] static std::string chartViewChanged(double x_min, double x_max, double y_min, double y_max) {
+    nlohmann::json j;
+    j["chart_x_min"] = x_min;
+    j["chart_x_max"] = x_max;
+    j["chart_y_min"] = y_min;
+    j["chart_y_max"] = y_max;
+    return j.dump();
+  }
 };
 
 }  // namespace PJ
