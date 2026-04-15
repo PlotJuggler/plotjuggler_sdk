@@ -115,6 +115,26 @@ class WidgetEvent {
     return result;
   }
 
+  /// ChartPreviewWidget: visible range changed via zoom or pan.
+  struct ChartViewState {
+    double x_min;
+    double x_max;
+    double y_min;
+    double y_max;
+  };
+
+  std::optional<ChartViewState> chartViewChanged() const {
+    auto xmin = data_.find("chart_x_min");
+    auto xmax = data_.find("chart_x_max");
+    auto ymin = data_.find("chart_y_min");
+    auto ymax = data_.find("chart_y_max");
+    if (xmin == data_.end() || !xmin->is_number() || xmax == data_.end() || !xmax->is_number() ||
+        ymin == data_.end() || !ymin->is_number() || ymax == data_.end() || !ymax->is_number()) {
+      return std::nullopt;
+    }
+    return ChartViewState{xmin->get<double>(), xmax->get<double>(), ymin->get<double>(), ymax->get<double>()};
+  }
+
   /// Check if a key exists in the event data
   bool has(std::string_view key) const {
     return data_.contains(std::string(key));

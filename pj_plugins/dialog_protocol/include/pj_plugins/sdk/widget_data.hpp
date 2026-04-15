@@ -138,6 +138,13 @@ class WidgetData {
     return *this;
   }
 
+  /// Enable interactive zoom (rubber band + mouse wheel) on the chart inside the named QFrame.
+  /// When enabled, onChartViewChanged() is called whenever the user zooms or pans.
+  WidgetData& setChartZoomEnabled(std::string_view name, bool enabled = true) {
+    entry(name)["chart_zoom_enabled"] = enabled;
+    return *this;
+  }
+
   // --- QPlainTextEdit ---
   WidgetData& setPlainText(std::string_view name, std::string_view text) {
     entry(name)["plain_text"] = text;

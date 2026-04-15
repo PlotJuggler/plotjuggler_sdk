@@ -271,9 +271,11 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
     return;
   }
 
-  // --- QFrame with chart_series → ChartPreviewWidget ---
+  // --- QFrame with chart_series or chart_zoom_enabled → ChartPreviewWidget ---
   if (auto* frame = qobject_cast<QFrame*>(w)) {
-    if (auto series_data = view.chartSeries(name)) {
+    auto series_data = view.chartSeries(name);
+    auto zoom_enabled = view.chartZoomEnabled(name);
+    if (series_data || zoom_enabled) {
       // Find or create the ChartPreviewWidget inside this frame.
       auto* chart = frame->findChild<PJ::ChartPreviewWidget*>();
       if (!chart) {
@@ -285,13 +287,18 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
         chart = new PJ::ChartPreviewWidget(frame);
         layout->addWidget(chart);
       }
-      // Convert WidgetDataView series to ChartPreviewWidget series.
-      std::vector<PJ::ChartPreviewWidget::Series> chart_series;
-      chart_series.reserve(series_data->size());
-      for (const auto& s : *series_data) {
-        chart_series.push_back({s.label, s.points, s.color});
+      if (series_data) {
+        // Convert WidgetDataView series to ChartPreviewWidget series.
+        std::vector<PJ::ChartPreviewWidget::Series> chart_series;
+        chart_series.reserve(series_data->size());
+        for (const auto& s : *series_data) {
+          chart_series.push_back({s.label, s.points, s.color});
+        }
+        chart->setSeries(chart_series);
       }
-      chart->setSeries(chart_series);
+      if (zoom_enabled) {
+        chart->setZoomEnabled(*zoom_enabled);
+      }
     }
     return;
   }
@@ -327,6 +334,21 @@ static bool is_internal_widget_name(const QString& name) {
 
 void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
   using PJ::WidgetEventBuilder;
+
+  // ChartPreviewWidget instances are unnamed children of their parent QFrame.
+  // Wire their viewChanged signals using the parent frame's objectName as the event widget name.
+  // Must run after applyWidgetData() so charts that were created on first apply are found here.
+  for (auto* chart : root->findChildren<PJ::ChartPreviewWidget*>()) {
+    auto* parent_frame = qobject_cast<QFrame*>(chart->parent());
+    if (!parent_frame || parent_frame->objectName().isEmpty()) {
+      continue;
+    }
+    std::string chart_name = parent_frame->objectName().toStdString();
+    QObject::connect(chart, &PJ::ChartPreviewWidget::viewChanged, chart,
+                     [callback, chart_name](double x_min, double x_max, double y_min, double y_max) {
+                       callback(chart_name, WidgetEventBuilder::chartViewChanged(x_min, x_max, y_min, y_max));
+                     });
+  }
 
   for (auto* w : root->findChildren<QWidget*>()) {
     QString qname = w->objectName();

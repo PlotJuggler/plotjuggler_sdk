@@ -3,6 +3,8 @@
 #include <QColor>
 #include <QPen>
 #include <QPointF>
+#include <QSignalBlocker>
+#include <QWheelEvent>
 #include <QtCharts/QChart>
 #include <QtCharts/QLegendMarker>
 #include <QtCharts/QLineSeries>
@@ -35,9 +37,15 @@ ChartPreviewWidget::ChartPreviewWidget(QWidget* parent) : QChartView(new QChart(
   chart()->legend()->setVisible(true);
   chart()->legend()->setAlignment(Qt::AlignBottom);
   chart()->setMargins(QMargins(4, 4, 4, 4));
+
+  // Emit viewChanged when axes change. QSignalBlocker(this) in setSeries/clearSeries
+  // suppresses spurious emissions during programmatic data updates.
+  QObject::connect(x_axis_, &QValueAxis::rangeChanged, this, [this](qreal, qreal) { emitViewChanged(); });
+  QObject::connect(y_axis_, &QValueAxis::rangeChanged, this, [this](qreal, qreal) { emitViewChanged(); });
 }
 
 void ChartPreviewWidget::setSeries(const std::vector<Series>& series) {
+  const QSignalBlocker blocker(this);  // suppress viewChanged during programmatic data update
   chart()->removeAllSeries();
 
   double x_min = std::numeric_limits<double>::max();
@@ -110,7 +118,33 @@ void ChartPreviewWidget::setSeries(const std::vector<Series>& series) {
 }
 
 void ChartPreviewWidget::clearSeries() {
+  const QSignalBlocker blocker(this);  // suppress viewChanged during programmatic data clear
   chart()->removeAllSeries();
+}
+
+void ChartPreviewWidget::setZoomEnabled(bool enabled) {
+  zoom_enabled_ = enabled;
+  setRubberBand(enabled ? QChartView::RectangleRubberBand : QChartView::NoRubberBand);
+}
+
+void ChartPreviewWidget::wheelEvent(QWheelEvent* event) {
+  if (!zoom_enabled_) {
+    QChartView::wheelEvent(event);
+    return;
+  }
+  auto delta = event->angleDelta().y();
+  if (delta != 0) {
+    // factor > 1 zooms in (shows less range), factor < 1 zooms out.
+    chart()->zoom(delta > 0 ? 1.25 : 0.8);
+  }
+  event->accept();
+}
+
+void ChartPreviewWidget::emitViewChanged() {
+  if (!zoom_enabled_) {
+    return;
+  }
+  emit viewChanged(x_axis_->min(), x_axis_->max(), y_axis_->min(), y_axis_->max());
 }
 
 }  // namespace PJ
