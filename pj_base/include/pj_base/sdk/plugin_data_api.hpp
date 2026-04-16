@@ -563,6 +563,34 @@ class ToolboxHostView {
     return MaterializedSeries(raw);
   }
 
+  /// Register a named colormap backed by a plugin-side callback.
+  /// The callback receives a scalar value and returns a color string ("#rrggbb" or CSS name).
+  /// The host stores the callback and invokes it from the chart renderer per data point.
+  using ColorMapEvalFn = const char* (*)(double value, void* user_ctx);
+
+  [[nodiscard]] Status registerColorMap(std::string_view name,
+                                        ColorMapEvalFn eval_fn,
+                                        void* user_ctx) const {
+    if (host_.vtable->register_colormap == nullptr) {
+      return unexpected(std::string("register_colormap not supported by this host"));
+    }
+    if (!host_.vtable->register_colormap(host_.ctx, toAbiString(name), eval_fn, user_ctx)) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  /// Unregister a previously registered colormap by name.
+  [[nodiscard]] Status unregisterColorMap(std::string_view name) const {
+    if (host_.vtable->unregister_colormap == nullptr) {
+      return unexpected(std::string("unregister_colormap not supported by this host"));
+    }
+    if (!host_.vtable->unregister_colormap(host_.ctx, toAbiString(name))) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
   [[nodiscard]] std::string_view lastError() const {
     const char* err = host_.vtable->get_last_error(host_.ctx);
     return err == nullptr ? std::string_view{} : std::string_view(err);
