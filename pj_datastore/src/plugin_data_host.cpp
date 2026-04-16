@@ -1110,7 +1110,7 @@ const PJ_toolbox_host_vtable_t kToolboxVTable = {
     toolboxEnsureTopic,         toolboxEnsureField,
     toolboxAppendRecord,        toolboxAppendRecordFast,
     toolboxAppendArrowIpc,      toolboxAcquireCatalogSnapshot,
-    toolboxReadSeries,          nullptr,
+    toolboxReadSeries,
     toolboxRegisterColorMap,    toolboxUnregisterColorMap,
 };
 
