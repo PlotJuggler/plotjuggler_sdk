@@ -47,6 +47,7 @@ if(PJ_BUILD_TESTS)
     tests/data_source_protocol_test.cpp
     tests/data_source_plugin_base_test.cpp
     tests/message_parser_plugin_base_test.cpp
+    tests/platform_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})
