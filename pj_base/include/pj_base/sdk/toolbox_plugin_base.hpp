@@ -122,6 +122,13 @@ class ToolboxPluginBase {
     return okStatus();
   }
 
+  /// Bind the optional colormap registry service. Override for plugins that
+  /// publish colormaps. Default accepts the registry (valid or not) as a no-op.
+  virtual Status bindColorMapRegistry(PJ_colormap_registry_t registry) {
+    colormap_registry_ = registry;
+    return okStatus();
+  }
+
   /// Serialize plugin configuration to JSON. Default returns "{}".
   virtual std::string saveConfig() const {
     return "{}";
@@ -158,6 +165,7 @@ class ToolboxPluginBase {
         trampoline_capabilities,
         trampoline_bind_toolbox_host,
         trampoline_bind_runtime_host,
+        trampoline_bind_colormap_registry,
         trampoline_save_config,
         trampoline_load_config,
         trampoline_get_dialog_context,
@@ -183,6 +191,14 @@ class ToolboxPluginBase {
     return ToolboxRuntimeHostView(runtime_host_);
   }
 
+  [[nodiscard]] sdk::ColorMapRegistryView colorMapRegistry() const {
+    return sdk::ColorMapRegistryView(colormap_registry_);
+  }
+
+  [[nodiscard]] bool colorMapRegistryBound() const {
+    return colormap_registry_.ctx != nullptr && colormap_registry_.vtable != nullptr;
+  }
+
   void setLastError(std::string error) {
     last_error_ = std::move(error);
   }
@@ -190,6 +206,7 @@ class ToolboxPluginBase {
  private:
   PJ_toolbox_host_t toolbox_host_{};
   PJ_toolbox_runtime_host_t runtime_host_{};
+  PJ_colormap_registry_t colormap_registry_{};
   std::string config_buf_;
   mutable std::string last_error_;
 
@@ -199,6 +216,7 @@ class ToolboxPluginBase {
   static uint64_t trampoline_capabilities(void* ctx);
   static bool trampoline_bind_toolbox_host(void* ctx, PJ_toolbox_host_t toolbox_host);
   static bool trampoline_bind_runtime_host(void* ctx, PJ_toolbox_runtime_host_t runtime_host);
+  static bool trampoline_bind_colormap_registry(void* ctx, PJ_colormap_registry_t registry);
   static const char* trampoline_save_config(void* ctx);
   static bool trampoline_load_config(void* ctx, const char* config_json);
   static void* trampoline_get_dialog_context(void* ctx);

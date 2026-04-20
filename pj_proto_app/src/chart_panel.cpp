@@ -3,6 +3,7 @@
 #include <QContextMenuEvent>
 #include <QDataStream>
 #include <QMimeData>
+#include <QPen>
 #include <cmath>
 #include <limits>
 
@@ -53,6 +54,10 @@ void ChartPanel::clearAllSeries() {
   }
   series_.clear();
   first_timestamp_ = 0;
+}
+
+void ChartPanel::setColorMap(std::function<QColor(double)> fn) {
+  colormap_fn_ = std::move(fn);
 }
 
 void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
@@ -108,6 +113,20 @@ void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
     });
 
     s.line->replace(points);
+    if (!points.empty()) {
+      s.last_value = points.last().y();
+    }
+  }
+
+  if (colormap_fn_) {
+    for (auto& s : series_) {
+      QColor color = colormap_fn_(s.last_value);
+      if (color.isValid()) {
+        QPen pen = s.line->pen();
+        pen.setColor(color);
+        s.line->setPen(pen);
+      }
+    }
   }
 
   // Auto-scale x-axis (skipped when user has manually zoomed or panned)

@@ -167,6 +167,13 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   connect(tree_view_, &QTreeView::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
 
   chart_panel_ = new ChartPanel(engine_);
+  // Feed the chart a live view of the colormap registry: the lambda captures
+  // the registry by reference, so any plugin that later activates a colormap
+  // takes effect on the next refresh without re-wiring the chart.
+  chart_panel_->setColorMap([this](double v) -> QColor {
+    std::string color_str = colormap_registry_.evaluate(v);
+    return color_str.empty() ? QColor() : QColor(QString::fromStdString(color_str));
+  });
 
   auto* splitter = new QSplitter(Qt::Horizontal);
   splitter->addWidget(tree_view_);
@@ -698,8 +705,8 @@ void MainWindow::onOpenMarketplace() {
 
 void MainWindow::setupToolboxPanels(QMenu* tools_menu) {
   for (const auto& tb : registry_.allToolboxes()) {
-    auto session =
-        std::make_unique<ToolboxSession>(engine_, const_cast<PJ::ToolboxLibrary&>(tb.library), tb.name, this);
+    auto session = std::make_unique<ToolboxSession>(
+        engine_, const_cast<PJ::ToolboxLibrary&>(tb.library), colormap_registry_, tb.name, this);
     if (!session->init()) {
       continue;
     }

@@ -83,6 +83,14 @@ class ToolboxHandle {
     return vt_->bind_runtime_host(ctx_, runtime_host);
   }
 
+  /// Bind the optional colormap registry service. Returns true when the plugin
+  /// accepts the registry (plugins that don't use it still return true as a
+  /// no-op) or when the plugin does not implement the binding at all.
+  [[nodiscard]] bool bindColorMapRegistry(PJ_colormap_registry_t registry) {
+    if (vt_->bind_colormap_registry == nullptr) return true;
+    return vt_->bind_colormap_registry(ctx_, registry);
+  }
+
   [[nodiscard]] std::string saveConfig() const {
     return safeString(vt_->save_config(ctx_));
   }

@@ -114,6 +114,14 @@ typedef struct PJ_toolbox_vtable_t {
   bool (*bind_toolbox_host)(void* ctx, PJ_toolbox_host_t toolbox_host);
   /** Bind the control-plane runtime host. Must be called before interaction. */
   bool (*bind_runtime_host)(void* ctx, PJ_toolbox_runtime_host_t runtime_host);
+  /**
+   * Bind the optional colormap registry service.
+   *
+   * Called by the host after bind_toolbox_host when a registry is available.
+   * Plugins that don't publish colormaps can leave this NULL; the host checks
+   * for NULL before calling. Returns true on success.
+   */
+  bool (*bind_colormap_registry)(void* ctx, PJ_colormap_registry_t registry);
 
   /** Serialize plugin configuration to JSON. Plugin-owned string. */
   const char* (*save_config)(void* ctx);

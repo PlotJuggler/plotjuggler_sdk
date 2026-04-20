@@ -12,6 +12,7 @@
 
 #include "chart_panel.hpp"
 #include "data_source_session.hpp"
+#include "pj_datastore/colormap_registry.hpp"
 #include "pj_datastore/engine.hpp"
 #include "plugin_registry.hpp"
 #include "series_tree_model.hpp"
@@ -58,6 +59,7 @@ class MainWindow : public QMainWindow {
   void restartSession(DataSourceSession* session);
 
   PJ::DataEngine engine_;
+  PJ::ColorMapRegistry colormap_registry_;
   PJ::TimeDomainId default_td_id_ = 0;
   PluginRegistry registry_;
   std::vector<std::unique_ptr<DataSourceSession>> sessions_;

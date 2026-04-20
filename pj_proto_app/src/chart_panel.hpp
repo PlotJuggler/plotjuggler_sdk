@@ -9,6 +9,7 @@
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QValueAxis>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,7 @@ struct PlottedSeries {
   PJ::TopicId topic_id = 0;
   size_t col_index = 0;
   std::string label;
+  double last_value = 0.0;
 };
 
 class ChartPanel : public QChartView {
@@ -34,6 +36,12 @@ class ChartPanel : public QChartView {
   void removeSeries(int index);
   void clearAllSeries();
   void updateData(PJ::Timestamp t_min, PJ::Timestamp t_max);
+
+  /// Install a color function keyed on each series' last value. Pass `{}` to
+  /// restore default per-series colors. The function may query shared state
+  /// (e.g. a `ColorMapRegistry`) and is consulted on every `updateData()`
+  /// call, so registry changes take effect on the next refresh.
+  void setColorMap(std::function<QColor(double)> fn);
 
  signals:
   void seriesDropped();
@@ -54,6 +62,7 @@ class ChartPanel : public QChartView {
   QValueAxis* x_axis_;
   QValueAxis* y_axis_;
   std::vector<PlottedSeries> series_;
+  std::function<QColor(double)> colormap_fn_;
   PJ::Timestamp first_timestamp_ = 0;
   bool user_zoom_ = false;
   bool is_panning_ = false;
