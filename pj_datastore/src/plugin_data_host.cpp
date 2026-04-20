@@ -956,15 +956,9 @@ struct DatastoreParserWriteHostState {
   TopicHandle topic;
 };
 
-struct ColorMapEntry {
-  const char* (*eval_fn)(double value, void* user_ctx);
-  void* user_ctx;
-};
-
 struct DatastoreToolboxHostState {
   explicit DatastoreToolboxHostState(DataEngine& engine) : core(engine) {}
   ToolboxCore core;
-  std::unordered_map<std::string, ColorMapEntry> colormaps;
 };
 
 bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic) {
@@ -1061,24 +1055,6 @@ bool toolboxReadSeries(void* ctx, FieldHandle field, PJ_materialized_series_t* o
   return static_cast<DatastoreToolboxHostState*>(ctx)->core.readSeries(field, out_series);
 }
 
-bool toolboxRegisterColorMap(void* ctx, PJ_string_view_t name,
-                             const char* (*eval_fn)(double, void*), void* user_ctx) {
-  auto* state = static_cast<DatastoreToolboxHostState*>(ctx);
-  std::string key(toStringView(name));
-  if (state->colormaps.count(key) > 0) {
-    state->core.write.last_error_ = "colormap '" + key + "' already registered";
-    return false;
-  }
-  state->colormaps[key] = {eval_fn, user_ctx};
-  return true;
-}
-
-bool toolboxUnregisterColorMap(void* ctx, PJ_string_view_t name) {
-  auto* state = static_cast<DatastoreToolboxHostState*>(ctx);
-  std::string key(toStringView(name));
-  return state->colormaps.erase(key) > 0;
-}
-
 const char* toolboxLastError(void* ctx) {
   return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.lastError();
 }
@@ -1111,7 +1087,6 @@ const PJ_toolbox_host_vtable_t kToolboxVTable = {
     toolboxAppendRecord,        toolboxAppendRecordFast,
     toolboxAppendArrowIpc,      toolboxAcquireCatalogSnapshot,
     toolboxReadSeries,
-    toolboxRegisterColorMap,    toolboxUnregisterColorMap,
 };
 
 DatastoreSourceWriteHost::DatastoreSourceWriteHost(DataEngine& engine, DataSourceHandle source)

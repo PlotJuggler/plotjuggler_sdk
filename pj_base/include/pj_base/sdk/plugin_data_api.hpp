@@ -563,34 +563,6 @@ class ToolboxHostView {
     return MaterializedSeries(raw);
   }
 
-  /// Register a named colormap backed by a plugin-side callback.
-  /// The callback receives a scalar value and returns a color string ("#rrggbb" or CSS name).
-  /// The host stores the callback and invokes it from the chart renderer per data point.
-  using ColorMapEvalFn = const char* (*)(double value, void* user_ctx);
-
-  [[nodiscard]] Status registerColorMap(std::string_view name,
-                                        ColorMapEvalFn eval_fn,
-                                        void* user_ctx) const {
-    if (host_.vtable->register_colormap == nullptr) {
-      return unexpected(std::string("register_colormap not supported by this host"));
-    }
-    if (!host_.vtable->register_colormap(host_.ctx, toAbiString(name), eval_fn, user_ctx)) {
-      return unexpected(std::string(lastError()));
-    }
-    return okStatus();
-  }
-
-  /// Unregister a previously registered colormap by name.
-  [[nodiscard]] Status unregisterColorMap(std::string_view name) const {
-    if (host_.vtable->unregister_colormap == nullptr) {
-      return unexpected(std::string("unregister_colormap not supported by this host"));
-    }
-    if (!host_.vtable->unregister_colormap(host_.ctx, toAbiString(name))) {
-      return unexpected(std::string(lastError()));
-    }
-    return okStatus();
-  }
-
   [[nodiscard]] std::string_view lastError() const {
     const char* err = host_.vtable->get_last_error(host_.ctx);
     return err == nullptr ? std::string_view{} : std::string_view(err);
@@ -598,6 +570,44 @@ class ToolboxHostView {
 
  private:
   PJ_toolbox_host_t host_;
+};
+
+// ---------------------------------------------------------------------------
+// ColorMapRegistryView — typed C++ view over PJ_colormap_registry_t
+// ---------------------------------------------------------------------------
+
+/// Signature of a color evaluation callback — mirrors the C ABI.
+using ColorMapEvalFn = const char* (*)(double value, void* user_ctx);
+
+/// C++ wrapper around PJ_colormap_registry_t for plugins that publish
+/// colormaps. Constructed from the fat pointer delivered via
+/// `bind_colormap_registry`. Empty-constructible; `valid()` tells whether
+/// the host exposed a registry.
+class ColorMapRegistryView {
+ public:
+  ColorMapRegistryView() = default;
+  explicit ColorMapRegistryView(PJ_colormap_registry_t registry) : registry_(registry) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return registry_.vtable != nullptr && registry_.ctx != nullptr;
+  }
+
+  /// Register (or replace) a named colormap. The new entry becomes active.
+  [[nodiscard]] bool registerMap(std::string_view name,
+                                 ColorMapEvalFn eval_fn,
+                                 void* user_ctx) const {
+    if (!valid() || registry_.vtable->register_map == nullptr) return false;
+    return registry_.vtable->register_map(registry_.ctx, toAbiString(name), eval_fn, user_ctx);
+  }
+
+  /// Unregister a colormap by name. Clears the active selection if it matched.
+  [[nodiscard]] bool unregisterMap(std::string_view name) const {
+    if (!valid() || registry_.vtable->unregister_map == nullptr) return false;
+    return registry_.vtable->unregister_map(registry_.ctx, toAbiString(name));
+  }
+
+ private:
+  PJ_colormap_registry_t registry_{};
 };
 
 }  // namespace PJ::sdk

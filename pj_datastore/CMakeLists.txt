@@ -17,6 +17,8 @@ add_library(pj_datastore STATIC
   src/derived_engine.cpp
   src/builtin_transforms.cpp
   src/plugin_data_host.cpp
+  src/colormap_registry.cpp
+  src/colormap_registry_host.cpp
 )
 target_include_directories(pj_datastore PUBLIC include)
 target_compile_features(pj_datastore PUBLIC cxx_std_20)

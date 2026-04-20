@@ -206,24 +206,43 @@ typedef struct PJ_toolbox_host_vtable_t {
       void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column);
   bool (*acquire_catalog_snapshot)(void* ctx, PJ_catalog_snapshot_t* out_snapshot);
   bool (*read_series)(void* ctx, PJ_field_handle_t field, PJ_materialized_series_t* out_series);
-
-  /** Register a named colormap backed by a plugin-side callback.
-   *  eval_fn receives a scalar value and returns a color string (CSS name or "#rrggbb").
-   *  The returned pointer is plugin-owned and must remain valid until the next call.
-   *  The host stores the callback; the chart renderer calls it per data point.
-   *  Returns false if a colormap with the same name already exists. */
-  bool (*register_colormap)(void* ctx, PJ_string_view_t name,
-                            const char* (*eval_fn)(double value, void* user_ctx),
-                            void* user_ctx);
-
-  /** Unregister a previously registered colormap by name. */
-  bool (*unregister_colormap)(void* ctx, PJ_string_view_t name);
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
   void* ctx;
   const PJ_toolbox_host_vtable_t* vtable;
 } PJ_toolbox_host_t;
+
+/**
+ * Colormap registry service — an independent host-provided service for
+ * toolbox plugins that want to publish named colormap callbacks.
+ *
+ * The registry is NOT part of the toolbox-host vtable: it has its own
+ * `ctx` and lives alongside the data/engine host, so plugins that never
+ * deal with colormaps never touch it.
+ *
+ * eval_fn receives a scalar value plus the plugin-provided `user_ctx` and
+ * returns a CSS color name or "#rrggbb" hex string. The returned pointer
+ * is plugin-owned and must remain valid until the next call to the same
+ * callback.
+ */
+typedef struct PJ_colormap_registry_vtable_t {
+  uint32_t protocol_version;
+  uint32_t struct_size;
+
+  /** Register or replace a named colormap. Newly registered map becomes active. */
+  bool (*register_map)(void* ctx, PJ_string_view_t name,
+                       const char* (*eval_fn)(double value, void* user_ctx),
+                       void* user_ctx);
+
+  /** Unregister a colormap by name. Clears the active selection if it matched. */
+  bool (*unregister_map)(void* ctx, PJ_string_view_t name);
+} PJ_colormap_registry_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_colormap_registry_vtable_t* vtable;
+} PJ_colormap_registry_t;
 
 #ifdef __cplusplus
 }

@@ -2,6 +2,7 @@
 
 #include <iostream>
 
+#include "pj_datastore/colormap_registry_host.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
 
 namespace proto {
@@ -41,10 +42,12 @@ static const PJ_toolbox_runtime_host_vtable_t kRuntimeVtable = {
 // ---------------------------------------------------------------------------
 
 ToolboxSession::ToolboxSession(PJ::DataEngine& engine, PJ::ToolboxLibrary& library,
-                               std::string name, QObject* parent)
+                               PJ::ColorMapRegistry& colormap_registry, std::string name,
+                               QObject* parent)
     : QObject(parent),
       engine_(engine),
       library_(library),
+      colormap_registry_(colormap_registry),
       name_(std::move(name)),
       handle_(library_.createHandle()) {}
 
@@ -62,6 +65,11 @@ bool ToolboxSession::init(const std::string& config_json) {
   auto runtime_host = makeRuntimeHost(this);
   if (!handle_.bindRuntimeHost(runtime_host)) {
     std::cerr << "Toolbox '" << name_ << "': bindRuntimeHost failed: " << handle_.lastError() << "\n";
+    return false;
+  }
+
+  if (!handle_.bindColorMapRegistry(PJ::makeColorMapRegistryHost(colormap_registry_))) {
+    std::cerr << "Toolbox '" << name_ << "': bindColorMapRegistry failed: " << handle_.lastError() << "\n";
     return false;
   }
 

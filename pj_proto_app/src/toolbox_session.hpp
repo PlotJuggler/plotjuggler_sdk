@@ -11,13 +11,18 @@
 #include "pj_plugins/host/toolbox_library.hpp"
 #include "plugin_registry.hpp"
 
+namespace PJ {
+class ColorMapRegistry;
+}  // namespace PJ
+
 namespace proto {
 
 class ToolboxSession : public QObject {
   Q_OBJECT
 
  public:
-  ToolboxSession(PJ::DataEngine& engine, PJ::ToolboxLibrary& library, std::string name,
+  ToolboxSession(PJ::DataEngine& engine, PJ::ToolboxLibrary& library,
+                 PJ::ColorMapRegistry& colormap_registry, std::string name,
                  QObject* parent = nullptr);
 
   /// Bind hosts and load persisted config. Returns false on error.
@@ -50,6 +55,7 @@ class ToolboxSession : public QObject {
 
   PJ::DataEngine& engine_;
   PJ::ToolboxLibrary& library_;
+  PJ::ColorMapRegistry& colormap_registry_;
   std::string name_;
   PJ::ToolboxHandle handle_;
   std::unique_ptr<PJ::DatastoreToolboxHost> toolbox_host_;
