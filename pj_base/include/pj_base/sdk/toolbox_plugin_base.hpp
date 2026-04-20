@@ -151,6 +151,10 @@ class ToolboxPluginBase {
     return nullptr;
   }
 
+  /// Override to react to new records being appended to the datastore.
+  /// Default is a no-op.
+  virtual void onDataChanged() {}
+
   template <typename CreateFn>
   static const PJ_toolbox_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
@@ -170,6 +174,7 @@ class ToolboxPluginBase {
         trampoline_load_config,
         trampoline_get_dialog_context,
         trampoline_get_last_error,
+        trampoline_on_data_changed,
     };
     return &vt;
   }
@@ -221,6 +226,7 @@ class ToolboxPluginBase {
   static bool trampoline_load_config(void* ctx, const char* config_json);
   static void* trampoline_get_dialog_context(void* ctx);
   static const char* trampoline_get_last_error(void* ctx);
+  static void trampoline_on_data_changed(void* ctx);
 };
 
 }  // namespace PJ

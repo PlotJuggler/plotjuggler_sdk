@@ -137,6 +137,9 @@ typedef struct PJ_toolbox_vtable_t {
 
   /** Return the last error message, or NULL if none. Plugin-owned string. */
   const char* (*get_last_error)(void* ctx);
+
+  /** Notify the plugin that new records have been appended to the datastore. */
+  void (*on_data_changed)(void* ctx);
 } PJ_toolbox_vtable_t;
 
 /** Signature of the exported entry point: `PJ_get_toolbox_vtable`. */

@@ -136,4 +136,15 @@ inline const char* ToolboxPluginBase::trampoline_get_last_error(void* ctx) {
   return self->last_error_.empty() ? nullptr : self->last_error_.c_str();
 }
 
+inline void ToolboxPluginBase::trampoline_on_data_changed(void* ctx) {
+  auto* self = static_cast<ToolboxPluginBase*>(ctx);
+  try {
+    self->onDataChanged();
+  } catch (const std::exception& e) {
+    self->last_error_ = e.what();
+  } catch (...) {
+    self->last_error_ = "Unknown exception in on_data_changed";
+  }
+}
+
 }  // namespace PJ

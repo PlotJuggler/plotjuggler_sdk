@@ -173,6 +173,29 @@ TEST(ToolboxPluginTest, ReadTransformWriteFlowAndNotifyDataChanged) {
   EXPECT_EQ(runtime_recorder.notify_data_changed_calls, 1);
 }
 
+TEST(ToolboxPluginTest, OnDataChangedReachesPluginAndTriggersNotify) {
+  auto library = PJ::ToolboxLibrary::load(PJ_MOCK_TOOLBOX_PLUGIN_PATH);
+  ASSERT_TRUE(library) << library.error();
+  auto handle = library->createHandle();
+
+  MinimalRuntimeHost runtime_recorder;
+  ASSERT_TRUE(handle.bindRuntimeHost(makeRuntimeHost(&runtime_recorder)));
+
+  const auto required = offsetof(PJ_toolbox_vtable_t, on_data_changed) + sizeof(void*);
+  EXPECT_GE(library->vtable()->struct_size, required);
+  EXPECT_NE(library->vtable()->on_data_changed, nullptr);
+
+  handle.onDataChanged();
+  handle.onDataChanged();
+  EXPECT_EQ(runtime_recorder.notify_data_changed_calls, 2);
+}
+
+TEST(ToolboxPluginTest, OnDataChangedIsNoOpWhenHandleInvalid) {
+  PJ::ToolboxHandle handle{nullptr};
+  EXPECT_FALSE(handle.valid());
+  handle.onDataChanged();  // Must not crash.
+}
+
 // Exception safety: use vtableWithCreate directly to test trampoline catch paths.
 namespace {
 
@@ -229,6 +252,37 @@ TEST(ToolboxPluginTest, ExceptionsSafelyCaughtAcrossAbi) {
 
   // get_dialog_context: exception → returns nullptr
   EXPECT_EQ(drv.vt->get_dialog_context(drv.ctx), nullptr);
+}
+
+namespace {
+
+class ThrowingOnDataChanged : public PJ::ToolboxPluginBase {
+ public:
+  uint64_t capabilities() const override {
+    return 0;
+  }
+  void onDataChanged() override {
+    throw std::runtime_error("on_data_changed exploded");
+  }
+};
+
+const PJ_toolbox_vtable_t* throwingOnDataChangedVtable() {
+  static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate(
+      []() -> void* { return new ThrowingOnDataChanged(); },
+      R"({"name":"ThrowOnDataChanged","version":"0.0.1"})");
+  return vt;
+}
+
+}  // namespace
+
+TEST(ToolboxPluginTest, OnDataChangedExceptionsSafelyCaught) {
+  VtableDriver drv(throwingOnDataChangedVtable());
+  ASSERT_NE(drv.vt->on_data_changed, nullptr);
+  drv.vt->on_data_changed(drv.ctx);  // Must not propagate.
+
+  const char* err = drv.vt->get_last_error(drv.ctx);
+  ASSERT_NE(err, nullptr);
+  EXPECT_NE(std::string(err).find("on_data_changed exploded"), std::string::npos);
 }
 
 }  // namespace
