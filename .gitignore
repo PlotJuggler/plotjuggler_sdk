@@ -6,3 +6,4 @@ pj_media/testdata/
 /plugins/dialog_protocol/build/*
 /perf.data*
 /.qt/
+/.vscode/*

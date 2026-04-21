@@ -69,6 +69,11 @@ snapshot at one timestamp), analogous to Foxglove's `FrameTransforms`.
 
 ## 4. Image
 
+> **External storage contract:** for the fine-grained Mosaico-side schema
+> (separate `RawImage`, `CompressedImage`, `DepthImage`,
+> `CompressedDepthImage`, `SegmentationImage`) that maps into this unified
+> type, see [`mosaico_media.md`](./mosaico_media.md).
+
 A single unified type for self-contained image frames: raw pixels or single-frame
 compressed formats. Every Image message is independently displayable — no decoder
 state carries across messages.

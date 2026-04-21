@@ -44,56 +44,182 @@ then video, then streaming.
 - **4K backward scrub density**: still limited by GOP size. With typical 2-second GOPs, backward scrub at 4K shows cached thumbnails (1920px) between keyframes. Acceptable for interactive use.
 - **H.264 only** in StreamingVideoDecoder. H.265 and AV1 keyframe detection not yet implemented (FfmpegDecoder can decode anything FFmpeg supports, but NAL utils are H.264-specific).
 
-### Remaining roadmap (prioritized for PlotJuggler integration)
+### Current state and forward plan (2026-04)
 
-**Next:**
+The completed-milestones table above is the audit trail; this section
+defines what is left and in what order. It supersedes the earlier
+"Remaining roadmap" priority list.
 
-1. **WebRTC live streaming demo** — end-to-end live video from a local
-   webcam via WebRTC, displayed in MediaViewerWidget.
+#### Cleanup and scope lock first
 
-   **Phase A — Webcam capture DataSource (no WebRTC yet):**
-   A demo that captures from the local webcam (`/dev/video0` on Linux)
-   via FFmpeg's `avdevice` (v4l2 input), encodes H.264 on-the-fly,
-   pushes annex-B NAL units into ObjectStore at real-time rate, and
-   displays via `StreamingVideoSource` + `MediaViewerWidget`. This
-   validates the live streaming pipeline end-to-end without network
-   complexity. Retention buffer enables scrub-back on paused stream.
+**Dead weight to retire:**
 
-   **Phase B — WebRTC/WHEP receiver:**
-   A WHEP client DataSource (using `libdatachannel`) that connects to
-   a WebRTC endpoint, depacketizes H.264 RTP → annex-B, and pushes
-   into ObjectStore. The display side is identical to Phase A. The
-   webcam is served by an external WHEP sender (e.g., GStreamer
-   `webrtcsink` or a simple test server).
+- `video_backend.h` / `VideoBackend` is a vestige of the libmpv era.
+  `FfmpegBackend` is the only subclass; its own header already tells
+  new callers to use `FileVideoSource`. Fold the callback typedefs
+  into `FfmpegBackend` and delete the interface.
+- Documentation drift: `TimelineCursor` in `REQUIREMENTS.md §2` is
+  obsoleted by the design shift to main-thread-driven timestamps
+  (see "Design note" below). `JsonExtractor` is named in
+  `ARCHITECTURE.md §4.1` but the class does not exist.
 
-   **Phase C — Integrated WebRTC demo:**
-   Single demo binary that captures webcam (Phase A), optionally
-   serves it via WebRTC, and displays locally. Can also connect to
-   a remote WHEP endpoint.
+**Scope decision — pj_media renders image-space only.**
 
-   Demo: `webcam_viewer` — opens local camera, shows live feed with
-   pause/scrub into retained buffer.
+`REQUIREMENTS.md §4.1` currently lists **2D `ScenePrimitive` (MarkersData
+with `z = 0`)** as a pj_media render target. This is wrong for the
+three-widget-family architecture. World-space markers carry `pose`,
+`frame_id`, and `Point3`, and to render them on a pj_media image viewer
+we would need:
 
-**High priority:**
+- projection via `CameraCalibration` (K, D, R, P),
+- frame lookup via `FrameTransform` + TF interpolation,
+- ROS Z-up to camera convention conversion.
 
-2. **pj_plugins integration** — wire ObjectStore write host to DataSource
-   plugins for MCAP/ROS2 video and image ingest.
+That is exactly the machinery `pj_3d_widgets` will own per
+`docs/APP_IMPLEMENTATION_PLAN.md §2.4`. Duplicating it inside pj_media
+creates two TF resolvers, two projection paths, and two renderers of
+the same primitives — precisely the mistake the independent-widget-
+families design is meant to avoid. It also matches how pj_media already
+defers `PointCloud` and `Grid` to the 3D family for the same reason.
 
-**Medium priority:**
+**Action**: update `REQUIREMENTS.md §4.1`, `datatypes_2D.md §4`
+("2D layer compositing"), and `ARCHITECTURE.md §8.1` (layer types
+table) to remove 2D `ScenePrimitive` from pj_media's render contract.
+pj_media renders `Image`, `VideoFrame`, and `ImageAnnotation`. That is
+the full list.
 
-3. **MediaIndexRegistry** — centralized keyframe index for file-backed
-   CompressedVideo topics (C ABI `publish_keyframe_index`).
+#### What is actually TODO — classified
 
-**Low priority (deferred):**
+**Prerequisites declared in `REQUIREMENTS.md §2`:**
 
-4. Compositor (multi-layer overlay) — deferred until annotation test data.
-5. SceneDecoder (CDR/Protobuf annotations) — deferred.
-6. H.265/AV1 NAL utils — extend when needed.
+| Item | Status | Real impact |
+|---|---|---|
+| `TimelineCursor` in `pj_base` | Obsoleted by design shift — remove from prerequisites. | Doc cleanup only. |
+| `pj_plugins` ABI v2 two-host `parse()` | Outstanding; blocks delegated ingest. | V1 with direct-ingest-only covers most MCAP/MP4/LeRobot cases. A real blocker only when one generic CDR/Protobuf parser must split scalar + media from the same message. |
 
-**Removed:**
+**Integration gaps — the real P1 work for PJ4 production:**
 
-- **MpvBackend / VideoViewerWidget / pj_media_qt_video** — removed.
-  FfmpegBackend + FileVideoSource is the only video path.
+1. **No DataSource plugin writes ObjectStore yet.** All ingest still
+   flows through `mcap_player/`. Wiring `object_write_host.pushOwned`
+   / `pushLazy` / `register_topic` into at least one concrete plugin
+   is what unblocks "open any MCAP in the real app".
+2. **`MediaIndexRegistry` is specified (ARCH §6) but not implemented.**
+   The C ABI slot `publish_keyframe_index` on
+   `PJ_object_write_host_vtable_t` is the missing piece.
+3. **No `pj_media_widgets_qt` wrapper yet.** Roughly one week's work
+   once `pj_app_core` scaffolding exists; not blocking today.
+4. **H.265 / AV1 NAL utils** — extend when test data demands.
+
+**Multi-layer rendering and annotations — the main feature gap:**
+
+| Piece | Spec | Status |
+|---|---|---|
+| `Compositor` / `CompositeMediaSource` | ARCH §5.4, §8 | header referenced, no implementation |
+| `SceneDecoder` (CDR/Protobuf → typed primitives) | ARCH §4.3 | header referenced, no implementation |
+| `ImageAnnotation` render path (Points, Circle, Text) | datatypes_2D §8 | not started |
+| 2D `ScenePrimitive` render | datatypes_2D §7 | **removed from scope** (see above) |
+
+#### The multi-layer problem — three cases, not one
+
+Multi-layer rendering splits into three architecturally different
+cases that REQUIREMENTS.md currently lumps together:
+
+1. **Image layers** — base RGB + depth colormap + segmentation mask.
+   Pure pixel-space, RGB-over-RGB alpha blend. The existing
+   `DepthToGrayscale` and `SegmentationPalette` codecs already produce
+   RGB buffers; only the combining step is missing. Cheapest and
+   most useful.
+2. **ImageAnnotation** — vector overlays in pixel-space (bounding
+   boxes, circles, text). Requires `SceneDecoder` plus a CPU
+   rasterizer. Self-contained to pj_media.
+3. **World-space markers** — not pj_media. Moves to `pj_3d_widgets`
+   per the scope decision above.
+
+#### Recommended ordered roadmap
+
+Time estimates are single-developer, rough. Each phase ends green on
+`./build.sh --debug && ./test.sh && ./run_clang_tidy.sh`.
+
+**Phase A — Cleanup and scope lock (~1 week)**
+
+- Delete `video_backend.h` / `VideoBackend`. Move the four callback
+  typedefs into `FfmpegBackend` directly.
+- Remove the obsolete `TimelineCursor` prerequisite and the
+  non-existent `JsonExtractor` references from docs.
+- Update `REQUIREMENTS.md §4.1`, `datatypes_2D.md §4`,
+  `ARCHITECTURE.md §8.1` to drop 2D `ScenePrimitive` from pj_media
+  render targets.
+
+**Phase B — Real ingest (~2–3 weeks, highest leverage)**
+
+- Implement `MediaIndexRegistry`
+  (`pj_media_core/media_index_registry.{h,cpp}`) plus the C ABI slot
+  `publish_keyframe_index` on `PJ_object_write_host_vtable_t`.
+  Unit-test against a fake vtable.
+- Port one concrete DataSource plugin — start with MCAP +
+  `foxglove.CompressedImage` — to write ObjectStore via `push_lazy`
+  with a seek-capture closure. Replace `mcap_player/` scaffolding
+  with the real plugin.
+- Extend to `foxglove.CompressedVideo` (H.264): plugin pre-scans NAL
+  for keyframes at open, publishes via the new slot;
+  `StreamingVideoDecoder` consumes via the registry instead of its
+  inline index on file-backed sources.
+
+**Phase C — Multi-layer compositor MVP (~2 weeks)**
+
+- Implement `CompositeMediaSource` (ARCH §5.4). Owns
+  `vector<unique_ptr<MediaSource>>`, each with a blend mode enum.
+  On each tick: call `takeFrame()` on each, CPU-alpha-blend in
+  timestamp order, return one composite `DecodedFrame`. Keep it on
+  CPU — 1080p CPU blend is under 5 ms, plenty before GPU is
+  warranted.
+- `MediaViewerWidget` stays unchanged. The compositor is just
+  another `MediaSource`.
+- Demo: RGB camera + depth colormap overlay scrubbable together
+  from one MCAP file. Exercises `at-or-before` per-layer semantics.
+
+**Phase D — Annotations (~3 weeks, delivers visible value)**
+
+- Implement `SceneDecoder` — CDR first (ROS 2 path), Protobuf later.
+  Start with `foxglove_msgs/ImageAnnotations` (Points, Circles,
+  Text). Output a `SceneFrame` struct with typed vectors.
+- Implement `AnnotationRasterLayer : MediaSource` — on
+  `setTimestamp(t)`: `latestAt` → `SceneDecoder::decode` →
+  CPU-rasterize to a transparent RGBA buffer at base image
+  resolution. Text via `QPainter + QFont → QImage` (same pattern
+  locked for `pj_3d_widgets`). Lines via Xiaolin Wu or Bresenham;
+  circles via midpoint. No shader work.
+- Wire as an additional compositor layer. Add test data (MCAP with
+  image + annotations).
+
+**Phase E — WebRTC live demo (~2–3 weeks)**
+
+- Phase E.1: webcam DataSource via FFmpeg `avdevice` (v4l2), H.264
+  on-the-fly encode, push NAL units into ObjectStore, display via
+  `StreamingVideoSource` + `MediaViewerWidget`. Validates live-mode
+  end-to-end.
+- Phase E.2: WHEP client via `libdatachannel`. Identical display
+  side.
+- Phase E.3: integrated demo that captures, optionally serves, and
+  displays locally.
+- Demo: `webcam_viewer` — opens local camera, shows live feed with
+  pause/scrub into retained buffer.
+
+#### Deferred (do not start yet)
+
+- H.265 / AV1 NAL utils — only when test data demands it.
+- GPU-side compositor — only if 4K CPU blend becomes a bottleneck.
+- `pj_plugins` ABI v2 two-host `parse()` — when we need a generic
+  CDR/Protobuf parser to split scalars + media in one pass.
+- `pj_media_widgets_qt` `IDataWidget` wrapper — gated on
+  `pj_app_core` Phase 0 scaffolding. Roughly one week when that
+  lands.
+
+#### Recent removals (for the record)
+
+- **MpvBackend / VideoViewerWidget / pj_media_qt_video** — removed
+  (commit `ee4bf62`). `FfmpegBackend` + `FileVideoSource` is the
+  only video path.
 
 ### Design note: MediaSource replaces PlaybackController
 

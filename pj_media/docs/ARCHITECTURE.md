@@ -256,6 +256,9 @@ the partial result based on the direction-aware rule (§3.2).
 
 ## 4. Codec Pipeline
 
+> For the upstream wire-format contract (Mosaico-side storage types that
+> the codec pipeline decodes), see [`mosaico_media.md`](./mosaico_media.md).
+
 Each ObjectStore topic produces raw bytes in a wire format. To reach
 display-ready pixels, those bytes pass through a **codec pipeline** —
 an ordered chain of stateless transforms configured per-layer at
