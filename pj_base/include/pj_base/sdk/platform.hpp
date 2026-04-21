@@ -18,6 +18,18 @@
 #include <optional>
 #include <string>
 
+#if defined(__linux__) || defined(__APPLE__)
+#  include <dlfcn.h>
+#elif defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
 namespace PJ::sdk {
 
 /// Read an environment variable.
@@ -74,6 +86,39 @@ inline std::filesystem::path userDataDir() {
   }
 #endif
   return fs::temp_directory_path() / "plotjuggler";
+}
+
+/// Return the directory containing the shared library (.so / .dll) that holds
+/// @p fn_addr at runtime.
+///
+/// Pass the address of any function defined in the same translation unit as
+/// the call site — the linker ensures the address resolves to the correct
+/// module. Returns an empty path on failure (requires `${CMAKE_DL_LIBS}` on
+/// Linux / macOS; no extra link dep on Windows or macOS).
+///
+/// Platform implementation:
+/// - Linux / macOS: dladdr()
+/// - Windows:       GetModuleHandleExW() + GetModuleFileNameW()
+inline std::filesystem::path getSharedLibDir(const void* fn_addr) {
+  namespace fs = std::filesystem;
+#if defined(__linux__) || defined(__APPLE__)
+  ::Dl_info info{};
+  if (::dladdr(fn_addr, &info) && info.dli_fname) {
+    return fs::path(info.dli_fname).parent_path();
+  }
+#elif defined(_WIN32)
+  wchar_t buf[MAX_PATH] = {};
+  HMODULE hm = nullptr;
+  if (::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(fn_addr), &hm)) {
+    ::GetModuleFileNameW(hm, buf, MAX_PATH);
+    return fs::path(buf).parent_path();
+  }
+#else
+  (void)fn_addr;
+#endif
+  return {};
 }
 
 }  // namespace PJ::sdk
