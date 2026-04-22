@@ -16,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+#include "nanoarrow/nanoarrow.h"
+#include "nanoarrow/nanoarrow.hpp"
 #include "pj_base/dataset.hpp"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/plugin_data_api.hpp"
@@ -37,10 +39,6 @@ using FieldHandle = PJ_field_handle_t;
 
 [[nodiscard]] std::string_view toStringView(PJ_string_view_t view) {
   return std::string_view(view.data == nullptr ? "" : view.data, view.size);
-}
-
-[[nodiscard]] Span<const uint8_t> toSpan(PJ_bytes_view_t view) {
-  return Span<const uint8_t>(view.data, view.size);
 }
 
 [[nodiscard]] Expected<PrimitiveType> fromAbiType(PJ_primitive_type_t type) {
@@ -569,13 +567,24 @@ struct WriteCore {
     return true;
   }
 
-  [[nodiscard]] bool appendArrowIpc(TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
+  /// Ingest a whole Arrow C Data Interface stream into a topic.
+  ///
+  /// Ownership contract: callers pass a producer-owned @p stream. The caller
+  /// decides whether to release after this call — this method does NOT
+  /// call stream->release. That lets the outermost ABI trampoline enforce
+  /// the "success releases, failure retains" rule uniformly.
+  [[nodiscard]] bool appendArrowStream(
+      TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column) {
+    if (stream == nullptr) {
+      setError("append_arrow_stream: null stream");
+      return false;
+    }
     if (engine_.getTopicStorage(topic.id) == nullptr) {
       setError(fmt::format("topic {} not found", topic.id));
       return false;
     }
 
-    auto schema_or = arrow_import::schemaFromIpc(toSpan(ipc_stream));
+    auto schema_or = arrow_import::schemaFromArrowStream(stream);
     if (!schema_or.has_value()) {
       setError(schema_or.error());
       return false;
@@ -585,7 +594,7 @@ struct WriteCore {
     int ts_arrow_col = -1;
     std::vector<arrow_import::ArrowColumnMapping> mappings;
     for (const auto& mapping : schema_or->second) {
-      if (mapping.field_name == timestamp_name) {
+      if (!timestamp_name.empty() && mapping.field_name == timestamp_name) {
         ts_arrow_col = mapping.arrow_column_index;
         continue;
       }
@@ -599,12 +608,12 @@ struct WriteCore {
       mappings.push_back(std::move(adjusted));
     }
 
-    if (ts_arrow_col < 0) {
-      setError(fmt::format("timestamp column '{}' not found in IPC schema", timestamp_name));
+    if (!timestamp_name.empty() && ts_arrow_col < 0) {
+      setError(fmt::format("timestamp column '{}' not found in stream schema", timestamp_name));
       return false;
     }
 
-    auto status = arrow_import::importIpcStream(writer_, topic.id, toSpan(ipc_stream), mappings, ts_arrow_col);
+    auto status = arrow_import::importArrowStream(writer_, topic.id, stream, mappings, ts_arrow_col);
     if (!status.has_value()) {
       setError(status.error());
       return false;
@@ -707,16 +716,189 @@ struct ToolboxCore {
     return true;
   }
 
-  // v4: Arrow-based read path. Stubbed for Phase 1a; Phase 1b fills in the
-  // real implementation that produces host-owned ArrowSchema + ArrowArray
-  // pair via nanoarrow, mirroring the materialisation logic that used to
-  // live here in v3 but emitting Arrow directly.
+  // v4: materialise one field's time series into host-owned Arrow structs.
+  // Output is a struct array with 2 columns: ["timestamp" (int64),
+  // <field_name> (typed)]. The caller must invoke out_schema->release and
+  // out_array->release when done; release callbacks are set by nanoarrow
+  // and free all allocated buffers.
   [[nodiscard]] bool readSeriesArrow(FieldHandle field, struct ArrowSchema* out_schema, struct ArrowArray* out_array) {
-    (void)field;
-    (void)out_schema;
-    (void)out_array;
-    write.setError("read_series_arrow: not yet implemented (Phase 1b)");
-    return false;
+    if (out_schema == nullptr || out_array == nullptr) {
+      write.setError("readSeriesArrow: out_schema and out_array must be non-null");
+      return false;
+    }
+
+    const auto* storage = engine_.getTopicStorage(field.topic.id);
+    if (storage == nullptr) {
+      write.setError(fmt::format("topic {} not found", field.topic.id));
+      return false;
+    }
+    const auto columns = effectiveColumns(engine_, *storage);
+    const auto* desc = findFieldDescriptor(columns, field.id);
+    if (desc == nullptr) {
+      write.setError(fmt::format("field {} not found in topic {}", field.id, field.topic.id));
+      return false;
+    }
+
+    const ArrowType value_arrow_type = [&]() {
+      switch (desc->logical_type) {
+        case PrimitiveType::kFloat32:
+          return NANOARROW_TYPE_FLOAT;
+        case PrimitiveType::kFloat64:
+          return NANOARROW_TYPE_DOUBLE;
+        case PrimitiveType::kInt8:
+          return NANOARROW_TYPE_INT8;
+        case PrimitiveType::kInt16:
+          return NANOARROW_TYPE_INT16;
+        case PrimitiveType::kInt32:
+          return NANOARROW_TYPE_INT32;
+        case PrimitiveType::kInt64:
+          return NANOARROW_TYPE_INT64;
+        case PrimitiveType::kUint8:
+          return NANOARROW_TYPE_UINT8;
+        case PrimitiveType::kUint16:
+          return NANOARROW_TYPE_UINT16;
+        case PrimitiveType::kUint32:
+          return NANOARROW_TYPE_UINT32;
+        case PrimitiveType::kUint64:
+          return NANOARROW_TYPE_UINT64;
+        case PrimitiveType::kBool:
+          return NANOARROW_TYPE_BOOL;
+        case PrimitiveType::kString:
+          return NANOARROW_TYPE_STRING;
+        case PrimitiveType::kUnspecified:
+          return NANOARROW_TYPE_NA;
+      }
+      return NANOARROW_TYPE_NA;
+    }();
+
+    nanoarrow::UniqueSchema schema;
+    ArrowSchemaInit(schema.get());
+    if (ArrowSchemaSetTypeStruct(schema.get(), 2) != NANOARROW_OK) {
+      write.setError("readSeriesArrow: ArrowSchemaSetTypeStruct failed");
+      return false;
+    }
+    ArrowSchemaInit(schema->children[0]);
+    if (ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_INT64) != NANOARROW_OK ||
+        ArrowSchemaSetName(schema->children[0], "timestamp") != NANOARROW_OK) {
+      write.setError("readSeriesArrow: failed to set timestamp child schema");
+      return false;
+    }
+    ArrowSchemaInit(schema->children[1]);
+    if (ArrowSchemaSetType(schema->children[1], value_arrow_type) != NANOARROW_OK ||
+        ArrowSchemaSetName(schema->children[1], desc->field_path.c_str()) != NANOARROW_OK) {
+      write.setError("readSeriesArrow: failed to set value child schema");
+      return false;
+    }
+
+    nanoarrow::UniqueArray array;
+    ArrowError arrow_err;
+    if (ArrowArrayInitFromSchema(array.get(), schema.get(), &arrow_err) != NANOARROW_OK) {
+      write.setError(std::string("readSeriesArrow: ArrowArrayInitFromSchema failed: ") + arrow_err.message);
+      return false;
+    }
+    if (ArrowArrayStartAppending(array.get()) != NANOARROW_OK) {
+      write.setError("readSeriesArrow: ArrowArrayStartAppending failed");
+      return false;
+    }
+
+    auto* ts_child = array->children[0];
+    auto* val_child = array->children[1];
+
+    for (const auto& chunk : storage->sealedChunks()) {
+      int col_index = -1;
+      for (std::size_t i = 0; i < chunk.columns.size(); ++i) {
+        if (chunk.columns[i].descriptor->field_id == field.id) {
+          col_index = static_cast<int>(i);
+          break;
+        }
+      }
+      if (col_index < 0) {
+        continue;
+      }
+      const auto col_sz = static_cast<std::size_t>(col_index);
+
+      for (uint32_t row = 0; row < chunk.stats.row_count; ++row) {
+        if (ArrowArrayAppendInt(ts_child, chunk.readTimestamp(row)) != NANOARROW_OK) {
+          write.setError("readSeriesArrow: timestamp append failed");
+          return false;
+        }
+
+        const bool is_null = chunk.isNull(col_sz, row);
+        if (is_null) {
+          if (ArrowArrayAppendNull(val_child, 1) != NANOARROW_OK) {
+            write.setError("readSeriesArrow: null append failed");
+            return false;
+          }
+        } else {
+          ArrowErrorCode rc = NANOARROW_OK;
+          switch (desc->logical_type) {
+            case PrimitiveType::kFloat32:
+              rc = ArrowArrayAppendDouble(val_child, decodeNumericExact<float>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kFloat64:
+              rc = ArrowArrayAppendDouble(val_child, decodeNumericExact<double>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt8:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int8_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt16:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int16_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt32:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int32_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt64:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int64_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint8:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint8_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint16:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint16_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint32:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint32_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint64:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint64_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kBool:
+              rc = ArrowArrayAppendInt(val_child, chunk.readBool(col_sz, row) ? 1 : 0);
+              break;
+            case PrimitiveType::kString: {
+              const auto text = chunk.readString(col_sz, row);
+              const ArrowStringView sv{text.data(), static_cast<int64_t>(text.size())};
+              rc = ArrowArrayAppendString(val_child, sv);
+              break;
+            }
+            case PrimitiveType::kUnspecified:
+              rc = ArrowArrayAppendNull(val_child, 1);
+              break;
+          }
+          if (rc != NANOARROW_OK) {
+            write.setError("readSeriesArrow: value append failed");
+            return false;
+          }
+        }
+
+        if (ArrowArrayFinishElement(array.get()) != NANOARROW_OK) {
+          write.setError("readSeriesArrow: ArrowArrayFinishElement failed");
+          return false;
+        }
+      }
+    }
+
+    if (ArrowArrayFinishBuildingDefault(array.get(), &arrow_err) != NANOARROW_OK) {
+      write.setError(std::string("readSeriesArrow: finish building failed: ") + arrow_err.message);
+      return false;
+    }
+
+    // Move schema + array into caller-provided out params (transfers release
+    // callbacks; the UniqueXxx destructors become no-ops).
+    ArrowSchemaMove(schema.get(), out_schema);
+    ArrowArrayMove(array.get(), out_array);
+    write.last_error_.clear();
+    return true;
   }
 };
 
@@ -787,15 +969,17 @@ bool sourceAppendBoundRecord(
 bool sourceAppendArrowStream(
     void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
     PJ_error_t* out_error) noexcept {
-  (void)ctx;
-  (void)topic;
-  (void)timestamp_column;
-  // Phase 1a: stub that rejects the call but still preserves the ownership
-  // contract — on failure the caller retains the stream. Phase 1b will wire
-  // this into the nanoarrow-backed ingest path.
-  (void)stream;
-  propagateError(out_error, "append_arrow_stream: not yet implemented (Phase 1b)");
-  return false;
+  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+  if (!impl->core.appendArrowStream(topic, stream, timestamp_column)) {
+    // Failure: plugin retains ownership of the stream; we do NOT release.
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  // Success: host now owns the stream — release it.
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
+  }
+  return true;
 }
 
 bool parserEnsureField(
@@ -888,14 +1072,15 @@ bool toolboxAppendBoundRecord(
 bool toolboxAppendArrowStream(
     void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
     PJ_error_t* out_error) noexcept {
-  (void)ctx;
-  (void)topic;
-  (void)timestamp_column;
-  (void)stream;
-  // Phase 1a: stub; Phase 1b wires through ArrowIpcArrayStreamReader / direct
-  // ArrowArrayStream ingest via nanoarrow.
-  propagateError(out_error, "append_arrow_stream: not yet implemented (Phase 1b)");
-  return false;
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.write.appendArrowStream(topic, stream, timestamp_column)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
+  }
+  return true;
 }
 
 bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error) noexcept {

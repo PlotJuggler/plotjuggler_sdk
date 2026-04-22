@@ -77,6 +77,14 @@ if(PJ_BUILD_TESTS)
     GTest::gtest_main)
   add_test(NAME arrow_import_test COMMAND arrow_import_test)
 
+  # v4 Arrow C Data Interface round-trip test (Phase 1b).
+  add_executable(arrow_stream_round_trip_test tests/arrow_stream_round_trip_test.cpp)
+  target_link_libraries(arrow_stream_round_trip_test PRIVATE
+    pj_datastore
+    ${PJ_NANOARROW_TARGET}
+    GTest::gtest_main)
+  add_test(NAME arrow_stream_round_trip_test COMMAND arrow_stream_round_trip_test)
+
   # Plugin host write test — DISABLED for v4 ABI migration.
   # Exercises v3 appendArrowIpc/readSeries; rewrite in Phase 1b when the
   # Arrow-stream write path and read_series_arrow are implemented.
