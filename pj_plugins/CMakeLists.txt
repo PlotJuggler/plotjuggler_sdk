@@ -6,7 +6,9 @@ add_subdirectory(dialog_protocol)
 
 add_library(pj_data_source_host STATIC
   src/data_source_library.cpp
+  src/plugin_catalog.cpp
 )
+find_package(nlohmann_json REQUIRED)
 target_include_directories(pj_data_source_host PUBLIC include)
 target_compile_features(pj_data_source_host PUBLIC cxx_std_20)
 target_compile_options(pj_data_source_host PRIVATE ${PJ_WARNING_FLAGS})
@@ -16,6 +18,7 @@ target_link_libraries(pj_data_source_host
     pj_dialog_protocol
   PRIVATE
     ${CMAKE_DL_LIBS}
+    nlohmann_json::nlohmann_json
 )
 
 if(PJ_BUILD_TESTS)
@@ -193,5 +196,15 @@ target_link_libraries(toolbox_plugin_test PRIVATE
   pj_toolbox_host pj_base GTest::gtest_main
 )
 add_test(NAME toolbox_plugin_test COMMAND toolbox_plugin_test)
+
+# ---------------------------------------------------------------------------
+# Plugin catalog (sidecar scanner) test — no dlopen, filesystem-only.
+# ---------------------------------------------------------------------------
+add_executable(plugin_catalog_test tests/plugin_catalog_test.cpp)
+target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(plugin_catalog_test PRIVATE
+  pj_data_source_host pj_base GTest::gtest_main
+)
+add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS
