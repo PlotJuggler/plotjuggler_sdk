@@ -1,5 +1,12 @@
 # Writing a Dialog Plugin
 
+> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). Every dialog
+> vtable slot is `PJ_NOEXCEPT` — the SDK trampolines in
+> `DialogPluginBase` catch exceptions automatically, but your overrides
+> must assume no exception ever crosses the ABI boundary. All dialog
+> calls happen on the main (GUI) thread; see `ARCHITECTURE.md` for the
+> full thread-class contract.
+
 ## What is a Dialog Plugin?
 
 A dialog plugin is a shared library (`.so` / `.dylib` / `.dll`) that drives a

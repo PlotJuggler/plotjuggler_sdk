@@ -1,5 +1,12 @@
 # Writing a DataSource Plugin
 
+> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). For the full
+> evolution rules (tail-slot gating, MIN_VTABLE_SIZE, ABI-FROZEN vs
+> ABI-APPENDABLE structs, Arrow C Data Interface at the write boundary,
+> PJ_NOEXCEPT discipline) see `ARCHITECTURE.md`. This guide walks
+> through the author-facing workflow; `ARCHITECTURE.md` is the binding
+> reference when the two disagree.
+
 ## What is a DataSource?
 
 A DataSource plugin is a shared library (`.so` / `.dylib` / `.dll`) that

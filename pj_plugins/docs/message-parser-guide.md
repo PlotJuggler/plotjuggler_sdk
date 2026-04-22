@@ -1,5 +1,11 @@
 # Writing a MessageParser Plugin
 
+> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). The parser
+> write-host stays per-record in v4 (parsers decode one message at a
+> time; the host coalesces into Arrow batches internally before
+> committing to storage). For ABI evolution rules, error semantics, and
+> noexcept discipline see `ARCHITECTURE.md`.
+
 ## What is a MessageParser?
 
 A MessageParser plugin is a shared library (`.so` / `.dylib` / `.dll`) that

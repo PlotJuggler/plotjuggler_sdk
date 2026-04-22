@@ -1,5 +1,12 @@
 # Writing a Toolbox Plugin
 
+> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). Toolbox plugins
+> read time series via the host's `read_series_arrow` slot, which
+> returns a caller-owned `ArrowSchema` + `ArrowArray` pair (no more
+> materialised `std::vector`). Wrap returns in
+> `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` for scope-bound
+> release. See `ARCHITECTURE.md` for the full ABI rules.
+
 ## What is a Toolbox?
 
 A Toolbox plugin is a shared library (`.so` / `.dylib` / `.dll`) that provides

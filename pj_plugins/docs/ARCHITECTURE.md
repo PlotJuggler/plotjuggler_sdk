@@ -1,9 +1,9 @@
 # Plugin System Architecture
 
-## 0a. ABI stability and evolution rules (v3.1)
+## 0a. ABI stability and evolution rules (v4)
 
 Seven rules the loader and every plugin author rely on. Breaking any of
-these is an ABI break and requires a v4 bump.
+these is an ABI break and requires a v5 bump.
 
 1. **Boot-level ABI symbol.** Every plugin .so exports
    `pj_plugin_abi_version` as a `const uint32_t` symbol independent of
@@ -11,17 +11,17 @@ these is an ABI break and requires a v4 bump.
    missing or mismatched symbol is a fail-fast rejection with a specific
    error. Emitted automatically by `PJ_DATA_SOURCE_PLUGIN`,
    `PJ_MESSAGE_PARSER_PLUGIN`, `PJ_TOOLBOX_PLUGIN` macros. Current value
-   is `PJ_ABI_VERSION == 3`.
+   is `PJ_ABI_VERSION == 4`.
 
-2. **Min-vtable-size floor, pinned at v3.0.** Each family header defines
+2. **Min-vtable-size floor, pinned at v4.0.** Each family header defines
    `PJ_<FAMILY>_MIN_VTABLE_SIZE` — the byte count of the vtable as
-   shipped in v3.0. The loader accepts
-   `struct_size >= MIN_VTABLE_SIZE`. This constant MUST NEVER GROW.
-   Growing it would reject plugins compiled against older v3 headers
-   (which correctly report a smaller size), silently breaking the
-   forward-compatibility promise.
+   shipped in v4.0. The loader accepts
+   `struct_size >= MIN_VTABLE_SIZE`. This constant MUST NEVER GROW
+   within the v4 series. Growing it would reject plugins compiled
+   against older v4 headers (which correctly report a smaller size),
+   silently breaking the forward-compatibility promise.
 
-3. **Tail-slot gating.** Every vtable slot added after v3.0 is a tail
+3. **Tail-slot gating.** Every vtable slot added after v4.0 is a tail
    slot. Host reads must go through the `PJ_HAS_TAIL_SLOT(vtable_type,
    vtable_ptr, field)` macro, which verifies both that the plugin's
    `struct_size` reaches the slot AND that the slot is non-null. Skipping
@@ -68,7 +68,7 @@ these is an ABI break and requires a v4 bump.
    `toolbox_trampolines.hpp` files centralize this pattern — mirror it
    exactly in any new trampoline.
 
-### Plugin extension query (CLAP-style, v3.1)
+### Plugin extension query (CLAP-style)
 
 Each family vtable has a tail slot
 `const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id)`
@@ -78,10 +78,37 @@ for known ids or `nullptr`. Hosts call via `handle.getPluginExtension(id)`
 (tail-slot-gated). Use the experimental namespace for work-in-progress
 extensions; graduate to stable (`pj.<name>.v1`) once locked in.
 
-## 0. Protocol v3 (current)
+## 0. Protocol v4 (current)
 
-All four plugin families (DataSource, MessageParser, Toolbox, Dialog) have
-been migrated to protocol v3. The key structural changes from v1/v2:
+All four plugin families (DataSource, MessageParser, Toolbox, Dialog) track
+protocol v4. Key v4 distinguishing features (a superset of everything the
+previously-circulated v3 design included — v3 was never an official
+release, and its changes roll into v4):
+
+- **Arrow C Data Interface at the data boundary.** The write-host
+  vtables expose `append_arrow_stream(ArrowArrayStream*)` as the
+  canonical bulk path; per-record `append_record` / `append_bound_record`
+  remain for streaming producers. Toolbox read-side returns host-owned
+  `ArrowSchema` + `ArrowArray` via `read_series_arrow` (no more
+  materialised `std::vector` at the boundary).
+- **PJ_NOEXCEPT on every vtable slot.** Exceptions across `extern "C"`
+  are UB; the noexcept specifier is part of the C++17 function type and
+  enforced at compile time. Trampolines catch and translate internally.
+- **Thread-class tags on every slot.** Every function-pointer field in
+  the ABI headers carries a `[main-thread]` / `[stream-thread]` /
+  `[thread-safe]` comment. Host-side runtime checking is optional
+  (reserved for a future `"pj.thread_check.v1"` service).
+- **Sidecar-based plugin discovery.** `pj_emit_plugin_manifest` (CMake)
+  writes a `<plugin>.pjmanifest.json` beside each DSO at build time;
+  `PJ::scanPluginSidecars(dir)` populates the host's plugin catalog
+  without dlopen'ing anything.
+- **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
+  only (DEEPBIND was a documented ASAN/allocator-interposition trap).
+  Plugin-local symbol isolation is left to `-fvisibility=hidden`.
+
+Structural shape inherited from the pre-v4 design work (carries the
+service registry, error out-params, and typed borrowed-dialog patterns
+that had been developed in the unreleased v3 iteration):
 
 - **Service registry as the sole binding mechanism.** Plugin vtables expose
   a single `bind(ctx, registry, err)` slot. The host registers all services
@@ -201,10 +228,10 @@ Each protocol header defines:
 
 | Family | Protocol header | Entry point symbol | Protocol version |
 |---|---|---|---|
-| DataSource | `data_source_protocol.h` | `PJ_get_data_source_vtable` | 2 |
-| MessageParser | `message_parser_protocol.h` | `PJ_get_message_parser_vtable` | 1 |
-| Toolbox | `toolbox_protocol.h` | `PJ_get_toolbox_vtable` | 1 |
-| Dialog | `dialog_protocol.h` | `PJ_get_dialog_vtable` | 1 |
+| DataSource | `data_source_protocol.h` | `PJ_get_data_source_vtable` | 4 |
+| MessageParser | `message_parser_protocol.h` | `PJ_get_message_parser_vtable` | 4 |
+| Toolbox | `toolbox_protocol.h` | `PJ_get_toolbox_vtable` | 4 |
+| Dialog | `dialog_protocol.h` | `PJ_get_dialog_vtable` | 4 |
 
 **String ownership:** Plugin-returned `const char*` pointers remain valid
 until the next call to the same function on the same context. The host copies
