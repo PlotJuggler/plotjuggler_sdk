@@ -26,7 +26,7 @@
 namespace PJ {
 
 /**
- * Base class for MessageParser plugins (protocol v3).
+ * Base class for MessageParser plugins (protocol v4).
  */
 class MessageParserPluginBase {
  public:

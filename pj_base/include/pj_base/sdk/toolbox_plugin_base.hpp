@@ -80,7 +80,7 @@ struct ToolboxRuntimeHostService {
 namespace PJ {
 
 /**
- * Base class for Toolbox plugins (protocol v3).
+ * Base class for Toolbox plugins (protocol v4).
  */
 class ToolboxPluginBase {
  public:

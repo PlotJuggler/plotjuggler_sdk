@@ -1,6 +1,6 @@
 /**
  * @file data_source_handle.hpp
- * @brief RAII wrapper around a single DataSource plugin instance (protocol v3).
+ * @brief RAII wrapper around a single DataSource plugin instance (protocol v4).
  *
  * Obtained from `DataSourceLibrary::createHandle()`. Owns the plugin context
  * and destroys it on scope exit. Move-only; not copyable.

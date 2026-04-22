@@ -1,6 +1,6 @@
 /**
  * @file message_parser_handle.hpp
- * @brief RAII wrapper around a single MessageParser plugin instance (v3).
+ * @brief RAII wrapper around a single MessageParser plugin instance (v4).
  */
 #pragma once
 

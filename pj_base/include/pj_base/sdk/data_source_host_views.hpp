@@ -1,6 +1,6 @@
 /**
  * @file data_source_host_views.hpp
- * @brief C++ wrappers over the DataSource runtime host vtable (v3).
+ * @brief C++ wrappers over the DataSource runtime host vtable (v4).
  *
  * The runtime host is delivered to DataSource plugins via the service
  * registry under the canonical name `"pj.runtime.v1"`. This header wraps

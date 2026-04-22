@@ -9,7 +9,7 @@
 
 namespace PJ {
 
-/// RAII wrapper around a plugin vtable + context (protocol v3).
+/// RAII wrapper around a plugin vtable + context (protocol v4).
 class DialogHandle {
  public:
   explicit DialogHandle(const PJ_dialog_vtable_t* vt) : vt_(vt) {

@@ -1,6 +1,6 @@
 /**
  * @file toolbox_handle.hpp
- * @brief RAII wrapper around a single Toolbox plugin instance (protocol v3).
+ * @brief RAII wrapper around a single Toolbox plugin instance (protocol v4).
  */
 #pragma once
 

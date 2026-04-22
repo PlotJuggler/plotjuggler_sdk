@@ -1,11 +1,11 @@
 /**
  * @file data_source_plugin_base.hpp
- * @brief C++ SDK for implementing DataSource plugins (protocol v3).
+ * @brief C++ SDK for implementing DataSource plugins (protocol v4).
  *
  * Plugin authors subclass `DataSourcePluginBase`, override the required
  * virtuals, and export with `PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)`.
  *
- * v3 contract (plugin-author perspective):
+ * v4 contract (plugin-author perspective):
  *   - Override `capabilities()`, `start()`, `stop()`, `currentState()`.
  *   - Optional: `bind()`, `pause()`, `resume()`, `poll()`, `saveConfig()`,
  *     `loadConfig()`, `getDialog()`.
@@ -41,7 +41,7 @@
 namespace PJ {
 
 /**
- * Base class for DataSource plugins (protocol v3).
+ * Base class for DataSource plugins (protocol v4).
  */
 class DataSourcePluginBase {
  public:
