@@ -392,15 +392,35 @@ class SourceWriteHostView {
 
   /// Hand an Arrow C Data Interface stream to the host for bulk ingest.
   ///
+  /// Bulk-write via Arrow C Data Interface. Recommended overload — takes
+  /// an `ArrowStreamHolder` by rvalue reference and disarms it on success,
+  /// making the ownership-transfer dance impossible to forget.
+  ///
+  ///   PJ::sdk::ArrowStreamHolder stream(buildStream());
+  ///   auto status = writeHost().appendArrowStream(topic, std::move(stream), "timestamp");
+  ///   // stream is inert on success, still alive on failure — either way,
+  ///   // no manual release() call is needed.
+  ///
+  /// @param timestamp_column Name of the int64 column in the stream's schema
+  ///        whose values are nanoseconds since Unix epoch. Empty means use
+  ///        a synthetic monotonic timestamp.
+  [[nodiscard]] Status appendArrowStream(
+      TopicHandle topic, ArrowStreamHolder&& stream, std::string_view timestamp_column = "timestamp") const {
+    auto status = appendArrowStream(topic, stream.get(), timestamp_column);
+    if (status) {
+      (void)stream.release();  // host took ownership; disarm the holder.
+    }
+    return status;
+  }
+
+  /// Raw-pointer overload — ABI escape hatch. Prefer the rvalue-ref version
+  /// above, which manages ownership for you.
+  ///
   /// Ownership: on success, the host takes ownership of @p stream — it pulls
   /// all batches via get_next and calls stream->release before returning.
   /// The plugin must NOT call release itself after a successful call.
   /// On failure (returns error), ownership is NOT transferred — the plugin
   /// retains responsibility for calling stream->release itself.
-  ///
-  /// @param timestamp_column Name of the int64 column in the stream's schema
-  ///        whose values are nanoseconds since Unix epoch. Empty means use
-  ///        a synthetic monotonic timestamp.
   [[nodiscard]] Status appendArrowStream(
       TopicHandle topic, struct ArrowArrayStream* stream, std::string_view timestamp_column = "timestamp") const {
     if (!valid()) {
@@ -687,9 +707,20 @@ class ToolboxHostView {
     return appendBoundRecord(topic, timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
   }
 
-  /// Bulk-write via Arrow C Data Interface. Same ownership rule as
-  /// SourceWriteHostView::appendArrowStream: success transfers ownership,
-  /// failure retains it.
+  /// Bulk-write via Arrow C Data Interface. Recommended overload — takes
+  /// an `ArrowStreamHolder` by rvalue reference and disarms it on success.
+  /// Same ownership rule as `SourceWriteHostView::appendArrowStream`.
+  [[nodiscard]] Status appendArrowStream(
+      TopicHandle topic, ArrowStreamHolder&& stream, std::string_view timestamp_column = "timestamp") const {
+    auto status = appendArrowStream(topic, stream.get(), timestamp_column);
+    if (status) {
+      (void)stream.release();
+    }
+    return status;
+  }
+
+  /// Raw-pointer overload — ABI escape hatch. Prefer the rvalue-ref version
+  /// above. Ownership contract matches SourceWriteHostView::appendArrowStream.
   [[nodiscard]] Status appendArrowStream(
       TopicHandle topic, struct ArrowArrayStream* stream, std::string_view timestamp_column = "timestamp") const {
     if (!valid()) {

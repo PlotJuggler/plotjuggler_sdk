@@ -128,16 +128,17 @@ using ArrowArrayHolder = detail::ArrowHolder<::ArrowArray>;
 
 /// RAII wrapper for `struct ArrowArrayStream`. Auto-releases on destruction.
 ///
-/// This one is special for plugin authors: when handing a stream to
-/// `SourceWriteHostView::appendArrowStream`, the *host* takes ownership on
-/// success. Use `release()` (not the destructor) to transfer ownership:
+/// Recommended usage: hand the holder by rvalue reference to the
+/// `appendArrowStream(ArrowStreamHolder&&, ...)` overload on
+/// `SourceWriteHostView` / `ToolboxHostView`, which disarms the holder on
+/// success:
 ///
 ///   ArrowStreamHolder stream(buildMyStream());
-///   auto status = writeHost.appendArrowStream(topic, stream.out(), "timestamp");
-///   if (status) {
-///     (void)stream.release();  // host has already released; holder goes inert
-///   }
-///   // on failure, destructor releases the stream (plugin retained ownership)
+///   auto status = writeHost.appendArrowStream(topic, std::move(stream), "timestamp");
+///   // on success, holder is inert; on failure, destructor releases the stream.
+///
+/// The raw-pointer overload of `appendArrowStream` remains as an ABI escape
+/// hatch for callers that own the stream through some other mechanism.
 using ArrowStreamHolder = detail::ArrowHolder<::ArrowArrayStream>;
 
 }  // namespace PJ::sdk
