@@ -27,6 +27,7 @@
 #include "pj_datastore/column_buffer.hpp"
 #include "pj_datastore/encoding.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_datastore/object_store.hpp"
 #include "pj_datastore/topic_storage.hpp"
 #include "pj_datastore/writer.hpp"
 
@@ -920,6 +921,17 @@ struct DatastoreToolboxHostState {
   ToolboxCore core;
 };
 
+struct DatastoreSourceObjectWriteHostState {
+  DatastoreSourceObjectWriteHostState(ObjectStore& s, DatasetId dataset) : store(s), dataset_id(dataset) {}
+  ObjectStore& store;
+  DatasetId dataset_id;
+  std::string last_error;
+
+  void setError(std::string msg) {
+    last_error = std::move(msg);
+  }
+};
+
 void propagateError(PJ_error_t* out_error, const char* msg) {
   sdk::fillError(out_error, 1, "datastore", msg != nullptr ? std::string_view(msg) : std::string_view{});
 }
@@ -1103,6 +1115,158 @@ bool toolboxReadSeriesArrow(
   return true;
 }
 
+/// RAII holder for the plugin-owned `fetch_ctx` passed to push_lazy. Stores
+/// the destroy callback pointer and the ctx value; destroys both on drop.
+/// Wrapped in a shared_ptr so the lambda that ObjectStore stores remains
+/// copyable (std::function requires copyable targets).
+class PluginFetchCtx {
+ public:
+  PluginFetchCtx(PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx, void (*destroy_fn)(void*)) noexcept
+      : fetch_fn_(fetch_fn), ctx_(fetch_ctx), destroy_fn_(destroy_fn) {}
+
+  ~PluginFetchCtx() {
+    if (destroy_fn_ != nullptr) {
+      destroy_fn_(ctx_);
+    }
+  }
+
+  PluginFetchCtx(const PluginFetchCtx&) = delete;
+  PluginFetchCtx& operator=(const PluginFetchCtx&) = delete;
+  PluginFetchCtx(PluginFetchCtx&&) = delete;
+  PluginFetchCtx& operator=(PluginFetchCtx&&) = delete;
+
+  [[nodiscard]] std::vector<uint8_t> invoke() const {
+    if (fetch_fn_ == nullptr) {
+      return {};
+    }
+    const uint8_t* data = nullptr;
+    std::size_t size = 0;
+    if (!fetch_fn_(ctx_, &data, &size) || data == nullptr) {
+      return {};
+    }
+    return std::vector<uint8_t>(data, data + size);
+  }
+
+ private:
+  PJ_lazy_fetch_fn_t fetch_fn_;
+  void* ctx_;
+  void (*destroy_fn_)(void*);
+};
+
+bool sourceObjectRegisterTopic(
+    void* ctx, PJ_string_view_t topic_name, PJ_string_view_t metadata_json, PJ_object_topic_handle_t* out_handle,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  if (out_handle == nullptr) {
+    propagateError(out_error, "out_handle must not be null");
+    return false;
+  }
+  try {
+    ObjectTopicDescriptor desc{};
+    desc.dataset_id = impl->dataset_id;
+    desc.topic_name = std::string(toStringView(topic_name));
+    desc.metadata_json = std::string(toStringView(metadata_json));
+    auto result = impl->store.registerTopic(desc);
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    out_handle->id = result->id;
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("registerTopic: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+bool sourceObjectPushOwned(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, std::size_t size,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  try {
+    std::vector<uint8_t> bytes;
+    if (data != nullptr && size > 0) {
+      bytes.assign(data, data + size);
+    }
+    auto result = impl->store.pushOwned(ObjectTopicId{topic.id}, timestamp_ns, std::move(bytes));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("pushOwned: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+bool sourceObjectPushLazy(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx,
+    void (*fetch_ctx_destroy)(void*), PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  if (fetch_fn == nullptr) {
+    if (fetch_ctx_destroy != nullptr) {
+      fetch_ctx_destroy(fetch_ctx);
+    }
+    propagateError(out_error, "fetch_fn must not be null");
+    return false;
+  }
+  try {
+    // shared_ptr keeps the ctx holder alive as long as ObjectStore keeps
+    // the lambda; destructor runs exactly once when ObjectStore drops the
+    // entry (retention, evict, removeTopic, clear, or store teardown).
+    auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
+    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    auto result = impl->store.pushLazy(ObjectTopicId{topic.id}, timestamp_ns, std::move(closure));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      // `holder` is the only reference to the ctx on failure; dropping it
+      // runs fetch_ctx_destroy exactly once (the destructor already does it).
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    // On exception before the ObjectStore took ownership, PluginFetchCtx's
+    // destructor runs as part of shared_ptr teardown — single destroy call.
+    return false;
+  } catch (...) {
+    impl->setError("pushLazy: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+void sourceObjectSetRetentionBudget(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, std::size_t max_memory_bytes) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  try {
+    RetentionBudget budget{};
+    budget.time_window_ns = time_window_ns;
+    budget.max_memory_bytes = max_memory_bytes;
+    impl->store.setRetentionBudget(ObjectTopicId{topic.id}, budget);
+  } catch (...) {
+    // Infallible by contract — swallow any exception from the store.
+  }
+}
+
 const PJ_source_write_host_vtable_t kSourceWriteVTable = {
     PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_source_write_host_vtable_t),
     sourceEnsureTopic,          sourceEnsureField,
@@ -1126,6 +1290,11 @@ const PJ_toolbox_host_vtable_t kToolboxVTable = {
     toolboxAppendArrowStream,
     toolboxAcquireCatalogSnapshot,
     toolboxReadSeriesArrow,
+};
+
+const PJ_object_write_host_vtable_t kSourceObjectWriteVTable = {
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_object_write_host_vtable_t), sourceObjectRegisterTopic, sourceObjectPushOwned,
+    sourceObjectPushLazy,       sourceObjectSetRetentionBudget,
 };
 
 DatastoreSourceWriteHost::DatastoreSourceWriteHost(DataEngine& engine, DataSourceHandle source)
@@ -1168,6 +1337,17 @@ PJ_toolbox_host_t DatastoreToolboxHost::raw() noexcept {
 
 void DatastoreToolboxHost::flushPending() {
   state_->core.write.flushPending();
+}
+
+DatastoreSourceObjectWriteHost::DatastoreSourceObjectWriteHost(ObjectStore& store, DatasetId dataset_id)
+    : state_(std::make_unique<DatastoreSourceObjectWriteHostState>(store, dataset_id)) {}
+DatastoreSourceObjectWriteHost::~DatastoreSourceObjectWriteHost() = default;
+DatastoreSourceObjectWriteHost::DatastoreSourceObjectWriteHost(DatastoreSourceObjectWriteHost&&) noexcept = default;
+DatastoreSourceObjectWriteHost& DatastoreSourceObjectWriteHost::operator=(DatastoreSourceObjectWriteHost&&) noexcept =
+    default;
+
+PJ_object_write_host_t DatastoreSourceObjectWriteHost::raw() noexcept {
+  return PJ_object_write_host_t{.ctx = state_.get(), .vtable = &kSourceObjectWriteVTable};
 }
 
 }  // namespace PJ

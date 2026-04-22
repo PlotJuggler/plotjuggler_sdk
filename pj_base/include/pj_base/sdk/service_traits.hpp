@@ -83,6 +83,19 @@ struct SourceWriteHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Object write host for DataSource plugins — writes into ObjectStore
+/// (peer to DataEngine) for topics carrying opaque payloads (markers,
+/// images, point clouds, scene primitives). Optional: plugins that
+/// publish only scalar data never resolve this.
+struct SourceObjectWriteHostService {
+  static constexpr const char* kName = "pj.source_object_write.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_object_write_host_t;
+  using Vtable = PJ_object_write_host_vtable_t;
+  using View = SourceObjectWriteHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 struct ParserWriteHostService {
   static constexpr const char* kName = "pj.parser_write.v1";
   static constexpr uint32_t kMinVersion = 1;

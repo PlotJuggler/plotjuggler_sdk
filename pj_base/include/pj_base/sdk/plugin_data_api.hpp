@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstring>
+#include <functional>
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -21,6 +23,15 @@ namespace PJ::sdk {
 using DataSourceHandle = PJ_data_source_handle_t;
 using TopicHandle = PJ_topic_handle_t;
 using FieldHandle = PJ_field_handle_t;
+using ObjectTopicHandle = PJ_object_topic_handle_t;
+
+inline bool operator==(ObjectTopicHandle a, ObjectTopicHandle b) {
+  return a.id == b.id;
+}
+
+inline bool operator!=(ObjectTopicHandle a, ObjectTopicHandle b) {
+  return !(a == b);
+}
 
 [[nodiscard]] inline PJ_primitive_type_t toAbiType(PrimitiveType type) {
   return static_cast<PJ_primitive_type_t>(type);
@@ -502,6 +513,130 @@ class ParserWriteHostView {
 
  private:
   PJ_parser_write_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
+// Object write host view (protocol v4)
+//
+// Writes into `pj_datastore::ObjectStore` — timestamped opaque payloads
+// for media topics (markers, annotations, images, point clouds).
+//
+// Two storage shapes via the same view:
+//
+//   * pushOwned(handle, ts, bytes) — eager: the store copies the bytes and
+//     owns them. Appropriate for small structured messages whose aggregate
+//     volume fits comfortably in memory.
+//
+//   * pushLazy(handle, ts, fetch_closure) — lazy: the store keeps only the
+//     closure, invoking it on demand when a consumer asks for the entry.
+//     Appropriate for large blobs (images, point clouds) whose bytes live
+//     in a file the plugin captures by shared_ptr inside the closure.
+//
+// The `pushLazy` template overload hides the raw C callback/destroy dance
+// behind a plain C++ lambda — the SDK heap-allocates a move-capture box
+// and wires the destroy callback to delete it.
+// ---------------------------------------------------------------------------
+
+class SourceObjectWriteHostView {
+ public:
+  using FetchFn = std::function<std::vector<uint8_t>()>;
+
+  SourceObjectWriteHostView() = default;
+  explicit SourceObjectWriteHostView(PJ_object_write_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
+
+  /// Register an object topic with opaque metadata JSON. The JSON is retained
+  /// verbatim by the store; viewers and parsers use it to pick a renderer.
+  [[nodiscard]] Expected<ObjectTopicHandle> registerTopic(std::string_view name, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("source object write host is not bound");
+    }
+    ObjectTopicHandle handle{};
+    PJ_error_t err{};
+    if (!host_.vtable->register_topic(host_.ctx, toAbiString(name), toAbiString(metadata_json), &handle, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return handle;
+  }
+
+  /// Eager push — host copies the bytes into its own storage.
+  [[nodiscard]] Status pushOwned(ObjectTopicHandle topic, Timestamp ts, Span<const uint8_t> payload) const {
+    if (!valid()) {
+      return unexpected("source object write host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->push_owned(host_.ctx, topic, ts, payload.data(), payload.size(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Lazy push — store retains the closure; it runs on demand per read.
+  ///
+  /// `fetch` may capture heavy state by value (e.g. a
+  /// `shared_ptr<FileReader>`). The SDK heap-allocates a move-capture box
+  /// and registers a destroy callback that `delete`s the box exactly once
+  /// when the ObjectStore evicts the entry. Plugin authors never touch
+  /// the raw fetch_ctx / fetch_ctx_destroy dance.
+  template <class Fetch>
+  [[nodiscard]] Status pushLazy(ObjectTopicHandle topic, Timestamp ts, Fetch&& fetch) const {
+    if (!valid()) {
+      return unexpected("source object write host is not bound");
+    }
+    auto* box = new LazyBox{FetchFn(std::forward<Fetch>(fetch)), std::vector<uint8_t>{}};
+    PJ_error_t err{};
+    if (!host_.vtable->push_lazy(host_.ctx, topic, ts, &LazyBox::trampoline, box, &LazyBox::destroy, &err)) {
+      delete box;  // push failed — store never took ownership; drop the box.
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Configure retention. Application-level concern — plugins rarely call this.
+  void setRetentionBudget(ObjectTopicHandle topic, int64_t time_window_ns, size_t max_memory_bytes) const {
+    if (!valid()) {
+      return;
+    }
+    host_.vtable->set_retention_budget(host_.ctx, topic, time_window_ns, max_memory_bytes);
+  }
+
+  [[nodiscard]] const PJ_object_write_host_t& raw() const noexcept {
+    return host_;
+  }
+
+ private:
+  PJ_object_write_host_t host_{};
+
+  /// Heap-allocated box that bridges a C++ fetch lambda to the C ABI
+  /// `(fetch_fn, fetch_ctx, destroy_fn)` triple. The `last_bytes` cache
+  /// keeps the buffer alive across the window the host needs to copy
+  /// from it; see the lifetime note on `PJ_lazy_fetch_fn_t`.
+  struct LazyBox {
+    FetchFn fetch;
+    std::vector<uint8_t> last_bytes;
+
+    static bool trampoline(void* ctx, const uint8_t** out_data, size_t* out_size) noexcept {
+      if (ctx == nullptr || out_data == nullptr || out_size == nullptr) {
+        return false;
+      }
+      auto* self = static_cast<LazyBox*>(ctx);
+      try {
+        self->last_bytes = self->fetch();
+      } catch (...) {
+        return false;
+      }
+      *out_data = self->last_bytes.data();
+      *out_size = self->last_bytes.size();
+      return true;
+    }
+
+    static void destroy(void* ctx) noexcept {
+      delete static_cast<LazyBox*>(ctx);
+    }
+  };
 };
 
 namespace detail {

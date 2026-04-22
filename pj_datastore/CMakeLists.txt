@@ -57,6 +57,7 @@ if(PJ_BUILD_TESTS)
     tests/array_expansion_test.cpp
     tests/regression_test.cpp
     tests/object_store_test.cpp
+    tests/plugin_data_host_object_test.cpp
     # tests/plugin_host_read_test.cpp  # disabled until Phase 1b lands
     #   (exercises v3 toolbox read path; rewrite for read_series_arrow)
   )

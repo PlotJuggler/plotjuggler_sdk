@@ -55,8 +55,14 @@ class DataSourcePluginBase {
   /// Default implementation pulls the two services every DataSource needs:
   ///   - `"pj.source_write.v1"` → SourceWriteHost
   ///   - `"pj.runtime.v1"` → DataSourceRuntimeHost
-  /// Override to request additional optional services (e.g. colormap), or
-  /// to relax the default requirement.
+  ///
+  /// Plus one optional service that media-capable sources resolve:
+  ///   - `"pj.source_object_write.v1"` → SourceObjectWriteHost (ObjectStore)
+  ///
+  /// Plugins that don't write to ObjectStore simply leave `objectWriteHost()`
+  /// unused; hosts without an ObjectStore bound simply don't register it.
+  /// Override to request additional services (e.g. colormap), or to relax
+  /// the default requirement.
   virtual Status bind(sdk::ServiceRegistry services) {
     auto write = services.require<sdk::SourceWriteHostService>();
     if (!write) {
@@ -69,6 +75,10 @@ class DataSourcePluginBase {
       return unexpected(std::move(runtime).error());
     }
     runtime_host_view_ = *runtime;
+
+    if (auto object_write = services.get<sdk::SourceObjectWriteHostService>()) {
+      object_write_host_view_ = *object_write;
+    }
 
     service_registry_ = services;
     return okStatus();
@@ -160,6 +170,13 @@ class DataSourcePluginBase {
     return runtime_host_view_;
   }
 
+  /// Optional — returns nullptr if the host did not register
+  /// `pj.source_object_write.v1`. Media-capable sources check this before
+  /// using it; scalar-only sources never touch it.
+  [[nodiscard]] const sdk::SourceObjectWriteHostView* objectWriteHost() const {
+    return object_write_host_view_.valid() ? &object_write_host_view_ : nullptr;
+  }
+
   [[nodiscard]] bool writeHostBound() const {
     return write_host_view_.valid();
   }
@@ -171,6 +188,7 @@ class DataSourcePluginBase {
  private:
   sdk::ServiceRegistry service_registry_{};
   sdk::SourceWriteHostView write_host_view_{PJ_source_write_host_t{}};
+  sdk::SourceObjectWriteHostView object_write_host_view_{};
   DataSourceRuntimeHostView runtime_host_view_{};
   std::string config_buf_;
 

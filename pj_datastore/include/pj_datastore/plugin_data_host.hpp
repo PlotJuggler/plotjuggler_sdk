@@ -3,11 +3,14 @@
 #include <memory>
 
 #include "pj_base/plugin_data_api.h"
+#include "pj_base/types.hpp"
 
 namespace PJ {
 
 class DataEngine;
+class ObjectStore;
 struct DatastoreSourceWriteHostState;
+struct DatastoreSourceObjectWriteHostState;
 struct DatastoreParserWriteHostState;
 struct DatastoreToolboxHostState;
 
@@ -26,6 +29,26 @@ class DatastoreSourceWriteHost {
 
  private:
   std::unique_ptr<DatastoreSourceWriteHostState> state_;
+};
+
+/// Host-side implementation of the scalar-peer object-write surface exposed
+/// as `pj.source_object_write.v1`. Bridges the C ABI onto
+/// `pj_datastore::ObjectStore`. One instance per DataSource session; the
+/// `DatasetId` scopes newly-registered topics to the enclosing dataset.
+class DatastoreSourceObjectWriteHost {
+ public:
+  DatastoreSourceObjectWriteHost(ObjectStore& store, DatasetId dataset_id);
+  ~DatastoreSourceObjectWriteHost();
+
+  DatastoreSourceObjectWriteHost(const DatastoreSourceObjectWriteHost&) = delete;
+  DatastoreSourceObjectWriteHost& operator=(const DatastoreSourceObjectWriteHost&) = delete;
+  DatastoreSourceObjectWriteHost(DatastoreSourceObjectWriteHost&&) noexcept;
+  DatastoreSourceObjectWriteHost& operator=(DatastoreSourceObjectWriteHost&&) noexcept;
+
+  [[nodiscard]] PJ_object_write_host_t raw() noexcept;
+
+ private:
+  std::unique_ptr<DatastoreSourceObjectWriteHostState> state_;
 };
 
 class DatastoreParserWriteHost {

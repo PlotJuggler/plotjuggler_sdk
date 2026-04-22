@@ -470,6 +470,90 @@ typedef struct {
   const PJ_toolbox_host_vtable_t* vtable;
 } PJ_toolbox_host_t;
 
+/* ==========================================================================
+ * Object-store write host (protocol v4)
+ *
+ * Plugin-visible surface over `pj_datastore::ObjectStore` — a message-
+ * oriented peer to DataEngine holding timestamped opaque payloads
+ * (markers/annotations written eagerly via push_owned; images/point
+ * clouds written lazily via push_lazy with a plugin-owned fetch closure).
+ *
+ * Separate from the scalar write surface by design: a plugin family
+ * may want one, the other, or both. DataSource plugins that handle
+ * media resolve `pj.source_object_write.v1` from the service registry.
+ * Parser plugins receiving delegated ingest for a media topic resolve
+ * `pj.parser_object_write.v1` in addition to `pj.parser_write.v1`.
+ * ========================================================================== */
+
+/* ABI-FROZEN: layout permanent; changes = v5 break. */
+typedef struct {
+  uint32_t id; /* 0 == invalid handle */
+} PJ_object_topic_handle_t;
+
+/* Lazy-fetch callback type. Invoked by the host on-demand when a consumer
+ * reads an entry stored via push_lazy. On success the plugin populates
+ * *out_data + *out_size with a pointer into memory owned by the plugin's
+ * fetch context — valid at least until the NEXT call to the same fn or
+ * until fetch_ctx_destroy runs. The host immediately copies the bytes; the
+ * plugin may reuse or free the buffer on the following call. */
+typedef bool (*PJ_lazy_fetch_fn_t)(void* fetch_ctx, const uint8_t** out_data, size_t* out_size) PJ_NOEXCEPT;
+
+/* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ *
+ * push_lazy / fetch_ctx lifetime contract:
+ *   The store retains fetch_ctx for the lifetime of the pushed entry (i.e.
+ *   as long as the entry remains in the ObjectStore's deque — indefinite
+ *   if no retention budget, bounded by the budget otherwise). When the
+ *   entry is finally evicted (retention, explicit evictBefore, removeTopic,
+ *   or clear), the store invokes fetch_ctx_destroy(fetch_ctx) exactly once.
+ *   Typical use: pack a shared_ptr<FileReader> into fetch_ctx; the destroy
+ *   callback `delete`s the owning box and drops the shared reference. */
+typedef struct PJ_object_write_host_vtable_t {
+  uint32_t abi_version;
+  uint32_t struct_size;
+
+  /* [stream-thread] Register an object topic under this data source with
+   * the given metadata JSON. `metadata_json` is opaque to the store and
+   * retained verbatim; viewers and parsers read it to pick a renderer.
+   * Returns false (with out_error populated) if a topic with this name
+   * already exists for the data source. */
+  bool (*register_topic)(
+      void* ctx, PJ_string_view_t topic_name, PJ_string_view_t metadata_json, PJ_object_topic_handle_t* out_handle,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Push an eagerly-owned entry. The store copies the bytes
+   * into its own storage; the plugin's buffer is free to be reused or freed
+   * the moment this call returns. Appropriate for small structured messages
+   * (markers, annotations, scene primitives) whose aggregate volume stays
+   * comfortably in memory. */
+  bool (*push_owned)(
+      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, size_t size,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Push a lazy entry — host stores the fetch closure, not
+   * the bytes. Appropriate for large blobs (still images, point clouds)
+   * where eager storage would inflate memory. See the lifetime contract
+   * above for fetch_ctx / fetch_ctx_destroy. */
+  bool (*push_lazy)(
+      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx,
+      void (*fetch_ctx_destroy)(void*), PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Configure the per-topic retention budget. Either axis
+   * may be zero to disable that axis; both zero disables automatic
+   * eviction entirely. Infallible — bad handles are silently ignored.
+   *
+   * Typical plugin author usage: do NOT call this. The application owns
+   * the retention policy; DataSource plugins should leave budgets alone. */
+  void (*set_retention_budget)(
+      void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, size_t max_memory_bytes) PJ_NOEXCEPT;
+} PJ_object_write_host_vtable_t;
+
+/* ABI-FROZEN: fat pointer layout permanent. */
+typedef struct {
+  void* ctx;
+  const PJ_object_write_host_vtable_t* vtable;
+} PJ_object_write_host_t;
+
 /**
  * Colormap registry service (v4).
  *
