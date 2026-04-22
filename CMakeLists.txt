@@ -33,6 +33,7 @@ endif()
 option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires nanoarrow)" ON)
 option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
+option(PJ_ENABLE_ABI_CHECK "Enable abidiff-based ABI drift gate (requires libabigail)" OFF)
 
 # ---------------------------------------------------------------------------
 # Compiler warnings
@@ -215,3 +216,9 @@ if(PJ_INSTALL_SDK)
     DESTINATION ${PJ_SDK_CMAKE_DIR}
   )
 endif()
+
+# ---------------------------------------------------------------------------
+# ABI drift gate (opt-in via -DPJ_ENABLE_ABI_CHECK=ON). Requires libabigail.
+# Included last so the canary target (mock_data_source_plugin) already exists.
+# ---------------------------------------------------------------------------
+include(PjAbiCheck)
