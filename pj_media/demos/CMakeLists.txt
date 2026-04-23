@@ -1,7 +1,7 @@
 find_package(mcap REQUIRED)
+find_package(libjpeg-turbo REQUIRED)
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
-  pkg_check_modules(TURBOJPEG IMPORTED_TARGET libturbojpeg)
   pkg_check_modules(LIBAVCODEC IMPORTED_TARGET libavcodec)
   pkg_check_modules(LIBAVFORMAT IMPORTED_TARGET libavformat)
   pkg_check_modules(LIBAVUTIL IMPORTED_TARGET libavutil)
@@ -12,7 +12,7 @@ add_executable(extract_frame extract_frame.cpp)
 target_compile_features(extract_frame PRIVATE cxx_std_20)
 target_compile_options(extract_frame PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(extract_frame PRIVATE
-  pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
+  pj_media_core pj_datastore mcap::mcap libjpeg-turbo::libjpeg-turbo
 )
 
 # --- Qt demo: MCAP image viewer with ObjectStore pipeline ---
@@ -24,14 +24,14 @@ if(TARGET pj_media_qt)
   target_compile_options(mcap_image_viewer PRIVATE ${PJ_WARNING_FLAGS})
   target_compile_definitions(mcap_image_viewer PRIVATE PJ_HAS_RHI_WIDGET)
   target_link_libraries(mcap_image_viewer PRIVATE
-    pj_media_qt pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
+    pj_media_qt pj_media_core pj_datastore mcap::mcap libjpeg-turbo::libjpeg-turbo
   )
   # --- Qt demo: multi-channel viewer (color + depth side by side) ---
   add_executable(multi_channel_viewer multi_channel_viewer.cpp)
   target_compile_features(multi_channel_viewer PRIVATE cxx_std_20)
   target_compile_options(multi_channel_viewer PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(multi_channel_viewer PRIVATE
-    pj_media_qt pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
+    pj_media_qt pj_media_core pj_datastore mcap::mcap libjpeg-turbo::libjpeg-turbo
   )
 
   # --- Qt demo: simulated live stream (M13) ---
@@ -39,7 +39,7 @@ if(TARGET pj_media_qt)
   target_compile_features(simulated_stream PRIVATE cxx_std_20)
   target_compile_options(simulated_stream PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(simulated_stream PRIVATE
-    pj_media_qt pj_media_core pj_datastore PkgConfig::TURBOJPEG
+    pj_media_qt pj_media_core pj_datastore libjpeg-turbo::libjpeg-turbo
   )
 
   # --- Qt demo: video stream (M18 — FFmpeg decode via ObjectStore) ---
@@ -67,7 +67,7 @@ elseif(PJ_BUILD_DIALOG_ENGINE_QT)
   target_compile_features(mcap_image_viewer PRIVATE cxx_std_20)
   target_compile_options(mcap_image_viewer PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(mcap_image_viewer PRIVATE
-    pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
+    pj_media_core pj_datastore mcap::mcap libjpeg-turbo::libjpeg-turbo
     Qt6::Widgets
   )
 endif()
