@@ -15,9 +15,15 @@ namespace PJ::detail {
 
 inline Expected<void*> loadLibraryHandle(std::string_view path) {
 #if defined(_WIN32)
-  HMODULE module = LoadLibraryA(std::string(path).c_str());
+  // LOAD_WITH_ALTERED_SEARCH_PATH adds the directory of the loaded DLL to the
+  // search path for resolving its dependencies — matches dlopen's default on
+  // Linux. Without it, deps are only searched in the .exe directory, System32
+  // and PATH, so plugins cannot ship their own sibling DLLs 
+  HMODULE module = LoadLibraryExA(std::string(path).c_str(), nullptr,
+                                  LOAD_WITH_ALTERED_SEARCH_PATH);
   if (module == nullptr) {
-    return unexpected(std::string("LoadLibraryA failed"));
+    return unexpected("LoadLibraryExA failed (error " +
+                      std::to_string(GetLastError()) + ")");
   }
   return reinterpret_cast<void*>(module);
 #else
