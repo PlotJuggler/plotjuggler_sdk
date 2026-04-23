@@ -180,6 +180,7 @@ if(PJ_BUILD_DIALOG_ENGINE_QT)
 endif()
 
 if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
+  set(PJ_HAS_PORTED_PLUGINS TRUE)
   add_subdirectory(pj_ported_plugins)
 endif()
 

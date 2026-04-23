@@ -209,7 +209,7 @@ target_link_libraries(plugin_catalog_test PRIVATE
 # at their output directory so it can scan real sidecars. Deferred via a
 # generator expression because csv_source_plugin is added later in the
 # top-level CMakeLists traversal (pj_ported_plugins/ after pj_plugins/).
-if(PJ_BUILD_PORTED_PLUGINS)
+if(PJ_HAS_PORTED_PLUGINS)
   target_compile_definitions(plugin_catalog_test PRIVATE
     PJ_PORTED_PLUGINS_BIN_DIR="$<TARGET_FILE_DIR:csv_source_plugin>"
   )
