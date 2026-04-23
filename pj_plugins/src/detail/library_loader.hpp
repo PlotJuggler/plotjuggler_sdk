@@ -26,7 +26,8 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // TODO: consider a Platform abstraction class (like pj_marketplace/PlatformUtils)
   //       to centralize OS-specific behavior.
   int flags = RTLD_NOW | RTLD_LOCAL;
-#if defined(__linux__) && defined(RTLD_DEEPBIND)
+  // RTLD_DEEPBIND is incompatible with AddressSanitizer runtime.
+#if defined(__linux__) && defined(RTLD_DEEPBIND) && !defined(PJ_ASAN_ACTIVE)
   flags |= RTLD_DEEPBIND;
 #endif
   void* handle = dlopen(std::string(path).c_str(), flags);

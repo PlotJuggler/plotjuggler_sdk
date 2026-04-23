@@ -1,0 +1,3 @@
+# VAAPI driver leaks memory via av_malloc during hardware context creation.
+# This is external to our code — all test assertions pass.
+leak:av_malloc
