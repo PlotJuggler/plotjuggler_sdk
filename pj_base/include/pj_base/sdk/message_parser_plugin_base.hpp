@@ -1,12 +1,13 @@
 /**
  * @file message_parser_plugin_base.hpp
- * @brief C++ SDK for implementing MessageParser plugins.
+ * @brief C++ SDK for implementing MessageParser plugins (protocol v4).
  *
- * Plugin authors subclass MessageParserPluginBase, override parse(),
- * and export with the PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest) macro.
- * The SDK handles C ABI trampoline generation and exception safety.
+ * Plugin authors subclass MessageParserPluginBase, override `parse()`, and
+ * export with PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest).
  *
- * See pj_plugins/examples/mock_json_parser.cpp for a complete example.
+ * The default `bind()` implementation acquires the parser write host from
+ * the service registry. Override to additionally acquire optional services.
+ * All trampolines are noexcept at the ABI boundary.
  */
 #pragma once
 
@@ -14,36 +15,46 @@
 #include <exception>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/sdk/plugin_data_api.hpp"
+#include "pj_base/sdk/service_registry.hpp"
+#include "pj_base/sdk/service_traits.hpp"
 
 namespace PJ {
 
 /**
- * Base class for MessageParser plugins.
- *
- * Subclass and override the pure-virtual parse() method. Optionally override
- * bindSchema, saveConfig/loadConfig for richer behaviour.
- *
- * Use writeHost() (protected) to write decoded fields during parse().
- * Export with PJ_MESSAGE_PARSER_PLUGIN(YourClass, manifest).
- *
- * The base class generates C ABI trampolines with full exception safety —
- * any exception thrown from a virtual is caught, stored via setLastError(),
- * and converted to a false/null return across the ABI boundary.
+ * Base class for MessageParser plugins (protocol v4).
  */
 class MessageParserPluginBase {
  public:
   virtual ~MessageParserPluginBase() = default;
 
-  /// Bind the data-plane write host. Override only if you need custom validation.
-  virtual Status bindWriteHost(PJ_parser_write_host_t write_host) {
-    if (write_host.ctx == nullptr || write_host.vtable == nullptr) {
-      return unexpected("write host is not bound");
+  /// Acquire host-provided services.
+  ///
+  /// Default implementation pulls:
+  ///   - "pj.parser_write.v1"        → ParserWriteHost       (mandatory)
+  ///   - "pj.parser_object_write.v1" → ObjectWriteHost       (optional)
+  ///
+  /// A media-capable parser checks `objectWriteHost()` inside parse() and
+  /// writes the scalar portion of the message to `writeHost()` and the
+  /// media payload to `objectWriteHost()` from a single parse() call.
+  virtual Status bind(sdk::ServiceRegistry services) {
+    auto write = services.require<sdk::ParserWriteHostService>();
+    if (!write) {
+      return unexpected(std::move(write).error());
     }
-    write_host_ = write_host;
+    write_host_view_ = *write;
+
+    // Object-write is optional — only registered by the host when the
+    // parser is bound to a media topic alongside a scalar one.
+    if (auto obj = services.get<sdk::ParserObjectWriteHostService>()) {
+      object_write_host_view_ = *obj;
+    }
+
+    service_registry_ = services;
     return okStatus();
   }
 
@@ -54,12 +65,10 @@ class MessageParserPluginBase {
     return okStatus();
   }
 
-  /// Serialize plugin configuration to JSON. Default returns "{}".
   virtual std::string saveConfig() const {
     return "{}";
   }
 
-  /// Restore plugin configuration from JSON. Default accepts any input.
   virtual Status loadConfig(std::string_view config_json) {
     (void)config_json;
     return okStatus();
@@ -68,9 +77,11 @@ class MessageParserPluginBase {
   /// Parse one raw message and write decoded fields via writeHost(). PURE VIRTUAL.
   virtual Status parse(Timestamp timestamp_ns, Span<const uint8_t> payload) = 0;
 
-  /// Return the last error message. Override for custom error reporting.
-  virtual std::string lastError() const {
-    return last_error_;
+  /// Return a pointer to a static plugin-exposed extension for @p id, or
+  /// nullptr if unknown. Default returns nullptr.
+  virtual const void* pluginExtension(std::string_view id) {
+    (void)id;
+    return nullptr;
   }
 
   template <typename CreateFn>
@@ -85,68 +96,74 @@ class MessageParserPluginBase {
         create_fn,
         trampoline_destroy,
         manifest,
-        trampoline_bind_write_host,
+        trampoline_bind,
         trampoline_bind_schema,
         trampoline_save_config,
         trampoline_load_config,
         trampoline_parse,
-        trampoline_get_last_error,
+        trampoline_get_plugin_extension,
     };
     return &vt;
   }
 
  protected:
+  [[nodiscard]] sdk::ServiceRegistry services() const {
+    return service_registry_;
+  }
+
+  [[nodiscard]] const sdk::ParserWriteHostView& writeHost() const {
+    return write_host_view_;
+  }
+
+  /// Optional — returns nullptr when the host did not register
+  /// `pj.parser_object_write.v1` for this parser's binding (scalar-only
+  /// case). Media-capable parsers check this and, if non-null, emit the
+  /// payload via `objectWriteHost()->pushOwned(ts, bytes)` alongside the
+  /// scalar fields written through `writeHost()`.
+  [[nodiscard]] const sdk::ParserObjectWriteHostView* objectWriteHost() const {
+    return object_write_host_view_.valid() ? &object_write_host_view_ : nullptr;
+  }
+
   [[nodiscard]] bool writeHostBound() const {
-    return write_host_.ctx != nullptr && write_host_.vtable != nullptr;
-  }
-
-  [[nodiscard]] sdk::ParserWriteHostView writeHost() const {
-    return sdk::ParserWriteHostView(write_host_);
-  }
-
-  void setLastError(std::string error) {
-    last_error_ = std::move(error);
+    return write_host_view_.valid();
   }
 
  private:
-  PJ_parser_write_host_t write_host_{};
+  sdk::ServiceRegistry service_registry_{};
+  sdk::ParserWriteHostView write_host_view_{PJ_parser_write_host_t{}};
+  sdk::ParserObjectWriteHostView object_write_host_view_{};
   std::string config_buf_;
-  mutable std::string last_error_;
 
-  // C ABI trampolines — exception-safe bridges between host vtable calls and
-  // C++ virtuals. Implementations live in detail/message_parser_trampolines.hpp.
-  static void trampoline_destroy(void* ctx);
-  static bool trampoline_bind_write_host(void* ctx, PJ_parser_write_host_t write_host);
-  static bool trampoline_bind_schema(void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema);
-  static const char* trampoline_save_config(void* ctx);
-  static bool trampoline_load_config(void* ctx, const char* config_json);
-  static bool trampoline_parse(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload);
-  static const char* trampoline_get_last_error(void* ctx);
+  static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {
+    sdk::fillError(out_error, code, domain, message);
+  }
+
+  static void trampoline_destroy(void* ctx) noexcept;
+  static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept;
+  static bool trampoline_bind_schema(
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error) noexcept;
+  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept;
+  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept;
+  static bool trampoline_parse(
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) noexcept;
+  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
 };
 
 }  // namespace PJ
 
-// Out-of-line trampoline definitions — separated to keep the public API header concise.
 #include "pj_base/sdk/detail/message_parser_trampolines.hpp"
 
-/**
- * Export a MessageParserPluginBase subclass as a shared-library plugin.
- *
- * Place at file scope (after the class definition). Generates the extern "C"
- * entry point `PJ_get_message_parser_vtable` that the host resolves via dlsym.
- *
- * @param ClassName   The MessageParserPluginBase subclass to instantiate.
- * @param manifest    A string literal containing the JSON manifest
- *                    (must have "name", "version", and "encoding" keys).
- *
- * Usage:
- * @code
- *   PJ_MESSAGE_PARSER_PLUGIN(MyParser, R"({"name":"My Parser","version":"1.0.0","encoding":"json"})")
- * @endcode
- */
-#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                                       \
-  extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_message_parser_vtable() {    \
-    static const PJ_message_parser_vtable_t* vt =                                                           \
-        PJ::MessageParserPluginBase::vtableWithCreate([]() -> void* { return new ClassName(); }, manifest); \
-    return vt;                                                                                              \
+#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                                             \
+  extern "C" PJ_MESSAGE_PARSER_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;                      \
+  extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_message_parser_vtable() noexcept { \
+    static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(                  \
+        []() noexcept -> void* {                                                                                  \
+          try {                                                                                                   \
+            return new ClassName();                                                                               \
+          } catch (...) {                                                                                         \
+            return nullptr;                                                                                       \
+          }                                                                                                       \
+        },                                                                                                        \
+        manifest);                                                                                                \
+    return vt;                                                                                                    \
   }

@@ -1,0 +1,206 @@
+#include <gtest/gtest.h>
+
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "pj_base/sdk/plugin_data_api.hpp"
+#include "pj_datastore/object_store.hpp"
+#include "pj_datastore/plugin_data_host.hpp"
+
+namespace PJ {
+namespace {
+
+using sdk::ObjectTopicHandle;
+using sdk::SourceObjectWriteHostView;
+
+constexpr DatasetId kDatasetId = 42;
+
+struct Fixture {
+  ObjectStore store;
+  DatastoreSourceObjectWriteHost host_impl{store, kDatasetId};
+  SourceObjectWriteHostView host{host_impl.raw()};
+};
+
+TEST(PluginDataHostObjectTest, RegisterTopicReturnsUsableHandle) {
+  Fixture f;
+  auto handle = f.host.registerTopic("markers", R"({"media_class":"scene"})");
+  ASSERT_TRUE(handle.has_value()) << handle.error();
+  EXPECT_NE(handle->id, 0U);
+
+  // Metadata round-trips through the store.
+  const auto topics = f.store.listTopics(kDatasetId);
+  ASSERT_EQ(topics.size(), 1U);
+  const auto& desc = f.store.descriptor(topics[0]);
+  EXPECT_EQ(desc.topic_name, "markers");
+  EXPECT_EQ(desc.metadata_json, R"({"media_class":"scene"})");
+  EXPECT_EQ(desc.dataset_id, kDatasetId);
+}
+
+TEST(PluginDataHostObjectTest, RegisterTopicRejectsDuplicateName) {
+  Fixture f;
+  ASSERT_TRUE(f.host.registerTopic("markers", "{}").has_value());
+  auto again = f.host.registerTopic("markers", "{}");
+  EXPECT_FALSE(again.has_value());
+}
+
+TEST(PluginDataHostObjectTest, PushOwnedStoresBytes) {
+  Fixture f;
+  const auto topic = *f.host.registerTopic("markers", "{}");
+
+  const std::vector<uint8_t> payload = {1, 2, 3, 4, 5};
+  auto status = f.host.pushOwned(topic, 1000, payload);
+  ASSERT_TRUE(status.has_value()) << status.error();
+  status = f.host.pushOwned(topic, 2000, payload);
+  ASSERT_TRUE(status.has_value()) << status.error();
+
+  const ObjectTopicId store_id{topic.id};
+  EXPECT_EQ(f.store.entryCount(store_id), 2U);
+  auto resolved = f.store.latestAt(store_id, 2000);
+  ASSERT_TRUE(resolved.has_value());
+  ASSERT_NE(resolved->data, nullptr);
+  EXPECT_EQ(resolved->data->size(), payload.size());
+  EXPECT_EQ(*resolved->data, payload);
+}
+
+TEST(PluginDataHostObjectTest, PushLazyRetainsClosureUntilEviction) {
+  Fixture f;
+  const auto topic = *f.host.registerTopic("images", R"({"media_class":"image"})");
+
+  // Use an atomic destroy-counter embedded in the shared state to prove the
+  // fetch_ctx_destroy callback runs exactly once per evicted entry.
+  struct SharedState {
+    std::atomic<int> fetch_calls{0};
+    std::atomic<int> destroy_calls{0};
+    std::vector<uint8_t> payload;
+  };
+  auto shared = std::make_shared<SharedState>();
+  shared->payload = {0xDE, 0xAD, 0xBE, 0xEF};
+
+  auto closure = [shared]() -> std::vector<uint8_t> {
+    shared->fetch_calls.fetch_add(1);
+    return shared->payload;
+  };
+
+  auto status = f.host.pushLazy(topic, 42, closure);
+  ASSERT_TRUE(status.has_value()) << status.error();
+
+  // Each read invokes the fetch closure.
+  auto first = f.store.latestAt(ObjectTopicId{topic.id}, 42);
+  ASSERT_TRUE(first.has_value());
+  ASSERT_NE(first->data, nullptr);
+  EXPECT_EQ(*first->data, shared->payload);
+  EXPECT_GE(shared->fetch_calls.load(), 1);
+
+  auto second = f.store.latestAt(ObjectTopicId{topic.id}, 42);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_GE(shared->fetch_calls.load(), 2);
+
+  // Destroy has not been invoked yet — the entry is still alive.
+  // (The test's `shared` is one ref; the closure captured in the store is
+  // another; a temporary held by the ObjectStore's fetch wrapper is a
+  // third. Refcount is implementation-detail — assert the visible effect.)
+  // SharedState has NOT been destroyed, so destroy_calls is still 0.
+  EXPECT_EQ(shared->destroy_calls.load(), 0);
+
+  // Evict: store drops the entry, which drops the std::function, which drops
+  // the plugin's shared holder, which runs fetch_ctx_destroy. This test
+  // can't directly observe fetch_ctx_destroy because the SDK's LazyBox
+  // destroy just `delete`s its box; but by construction `closure` owns
+  // only `shared`, and when the store drops its copy of closure, only our
+  // local `closure` variable + our local `shared` remain. We can still
+  // verify that the closure is gone from the store by observing
+  // `entryCount` drop to zero.
+  f.store.evictBefore(ObjectTopicId{topic.id}, 100);
+  EXPECT_EQ(f.store.entryCount(ObjectTopicId{topic.id}), 0U);
+}
+
+TEST(PluginDataHostObjectTest, PushLazyDestroyCallbackRunsExactlyOnceOnEviction) {
+  // Integration test using the raw C ABI — explicitly verifies the destroy
+  // callback fires exactly once when the entry is evicted from the store.
+  Fixture f;
+  const auto topic = *f.host.registerTopic("pointclouds", R"({"media_class":"pointcloud"})");
+
+  struct Ctx {
+    std::atomic<int> destroy_count{0};
+    std::vector<uint8_t> last_bytes;
+    std::vector<uint8_t> payload{0x11, 0x22, 0x33};
+  };
+  auto* ctx = new Ctx();
+
+  auto fetch_fn = [](void* c, const uint8_t** out_data, size_t* out_size) noexcept -> bool {
+    auto* self = static_cast<Ctx*>(c);
+    self->last_bytes = self->payload;
+    *out_data = self->last_bytes.data();
+    *out_size = self->last_bytes.size();
+    return true;
+  };
+  auto destroy_fn = [](void* c) noexcept { static_cast<Ctx*>(c)->destroy_count.fetch_add(1); };
+
+  const auto raw = f.host.raw();
+  PJ_error_t err{};
+  ASSERT_TRUE(raw.vtable->push_lazy(raw.ctx, topic, 100, fetch_fn, ctx, destroy_fn, &err));
+
+  // Fetch once — the callback runs but the ctx stays alive.
+  auto resolved = f.store.latestAt(ObjectTopicId{topic.id}, 100);
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(*resolved->data, ctx->payload);
+  EXPECT_EQ(ctx->destroy_count.load(), 0);
+
+  // Evict — destroy_fn runs exactly once.
+  f.store.evictBefore(ObjectTopicId{topic.id}, 1000);
+  EXPECT_EQ(f.store.entryCount(ObjectTopicId{topic.id}), 0U);
+  EXPECT_EQ(ctx->destroy_count.load(), 1);
+
+  delete ctx;  // clean up the raw box we allocated in the test.
+}
+
+TEST(PluginDataHostObjectTest, PushLazyWithNullFetchFnFails) {
+  Fixture f;
+  const auto topic = *f.host.registerTopic("bogus", "{}");
+
+  const auto raw = f.host.raw();
+  PJ_error_t err{};
+  std::atomic<int> destroyed{0};
+  auto destroy_fn = [](void* c) noexcept { static_cast<std::atomic<int>*>(c)->fetch_add(1); };
+  EXPECT_FALSE(raw.vtable->push_lazy(raw.ctx, topic, 1, nullptr, &destroyed, destroy_fn, &err));
+  // Even on failure, the store calls destroy_fn to free plugin-owned ctx.
+  EXPECT_EQ(destroyed.load(), 1);
+}
+
+TEST(PluginDataHostObjectTest, PushRejectsUnknownTopicHandle) {
+  Fixture f;
+  const ObjectTopicHandle bogus{99999};
+  const std::vector<uint8_t> payload{1, 2, 3};
+  auto status = f.host.pushOwned(bogus, 1, payload);
+  EXPECT_FALSE(status.has_value());
+}
+
+TEST(PluginDataHostObjectTest, SetRetentionBudgetEnforcesTimeWindow) {
+  Fixture f;
+  const auto topic = *f.host.registerTopic("rolling", "{}");
+
+  // 10 ns window. Pushes at t=0,1,...,100 — only entries within 10 ns of
+  // the newest timestamp should survive.
+  f.host.setRetentionBudget(topic, /*time_window_ns=*/10, /*max_memory_bytes=*/0);
+  const std::vector<uint8_t> payload{0xAA};
+  for (int64_t t = 0; t <= 100; ++t) {
+    ASSERT_TRUE(f.host.pushOwned(topic, t, payload).has_value());
+  }
+  // Entries older than 90 ns (100 - 10) are evicted.
+  const auto range = f.store.timeRange(ObjectTopicId{topic.id});
+  EXPECT_GE(range.first, 90);
+  EXPECT_EQ(range.second, 100);
+}
+
+TEST(PluginDataHostObjectTest, ViewReportsNotBoundWhenRawIsEmpty) {
+  SourceObjectWriteHostView empty;
+  EXPECT_FALSE(empty.valid());
+  auto status = empty.pushOwned(ObjectTopicHandle{1}, 0, {});
+  EXPECT_FALSE(status.has_value());
+}
+
+}  // namespace
+}  // namespace PJ

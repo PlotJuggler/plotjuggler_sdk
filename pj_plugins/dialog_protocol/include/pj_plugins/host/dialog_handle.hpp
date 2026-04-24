@@ -9,10 +9,7 @@
 
 namespace PJ {
 
-/// RAII wrapper around a plugin vtable + context.
-/// Owns the context created by vtable->create() and destroys it in the destructor.
-/// A borrowed handle (via borrowed()) does NOT own the context — destructor skips destroy().
-/// All string-returning methods copy from the plugin's internal buffer — safe to hold.
+/// RAII wrapper around a plugin vtable + context (protocol v4).
 class DialogHandle {
  public:
   explicit DialogHandle(const PJ_dialog_vtable_t* vt) : vt_(vt) {
@@ -22,11 +19,14 @@ class DialogHandle {
     }
   }
 
-  /// Create a non-owning handle from an externally managed context.
-  /// The caller must ensure the context outlives this handle.
-  /// Destructor will NOT call destroy().
+  /// Non-owning handle from an externally managed context (e.g. a plugin's embedded dialog).
   static DialogHandle borrowed(const PJ_dialog_vtable_t* vt, void* ctx) {
     return DialogHandle(vt, ctx, false);
+  }
+
+  /// Non-owning handle built from a PJ_borrowed_dialog_t fat pointer.
+  static DialogHandle fromBorrowed(PJ_borrowed_dialog_t borrowed_ref) {
+    return DialogHandle(borrowed_ref.vtable, borrowed_ref.ctx, false);
   }
 
   ~DialogHandle() {
@@ -35,7 +35,6 @@ class DialogHandle {
     }
   }
 
-  // Move-only
   DialogHandle(DialogHandle&& other) noexcept : vt_(other.vt_), ctx_(other.ctx_), owned_(other.owned_) {
     other.vt_ = nullptr;
     other.ctx_ = nullptr;
@@ -54,58 +53,49 @@ class DialogHandle {
   DialogHandle(const DialogHandle&) = delete;
   DialogHandle& operator=(const DialogHandle&) = delete;
 
-  // --- Queries — return copied strings ---
-
+  // --- Queries ---
   [[nodiscard]] std::string manifest() const {
     return safeString(vt_->get_manifest(ctx_));
   }
-
   [[nodiscard]] std::string ui_content() const {
     return safeString(vt_->get_ui_content(ctx_));
   }
-
   [[nodiscard]] std::string widget_data() const {
     return safeString(vt_->get_widget_data(ctx_));
   }
 
-  // --- Events — return true if host should re-read widget_data() ---
-
+  // --- Events (fallible — errors swallowed here; callers that need detail call vtable directly) ---
   [[nodiscard]] bool sendEvent(std::string_view widget_name, std::string_view event_json) {
-    return vt_->on_widget_event(ctx_, std::string(widget_name).c_str(), std::string(event_json).c_str());
+    return vt_->on_widget_event(ctx_, std::string(widget_name).c_str(), std::string(event_json).c_str(), nullptr);
   }
 
   [[nodiscard]] bool tick() {
-    return vt_->on_tick(ctx_);
+    return vt_->on_tick(ctx_, nullptr);
   }
 
   // --- Dialog result ---
-
   void accept(std::string_view final_state_json) {
     vt_->on_accepted(ctx_, std::string(final_state_json).c_str());
   }
-
   void reject() {
     vt_->on_rejected(ctx_);
   }
 
   // --- Config persistence ---
-
   [[nodiscard]] std::string save_config() const {
-    return safeString(vt_->save_config(ctx_));
+    PJ_string_view_t sv{};
+    if (!vt_->save_config(ctx_, &sv, nullptr)) {
+      return std::string();
+    }
+    return sv.data == nullptr ? std::string() : std::string(sv.data, sv.size);
   }
 
   [[nodiscard]] bool load_config(std::string_view config_json) {
-    return vt_->load_config(ctx_, std::string(config_json).c_str());
-  }
-
-  // --- Error — returns "" if no error ---
-
-  [[nodiscard]] std::string lastError() const {
-    return safeString(vt_->get_last_error(ctx_));
+    PJ_string_view_t sv{config_json.data(), config_json.size()};
+    return vt_->load_config(ctx_, sv, nullptr);
   }
 
   // --- Escape hatch ---
-
   [[nodiscard]] const PJ_dialog_vtable_t* vtable() const {
     return vt_;
   }

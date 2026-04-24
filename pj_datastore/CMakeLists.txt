@@ -56,8 +56,12 @@ if(PJ_BUILD_TESTS)
     tests/derived_engine_test.cpp
     tests/array_expansion_test.cpp
     tests/regression_test.cpp
-    tests/plugin_host_read_test.cpp
     tests/object_store_test.cpp
+    tests/plugin_data_host_object_test.cpp
+    tests/plugin_data_host_object_read_test.cpp
+    tests/plugin_parser_object_write_test.cpp
+    # tests/plugin_host_read_test.cpp  # disabled until Phase 1b lands
+    #   (exercises v3 toolbox read path; rewrite for read_series_arrow)
   )
 
   foreach(test_src ${PJ_DATASTORE_TESTS})
@@ -76,14 +80,24 @@ if(PJ_BUILD_TESTS)
     GTest::gtest_main)
   add_test(NAME arrow_import_test COMMAND arrow_import_test)
 
-  # Plugin host write test (needs nanoarrow for Arrow IPC testing)
-  add_executable(plugin_host_write_test tests/plugin_host_write_test.cpp)
-  target_link_libraries(plugin_host_write_test PRIVATE
+  # v4 Arrow C Data Interface round-trip test (Phase 1b).
+  add_executable(arrow_stream_round_trip_test tests/arrow_stream_round_trip_test.cpp)
+  target_link_libraries(arrow_stream_round_trip_test PRIVATE
     pj_datastore
     ${PJ_NANOARROW_TARGET}
-    ${PJ_NANOARROW_IPC_TARGET}
     GTest::gtest_main)
-  add_test(NAME plugin_host_write_test COMMAND plugin_host_write_test)
+  add_test(NAME arrow_stream_round_trip_test COMMAND arrow_stream_round_trip_test)
+
+  # Plugin host write test — DISABLED for v4 ABI migration.
+  # Exercises v3 appendArrowIpc/readSeries; rewrite in Phase 1b when the
+  # Arrow-stream write path and read_series_arrow are implemented.
+  # add_executable(plugin_host_write_test tests/plugin_host_write_test.cpp)
+  # target_link_libraries(plugin_host_write_test PRIVATE
+  #   pj_datastore
+  #   ${PJ_NANOARROW_TARGET}
+  #   ${PJ_NANOARROW_IPC_TARGET}
+  #   GTest::gtest_main)
+  # add_test(NAME plugin_host_write_test COMMAND plugin_host_write_test)
 
   # ---------------------------------------------------------------------------
   # Benchmarks

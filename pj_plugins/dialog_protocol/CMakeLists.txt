@@ -7,12 +7,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # --- Header-only interface libraries ---
 
-# Pure C ABI header (no deps)
+# Pure C ABI header (depends on pj_base for PJ_error_t, PJ_string_view_t)
 add_library(pj_dialog_protocol INTERFACE)
 target_include_directories(pj_dialog_protocol INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
+target_link_libraries(pj_dialog_protocol INTERFACE pj_base)
 
 # C++ SDK (adds nlohmann/json for widget_data/widget_event)
 find_package(nlohmann_json REQUIRED)

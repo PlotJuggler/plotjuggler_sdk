@@ -22,7 +22,7 @@
 #include <pj_plugins/host_qt/widget_binding.hpp>
 
 // Defined in mock_dialog.cpp, linked statically
-extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
+extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept;
 
 // ==========================================================================
 // Widget Binding Tests — programmatic widgets, no QUiLoader needed

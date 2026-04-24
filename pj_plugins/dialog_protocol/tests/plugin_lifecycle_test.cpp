@@ -7,7 +7,7 @@
 #include <string>
 
 // Defined in mock_dialog.cpp, linked statically
-extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
+extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept;
 
 class PluginLifecycleTest : public ::testing::Test {
  protected:
@@ -51,7 +51,6 @@ TEST_F(PluginLifecycleTest, AllFunctionPointersNonNull) {
   EXPECT_NE(vt_->on_rejected, nullptr);
   EXPECT_NE(vt_->save_config, nullptr);
   EXPECT_NE(vt_->load_config, nullptr);
-  EXPECT_NE(vt_->get_last_error, nullptr);
 }
 
 // --- Manifest ---
@@ -107,7 +106,7 @@ TEST_F(PluginLifecycleTest, WidgetDataPointerValidUntilNextCall) {
 // --- Widget Events ---
 
 TEST_F(PluginLifecycleTest, OnWidgetEventTextChanged) {
-  bool refresh = vt_->on_widget_event(ctx_, "name_input", R"({"text": "my_source"})");
+  bool refresh = vt_->on_widget_event(ctx_, "name_input", R"({"text": "my_source"})", nullptr);
   EXPECT_TRUE(refresh);
   // Verify the change took effect
   auto j = nlohmann::json::parse(vt_->get_widget_data(ctx_));
@@ -115,7 +114,7 @@ TEST_F(PluginLifecycleTest, OnWidgetEventTextChanged) {
 }
 
 TEST_F(PluginLifecycleTest, OnWidgetEventUnknownWidget) {
-  bool refresh = vt_->on_widget_event(ctx_, "nonexistent_widget", R"({"text": "x"})");
+  bool refresh = vt_->on_widget_event(ctx_, "nonexistent_widget", R"({"text": "x"})", nullptr);
   EXPECT_FALSE(refresh);
 }
 
@@ -123,26 +122,28 @@ TEST_F(PluginLifecycleTest, OnWidgetEventUnknownWidget) {
 
 TEST_F(PluginLifecycleTest, OnTickInitiallyFalse) {
   // mock_dialog has no tick behavior — always returns false
-  EXPECT_FALSE(vt_->on_tick(ctx_));
+  EXPECT_FALSE(vt_->on_tick(ctx_, nullptr));
 }
 
 // --- Config round-trip ---
 
 TEST_F(PluginLifecycleTest, SaveLoadConfigRoundTrip) {
   // Set some state
-  vt_->on_widget_event(ctx_, "name_input", R"({"text": "test_name"})");
-  vt_->on_widget_event(ctx_, "count_input", R"({"value": 42})");
-  vt_->on_widget_event(ctx_, "verbose_check", R"({"checked": true})");
+  vt_->on_widget_event(ctx_, "name_input", R"({"text": "test_name"})", nullptr);
+  vt_->on_widget_event(ctx_, "count_input", R"({"value": 42})", nullptr);
+  vt_->on_widget_event(ctx_, "verbose_check", R"({"checked": true})", nullptr);
 
   // Save config
-  const char* config = vt_->save_config(ctx_);
-  ASSERT_NE(config, nullptr);
-  std::string saved_config(config);
+  PJ_string_view_t saved_sv{};
+  ASSERT_TRUE(vt_->save_config(ctx_, &saved_sv, nullptr));
+  ASSERT_NE(saved_sv.data, nullptr);
+  std::string saved_config(saved_sv.data, saved_sv.size);
 
   // Create a new context and load the config
   void* ctx2 = vt_->create();
   ASSERT_NE(ctx2, nullptr);
-  bool loaded = vt_->load_config(ctx2, saved_config.c_str());
+  PJ_string_view_t load_sv{saved_config.data(), saved_config.size()};
+  bool loaded = vt_->load_config(ctx2, load_sv, nullptr);
   EXPECT_TRUE(loaded);
 
   // Verify the state was restored
@@ -154,22 +155,19 @@ TEST_F(PluginLifecycleTest, SaveLoadConfigRoundTrip) {
   vt_->destroy(ctx2);
 }
 
-// --- Error reporting ---
-
-TEST_F(PluginLifecycleTest, NoErrorInitially) {
-  const char* err = vt_->get_last_error(ctx_);
-  EXPECT_EQ(err, nullptr);
-}
-
 TEST_F(PluginLifecycleTest, LoadConfigWithInvalidJson) {
-  bool loaded = vt_->load_config(ctx_, "not valid json");
+  const char kBad[] = "not valid json";
+  PJ_string_view_t sv{kBad, sizeof(kBad) - 1};
+  bool loaded = vt_->load_config(ctx_, sv, nullptr);
   EXPECT_FALSE(loaded);
 }
 
 TEST_F(PluginLifecycleTest, LoadConfigWithWrongTypes) {
   // name as int instead of string — should not crash, should still return true
   // (type-safe loading just skips invalid fields)
-  bool loaded = vt_->load_config(ctx_, R"({"name": 42, "count": "not_int"})");
+  const char kJson[] = R"({"name": 42, "count": "not_int"})";
+  PJ_string_view_t sv{kJson, sizeof(kJson) - 1};
+  bool loaded = vt_->load_config(ctx_, sv, nullptr);
   EXPECT_TRUE(loaded);
   // Verify name was NOT overwritten (was string, got int — skipped)
   auto j = nlohmann::json::parse(vt_->get_widget_data(ctx_));

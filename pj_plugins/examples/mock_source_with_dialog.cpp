@@ -326,8 +326,8 @@ class MockStreamerDialog : public PJ::DialogPluginTyped {
 /// DataSource class — business logic, owns the dialog as a member.
 class MockStreamerSource : public PJ::StreamSourceBase {
  public:
-  void* dialogContext() override {
-    return &dialog_;
+  PJ_borrowed_dialog_t getDialog() override {
+    return PJ::borrowDialog(dialog_);
   }
 
   uint64_t extraCapabilities() const override {

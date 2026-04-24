@@ -45,9 +45,17 @@ if(PJ_BUILD_TESTS)
     tests/expected_test.cpp
     tests/plugin_data_api_test.cpp
     tests/data_source_protocol_test.cpp
-    tests/data_source_plugin_base_test.cpp
-    tests/message_parser_plugin_base_test.cpp
+    # TODO: data_source_plugin_base_test.cpp and
+    # message_parser_plugin_base_test.cpp exercised old bind_write_host /
+    # bind_runtime_host slots that were already removed by the time the
+    # service-registry API landed. Coverage for those paths is provided
+    # today by the *_library_test.cpp integration tests. The old unit
+    # tests can either be rewritten to target the v4 service-registry
+    # flow or deleted outright.
+    tests/abi_layout_sentinels_test.cpp
     tests/platform_test.cpp
+    tests/arrow_holders_test.cpp
+    tests/media_metadata_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})

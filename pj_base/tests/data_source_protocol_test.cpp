@@ -49,7 +49,7 @@ TEST(DataSourceProtocolTest, ParserBindingRequestStoresViewsWithoutOwnership) {
 
 TEST(DataSourceProtocolTest, RuntimeHostVtableHasIsStopRequested) {
   PJ_data_source_runtime_host_vtable_t vtable{};
-  vtable.is_stop_requested = [](void*) -> bool { return true; };
+  vtable.is_stop_requested = [](void*) noexcept -> bool { return true; };
   EXPECT_TRUE(vtable.is_stop_requested(nullptr));
 }
 

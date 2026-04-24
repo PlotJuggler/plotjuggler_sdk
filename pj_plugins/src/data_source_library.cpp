@@ -37,6 +37,11 @@ Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
     return unexpected(handle.error());
   }
 
+  if (auto abi = detail::checkPluginAbiVersion(*handle); !abi) {
+    detail::closeLibraryHandle(*handle);
+    return unexpected(abi.error());
+  }
+
   auto sym = detail::resolveSymbol(*handle, "PJ_get_data_source_vtable");
   if (!sym) {
     detail::closeLibraryHandle(*handle);
@@ -53,9 +58,11 @@ Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
     detail::closeLibraryHandle(*handle);
     return unexpected(std::string("DataSource protocol version mismatch"));
   }
-  if (vtable->struct_size < sizeof(PJ_data_source_vtable_t)) {
+  // Use MIN_VTABLE_SIZE (pinned at v3.0), NOT sizeof() which grows per host
+  // release and would falsely reject plugins compiled against older headers.
+  if (vtable->struct_size < PJ_DATA_SOURCE_MIN_VTABLE_SIZE) {
     detail::closeLibraryHandle(*handle);
-    return unexpected(std::string("DataSource vtable is smaller than expected"));
+    return unexpected(std::string("DataSource vtable smaller than v3.0 baseline"));
   }
 
   return DataSourceLibrary(*handle, vtable, std::string(path));

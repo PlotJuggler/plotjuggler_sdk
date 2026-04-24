@@ -113,7 +113,8 @@ void MarketplaceWindow::setupSignals() {
           ui_->progress_bar_->setVisible(false);
           populateCards();
           setStatus("Extension staged — will be active after restart");
-   });   
+          processInstallQueue();
+   });
 
 
   connect(ext_mgr_, &ExtensionManager::uninstallPendingRestart, this,

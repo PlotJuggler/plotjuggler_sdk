@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -10,6 +11,7 @@
 #endif
 
 #include "pj_base/expected.hpp"
+#include "pj_base/plugin_data_api.h"
 
 namespace PJ::detail {
 
@@ -27,15 +29,22 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   }
   return reinterpret_cast<void*>(module);
 #else
-  // RTLD_DEEPBIND prevents symbol conflicts (e.g. Conan OpenSSL vs system libcrypto)
-  // but is a glibc extension — not available on macOS or musl.
-  // TODO: consider a Platform abstraction class (like pj_marketplace/PlatformUtils)
-  //       to centralize OS-specific behavior.
+  // RTLD_NOW  — resolve all symbols now; fail-fast on missing ones.
+  // RTLD_LOCAL — keep plugin symbols out of the global symbol pool; each
+  //              plugin resolves its own copies of bundled statics in
+  //              isolation from other plugins and from the host.
+  //
+  // Historical note: we USED to also set RTLD_DEEPBIND on glibc to force
+  // the plugin's own symbol scope ahead of the global one (Conan OpenSSL
+  // vs system libcrypto, etc.). That flag is a documented trap — it
+  // breaks LD_PRELOAD'd malloc interposition, which makes every plugin
+  // dlopen fail under AddressSanitizer (and similarly for jemalloc /
+  // tcmalloc interposition in production). Plugin-local symbol isolation
+  // is instead achieved by building plugins with -fvisibility=hidden and
+  // explicitly marking only the boot-level exports
+  // (pj_plugin_abi_version + PJ_get_<family>_vtable) as default visible.
+  // See cmake/PjPluginManifest.cmake for the plugin build flags.
   int flags = RTLD_NOW | RTLD_LOCAL;
-  // RTLD_DEEPBIND is incompatible with AddressSanitizer runtime.
-#if defined(__linux__) && defined(RTLD_DEEPBIND) && !defined(PJ_ASAN_ACTIVE)
-  flags |= RTLD_DEEPBIND;
-#endif
   void* handle = dlopen(std::string(path).c_str(), flags);
   if (handle == nullptr) {
     return unexpected(std::string(dlerror()));
@@ -64,6 +73,21 @@ inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
   }
   return symbol;
 #endif
+}
+
+/// Verify the plugin exports `pj_plugin_abi_version` and its value equals
+/// PJ_ABI_VERSION. Must be called BEFORE the family vtable is fetched — the
+/// vtable layout is only meaningful once the boot-level ABI matches.
+inline Expected<void> checkPluginAbiVersion(void* handle) {
+  auto sym = resolveSymbol(handle, "pj_plugin_abi_version");
+  if (!sym) {
+    return unexpected(std::string("plugin missing pj_plugin_abi_version symbol"));
+  }
+  const auto* plugin_abi = static_cast<const uint32_t*>(*sym);
+  if (plugin_abi == nullptr || *plugin_abi != PJ_ABI_VERSION) {
+    return unexpected(std::string("plugin pj_plugin_abi_version mismatch (expected 4)"));
+  }
+  return {};
 }
 
 inline void closeLibraryHandle(void* handle) {
