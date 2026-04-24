@@ -39,6 +39,18 @@ function(pj_emit_plugin_manifest TARGET)
     message(FATAL_ERROR "pj_emit_plugin_manifest(${TARGET}): FAMILY is required")
   endif()
 
+  # Hide all symbols by default. The only two that must remain visible are
+  # pj_plugin_abi_version and PJ_get_<family>_vtable — both are explicitly
+  # annotated with visibility("default") by the PJ_*_PLUGIN macros in pj_base.
+  # This is the replacement for RTLD_DEEPBIND: statically bundled deps (e.g.
+  # OpenSSL inside paho-mqtt) cannot conflict with the host's shared libs
+  # because their symbols are hidden and never added to the global namespace.
+  set_target_properties(${TARGET} PROPERTIES
+    CXX_VISIBILITY_PRESET   hidden
+    C_VISIBILITY_PRESET     hidden
+    VISIBILITY_INLINES_HIDDEN ON
+  )
+
   set(_valid_families data_source message_parser toolbox dialog)
   list(FIND _valid_families "${ARG_FAMILY}" _family_idx)
   if(_family_idx LESS 0)

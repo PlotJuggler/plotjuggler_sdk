@@ -40,10 +40,12 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // breaks LD_PRELOAD'd malloc interposition, which makes every plugin
   // dlopen fail under AddressSanitizer (and similarly for jemalloc /
   // tcmalloc interposition in production). Plugin-local symbol isolation
-  // is instead achieved by building plugins with -fvisibility=hidden and
-  // explicitly marking only the boot-level exports
-  // (pj_plugin_abi_version + PJ_get_<family>_vtable) as default visible.
-  // See cmake/PjPluginManifest.cmake for the plugin build flags.
+  // is achieved by building plugins with -fvisibility=hidden (enforced by
+  // pj_emit_plugin_manifest in cmake/PjPluginManifest.cmake), marking only
+  // pj_plugin_abi_version + PJ_get_<family>_vtable as default visible via
+  // the PJ_*_PLUGIN macros. Bundled static deps (e.g. OpenSSL inside
+  // paho-mqtt) cannot conflict with the host because their symbols are
+  // hidden and RTLD_LOCAL keeps them out of the global namespace.
   int flags = RTLD_NOW | RTLD_LOCAL;
   void* handle = dlopen(std::string(path).c_str(), flags);
   if (handle == nullptr) {
