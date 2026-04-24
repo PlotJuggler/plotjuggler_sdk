@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTimer>
@@ -70,9 +71,12 @@ class MainWindow : public QMainWindow {
   QTreeView* tree_view_ = nullptr;
   ChartPanel* chart_panel_ = nullptr;
   QSpinBox* buffer_spinbox_ = nullptr;
+  QPushButton* btn_marketplace_ = nullptr;
+  QMenu* tools_menu_ = nullptr;
   QTimer refresh_timer_;
   int refresh_tick_ = 0;
   bool streaming_active_ = false;
+  int open_toolbox_dialogs_ = 0;
 
   std::vector<std::unique_ptr<ToolboxSession>> toolbox_sessions_;
 };

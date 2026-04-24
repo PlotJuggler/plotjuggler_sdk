@@ -40,6 +40,8 @@ class ToolboxSession : public QObject {
 
  signals:
   void dataChanged();
+  void dialogOpened();
+  void dialogClosed();
 
  public:
   // Public so the file-scope static vtable lambdas can cast to it.

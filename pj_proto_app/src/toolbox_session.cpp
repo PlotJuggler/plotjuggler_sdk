@@ -103,8 +103,10 @@ bool ToolboxSession::runDialog(QWidget* parent) {
   PJ::DialogEngine dialog_engine(std::move(dialog_handle), config);
 
   dialog_running_ = true;
+  emit dialogOpened();
   auto result = dialog_engine.showDialog(parent);
   dialog_running_ = false;
+  emit dialogClosed();
 
   // Always persist the plugin's config after the dialog closes, regardless of
   // whether the user clicked OK or Close/X. Toolbox dialogs (unlike file-open
