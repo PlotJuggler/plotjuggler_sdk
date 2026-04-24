@@ -258,7 +258,7 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
   }                                                                                                       \
   namespace PJ {                                                                                          \
   template <>                                                                                             \
-  inline const PJ_dialog_vtable_t* dialogVtableFor<ClassName>() noexcept {                                \
+  [[maybe_unused]] inline const PJ_dialog_vtable_t* dialogVtableFor<ClassName>() noexcept {               \
     return PJ_get_dialog_vtable();                                                                        \
   }                                                                                                       \
   }
