@@ -1,15 +1,14 @@
 /**
  * @file message_parser_handle.hpp
- * @brief RAII wrapper around a single MessageParser plugin instance.
- *
- * Obtained from MessageParserLibrary::createHandle(). Owns the plugin context
- * and destroys it on scope exit. Move-only; not copyable.
+ * @brief RAII wrapper around a single MessageParser plugin instance (v4).
  */
 #pragma once
 
 #include <pj_base/message_parser_protocol.h>
 
 #include <cassert>
+#include <pj_base/expected.hpp>
+#include <pj_base/sdk/data_source_host_views.hpp>
 #include <pj_base/span.hpp>
 #include <pj_base/types.hpp>
 #include <string>
@@ -18,12 +17,7 @@
 
 namespace PJ {
 
-/**
- * RAII handle owning a MessageParser plugin instance.
- *
- * Each method delegates to the corresponding vtable function pointer.
- * The destructor calls vt_->destroy(ctx_).
- */
+/// RAII handle owning a MessageParser plugin instance.
 class MessageParserHandle {
  public:
   explicit MessageParserHandle(const PJ_message_parser_vtable_t* vt) : vt_(vt) {
@@ -60,34 +54,62 @@ class MessageParserHandle {
   }
 
   [[nodiscard]] std::string manifest() const {
-    return safeString(vt_->manifest_json);
+    return vt_->manifest_json != nullptr ? std::string(vt_->manifest_json) : std::string();
   }
 
-  [[nodiscard]] bool bindWriteHost(PJ_parser_write_host_t write_host) {
-    return vt_->bind_write_host(ctx_, write_host);
+  [[nodiscard]] Status bind(PJ_service_registry_t registry) {
+    PJ_error_t err{};
+    if (!vt_->bind(ctx_, registry, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
-  [[nodiscard]] bool bindSchema(std::string_view type_name, Span<const uint8_t> schema) {
-    PJ_string_view_t tn = {type_name.data(), type_name.size()};
-    PJ_bytes_view_t sc = {schema.data(), schema.size()};
-    return vt_->bind_schema(ctx_, tn, sc);
+  [[nodiscard]] Status bindSchema(std::string_view type_name, Span<const uint8_t> schema) {
+    PJ_string_view_t tn{type_name.data(), type_name.size()};
+    PJ_bytes_view_t sc{schema.data(), schema.size()};
+    PJ_error_t err{};
+    if (!vt_->bind_schema(ctx_, tn, sc, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
-  [[nodiscard]] std::string saveConfig() const {
-    return safeString(vt_->save_config(ctx_));
+  [[nodiscard]] Status saveConfig(std::string& out_json) {
+    PJ_string_view_t sv{};
+    PJ_error_t err{};
+    if (!vt_->save_config(ctx_, &sv, &err)) {
+      return unexpected(errorToString(err));
+    }
+    out_json.assign(sv.data == nullptr ? "" : sv.data, sv.size);
+    return okStatus();
   }
 
-  [[nodiscard]] bool loadConfig(std::string_view config_json) {
-    return vt_->load_config(ctx_, std::string(config_json).c_str());
+  [[nodiscard]] Status loadConfig(std::string_view config_json) {
+    PJ_string_view_t sv{config_json.data(), config_json.size()};
+    PJ_error_t err{};
+    if (!vt_->load_config(ctx_, sv, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
-  [[nodiscard]] bool parse(Timestamp timestamp_ns, Span<const uint8_t> payload) {
-    PJ_bytes_view_t bytes = {payload.data(), payload.size()};
-    return vt_->parse(ctx_, timestamp_ns, bytes);
+  [[nodiscard]] Status parse(Timestamp timestamp_ns, Span<const uint8_t> payload) {
+    PJ_bytes_view_t bytes{payload.data(), payload.size()};
+    PJ_error_t err{};
+    if (!vt_->parse(ctx_, timestamp_ns, bytes, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
-  [[nodiscard]] std::string lastError() const {
-    return safeString(vt_->get_last_error(ctx_));
+  /// Query a plugin-exposed extension by reverse-DNS id. Tail-slot gated.
+  [[nodiscard]] const void* getPluginExtension(std::string_view id) const {
+    if (!PJ_HAS_TAIL_SLOT(PJ_message_parser_vtable_t, vt_, get_plugin_extension)) {
+      return nullptr;
+    }
+    PJ_string_view_t sv{id.data(), id.size()};
+    return vt_->get_plugin_extension(ctx_, sv);
   }
 
   [[nodiscard]] const PJ_message_parser_vtable_t* vtable() const {
@@ -101,10 +123,6 @@ class MessageParserHandle {
  private:
   const PJ_message_parser_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
-
-  static std::string safeString(const char* str) {
-    return str != nullptr ? std::string(str) : std::string();
-  }
 };
 
 }  // namespace PJ

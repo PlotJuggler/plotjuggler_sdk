@@ -16,14 +16,18 @@
 #include <utility>
 #include <vector>
 
+#include "nanoarrow/nanoarrow.h"
+#include "nanoarrow/nanoarrow.hpp"
 #include "pj_base/dataset.hpp"
 #include "pj_base/plugin_data_api.h"
+#include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_datastore/arrow_import.hpp"
 #include "pj_datastore/chunk.hpp"
 #include "pj_datastore/column_buffer.hpp"
 #include "pj_datastore/encoding.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_datastore/object_store.hpp"
 #include "pj_datastore/topic_storage.hpp"
 #include "pj_datastore/writer.hpp"
 
@@ -36,10 +40,6 @@ using FieldHandle = PJ_field_handle_t;
 
 [[nodiscard]] std::string_view toStringView(PJ_string_view_t view) {
   return std::string_view(view.data == nullptr ? "" : view.data, view.size);
-}
-
-[[nodiscard]] Span<const uint8_t> toSpan(PJ_bytes_view_t view) {
-  return Span<const uint8_t>(view.data, view.size);
 }
 
 [[nodiscard]] Expected<PrimitiveType> fromAbiType(PJ_primitive_type_t type) {
@@ -568,13 +568,24 @@ struct WriteCore {
     return true;
   }
 
-  [[nodiscard]] bool appendArrowIpc(TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
+  /// Ingest a whole Arrow C Data Interface stream into a topic.
+  ///
+  /// Ownership contract: callers pass a producer-owned @p stream. The caller
+  /// decides whether to release after this call — this method does NOT
+  /// call stream->release. That lets the outermost ABI trampoline enforce
+  /// the "success releases, failure retains" rule uniformly.
+  [[nodiscard]] bool appendArrowStream(
+      TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column) {
+    if (stream == nullptr) {
+      setError("append_arrow_stream: null stream");
+      return false;
+    }
     if (engine_.getTopicStorage(topic.id) == nullptr) {
       setError(fmt::format("topic {} not found", topic.id));
       return false;
     }
 
-    auto schema_or = arrow_import::schemaFromIpc(toSpan(ipc_stream));
+    auto schema_or = arrow_import::schemaFromArrowStream(stream);
     if (!schema_or.has_value()) {
       setError(schema_or.error());
       return false;
@@ -584,7 +595,7 @@ struct WriteCore {
     int ts_arrow_col = -1;
     std::vector<arrow_import::ArrowColumnMapping> mappings;
     for (const auto& mapping : schema_or->second) {
-      if (mapping.field_name == timestamp_name) {
+      if (!timestamp_name.empty() && mapping.field_name == timestamp_name) {
         ts_arrow_col = mapping.arrow_column_index;
         continue;
       }
@@ -598,12 +609,12 @@ struct WriteCore {
       mappings.push_back(std::move(adjusted));
     }
 
-    if (ts_arrow_col < 0) {
-      setError(fmt::format("timestamp column '{}' not found in IPC schema", timestamp_name));
+    if (!timestamp_name.empty() && ts_arrow_col < 0) {
+      setError(fmt::format("timestamp column '{}' not found in stream schema", timestamp_name));
       return false;
     }
 
-    auto status = arrow_import::importIpcStream(writer_, topic.id, toSpan(ipc_stream), mappings, ts_arrow_col);
+    auto status = arrow_import::importArrowStream(writer_, topic.id, stream, mappings, ts_arrow_col);
     if (!status.has_value()) {
       setError(status.error());
       return false;
@@ -627,30 +638,8 @@ struct CatalogSnapshotState {
   std::vector<PJ_field_info_t> fields;
 };
 
-struct MaterializedSeriesState {
-  std::vector<Timestamp> timestamps;
-  std::vector<uint8_t> validity_bits;
-  std::vector<float> float32_values;
-  std::vector<double> float64_values;
-  std::vector<int8_t> int8_values;
-  std::vector<int16_t> int16_values;
-  std::vector<int32_t> int32_values;
-  std::vector<int64_t> int64_values;
-  std::vector<uint8_t> uint8_values;
-  std::vector<uint16_t> uint16_values;
-  std::vector<uint32_t> uint32_values;
-  std::vector<uint64_t> uint64_values;
-  std::vector<uint8_t> bool_values;
-  std::vector<uint32_t> string_offsets;
-  std::vector<char> string_bytes;
-};
-
 void releaseCatalogSnapshot(void* ctx) {
   delete static_cast<CatalogSnapshotState*>(ctx);
-}
-
-void releaseMaterializedSeries(void* ctx) {
-  delete static_cast<MaterializedSeriesState*>(ctx);
 }
 
 PJ_string_view_t storeString(CatalogSnapshotState& state, std::string_view value) {
@@ -728,7 +717,17 @@ struct ToolboxCore {
     return true;
   }
 
-  [[nodiscard]] bool readSeries(FieldHandle field, PJ_materialized_series_t* out_series) {
+  // v4: materialise one field's time series into host-owned Arrow structs.
+  // Output is a struct array with 2 columns: ["timestamp" (int64),
+  // <field_name> (typed)]. The caller must invoke out_schema->release and
+  // out_array->release when done; release callbacks are set by nanoarrow
+  // and free all allocated buffers.
+  [[nodiscard]] bool readSeriesArrow(FieldHandle field, struct ArrowSchema* out_schema, struct ArrowArray* out_array) {
+    if (out_schema == nullptr || out_array == nullptr) {
+      write.setError("readSeriesArrow: out_schema and out_array must be non-null");
+      return false;
+    }
+
     const auto* storage = engine_.getTopicStorage(field.topic.id);
     if (storage == nullptr) {
       write.setError(fmt::format("topic {} not found", field.topic.id));
@@ -741,68 +740,72 @@ struct ToolboxCore {
       return false;
     }
 
-    auto* state = new MaterializedSeriesState{};
-    const auto& chunks = storage->sealedChunks();
-    std::size_t total_rows = 0;
-    for (const auto& chunk : chunks) {
-      for (const auto& col : chunk.columns) {
-        if (col.descriptor->field_id == field.id) {
-          total_rows += chunk.stats.row_count;
-          break;
-        }
+    const ArrowType value_arrow_type = [&]() {
+      switch (desc->logical_type) {
+        case PrimitiveType::kFloat32:
+          return NANOARROW_TYPE_FLOAT;
+        case PrimitiveType::kFloat64:
+          return NANOARROW_TYPE_DOUBLE;
+        case PrimitiveType::kInt8:
+          return NANOARROW_TYPE_INT8;
+        case PrimitiveType::kInt16:
+          return NANOARROW_TYPE_INT16;
+        case PrimitiveType::kInt32:
+          return NANOARROW_TYPE_INT32;
+        case PrimitiveType::kInt64:
+          return NANOARROW_TYPE_INT64;
+        case PrimitiveType::kUint8:
+          return NANOARROW_TYPE_UINT8;
+        case PrimitiveType::kUint16:
+          return NANOARROW_TYPE_UINT16;
+        case PrimitiveType::kUint32:
+          return NANOARROW_TYPE_UINT32;
+        case PrimitiveType::kUint64:
+          return NANOARROW_TYPE_UINT64;
+        case PrimitiveType::kBool:
+          return NANOARROW_TYPE_BOOL;
+        case PrimitiveType::kString:
+          return NANOARROW_TYPE_STRING;
+        case PrimitiveType::kUnspecified:
+          return NANOARROW_TYPE_NA;
       }
+      return NANOARROW_TYPE_NA;
+    }();
+
+    nanoarrow::UniqueSchema schema;
+    ArrowSchemaInit(schema.get());
+    if (ArrowSchemaSetTypeStruct(schema.get(), 2) != NANOARROW_OK) {
+      write.setError("readSeriesArrow: ArrowSchemaSetTypeStruct failed");
+      return false;
+    }
+    ArrowSchemaInit(schema->children[0]);
+    if (ArrowSchemaSetType(schema->children[0], NANOARROW_TYPE_INT64) != NANOARROW_OK ||
+        ArrowSchemaSetName(schema->children[0], "timestamp") != NANOARROW_OK) {
+      write.setError("readSeriesArrow: failed to set timestamp child schema");
+      return false;
+    }
+    ArrowSchemaInit(schema->children[1]);
+    if (ArrowSchemaSetType(schema->children[1], value_arrow_type) != NANOARROW_OK ||
+        ArrowSchemaSetName(schema->children[1], desc->field_path.c_str()) != NANOARROW_OK) {
+      write.setError("readSeriesArrow: failed to set value child schema");
+      return false;
     }
 
-    state->timestamps.reserve(total_rows);
-    state->validity_bits.assign((total_rows + 7) / 8, 0xFF);
-
-    auto mark_null = [&](std::size_t row_index) {
-      state->validity_bits[row_index / 8] &= static_cast<uint8_t>(~(1U << (row_index % 8)));
-    };
-
-    std::size_t row_index = 0;
-    switch (desc->logical_type) {
-      case PrimitiveType::kFloat32:
-        state->float32_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kFloat64:
-        state->float64_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt8:
-        state->int8_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt16:
-        state->int16_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt32:
-        state->int32_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt64:
-        state->int64_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint8:
-        state->uint8_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint16:
-        state->uint16_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint32:
-        state->uint32_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint64:
-        state->uint64_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kBool:
-        state->bool_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kString:
-        state->string_offsets.push_back(0);
-        break;
-      case PrimitiveType::kUnspecified:
-        break;
+    nanoarrow::UniqueArray array;
+    ArrowError arrow_err;
+    if (ArrowArrayInitFromSchema(array.get(), schema.get(), &arrow_err) != NANOARROW_OK) {
+      write.setError(std::string("readSeriesArrow: ArrowArrayInitFromSchema failed: ") + arrow_err.message);
+      return false;
+    }
+    if (ArrowArrayStartAppending(array.get()) != NANOARROW_OK) {
+      write.setError("readSeriesArrow: ArrowArrayStartAppending failed");
+      return false;
     }
 
-    for (const auto& chunk : chunks) {
+    auto* ts_child = array->children[0];
+    auto* val_child = array->children[1];
+
+    for (const auto& chunk : storage->sealedChunks()) {
       int col_index = -1;
       for (std::size_t i = 0; i < chunk.columns.size(); ++i) {
         if (chunk.columns[i].descriptor->field_id == field.id) {
@@ -813,131 +816,88 @@ struct ToolboxCore {
       if (col_index < 0) {
         continue;
       }
+      const auto col_sz = static_cast<std::size_t>(col_index);
+
       for (uint32_t row = 0; row < chunk.stats.row_count; ++row) {
-        state->timestamps.push_back(chunk.readTimestamp(row));
-        const bool is_null = chunk.isNull(static_cast<std::size_t>(col_index), row);
+        if (ArrowArrayAppendInt(ts_child, chunk.readTimestamp(row)) != NANOARROW_OK) {
+          write.setError("readSeriesArrow: timestamp append failed");
+          return false;
+        }
+
+        const bool is_null = chunk.isNull(col_sz, row);
         if (is_null) {
-          mark_null(row_index);
-        }
-        switch (desc->logical_type) {
-          case PrimitiveType::kFloat32:
-            state->float32_values.push_back(
-                is_null ? 0.0F : decodeNumericExact<float>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kFloat64:
-            state->float64_values.push_back(
-                is_null ? 0.0 : decodeNumericExact<double>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt8:
-            state->int8_values.push_back(
-                is_null ? 0 : decodeNumericExact<int8_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt16:
-            state->int16_values.push_back(
-                is_null ? 0 : decodeNumericExact<int16_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt32:
-            state->int32_values.push_back(
-                is_null ? 0 : decodeNumericExact<int32_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt64:
-            state->int64_values.push_back(
-                is_null ? 0 : decodeNumericExact<int64_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint8:
-            state->uint8_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint8_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint16:
-            state->uint16_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint16_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint32:
-            state->uint32_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint32_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint64:
-            state->uint64_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint64_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kBool:
-            state->bool_values.push_back(
-                is_null ? 0 : static_cast<uint8_t>(chunk.readBool(static_cast<std::size_t>(col_index), row)));
-            break;
-          case PrimitiveType::kString: {
-            if (!is_null) {
-              const auto text = chunk.readString(static_cast<std::size_t>(col_index), row);
-              state->string_bytes.insert(state->string_bytes.end(), text.begin(), text.end());
-            }
-            state->string_offsets.push_back(static_cast<uint32_t>(state->string_bytes.size()));
-            break;
+          if (ArrowArrayAppendNull(val_child, 1) != NANOARROW_OK) {
+            write.setError("readSeriesArrow: null append failed");
+            return false;
           }
-          case PrimitiveType::kUnspecified:
-            break;
+        } else {
+          ArrowErrorCode rc = NANOARROW_OK;
+          switch (desc->logical_type) {
+            case PrimitiveType::kFloat32:
+              rc = ArrowArrayAppendDouble(val_child, decodeNumericExact<float>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kFloat64:
+              rc = ArrowArrayAppendDouble(val_child, decodeNumericExact<double>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt8:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int8_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt16:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int16_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt32:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int32_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kInt64:
+              rc = ArrowArrayAppendInt(val_child, decodeNumericExact<int64_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint8:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint8_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint16:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint16_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint32:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint32_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kUint64:
+              rc = ArrowArrayAppendUInt(val_child, decodeNumericExact<uint64_t>(chunk, col_sz, row));
+              break;
+            case PrimitiveType::kBool:
+              rc = ArrowArrayAppendInt(val_child, chunk.readBool(col_sz, row) ? 1 : 0);
+              break;
+            case PrimitiveType::kString: {
+              const auto text = chunk.readString(col_sz, row);
+              const ArrowStringView sv{text.data(), static_cast<int64_t>(text.size())};
+              rc = ArrowArrayAppendString(val_child, sv);
+              break;
+            }
+            case PrimitiveType::kUnspecified:
+              rc = ArrowArrayAppendNull(val_child, 1);
+              break;
+          }
+          if (rc != NANOARROW_OK) {
+            write.setError("readSeriesArrow: value append failed");
+            return false;
+          }
         }
-        ++row_index;
+
+        if (ArrowArrayFinishElement(array.get()) != NANOARROW_OK) {
+          write.setError("readSeriesArrow: ArrowArrayFinishElement failed");
+          return false;
+        }
       }
     }
 
-    *out_series = PJ_materialized_series_t{
-        .source = DataSourceHandle{.id = storage->descriptor().dataset_id},
-        .topic = field.topic,
-        .field = field,
-        .type = static_cast<PJ_primitive_type_t>(desc->logical_type),
-        .timestamps = state->timestamps.data(),
-        .row_count = state->timestamps.size(),
-        .validity_bits = state->validity_bits.data(),
-        .validity_size = state->validity_bits.size(),
-        .values = {},
-        .release_ctx = state,
-        .release = releaseMaterializedSeries,
-    };
-
-    switch (desc->logical_type) {
-      case PrimitiveType::kFloat32:
-        out_series->values.as_float32 = state->float32_values.data();
-        break;
-      case PrimitiveType::kFloat64:
-        out_series->values.as_float64 = state->float64_values.data();
-        break;
-      case PrimitiveType::kInt8:
-        out_series->values.as_int8 = state->int8_values.data();
-        break;
-      case PrimitiveType::kInt16:
-        out_series->values.as_int16 = state->int16_values.data();
-        break;
-      case PrimitiveType::kInt32:
-        out_series->values.as_int32 = state->int32_values.data();
-        break;
-      case PrimitiveType::kInt64:
-        out_series->values.as_int64 = state->int64_values.data();
-        break;
-      case PrimitiveType::kUint8:
-        out_series->values.as_uint8 = state->uint8_values.data();
-        break;
-      case PrimitiveType::kUint16:
-        out_series->values.as_uint16 = state->uint16_values.data();
-        break;
-      case PrimitiveType::kUint32:
-        out_series->values.as_uint32 = state->uint32_values.data();
-        break;
-      case PrimitiveType::kUint64:
-        out_series->values.as_uint64 = state->uint64_values.data();
-        break;
-      case PrimitiveType::kBool:
-        out_series->values.as_bool = state->bool_values.data();
-        break;
-      case PrimitiveType::kString:
-        out_series->values.as_string = PJ_string_series_values_t{
-            .offsets = state->string_offsets.data(),
-            .offset_count = state->string_offsets.size(),
-            .bytes = state->string_bytes.data(),
-            .byte_count = state->string_bytes.size(),
-        };
-        break;
-      case PrimitiveType::kUnspecified:
-        break;
+    if (ArrowArrayFinishBuildingDefault(array.get(), &arrow_err) != NANOARROW_OK) {
+      write.setError(std::string("readSeriesArrow: finish building failed: ") + arrow_err.message);
+      return false;
     }
+
+    // Move schema + array into caller-provided out params (transfers release
+    // callbacks; the UniqueXxx destructors become no-ops).
+    ArrowSchemaMove(schema.get(), out_schema);
+    ArrowArrayMove(array.get(), out_array);
     write.last_error_.clear();
     return true;
   }
@@ -961,132 +921,638 @@ struct DatastoreToolboxHostState {
   ToolboxCore core;
 };
 
-bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.ensureTopic(
-      static_cast<DatastoreSourceWriteHostState*>(ctx)->source, toStringView(topic_name), out_topic);
+struct DatastoreSourceObjectWriteHostState {
+  DatastoreSourceObjectWriteHostState(ObjectStore& s, DatasetId dataset) : store(s), dataset_id(dataset) {}
+  ObjectStore& store;
+  DatasetId dataset_id;
+  std::string last_error;
+
+  void setError(std::string msg) {
+    last_error = std::move(msg);
+  }
+};
+
+struct DatastoreToolboxObjectReadHostState {
+  explicit DatastoreToolboxObjectReadHostState(ObjectStore& s) : store(s) {}
+  ObjectStore& store;
+  std::string last_error;
+
+  void setError(std::string msg) {
+    last_error = std::move(msg);
+  }
+};
+
+struct DatastoreParserObjectWriteHostState {
+  DatastoreParserObjectWriteHostState(ObjectStore& s, ObjectTopicId topic) : store(s), bound_topic(topic) {}
+  ObjectStore& store;
+  ObjectTopicId bound_topic;
+  std::string last_error;
+
+  void setError(std::string msg) {
+    last_error = std::move(msg);
+  }
+};
+
+void propagateError(PJ_error_t* out_error, const char* msg) {
+  sdk::fillError(out_error, 1, "datastore", msg != nullptr ? std::string_view(msg) : std::string_view{});
+}
+
+bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+  if (!impl->core.ensureTopic(impl->source, toStringView(topic_name), out_topic)) {
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  return true;
 }
 
 bool sourceEnsureField(
-    void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.ensureField(
-      topic, toStringView(field_name), type, out_field);
+    void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+  if (!impl->core.ensureField(topic, toStringView(field_name), type, out_field)) {
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  return true;
 }
 
 bool sourceAppendRecord(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendRecord(topic, timestamp, fields, field_count);
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+  if (!impl->core.appendRecord(topic, timestamp, fields, field_count)) {
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool sourceAppendRecordFast(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendBoundRecord(
-      topic, timestamp, fields, field_count);
+bool sourceAppendBoundRecord(
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+  if (!impl->core.appendBoundRecord(topic, timestamp, fields, field_count)) {
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool sourceAppendArrowIpc(void* ctx, TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendArrowIpc(topic, ipc_stream, timestamp_column);
+bool sourceAppendArrowStream(
+    void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+  if (!impl->core.appendArrowStream(topic, stream, timestamp_column)) {
+    // Failure: plugin retains ownership of the stream; we do NOT release.
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  // Success: host now owns the stream — release it.
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
+  }
+  return true;
 }
 
-const char* sourceLastError(void* ctx) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.lastError();
-}
-
-bool parserEnsureField(void* ctx, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field) {
+bool parserEnsureField(
+    void* ctx, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  return impl->core.ensureField(impl->topic, toStringView(field_name), type, out_field);
+  if (!impl->core.ensureField(impl->topic, toStringView(field_name), type, out_field)) {
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool parserAppendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count) {
+bool parserAppendRecord(
+    void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  return impl->core.appendRecord(impl->topic, timestamp, fields, field_count);
+  if (!impl->core.appendRecord(impl->topic, timestamp, fields, field_count)) {
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool parserAppendRecordFast(
-    void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
+bool parserAppendBoundRecord(
+    void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  return impl->core.appendBoundRecord(impl->topic, timestamp, fields, field_count);
+  if (!impl->core.appendBoundRecord(impl->topic, timestamp, fields, field_count)) {
+    propagateError(out_error, impl->core.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool parserAppendArrowIpc(void* ctx, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
-  auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  return impl->core.appendArrowIpc(impl->topic, ipc_stream, timestamp_column);
+bool toolboxCreateDataSource(
+    void* ctx, PJ_string_view_t name, DataSourceHandle* out_source, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.write.createDataSource(toStringView(name), out_source)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  return true;
 }
 
-const char* parserLastError(void* ctx) {
-  return static_cast<DatastoreParserWriteHostState*>(ctx)->core.lastError();
-}
-
-bool toolboxCreateDataSource(void* ctx, PJ_string_view_t name, DataSourceHandle* out_source) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.createDataSource(toStringView(name), out_source);
-}
-
-bool toolboxEnsureTopic(void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, TopicHandle* out_topic) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.ensureTopic(
-      source, toStringView(topic_name), out_topic);
+bool toolboxEnsureTopic(
+    void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, TopicHandle* out_topic,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.write.ensureTopic(source, toStringView(topic_name), out_topic)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  return true;
 }
 
 bool toolboxEnsureField(
-    void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.ensureField(
-      topic, toStringView(field_name), type, out_field);
+    void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.write.ensureField(topic, toStringView(field_name), type, out_field)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  return true;
 }
 
 bool toolboxAppendRecord(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.appendRecord(topic, timestamp, fields, field_count);
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.write.appendRecord(topic, timestamp, fields, field_count)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool toolboxAppendRecordFast(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.appendBoundRecord(
-      topic, timestamp, fields, field_count);
+bool toolboxAppendBoundRecord(
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.write.appendBoundRecord(topic, timestamp, fields, field_count)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool toolboxAppendArrowIpc(
-    void* ctx, TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.appendArrowIpc(topic, ipc_stream, timestamp_column);
+bool toolboxAppendArrowStream(
+    void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.write.appendArrowStream(topic, stream, timestamp_column)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
+  }
+  return true;
 }
 
-bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapshot) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.acquireCatalogSnapshot(out_snapshot);
+bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.acquireCatalogSnapshot(out_snapshot)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  return true;
 }
 
-bool toolboxReadSeries(void* ctx, FieldHandle field, PJ_materialized_series_t* out_series) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.readSeries(field, out_series);
+bool toolboxReadSeriesArrow(
+    void* ctx, FieldHandle field, struct ArrowSchema* out_schema, struct ArrowArray* out_array,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (!impl->core.readSeriesArrow(field, out_schema, out_array)) {
+    propagateError(out_error, impl->core.write.lastError());
+    return false;
+  }
+  return true;
 }
 
-const char* toolboxLastError(void* ctx) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.lastError();
+/// RAII holder for the plugin-owned `fetch_ctx` passed to push_lazy. Stores
+/// the destroy callback pointer and the ctx value; destroys both on drop.
+/// Wrapped in a shared_ptr so the lambda that ObjectStore stores remains
+/// copyable (std::function requires copyable targets).
+class PluginFetchCtx {
+ public:
+  PluginFetchCtx(PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx, void (*destroy_fn)(void*)) noexcept
+      : fetch_fn_(fetch_fn), ctx_(fetch_ctx), destroy_fn_(destroy_fn) {}
+
+  ~PluginFetchCtx() {
+    if (destroy_fn_ != nullptr) {
+      destroy_fn_(ctx_);
+    }
+  }
+
+  PluginFetchCtx(const PluginFetchCtx&) = delete;
+  PluginFetchCtx& operator=(const PluginFetchCtx&) = delete;
+  PluginFetchCtx(PluginFetchCtx&&) = delete;
+  PluginFetchCtx& operator=(PluginFetchCtx&&) = delete;
+
+  [[nodiscard]] std::vector<uint8_t> invoke() const {
+    if (fetch_fn_ == nullptr) {
+      return {};
+    }
+    const uint8_t* data = nullptr;
+    std::size_t size = 0;
+    if (!fetch_fn_(ctx_, &data, &size) || data == nullptr) {
+      return {};
+    }
+    return std::vector<uint8_t>(data, data + size);
+  }
+
+ private:
+  PJ_lazy_fetch_fn_t fetch_fn_;
+  void* ctx_;
+  void (*destroy_fn_)(void*);
+};
+
+bool sourceObjectRegisterTopic(
+    void* ctx, PJ_string_view_t topic_name, PJ_string_view_t metadata_json, PJ_object_topic_handle_t* out_handle,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  if (out_handle == nullptr) {
+    propagateError(out_error, "out_handle must not be null");
+    return false;
+  }
+  try {
+    ObjectTopicDescriptor desc{};
+    desc.dataset_id = impl->dataset_id;
+    desc.topic_name = std::string(toStringView(topic_name));
+    desc.metadata_json = std::string(toStringView(metadata_json));
+    auto result = impl->store.registerTopic(desc);
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    out_handle->id = result->id;
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("registerTopic: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+bool sourceObjectPushOwned(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, std::size_t size,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  try {
+    std::vector<uint8_t> bytes;
+    if (data != nullptr && size > 0) {
+      bytes.assign(data, data + size);
+    }
+    auto result = impl->store.pushOwned(ObjectTopicId{topic.id}, timestamp_ns, std::move(bytes));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("pushOwned: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+bool sourceObjectPushLazy(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx,
+    void (*fetch_ctx_destroy)(void*), PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  if (fetch_fn == nullptr) {
+    if (fetch_ctx_destroy != nullptr) {
+      fetch_ctx_destroy(fetch_ctx);
+    }
+    propagateError(out_error, "fetch_fn must not be null");
+    return false;
+  }
+  try {
+    // shared_ptr keeps the ctx holder alive as long as ObjectStore keeps
+    // the lambda; destructor runs exactly once when ObjectStore drops the
+    // entry (retention, evict, removeTopic, clear, or store teardown).
+    auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
+    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    auto result = impl->store.pushLazy(ObjectTopicId{topic.id}, timestamp_ns, std::move(closure));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      // `holder` is the only reference to the ctx on failure; dropping it
+      // runs fetch_ctx_destroy exactly once (the destructor already does it).
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    // On exception before the ObjectStore took ownership, PluginFetchCtx's
+    // destructor runs as part of shared_ptr teardown — single destroy call.
+    return false;
+  } catch (...) {
+    impl->setError("pushLazy: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+void sourceObjectSetRetentionBudget(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, std::size_t max_memory_bytes) noexcept {
+  auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  try {
+    RetentionBudget budget{};
+    budget.time_window_ns = time_window_ns;
+    budget.max_memory_bytes = max_memory_bytes;
+    impl->store.setRetentionBudget(ObjectTopicId{topic.id}, budget);
+  } catch (...) {
+    // Infallible by contract — swallow any exception from the store.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Toolbox object read host trampolines
+// ---------------------------------------------------------------------------
+
+/// Box holding the shared_ptr that keeps ObjectStore bytes alive. One
+/// allocated per successful read_latest_at; freed by release_bytes.
+struct ObjectBytesBox {
+  std::shared_ptr<const std::vector<uint8_t>> bytes;
+};
+
+PJ_object_topic_handle_t toolboxObjectLookupTopic(void* ctx, PJ_string_view_t topic_name) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    const auto needle = toStringView(topic_name);
+    for (const auto id : impl->store.listTopics()) {
+      if (impl->store.descriptor(id).topic_name == needle) {
+        return PJ_object_topic_handle_t{id.id};
+      }
+    }
+  } catch (...) {
+    // Fall through to invalid handle.
+  }
+  return PJ_object_topic_handle_t{0};
+}
+
+bool toolboxObjectListTopics(
+    void* ctx, PJ_object_topic_handle_t* out_buffer, std::size_t buffer_capacity, std::size_t* out_count,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  if (out_count == nullptr) {
+    propagateError(out_error, "out_count must not be null");
+    return false;
+  }
+  try {
+    const auto ids = impl->store.listTopics();
+    *out_count = ids.size();
+    if (out_buffer != nullptr) {
+      const std::size_t n = std::min(buffer_capacity, ids.size());
+      for (std::size_t i = 0; i < n; ++i) {
+        out_buffer[i] = PJ_object_topic_handle_t{ids[i].id};
+      }
+    }
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("listTopics: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+const char* toolboxObjectTopicMetadata(void* ctx, PJ_object_topic_handle_t topic) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    const auto& desc = impl->store.descriptor(ObjectTopicId{topic.id});
+    // Descriptor is stored in the series and lives as long as the topic;
+    // the pointer remains stable until the topic is removed.
+    return desc.metadata_json.c_str();
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+bool toolboxObjectReadLatestAt(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, PJ_object_bytes_handle_t* out_handle,
+    int64_t* out_timestamp, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  if (out_handle == nullptr) {
+    propagateError(out_error, "out_handle must not be null");
+    return false;
+  }
+  *out_handle = nullptr;
+  try {
+    auto entry = impl->store.latestAt(ObjectTopicId{topic.id}, timestamp_ns);
+    if (!entry.has_value() || entry->data == nullptr) {
+      impl->setError("no entry at-or-before timestamp");
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    auto* box = new ObjectBytesBox{std::move(entry->data)};
+    *out_handle = reinterpret_cast<PJ_object_bytes_handle_t>(box);
+    if (out_timestamp != nullptr) {
+      *out_timestamp = entry->timestamp;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("readLatestAt: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+void toolboxObjectGetBytes(PJ_object_bytes_handle_t handle, const uint8_t** out_data, std::size_t* out_size) noexcept {
+  if (out_data != nullptr) {
+    *out_data = nullptr;
+  }
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  if (handle == nullptr) {
+    return;
+  }
+  auto* box = reinterpret_cast<ObjectBytesBox*>(handle);
+  if (!box->bytes) {
+    return;
+  }
+  if (out_data != nullptr) {
+    *out_data = box->bytes->data();
+  }
+  if (out_size != nullptr) {
+    *out_size = box->bytes->size();
+  }
+}
+
+void toolboxObjectReleaseBytes(PJ_object_bytes_handle_t handle) noexcept {
+  if (handle == nullptr) {
+    return;
+  }
+  delete reinterpret_cast<ObjectBytesBox*>(handle);
+}
+
+std::size_t toolboxObjectEntryCount(void* ctx, PJ_object_topic_handle_t topic) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    return impl->store.entryCount(ObjectTopicId{topic.id});
+  } catch (...) {
+    return 0;
+  }
+}
+
+bool toolboxObjectTimeRange(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t* out_min_ts, int64_t* out_max_ts) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    if (impl->store.entryCount(ObjectTopicId{topic.id}) == 0) {
+      return false;
+    }
+    const auto range = impl->store.timeRange(ObjectTopicId{topic.id});
+    if (out_min_ts != nullptr) {
+      *out_min_ts = range.first;
+    }
+    if (out_max_ts != nullptr) {
+      *out_max_ts = range.second;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Parser object write host trampolines — topic bound at service-create time.
+// ---------------------------------------------------------------------------
+
+bool parserObjectPushOwned(
+    void* ctx, int64_t timestamp_ns, const uint8_t* data, std::size_t size, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreParserObjectWriteHostState*>(ctx);
+  try {
+    std::vector<uint8_t> bytes;
+    if (data != nullptr && size > 0) {
+      bytes.assign(data, data + size);
+    }
+    auto result = impl->store.pushOwned(impl->bound_topic, timestamp_ns, std::move(bytes));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("parser pushOwned: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+bool parserObjectPushLazy(
+    void* ctx, int64_t timestamp_ns, PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx, void (*fetch_ctx_destroy)(void*),
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreParserObjectWriteHostState*>(ctx);
+  if (fetch_fn == nullptr) {
+    if (fetch_ctx_destroy != nullptr) {
+      fetch_ctx_destroy(fetch_ctx);
+    }
+    propagateError(out_error, "fetch_fn must not be null");
+    return false;
+  }
+  try {
+    auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
+    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    auto result = impl->store.pushLazy(impl->bound_topic, timestamp_ns, std::move(closure));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("parser pushLazy: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
 }
 
 const PJ_source_write_host_vtable_t kSourceWriteVTable = {
-    PJ_PLUGIN_DATA_API_VERSION,
-    sizeof(PJ_source_write_host_vtable_t),
-    sourceLastError,
-    sourceEnsureTopic,
-    sourceEnsureField,
-    sourceAppendRecord,
-    sourceAppendRecordFast,
-    sourceAppendArrowIpc,
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_source_write_host_vtable_t),
+    sourceEnsureTopic,          sourceEnsureField,
+    sourceAppendRecord,         sourceAppendBoundRecord,
+    sourceAppendArrowStream,
 };
 
 const PJ_parser_write_host_vtable_t kParserWriteVTable = {
-    PJ_PLUGIN_DATA_API_VERSION,
-    sizeof(PJ_parser_write_host_vtable_t),
-    parserLastError,
-    parserEnsureField,
-    parserAppendRecord,
-    parserAppendRecordFast,
-    parserAppendArrowIpc,
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_parser_write_host_vtable_t), parserEnsureField, parserAppendRecord,
+    parserAppendBoundRecord,
 };
 
 const PJ_toolbox_host_vtable_t kToolboxVTable = {
-    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_toolbox_host_vtable_t),
-    toolboxLastError,           toolboxCreateDataSource,
-    toolboxEnsureTopic,         toolboxEnsureField,
-    toolboxAppendRecord,        toolboxAppendRecordFast,
-    toolboxAppendArrowIpc,      toolboxAcquireCatalogSnapshot,
-    toolboxReadSeries,
+    PJ_PLUGIN_DATA_API_VERSION,
+    sizeof(PJ_toolbox_host_vtable_t),
+    toolboxCreateDataSource,
+    toolboxEnsureTopic,
+    toolboxEnsureField,
+    toolboxAppendRecord,
+    toolboxAppendBoundRecord,
+    toolboxAppendArrowStream,
+    toolboxAcquireCatalogSnapshot,
+    toolboxReadSeriesArrow,
+};
+
+const PJ_object_write_host_vtable_t kSourceObjectWriteVTable = {
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_object_write_host_vtable_t), sourceObjectRegisterTopic, sourceObjectPushOwned,
+    sourceObjectPushLazy,       sourceObjectSetRetentionBudget,
+};
+
+const PJ_object_read_host_vtable_t kToolboxObjectReadVTable = {
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_object_read_host_vtable_t),
+    toolboxObjectLookupTopic,   toolboxObjectListTopics,
+    toolboxObjectTopicMetadata, toolboxObjectReadLatestAt,
+    toolboxObjectGetBytes,      toolboxObjectReleaseBytes,
+    toolboxObjectEntryCount,    toolboxObjectTimeRange,
+};
+
+const PJ_parser_object_write_host_vtable_t kParserObjectWriteVTable = {
+    PJ_PLUGIN_DATA_API_VERSION,
+    sizeof(PJ_parser_object_write_host_vtable_t),
+    parserObjectPushOwned,
+    parserObjectPushLazy,
 };
 
 DatastoreSourceWriteHost::DatastoreSourceWriteHost(DataEngine& engine, DataSourceHandle source)
@@ -1129,6 +1595,39 @@ PJ_toolbox_host_t DatastoreToolboxHost::raw() noexcept {
 
 void DatastoreToolboxHost::flushPending() {
   state_->core.write.flushPending();
+}
+
+DatastoreSourceObjectWriteHost::DatastoreSourceObjectWriteHost(ObjectStore& store, DatasetId dataset_id)
+    : state_(std::make_unique<DatastoreSourceObjectWriteHostState>(store, dataset_id)) {}
+DatastoreSourceObjectWriteHost::~DatastoreSourceObjectWriteHost() = default;
+DatastoreSourceObjectWriteHost::DatastoreSourceObjectWriteHost(DatastoreSourceObjectWriteHost&&) noexcept = default;
+DatastoreSourceObjectWriteHost& DatastoreSourceObjectWriteHost::operator=(DatastoreSourceObjectWriteHost&&) noexcept =
+    default;
+
+PJ_object_write_host_t DatastoreSourceObjectWriteHost::raw() noexcept {
+  return PJ_object_write_host_t{.ctx = state_.get(), .vtable = &kSourceObjectWriteVTable};
+}
+
+DatastoreToolboxObjectReadHost::DatastoreToolboxObjectReadHost(ObjectStore& store)
+    : state_(std::make_unique<DatastoreToolboxObjectReadHostState>(store)) {}
+DatastoreToolboxObjectReadHost::~DatastoreToolboxObjectReadHost() = default;
+DatastoreToolboxObjectReadHost::DatastoreToolboxObjectReadHost(DatastoreToolboxObjectReadHost&&) noexcept = default;
+DatastoreToolboxObjectReadHost& DatastoreToolboxObjectReadHost::operator=(DatastoreToolboxObjectReadHost&&) noexcept =
+    default;
+
+PJ_object_read_host_t DatastoreToolboxObjectReadHost::raw() noexcept {
+  return PJ_object_read_host_t{.ctx = state_.get(), .vtable = &kToolboxObjectReadVTable};
+}
+
+DatastoreParserObjectWriteHost::DatastoreParserObjectWriteHost(ObjectStore& store, uint32_t topic_id)
+    : state_(std::make_unique<DatastoreParserObjectWriteHostState>(store, ObjectTopicId{topic_id})) {}
+DatastoreParserObjectWriteHost::~DatastoreParserObjectWriteHost() = default;
+DatastoreParserObjectWriteHost::DatastoreParserObjectWriteHost(DatastoreParserObjectWriteHost&&) noexcept = default;
+DatastoreParserObjectWriteHost& DatastoreParserObjectWriteHost::operator=(DatastoreParserObjectWriteHost&&) noexcept =
+    default;
+
+PJ_parser_object_write_host_t DatastoreParserObjectWriteHost::raw() noexcept {
+  return PJ_parser_object_write_host_t{.ctx = state_.get(), .vtable = &kParserObjectWriteVTable};
 }
 
 }  // namespace PJ

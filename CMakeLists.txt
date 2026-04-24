@@ -4,6 +4,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Make project cmake/ helpers discoverable to sub-trees and plugins.
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. — used by PjPluginManifest
+include(PjPluginManifest)
+
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
@@ -28,6 +33,7 @@ endif()
 option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires nanoarrow)" ON)
 option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
+option(PJ_ENABLE_ABI_CHECK "Enable abidiff-based ABI drift gate (requires libabigail)" OFF)
 
 # ---------------------------------------------------------------------------
 # Compiler warnings
@@ -174,6 +180,7 @@ if(PJ_BUILD_DIALOG_ENGINE_QT)
 endif()
 
 if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
+  set(PJ_HAS_PORTED_PLUGINS TRUE)
   add_subdirectory(pj_ported_plugins)
 endif()
 
@@ -210,3 +217,9 @@ if(PJ_INSTALL_SDK)
     DESTINATION ${PJ_SDK_CMAKE_DIR}
   )
 endif()
+
+# ---------------------------------------------------------------------------
+# ABI drift gate (opt-in via -DPJ_ENABLE_ABI_CHECK=ON). Requires libabigail.
+# Included last so the canary target (mock_data_source_plugin) already exists.
+# ---------------------------------------------------------------------------
+include(PjAbiCheck)

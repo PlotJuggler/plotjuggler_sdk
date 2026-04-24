@@ -37,6 +37,11 @@ Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path)
     return unexpected(handle.error());
   }
 
+  if (auto abi = detail::checkPluginAbiVersion(*handle); !abi) {
+    detail::closeLibraryHandle(*handle);
+    return unexpected(abi.error());
+  }
+
   auto sym = detail::resolveSymbol(*handle, "PJ_get_message_parser_vtable");
   if (!sym) {
     detail::closeLibraryHandle(*handle);
@@ -53,9 +58,9 @@ Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path)
     detail::closeLibraryHandle(*handle);
     return unexpected(std::string("MessageParser protocol version mismatch"));
   }
-  if (vtable->struct_size < sizeof(PJ_message_parser_vtable_t)) {
+  if (vtable->struct_size < PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE) {
     detail::closeLibraryHandle(*handle);
-    return unexpected(std::string("MessageParser vtable is smaller than expected"));
+    return unexpected(std::string("MessageParser vtable smaller than v3.0 baseline"));
   }
 
   return MessageParserLibrary(*handle, vtable, std::string(path));

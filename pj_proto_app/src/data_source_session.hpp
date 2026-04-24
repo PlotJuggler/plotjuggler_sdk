@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -17,15 +18,24 @@
 #include "pj_plugins/host/data_source_handle.hpp"
 #include "pj_plugins/host/data_source_library.hpp"
 #include "pj_plugins/host/message_parser_handle.hpp"
+#include "pj_plugins/host/service_registry_builder.hpp"
 
 namespace proto {
 
 class PluginRegistry;
 
-/// State for one parser binding: parser instance + its write host.
+/// State for one parser binding: parser instance + its write host + the
+/// service registry builder the parser was bound through (kept alive so the
+/// fat-pointer services remain valid for the binding's lifetime).
+/// Destruction order (reverse of declaration) matters: the parser's
+/// destructor may flush pending writes through write_host, so parser must
+/// die BEFORE write_host. The registry_builder only supplies fat pointers
+/// at bind-time; after bind, the plugin holds its own copies, so the
+/// builder can die first.
 struct ParserBinding {
-  std::unique_ptr<PJ::MessageParserHandle> parser;
+  std::unique_ptr<PJ::ServiceRegistryBuilder> registry_builder;
   std::unique_ptr<PJ::DatastoreParserWriteHost> write_host;
+  std::unique_ptr<PJ::MessageParserHandle> parser;
 };
 
 struct DedupMessage {
@@ -73,9 +83,15 @@ class DataSourceSession : public QObject {
       PJ::DataEngine& engine, PJ::DataSourceLibrary& library, PJ::TimeDomainId td_id, std::string source_name,
       PluginRegistry* registry, QObject* parent = nullptr);
 
-  /// Bind a minimal runtime host so the dialog can call listAvailableEncodings().
-  /// Must be called before showing the dialog. setupAndStart() will complete the binding.
-  void bindRuntimeHostForDialog();
+  /// Bind the plugin with the full service registry (source_write + runtime).
+  /// Creates the dataset + write_host up-front so the registry is complete
+  /// before the dialog is shown — the v3 protocol requires `bind()` to be
+  /// called exactly once per plugin instance. Idempotent: a second call is
+  /// a no-op.
+  ///
+  /// Must be called before showing the dialog. startFileImport/startStream
+  /// assume the session is already bound.
+  [[nodiscard]] bool bindForDialog();
 
   bool startFileImport(const std::string& config_json);
   bool startStream(const std::string& config_json);
@@ -93,7 +109,7 @@ class DataSourceSession : public QObject {
     return library_;
   }
   [[nodiscard]] PJ_data_source_state_t currentState() const {
-    return handle_.currentState();
+    return static_cast<PJ_data_source_state_t>(handle_.currentState());
   }
   [[nodiscard]] bool supportsPause() const {
     return (handle_.capabilities() & PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE) != 0;
@@ -111,7 +127,7 @@ class DataSourceSession : public QObject {
     return last_config_json_;
   }
   [[nodiscard]] const std::string& lastError() const {
-    return last_error_;
+    return runtime_state_.last_error;
   }
 
   /// Bind the message box callback from the Qt layer. Must be called before start.
@@ -131,7 +147,7 @@ class DataSourceSession : public QObject {
  private:
   static PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state);
 
-  bool setupAndStart(const std::string& config_json);
+  bool applyConfigAndStart(const std::string& config_json);
 
   PJ::DataEngine& engine_;
   PJ::DataSourceLibrary& library_;
@@ -141,9 +157,15 @@ class DataSourceSession : public QObject {
   PJ::DataSourceHandle handle_;
   std::unique_ptr<PJ::DatastoreSourceWriteHost> write_host_;
   RuntimeHostState runtime_state_;
+  /// Single service-registry slot for the plugin's lifetime. Populated in
+  /// bindRuntimeHostForDialog() with the runtime-only registry, then
+  /// replaced in setupAndStart() with the full (source_write + runtime)
+  /// registry. `optional` is used because ServiceRegistryBuilder is
+  /// non-movable (see its declaration) — `emplace` reconstructs in place.
+  std::optional<PJ::ServiceRegistryBuilder> bind_registry_;
   std::string last_config_json_;
-  std::string last_error_;
   bool is_stream_ = false;
+  bool bound_ = false;
 };
 
 }  // namespace proto

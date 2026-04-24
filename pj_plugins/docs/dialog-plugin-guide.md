@@ -1,5 +1,12 @@
 # Writing a Dialog Plugin
 
+> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). Every dialog
+> vtable slot is `PJ_NOEXCEPT` — the SDK trampolines in
+> `DialogPluginBase` catch exceptions automatically, but your overrides
+> must assume no exception ever crosses the ABI boundary. All dialog
+> calls happen on the main (GUI) thread; see `ARCHITECTURE.md` for the
+> full thread-class contract.
+
 ## What is a Dialog Plugin?
 
 A dialog plugin is a shared library (`.so` / `.dylib` / `.dll`) that drives a
@@ -530,12 +537,23 @@ streaming data source with a full configuration dialog in a single `.so`:
 ### DataSource-owned dialog pattern
 
 When a dialog is part of a DataSource plugin, the dialog class is a member of
-the source class. The source overrides `dialogContext()` to return a pointer
-to the dialog member. Both classes export their vtables from the same `.so`:
+the source class. The source overrides `getDialog()` returning a typed
+`PJ_borrowed_dialog_t` fat pointer via `PJ::borrowDialog(dialog_)` — no
+`extern "C"` forward declaration required:
 
 ```cpp
+class MySource : public PJ::StreamSourceBase {
+ public:
+  PJ_borrowed_dialog_t getDialog() override {
+    return PJ::borrowDialog(dialog_);
+  }
+ private:
+  MyDialog dialog_;
+};
+
 PJ_DATA_SOURCE_PLUGIN(MySource, R"({"name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN(MyDialog)
+PJ_DIALOG_PLUGIN(MyDialog)   // also specialises PJ::dialogVtableFor<MyDialog>()
+                             // so PJ::borrowDialog picks up the right vtable.
 ```
 
 The host resolves both vtables, creates a borrowed `DialogHandle` from the

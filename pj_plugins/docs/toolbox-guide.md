@@ -1,5 +1,12 @@
 # Writing a Toolbox Plugin
 
+> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). Toolbox plugins
+> read time series via the host's `read_series_arrow` slot, which
+> returns a caller-owned `ArrowSchema` + `ArrowArray` pair (no more
+> materialised `std::vector`). Wrap returns in
+> `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` for scope-bound
+> release. See `ARCHITECTURE.md` for the full ABI rules.
+
 ## What is a Toolbox?
 
 A Toolbox plugin is a shared library (`.so` / `.dylib` / `.dll`) that provides
@@ -16,10 +23,13 @@ editor, custom data transforms.
 ## Quick Start
 
 1. Subclass `PJ::ToolboxPluginBase`
-2. Override `capabilities()` (required) and optionally `bindToolboxHost()`,
-   `bindRuntimeHost()`, `saveConfig()`, `loadConfig()`, `dialogContext()`
+2. Override `capabilities()` (required) and optionally `bind()` (for
+   acquiring services), `saveConfig()`, `loadConfig()`, `getDialog()`
 3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"name":"...","version":"..."})")`
-4. Build as a shared library linking `pj_base`
+4. If you ship an embedded dialog, also declare it as a
+   `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog)`
+5. Build as a shared library linking `pj_base` (+ `pj_dialog_sdk` if
+   you have a dialog)
 
 A complete example lives at `pj_plugins/examples/mock_toolbox.cpp`.
 
@@ -29,6 +39,7 @@ A complete example lives at `pj_plugins/examples/mock_toolbox.cpp`.
 
 ```cpp
 #include <pj_base/sdk/toolbox_plugin_base.hpp>
+#include <pj_plugins/sdk/dialog_plugin_base.hpp>  // only if you have a dialog
 
 class MyToolbox : public PJ::ToolboxPluginBase {
  public:
@@ -36,10 +47,18 @@ class MyToolbox : public PJ::ToolboxPluginBase {
     return PJ::kToolboxCapabilityHasDialog;
   }
 
-  void* dialogContext() override { return this; }
+  // Hand the host a typed borrowed reference to the embedded dialog.
+  // PJ::borrowDialog picks up the matching vtable automatically —
+  // no extern "C" forward declaration needed in your source.
+  PJ_borrowed_dialog_t getDialog() override {
+    return PJ::borrowDialog(dialog_);
+  }
 
   PJ::Status loadConfig(std::string_view json) override;
   std::string saveConfig() const override;
+
+ private:
+  MyDialog dialog_;
 };
 ```
 
@@ -129,9 +148,9 @@ data store.
 | `ensureField(topic, name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. |
 | `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
-| `appendArrowIpc(topic, ipc_stream, ts_col)` | Write an Arrow IPC stream directly (bulk columnar). |
+| `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
-| `readSeries(field)` | Read the full time series for a field. |
+| `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
 
 ### Runtime host — control plane
 
@@ -142,6 +161,48 @@ Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 | `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
 | `notifyDataChanged()` | Tell the host that data was modified; refresh UI. |
 | `lastError()` | Read the last host-side error message. |
+
+### Reading a series via Arrow
+
+`readSeriesArrow()` is the only read path in v4 — it returns
+`ArrowSchema` + `ArrowArray` out-params populated by the host.
+Wrap the out-params in the RAII holders from `pj_base/sdk/arrow.hpp`
+so they are released automatically at scope exit:
+
+```cpp
+#include <pj_base/sdk/arrow.hpp>
+
+void MyToolbox::runFft(PJ::sdk::FieldHandle field) {
+  PJ::sdk::ArrowSchemaHolder schema;
+  PJ::sdk::ArrowArrayHolder  array;
+
+  auto status = toolboxHost().readSeriesArrow(field, schema.out(), array.out());
+  if (!status) {
+    runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError,
+                                "readSeriesArrow failed: " + status.error());
+    return;
+  }
+
+  // array.get() now points to a two-column Arrow struct:
+  //   column 0: "timestamp"   — int64 nanoseconds since Unix epoch
+  //   column 1: <field name>  — typed to the field's primitive type
+  // Walk children[0]->buffers / children[1]->buffers per Arrow spec,
+  // or hand array.get() directly to analytics code that speaks Arrow
+  // (DuckDB, Polars, pandas via PyCapsule, …).
+}
+// schema and array are released here by their destructors.
+```
+
+**Bulk-write output:** pair `readSeriesArrow` with `appendArrowStream`
+to round-trip data through a transform. Use the rvalue-ref overload:
+
+```cpp
+PJ::sdk::ArrowStreamHolder stream(buildOutputStream());
+auto status = toolboxHost().appendArrowStream(
+    out_topic, std::move(stream), "timestamp");
+// Success: stream is inert. Failure: destructor releases it. No manual
+// release() dance required.
+```
 
 ## Configuration Persistence
 
@@ -205,15 +266,53 @@ exceptions cross the C ABI boundary.
 ## Threading Model
 
 All plugin callbacks — `bindToolboxHost()`, `bindRuntimeHost()`,
-`loadConfig()`, `saveConfig()`, `dialogContext()` — are called **on the host's
+`loadConfig()`, `saveConfig()`, `getDialog()` — are called **on the host's
 thread**. The host guarantees single-threaded access per plugin instance.
 
 Toolbox host and runtime host methods must be called from the same thread that
 invoked the callback. If your plugin uses internal threading, synchronize
 access and only call host methods from the host's thread.
 
+## Testing
+
+Use `PJ::testing::ToolboxTestStore` from
+`pj_plugins/include/pj_plugins/testing/toolbox_test_store.hpp` to write
+unit tests without hand-rolling an Arrow C Data Interface mock:
+
+```cpp
+#include <pj_plugins/testing/toolbox_test_store.hpp>
+
+TEST(MyToolboxTest, Basic) {
+  auto library = PJ::ToolboxLibrary::load(PJ_MY_TOOLBOX_PLUGIN_PATH);
+  auto handle = library->createHandle();
+
+  PJ::testing::ToolboxTestStore store;
+  store.addTopic("input")
+       .addField("input", "x", timestamps, values);
+
+  PJ::ServiceRegistryBuilder registry;
+  registry.registerService<PJ::sdk::ToolboxHostService>(store.makeHost());
+  registry.registerService<PJ::sdk::ToolboxRuntimeHostService>(store.makeRuntimeHost());
+  ASSERT_TRUE(handle.bind(registry.view()));
+
+  ASSERT_TRUE(handle.loadConfig(R"({...})"));
+
+  EXPECT_EQ(store.notifyDataChangedCalls(), 1);
+  EXPECT_DOUBLE_EQ(store.flatRecords()[0].numeric, expected);
+}
+```
+
+The store captures `appendRecord` writes and counts `createDataSource`
++ `notifyDataChanged` invocations. `flatRecords()` gives a flat
+(timestamp, name, value) view; `writtenRecords()` preserves the nested
+row-of-fields shape. See
+`pj_plugins/testing/toolbox_test_store.hpp` for the full API.
+
 ## Examples
 
 - `pj_plugins/examples/mock_toolbox.cpp` — minimal test fixture that exercises
   the full `ToolboxPluginBase` API surface: capabilities, config persistence,
   host binding, and dialog context.
+- `pj_ported_plugins/toolbox_quaternion/quaternion_plugin_test.cpp` —
+  end-to-end test using `ToolboxTestStore` to drive the quaternion toolbox
+  through several real scenarios.

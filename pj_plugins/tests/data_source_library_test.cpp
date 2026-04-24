@@ -3,10 +3,12 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <cstring>
 #include <string>
 
 #include "pj_base/plugin_data_api.h"
-#include "pj_base/sdk/data_source_plugin_base.hpp"
+#include "pj_base/sdk/service_traits.hpp"
+#include "pj_plugins/host/service_registry_builder.hpp"
 
 #ifndef PJ_MOCK_DATA_SOURCE_PLUGIN_PATH
 #error "PJ_MOCK_DATA_SOURCE_PLUGIN_PATH must be defined"
@@ -14,145 +16,110 @@
 
 namespace {
 
-struct MinimalWriteHost {
-  static const char* getLastError(void*) {
-    return nullptr;
+// Fake source-write host (v4: all trampolines noexcept, append_arrow_stream).
+bool fwsEnsureTopic(void*, PJ_string_view_t, PJ_topic_handle_t* out, PJ_error_t*) noexcept {
+  *out = PJ_topic_handle_t{1};
+  return true;
+}
+bool fwsEnsureField(
+    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out,
+    PJ_error_t*) noexcept {
+  *out = PJ_field_handle_t{topic, 1};
+  return true;
+}
+bool fwsAppendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t*) noexcept {
+  return true;
+}
+bool fwsAppendBoundRecord(
+    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
+  return true;
+}
+bool fwsAppendArrowStream(
+    void*, PJ_topic_handle_t, struct ArrowArrayStream* stream, PJ_string_view_t, PJ_error_t*) noexcept {
+  // Stub: consume ownership by releasing the stream (success path contract).
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
   }
+  return true;
+}
 
-  static bool ensureTopic(void*, PJ_string_view_t, PJ_topic_handle_t* out_topic) {
-    *out_topic = PJ_topic_handle_t{1};
-    return true;
-  }
-
-  static bool ensureField(
-      void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
-    *out_field = PJ_field_handle_t{topic, 1};
-    return true;
-  }
-
-  static bool appendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t) {
-    return true;
-  }
-
-  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t) {
-    return true;
-  }
-
-  static bool appendArrowIpc(void*, PJ_topic_handle_t, PJ_bytes_view_t, PJ_string_view_t) {
-    return true;
-  }
-};
-
-struct MinimalRuntimeHost {
-  static const char* getLastError(void*) {
-    return nullptr;
-  }
-  static void reportMessage(void*, PJ_data_source_message_level_t, PJ_string_view_t) {}
-  static bool progressStart(void*, PJ_string_view_t, uint64_t, bool) {
-    return true;
-  }
-  static bool progressUpdate(void*, uint64_t) {
-    return true;
-  }
-  static void progressFinish(void*) {}
-  static bool isStopRequested(void*) {
-    return false;
-  }
-  static void notifyState(void*, PJ_data_source_state_t) {}
-  static void requestStop(void*, PJ_data_source_state_t, PJ_string_view_t) {}
-
-  static bool ensureParserBinding(void*, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out_handle) {
-    *out_handle = PJ_parser_binding_handle_t{11};
-    return true;
-  }
-
-  static bool pushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t) {
-    return true;
-  }
-
-  static int showMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) {
-    return PJ_MSG_BTN_OK;
-  }
-
-  static const char* listAvailableEncodings(void*) {
-    return R"(["json","cbor","protobuf"])";
-  }
-};
-
-PJ_source_write_host_t makeWriteHost() {
+PJ_source_write_host_t makeSourceWriteHost() {
   static const PJ_source_write_host_vtable_t vtable = {
       .abi_version = PJ_PLUGIN_DATA_API_VERSION,
       .struct_size = sizeof(PJ_source_write_host_vtable_t),
-      .get_last_error = MinimalWriteHost::getLastError,
-      .ensure_topic = MinimalWriteHost::ensureTopic,
-      .ensure_field = MinimalWriteHost::ensureField,
-      .append_record = MinimalWriteHost::appendRecord,
-      .append_bound_record = MinimalWriteHost::appendBoundRecord,
-      .append_arrow_ipc = MinimalWriteHost::appendArrowIpc,
+      .ensure_topic = fwsEnsureTopic,
+      .ensure_field = fwsEnsureField,
+      .append_record = fwsAppendRecord,
+      .append_bound_record = fwsAppendBoundRecord,
+      .append_arrow_stream = fwsAppendArrowStream,
   };
   return PJ_source_write_host_t{.ctx = reinterpret_cast<void*>(0x1), .vtable = &vtable};
 }
 
-PJ_data_source_runtime_host_t makeRuntimeHost() {
-  static const PJ_data_source_runtime_host_vtable_t vtable = {
-      .protocol_version = PJ_DATA_SOURCE_PROTOCOL_VERSION,
+// Fake runtime host (v4: every slot noexcept).
+void rhReportMessage(void*, PJ_data_source_message_level_t, PJ_string_view_t) noexcept {}
+bool rhProgressStart(void*, PJ_string_view_t, uint64_t, bool, PJ_error_t*) noexcept {
+  return true;
+}
+bool rhProgressUpdate(void*, uint64_t) noexcept {
+  return true;
+}
+void rhProgressFinish(void*) noexcept {}
+bool rhIsStopRequested(void*) noexcept {
+  return false;
+}
+void rhNotifyState(void*, PJ_data_source_state_t) noexcept {}
+void rhRequestStop(void*, PJ_data_source_state_t, PJ_string_view_t) noexcept {}
+bool rhEnsureParserBinding(
+    void*, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out, PJ_error_t*) noexcept {
+  *out = PJ_parser_binding_handle_t{11};
+  return true;
+}
+bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t, PJ_error_t*) noexcept {
+  return true;
+}
+int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) noexcept {
+  return PJ_MSG_BTN_OK;
+}
+const char* rhListEncodings(void*) noexcept {
+  return R"(["json","cbor","protobuf"])";
+}
+
+PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
+  static const PJ_data_source_runtime_host_vtable_t with_vt = {
+      .protocol_version = 1,
       .struct_size = sizeof(PJ_data_source_runtime_host_vtable_t),
-      .get_last_error = MinimalRuntimeHost::getLastError,
-      .report_message = MinimalRuntimeHost::reportMessage,
-      .progress_start = MinimalRuntimeHost::progressStart,
-      .progress_update = MinimalRuntimeHost::progressUpdate,
-      .progress_finish = MinimalRuntimeHost::progressFinish,
-      .is_stop_requested = MinimalRuntimeHost::isStopRequested,
-      .notify_state = MinimalRuntimeHost::notifyState,
-      .request_stop = MinimalRuntimeHost::requestStop,
-      .ensure_parser_binding = MinimalRuntimeHost::ensureParserBinding,
-      .push_raw_message = MinimalRuntimeHost::pushRawMessage,
-      .show_message_box = MinimalRuntimeHost::showMessageBox,
+      .report_message = rhReportMessage,
+      .progress_start = rhProgressStart,
+      .progress_update = rhProgressUpdate,
+      .progress_finish = rhProgressFinish,
+      .is_stop_requested = rhIsStopRequested,
+      .notify_state = rhNotifyState,
+      .request_stop = rhRequestStop,
+      .ensure_parser_binding = rhEnsureParserBinding,
+      .push_raw_message = rhPushRawMessage,
+      .show_message_box = rhShowMessageBox,
+      .list_available_encodings = rhListEncodings,
+  };
+  static const PJ_data_source_runtime_host_vtable_t no_enc_vt = {
+      .protocol_version = 1,
+      .struct_size = sizeof(PJ_data_source_runtime_host_vtable_t),
+      .report_message = rhReportMessage,
+      .progress_start = rhProgressStart,
+      .progress_update = rhProgressUpdate,
+      .progress_finish = rhProgressFinish,
+      .is_stop_requested = rhIsStopRequested,
+      .notify_state = rhNotifyState,
+      .request_stop = rhRequestStop,
+      .ensure_parser_binding = rhEnsureParserBinding,
+      .push_raw_message = rhPushRawMessage,
+      .show_message_box = rhShowMessageBox,
       .list_available_encodings = nullptr,
   };
-  return PJ_data_source_runtime_host_t{.ctx = reinterpret_cast<void*>(0x2), .vtable = &vtable};
-}
-
-PJ_data_source_runtime_host_t makeRuntimeHostWithEncodings() {
-  static const PJ_data_source_runtime_host_vtable_t vtable = {
-      .protocol_version = PJ_DATA_SOURCE_PROTOCOL_VERSION,
-      .struct_size = sizeof(PJ_data_source_runtime_host_vtable_t),
-      .get_last_error = MinimalRuntimeHost::getLastError,
-      .report_message = MinimalRuntimeHost::reportMessage,
-      .progress_start = MinimalRuntimeHost::progressStart,
-      .progress_update = MinimalRuntimeHost::progressUpdate,
-      .progress_finish = MinimalRuntimeHost::progressFinish,
-      .is_stop_requested = MinimalRuntimeHost::isStopRequested,
-      .notify_state = MinimalRuntimeHost::notifyState,
-      .request_stop = MinimalRuntimeHost::requestStop,
-      .ensure_parser_binding = MinimalRuntimeHost::ensureParserBinding,
-      .push_raw_message = MinimalRuntimeHost::pushRawMessage,
-      .show_message_box = MinimalRuntimeHost::showMessageBox,
-      .list_available_encodings = MinimalRuntimeHost::listAvailableEncodings,
+  return PJ_data_source_runtime_host_t{
+      .ctx = reinterpret_cast<void*>(0x2),
+      .vtable = with_encodings ? &with_vt : &no_enc_vt,
   };
-  return PJ_data_source_runtime_host_t{.ctx = reinterpret_cast<void*>(0x3), .vtable = &vtable};
-}
-
-// Make a runtime host with a smaller struct_size to simulate an older host
-PJ_data_source_runtime_host_t makeOldRuntimeHostWithoutEncodings() {
-  static const PJ_data_source_runtime_host_vtable_t vtable = {
-      .protocol_version = PJ_DATA_SOURCE_PROTOCOL_VERSION,
-      // Lie about struct_size to simulate an older host without list_available_encodings
-      .struct_size = offsetof(PJ_data_source_runtime_host_vtable_t, list_available_encodings),
-      .get_last_error = MinimalRuntimeHost::getLastError,
-      .report_message = MinimalRuntimeHost::reportMessage,
-      .progress_start = MinimalRuntimeHost::progressStart,
-      .progress_update = MinimalRuntimeHost::progressUpdate,
-      .progress_finish = MinimalRuntimeHost::progressFinish,
-      .is_stop_requested = MinimalRuntimeHost::isStopRequested,
-      .notify_state = MinimalRuntimeHost::notifyState,
-      .request_stop = MinimalRuntimeHost::requestStop,
-      .ensure_parser_binding = MinimalRuntimeHost::ensureParserBinding,
-      .push_raw_message = MinimalRuntimeHost::pushRawMessage,
-      .show_message_box = MinimalRuntimeHost::showMessageBox,
-      .list_available_encodings = MinimalRuntimeHost::listAvailableEncodings,  // ignored due to struct_size
-  };
-  return PJ_data_source_runtime_host_t{.ctx = reinterpret_cast<void*>(0x4), .vtable = &vtable};
 }
 
 TEST(DataSourceLibraryTest, LoadsSharedPluginAndDrivesInstance) {
@@ -165,52 +132,43 @@ TEST(DataSourceLibraryTest, LoadsSharedPluginAndDrivesInstance) {
   EXPECT_TRUE(handle.valid());
   EXPECT_NE(handle.manifest().find("Mock DataSource"), std::string::npos);
 
-  ASSERT_TRUE(handle.bindWriteHost(makeWriteHost()));
-  ASSERT_TRUE(handle.bindRuntimeHost(makeRuntimeHost()));
+  PJ::ServiceRegistryBuilder reg;
+  reg.registerService<PJ::sdk::SourceWriteHostService>(makeSourceWriteHost());
+  reg.registerService<PJ::sdk::DataSourceRuntimeHostService>(makeRuntimeHost(false));
+
+  ASSERT_TRUE(handle.bind(reg.view()));
   ASSERT_TRUE(handle.loadConfig(R"({"delegated":true})"));
   EXPECT_TRUE(handle.start());
-  EXPECT_EQ(handle.currentState(), PJ_DATA_SOURCE_STATE_RUNNING);
+  EXPECT_EQ(handle.currentState(), PJ::DataSourceState::kRunning);
   handle.stop();
-  EXPECT_EQ(handle.currentState(), PJ_DATA_SOURCE_STATE_STOPPED);
+  EXPECT_EQ(handle.currentState(), PJ::DataSourceState::kStopped);
 }
 
-// ---------------------------------------------------------------------------
-// listAvailableEncodings tests
-// ---------------------------------------------------------------------------
+TEST(DataSourceLibraryTest, BindFailsWithEmptyRegistry) {
+  auto library = PJ::DataSourceLibrary::load(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH);
+  ASSERT_TRUE(library);
+  auto handle = library->createHandle();
+
+  PJ::ServiceRegistryBuilder empty;
+  auto status = handle.bind(empty.view());
+  EXPECT_FALSE(status);
+  EXPECT_NE(status.error().find("pj.source_write.v1"), std::string::npos);
+}
 
 TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsEmptyWhenNullptr) {
-  auto host = makeRuntimeHost();  // has list_available_encodings = nullptr
-  PJ::DataSourceRuntimeHostView view(host);
-
-  auto encodings = view.listAvailableEncodings();
-  EXPECT_TRUE(encodings.empty());
+  PJ::DataSourceRuntimeHostView view(makeRuntimeHost(false));
+  EXPECT_TRUE(view.listAvailableEncodings().empty());
 }
 
 TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsJsonArray) {
-  auto host = makeRuntimeHostWithEncodings();
-  PJ::DataSourceRuntimeHostView view(host);
-
-  auto encodings = view.listAvailableEncodings();
-  EXPECT_FALSE(encodings.empty());
-  EXPECT_EQ(encodings, R"(["json","cbor","protobuf"])");
-}
-
-TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsEmptyForOldHost) {
-  // Simulate an older host that doesn't have the list_available_encodings field
-  // (struct_size is smaller than the offset of that field)
-  auto host = makeOldRuntimeHostWithoutEncodings();
-  PJ::DataSourceRuntimeHostView view(host);
-
-  auto encodings = view.listAvailableEncodings();
-  EXPECT_TRUE(encodings.empty());
+  PJ::DataSourceRuntimeHostView view(makeRuntimeHost(true));
+  EXPECT_EQ(view.listAvailableEncodings(), R"(["json","cbor","protobuf"])");
 }
 
 TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsEmptyForInvalidView) {
-  PJ::DataSourceRuntimeHostView view;  // default constructed = invalid
+  PJ::DataSourceRuntimeHostView view;
   EXPECT_FALSE(view.valid());
-
-  auto encodings = view.listAvailableEncodings();
-  EXPECT_TRUE(encodings.empty());
+  EXPECT_TRUE(view.listAvailableEncodings().empty());
 }
 
 }  // namespace

@@ -1,19 +1,6 @@
 /**
  * @file toolbox_handle.hpp
- * @brief RAII wrapper around a single Toolbox plugin instance.
- *
- * Obtained from ToolboxLibrary::createHandle(). Owns the plugin context
- * and destroys it on scope exit. Move-only; not copyable.
- *
- * Typical usage:
- * @code
- *   auto handle = library.createHandle();
- *   handle.bindToolboxHost(toolbox_host);
- *   handle.bindRuntimeHost(runtime_host);
- *   handle.loadConfig(json);
- *   // user interacts with dialog
- *   auto config = handle.saveConfig();
- * @endcode
+ * @brief RAII wrapper around a single Toolbox plugin instance (protocol v4).
  */
 #pragma once
 
@@ -21,18 +8,15 @@
 
 #include <cassert>
 #include <cstddef>
+#include <pj_base/expected.hpp>
+#include <pj_base/sdk/data_source_host_views.hpp>
 #include <string>
 #include <string_view>
 #include <utility>
 
 namespace PJ {
 
-/**
- * RAII handle owning a Toolbox plugin instance.
- *
- * Each method delegates to the corresponding vtable function pointer.
- * The destructor calls vt_->destroy(ctx_).
- */
+/// RAII handle owning a Toolbox plugin instance.
 class ToolboxHandle {
  public:
   explicit ToolboxHandle(const PJ_toolbox_vtable_t* vt) : vt_(vt) {
@@ -69,58 +53,58 @@ class ToolboxHandle {
   }
 
   [[nodiscard]] std::string manifest() const {
-    return safeString(vt_->manifest_json);
+    return vt_->manifest_json != nullptr ? std::string(vt_->manifest_json) : std::string();
   }
 
   [[nodiscard]] uint64_t capabilities() const {
     return vt_->capabilities(ctx_);
   }
 
-  [[nodiscard]] bool bindToolboxHost(PJ_toolbox_host_t toolbox_host) {
-    return vt_->bind_toolbox_host(ctx_, toolbox_host);
-  }
-
-  [[nodiscard]] bool bindRuntimeHost(PJ_toolbox_runtime_host_t runtime_host) {
-    return vt_->bind_runtime_host(ctx_, runtime_host);
-  }
-
-  /// Bind the optional colormap registry service. Returns true when the plugin
-  /// accepts the registry (plugins that don't use it still return true as a
-  /// no-op) or when the plugin does not implement the binding at all.
-  [[nodiscard]] bool bindColorMapRegistry(PJ_colormap_registry_t registry) {
-    if (vt_->bind_colormap_registry == nullptr) return true;
-    return vt_->bind_colormap_registry(ctx_, registry);
-  }
-
-  [[nodiscard]] std::string saveConfig() const {
-    return safeString(vt_->save_config(ctx_));
-  }
-
-  [[nodiscard]] bool loadConfig(std::string_view config_json) {
-    return vt_->load_config(ctx_, std::string(config_json).c_str());
-  }
-
-  [[nodiscard]] void* dialogContext() const {
-    return vt_->get_dialog_context ? vt_->get_dialog_context(ctx_) : nullptr;
-  }
-
-  [[nodiscard]] std::string lastError() const {
-    return safeString(vt_->get_last_error(ctx_));
-  }
-
-  /// Notify the plugin that new records have been appended to the datastore.
-  /// No-op for plugins compiled against an older SDK revision whose vtable
-  /// does not include the `on_data_changed` slot.
-  void onDataChanged() const {
-    if (vt_ == nullptr || ctx_ == nullptr) {
-      return;
+  [[nodiscard]] Status bind(PJ_service_registry_t registry) {
+    PJ_error_t err{};
+    if (!vt_->bind(ctx_, registry, &err)) {
+      return unexpected(errorToString(err));
     }
-    constexpr size_t required_size =
-        offsetof(PJ_toolbox_vtable_t, on_data_changed) + sizeof(vt_->on_data_changed);
-    if (vt_->struct_size < required_size || vt_->on_data_changed == nullptr) {
+    return okStatus();
+  }
+
+  [[nodiscard]] Status saveConfig(std::string& out_json) {
+    PJ_string_view_t sv{};
+    PJ_error_t err{};
+    if (!vt_->save_config(ctx_, &sv, &err)) {
+      return unexpected(errorToString(err));
+    }
+    out_json.assign(sv.data == nullptr ? "" : sv.data, sv.size);
+    return okStatus();
+  }
+
+  [[nodiscard]] Status loadConfig(std::string_view config_json) {
+    PJ_string_view_t sv{config_json.data(), config_json.size()};
+    PJ_error_t err{};
+    if (!vt_->load_config(ctx_, sv, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] PJ_borrowed_dialog_t getDialog() const {
+    return vt_->get_dialog != nullptr ? vt_->get_dialog(ctx_) : PJ_borrowed_dialog_t{nullptr, nullptr};
+  }
+
+  void onDataChanged() const {
+    if (vt_ == nullptr || ctx_ == nullptr || vt_->on_data_changed == nullptr) {
       return;
     }
     vt_->on_data_changed(ctx_);
+  }
+
+  /// Query a plugin-exposed extension by reverse-DNS id. Tail-slot gated.
+  [[nodiscard]] const void* getPluginExtension(std::string_view id) const {
+    if (!PJ_HAS_TAIL_SLOT(PJ_toolbox_vtable_t, vt_, get_plugin_extension)) {
+      return nullptr;
+    }
+    PJ_string_view_t sv{id.data(), id.size()};
+    return vt_->get_plugin_extension(ctx_, sv);
   }
 
   [[nodiscard]] const PJ_toolbox_vtable_t* vtable() const {
@@ -134,10 +118,6 @@ class ToolboxHandle {
  private:
   const PJ_toolbox_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
-
-  static std::string safeString(const char* str) {
-    return str != nullptr ? std::string(str) : std::string();
-  }
 };
 
 }  // namespace PJ

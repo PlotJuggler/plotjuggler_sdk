@@ -6,6 +6,10 @@ repos:
     rev: v4.5.0
     hooks:
       - id: check-added-large-files
+        # pj_base/abi/baseline.abi is an intentionally-tracked reference
+        # dump (~1.1 MB of XML from abidw) used by the ABI drift gate.
+        # It is refreshed via `cmake --build . --target abi_update_baseline`.
+        exclude: ^pj_base/abi/
       - id: check-ast
       - id: check-case-conflict
       - id: check-merge-conflict

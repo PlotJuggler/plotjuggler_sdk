@@ -1,119 +1,130 @@
 /**
  * @file detail/message_parser_trampolines.hpp
- * @brief Out-of-line definitions for MessageParserPluginBase C ABI trampolines.
+ * @brief Out-of-line C ABI trampolines for MessageParserPluginBase (v4).
  *
- * Included automatically by message_parser_plugin_base.hpp — do not include directly.
- * Each trampoline wraps a virtual call with try-catch for full exception safety
- * across the C ABI boundary.
+ * Included automatically by message_parser_plugin_base.hpp.
+ * Every trampoline is `noexcept` — the v4 vtable requires it.
  */
 #pragma once
 
 namespace PJ {
 
-inline void MessageParserPluginBase::trampoline_destroy(void* ctx) {
+inline void MessageParserPluginBase::trampoline_destroy(void* ctx) noexcept {
   try {
     delete static_cast<MessageParserPluginBase*>(ctx);
   } catch (...) {}
 }
 
-inline bool MessageParserPluginBase::trampoline_bind_write_host(void* ctx, PJ_parser_write_host_t write_host) {
+inline bool MessageParserPluginBase::trampoline_bind(
+    void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
-    auto status = self->bindWriteHost(write_host);
+    auto status = self->bind(sdk::ServiceRegistry(registry));
     if (!status) {
-      self->last_error_ = std::move(status).error();
+      self->storeError(out_error, 1, "plugin", std::move(status).error());
       return false;
     }
     return true;
   } catch (const std::exception& e) {
-    self->last_error_ = e.what();
+    self->storeError(out_error, 1, "plugin", std::string("bind threw: ") + e.what());
     return false;
   } catch (...) {
-    self->last_error_ = "Unknown exception in bind_write_host";
+    self->storeError(out_error, 1, "plugin", "unknown exception in bind");
     return false;
   }
 }
 
 inline bool MessageParserPluginBase::trampoline_bind_schema(
-    void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema) {
+    void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
-    auto status = self->bindSchema(
-        std::string_view(type_name.data, type_name.size), Span<const uint8_t>(schema.data, schema.size));
+    auto name_sv = type_name.data == nullptr ? std::string_view{} : std::string_view(type_name.data, type_name.size);
+    Span<const uint8_t> schema_span(schema.data, schema.size);
+    auto status = self->bindSchema(name_sv, schema_span);
     if (!status) {
-      self->last_error_ = std::move(status).error();
+      self->storeError(out_error, 1, "plugin", std::move(status).error());
       return false;
     }
     return true;
   } catch (const std::exception& e) {
-    self->last_error_ = e.what();
+    self->storeError(out_error, 1, "plugin", std::string("bind_schema threw: ") + e.what());
     return false;
   } catch (...) {
-    self->last_error_ = "Unknown exception in bind_schema";
+    self->storeError(out_error, 1, "plugin", "unknown exception in bind_schema");
     return false;
   }
 }
 
-inline const char* MessageParserPluginBase::trampoline_save_config(void* ctx) {
+inline bool MessageParserPluginBase::trampoline_save_config(
+    void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
+  if (out_json == nullptr) {
+    self->storeError(out_error, 2, "plugin", "save_config called with null out_json");
+    return false;
+  }
   try {
     self->config_buf_ = self->saveConfig();
-    return self->config_buf_.c_str();
+    out_json->data = self->config_buf_.data();
+    out_json->size = self->config_buf_.size();
+    return true;
   } catch (const std::exception& e) {
-    self->last_error_ = e.what();
-    return "{}";
+    self->storeError(out_error, 1, "plugin", std::string("save_config threw: ") + e.what());
+    return false;
   } catch (...) {
-    self->last_error_ = "Unknown exception in save_config";
-    return "{}";
+    self->storeError(out_error, 1, "plugin", "unknown exception in save_config");
+    return false;
   }
 }
 
-inline bool MessageParserPluginBase::trampoline_load_config(void* ctx, const char* config_json) {
+inline bool MessageParserPluginBase::trampoline_load_config(
+    void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
-    auto status = self->loadConfig(config_json == nullptr ? std::string_view{} : std::string_view(config_json));
+    std::string_view sv =
+        config_json.data == nullptr ? std::string_view{} : std::string_view(config_json.data, config_json.size);
+    auto status = self->loadConfig(sv);
     if (!status) {
-      self->last_error_ = std::move(status).error();
+      self->storeError(out_error, 1, "plugin", std::move(status).error());
       return false;
     }
     return true;
   } catch (const std::exception& e) {
-    self->last_error_ = e.what();
+    self->storeError(out_error, 1, "plugin", std::string("load_config threw: ") + e.what());
     return false;
   } catch (...) {
-    self->last_error_ = "Unknown exception in load_config";
+    self->storeError(out_error, 1, "plugin", "unknown exception in load_config");
     return false;
   }
 }
 
-inline bool MessageParserPluginBase::trampoline_parse(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload) {
+inline bool MessageParserPluginBase::trampoline_parse(
+    void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
-    auto status = self->parse(Timestamp{timestamp_ns}, Span<const uint8_t>(payload.data, payload.size));
+    Span<const uint8_t> payload_span(payload.data, payload.size);
+    auto status = self->parse(timestamp_ns, payload_span);
     if (!status) {
-      self->last_error_ = std::move(status).error();
+      self->storeError(out_error, 1, "plugin", std::move(status).error());
       return false;
     }
     return true;
   } catch (const std::exception& e) {
-    self->last_error_ = e.what();
+    self->storeError(out_error, 1, "plugin", std::string("parse threw: ") + e.what());
     return false;
   } catch (...) {
-    self->last_error_ = "Unknown exception in parse";
+    self->storeError(out_error, 1, "plugin", "unknown exception in parse");
     return false;
   }
 }
 
-inline const char* MessageParserPluginBase::trampoline_get_last_error(void* ctx) {
+inline const void* MessageParserPluginBase::trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
-    self->last_error_ = self->lastError();
-  } catch (const std::exception& e) {
-    self->last_error_ = e.what();
+    std::string_view sv = id.data == nullptr ? std::string_view{} : std::string_view(id.data, id.size);
+    return self->pluginExtension(sv);
   } catch (...) {
-    self->last_error_ = "Unknown exception in get_last_error";
+    return nullptr;
   }
-  return self->last_error_.empty() ? nullptr : self->last_error_.c_str();
 }
 
 }  // namespace PJ
