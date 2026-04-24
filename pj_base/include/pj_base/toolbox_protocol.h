@@ -1,19 +1,13 @@
 /**
  * @file toolbox_protocol.h
- * @brief C ABI protocol for Toolbox plugins (version 1).
+ * @brief C ABI protocol for Toolbox plugins (version 4).
  *
- * Defines the vtable contracts that a Toolbox shared library must export.
- * The host loads the library, calls PJ_get_toolbox_vtable() to obtain a
- * vtable, then drives the plugin through create/bind/interact/destroy.
- *
- * Two host bindings exist:
- *  - **Toolbox host** (PJ_toolbox_host_t, from plugin_data_api.h): data-plane
- *    callbacks for reading/writing records in the host's storage engine.
- *  - **Runtime host** (PJ_toolbox_runtime_host_t, below): control-plane
- *    callbacks for diagnostic messages and data-change notifications.
- *
- * String ownership convention: plugin-returned `const char*` pointers remain
- * valid until the next call to the same function on the same context.
+ * v4 summary of changes vs v3:
+ *   - Toolbox host (pj.toolbox_write.v1) now uses Arrow C Data Interface
+ *     for bulk write (append_arrow_stream) and read (read_series_arrow).
+ *     The materialised-vector read_series and byte-based append_arrow_ipc
+ *     are removed. See pj_base/plugin_data_api.h.
+ *   - Every vtable slot is PJ_NOEXCEPT and carries a thread-class tag.
  */
 #ifndef PJ_TOOLBOX_PROTOCOL_H
 #define PJ_TOOLBOX_PROTOCOL_H
@@ -29,7 +23,19 @@ extern "C" {
 #endif
 
 /** Protocol version. Host and plugin must agree on the same major version. */
-#define PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION 1
+#define PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION 4
+
+/**
+ * Minimum vtable size for v4.0 compatibility, pinned at v4.0 release.
+ *
+ * Loaders reject plugins whose `struct_size < PJ_TOOLBOX_MIN_VTABLE_SIZE`.
+ * MUST NOT GROW when new tail slots are appended. See PJ_ABI_VERSION comment
+ * in plugin_data_api.h for the rationale.
+ *
+ * Last v4.0 slot is `get_plugin_extension` (promoted from v3 tail).
+ */
+#define PJ_TOOLBOX_MIN_VTABLE_SIZE \
+  (offsetof(PJ_toolbox_vtable_t, get_plugin_extension) + sizeof(const void* (*)(void*, PJ_string_view_t)))
 
 #if defined(_WIN32)
 #define PJ_TOOLBOX_EXPORT __declspec(dllexport)
@@ -46,103 +52,88 @@ typedef enum {
   PJ_TOOLBOX_MESSAGE_ERROR = 2,
 } PJ_toolbox_message_level_t;
 
-/**
- * Capability flags returned by the plugin's capabilities() function.
- * Combine with bitwise OR.
- */
 enum {
-  PJ_TOOLBOX_CAPABILITY_HAS_DIALOG = 1ull << 0,       /**< Plugin provides a persistent UI panel. */
-  PJ_TOOLBOX_CAPABILITY_NON_MODAL_DIALOG = 1ull << 1, /**< Dialog should be shown non-modally so the host window remains interactive (e.g. for drag-and-drop). */
+  PJ_TOOLBOX_CAPABILITY_HAS_DIALOG = 1ull << 0,
+  PJ_TOOLBOX_CAPABILITY_NON_MODAL_DIALOG = 1ull << 1,
 };
 
 /**
- * Runtime host vtable — control-plane callbacks provided by the host.
- *
- * The plugin calls these to send diagnostic messages and notify the host
- * when data has been modified so the UI can refresh.
+ * Toolbox runtime host vtable — control-plane callbacks, delivered as the
+ * "pj.toolbox_runtime.v1" service.
  */
 typedef struct PJ_toolbox_runtime_host_vtable_t {
-  uint32_t protocol_version; /**< Must equal PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION. */
-  uint32_t struct_size;      /**< sizeof(PJ_toolbox_runtime_host_vtable_t). */
+  uint32_t protocol_version;
+  uint32_t struct_size;
 
-  /** Returns the last host-side error message, or NULL if none. */
-  const char* (*get_last_error)(void* ctx);
+  /** [thread-safe] Send a diagnostic message to the host (shown in UI log). */
+  void (*report_message)(void* ctx, PJ_toolbox_message_level_t level, PJ_string_view_t message) PJ_NOEXCEPT;
 
-  /** Send a diagnostic message to the host (shown in UI log). */
-  void (*report_message)(void* ctx, PJ_toolbox_message_level_t level, PJ_string_view_t message);
-
-  /** Notify the host that the plugin has modified data; host should refresh UI. */
-  void (*notify_data_changed)(void* ctx);
+  /** [thread-safe] Notify the host that data has been modified; host refreshes UI. */
+  void (*notify_data_changed)(void* ctx) PJ_NOEXCEPT;
 } PJ_toolbox_runtime_host_vtable_t;
 
-/** Fat pointer pairing a runtime host context with its vtable. */
 typedef struct {
   void* ctx;
   const PJ_toolbox_runtime_host_vtable_t* vtable;
 } PJ_toolbox_runtime_host_t;
 
 /**
- * Toolbox plugin vtable — the interface a plugin shared library exports.
+ * Toolbox plugin vtable (v4).
  *
- * The host obtains this via the exported PJ_get_toolbox_vtable() symbol.
- * Typical lifecycle: create -> bind hosts -> load config -> [user interacts] -> save config -> destroy.
+ * Typical lifecycle: create -> bind(registry) -> load_config (optional)
+ *                    -> [user interacts] -> save_config -> destroy.
+ * Every slot is PJ_NOEXCEPT.
  */
 typedef struct PJ_toolbox_vtable_t {
-  uint32_t protocol_version; /**< Must equal PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION. */
-  uint32_t struct_size;      /**< sizeof(PJ_toolbox_vtable_t). */
+  uint32_t protocol_version;
+  uint32_t struct_size;
 
-  /** Allocate a new plugin instance. Returns opaque context pointer. */
-  void* (*create)(void);
-  /** Destroy an instance previously created by create(). */
-  void (*destroy)(void* ctx);
+  /** [main-thread] Allocate a new toolbox instance. */
+  void* (*create)(void)PJ_NOEXCEPT;
+  /** [main-thread] Destroy an instance previously created by create(). */
+  void (*destroy)(void* ctx) PJ_NOEXCEPT;
 
-  /**
-   * Static JSON manifest. Compile-time constant string literal.
-   *
-   * Required keys:
-   *   "name"    — human-readable plugin name (string).
-   *   "version" — semver version string (string).
-   *
-   * Optional keys:
-   *   "description" — short description of the plugin (string).
-   */
   const char* manifest_json;
-  /** Return capability bitmask (PJ_TOOLBOX_CAPABILITY_* flags). */
-  uint64_t (*capabilities)(void* ctx);
-
-  /** Bind the data-plane toolbox host. Must be called before interaction. */
-  bool (*bind_toolbox_host)(void* ctx, PJ_toolbox_host_t toolbox_host);
-  /** Bind the control-plane runtime host. Must be called before interaction. */
-  bool (*bind_runtime_host)(void* ctx, PJ_toolbox_runtime_host_t runtime_host);
-  /**
-   * Bind the optional colormap registry service.
-   *
-   * Called by the host after bind_toolbox_host when a registry is available.
-   * Plugins that don't publish colormaps can leave this NULL; the host checks
-   * for NULL before calling. Returns true on success.
-   */
-  bool (*bind_colormap_registry)(void* ctx, PJ_colormap_registry_t registry);
-
-  /** Serialize plugin configuration to JSON. Plugin-owned string. */
-  const char* (*save_config)(void* ctx);
-  /** Restore plugin configuration from JSON. */
-  bool (*load_config)(void* ctx, const char* config_json);
+  /** [main-thread] Return capability bitmask (PJ_TOOLBOX_CAPABILITY_* flags). */
+  uint64_t (*capabilities)(void* ctx) PJ_NOEXCEPT;
 
   /**
-   * Returns a context pointer for the plugin's dialog.
-   * The returned pointer is owned by the Toolbox instance — the host
-   * must NOT destroy it independently. Returns NULL if no dialog.
+   * [main-thread] Bind host services. The host registers at least
+   * "pj.toolbox_write.v1" and "pj.toolbox_runtime.v1"; optional services
+   * such as "pj.colormap.v1" may also be present.
    */
-  void* (*get_dialog_context)(void* ctx);
+  bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** Return the last error message, or NULL if none. Plugin-owned string. */
-  const char* (*get_last_error)(void* ctx);
+  /** [main-thread] Serialize toolbox configuration to JSON. */
+  bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /** [main-thread] Restore toolbox configuration from JSON. */
+  bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** Notify the plugin that new records have been appended to the datastore. */
-  void (*on_data_changed)(void* ctx);
+  /**
+   * [main-thread] Return a typed borrowed reference to this toolbox's
+   * dialog. The host must NOT call the dialog vtable's create() or
+   * destroy() on a borrowed handle. Returns {NULL, NULL} if this toolbox
+   * has no dialog.
+   */
+  PJ_borrowed_dialog_t (*get_dialog)(void* ctx) PJ_NOEXCEPT;
+
+  /** [main-thread] Notify the plugin that new records have been appended
+   *  to the datastore. */
+  void (*on_data_changed)(void* ctx) PJ_NOEXCEPT;
+
+  /** [thread-safe] Query a plugin-exposed extension by reverse-DNS id.
+   *  See PJ_data_source_vtable_t::get_plugin_extension for the full
+   *  contract and ID-versioning convention. */
+  const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id)PJ_NOEXCEPT;
+
+  /* ====================================================================
+   * Tail slots beyond here are OPTIONAL. Host reads MUST check both
+   * struct_size and slot-nullability via PJ_HAS_TAIL_SLOT.
+   * ==================================================================== */
 } PJ_toolbox_vtable_t;
+/* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
+ * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_TOOLBOX_MIN_VTABLE_SIZE. */
 
-/** Signature of the exported entry point: `PJ_get_toolbox_vtable`. */
 typedef const PJ_toolbox_vtable_t* (*PJ_get_toolbox_vtable_fn)(void);
 
 #ifdef __cplusplus

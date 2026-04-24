@@ -5,7 +5,7 @@
 #include <string>
 
 // Defined in mock_dialog.cpp, linked statically
-extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
+extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept;
 
 class DialogHandleTest : public ::testing::Test {
  protected:
@@ -144,13 +144,6 @@ TEST_F(DialogHandleTest, SaveLoadConfigRoundTrip) {
 TEST_F(DialogHandleTest, LoadConfigInvalidJson) {
   PJ::DialogHandle h(vt_);
   EXPECT_FALSE(h.load_config("not json"));
-}
-
-// --- Error reporting ---
-
-TEST_F(DialogHandleTest, NoErrorInitially) {
-  PJ::DialogHandle h(vt_);
-  EXPECT_EQ(h.lastError(), "");
 }
 
 // --- Accept / Reject ---

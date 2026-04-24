@@ -89,8 +89,15 @@ Stateful interactive tools with full data access.
 
 Shared by DataSource, MessageParser, and Toolbox. Supports:
 
-- **Incremental writes** — `appendRecord()` with named or bound field values.
-- **Bulk Arrow IPC writes** — `appendArrowIpc()` for columnar data.
+- **Incremental writes** — `appendRecord()` / `appendBoundRecord()` with
+  named or pre-resolved field values. Used by parsers and streaming
+  sources where data arrives one message at a time.
+- **Bulk Arrow writes** — `appendArrowStream()` hands an
+  `ArrowArrayStream*` (Arrow C Data Interface) to the host, which pulls
+  all batches and takes ownership on success. This is the canonical
+  path for file-based sources and toolbox bulk imports. The parser
+  write surface is per-record only — the host coalesces parser output
+  into Arrow batches internally before committing to storage.
 - **Topic and field management** — `ensureTopic()`, `ensureField()`.
 
 Family-specific permissions differ (Toolbox can create data sources; DataSource
@@ -102,7 +109,11 @@ the same.
 Only Toolbox requires read access:
 
 - `catalogSnapshot()` — enumerate available data sources, topics, and fields.
-- `readSeries(field)` — read the full time series for a field.
+- `readSeriesArrow(field)` — read the full time series for a field as a
+  host-owned `ArrowSchema` + `ArrowArray` pair (timestamp column +
+  value column). Plugins wrap the out-params in
+  `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` for scope-bound
+  release.
 
 Materialization/decompression is acceptable when reading actual sample data.
 
@@ -134,7 +145,8 @@ controls inside a DataSource dialog via the `pj_parser_slot` placeholder.
 ### Ownership and Lifecycle
 
 - **DataSource dialog**: member of the source class. Host obtains a borrowed
-  reference via `dialogContext()`. Dialog and source share state directly.
+  reference via `getDialog()` (using `PJ::borrowDialog(dialog_)` from the
+  SDK). Dialog and source share state directly.
 - **Parser dialog**: independent owned instance created by the host. Config
   flows via JSON — dialog and parser share a JSON schema contract but are
   otherwise decoupled.

@@ -55,7 +55,7 @@ TEST(SourceDialogIntegration, BorrowedDialogContext) {
   auto source = lib->createHandle();
   ASSERT_TRUE(source.valid());
 
-  void* dialog_ctx = source.dialogContext();
+  void* dialog_ctx = source.getDialog().ctx;
   EXPECT_NE(dialog_ctx, nullptr);
 }
 
@@ -71,7 +71,7 @@ TEST(SourceDialogIntegration, BorrowedDialogHandleWorks) {
   auto source = lib->createHandle();
   ASSERT_TRUE(source.valid());
 
-  void* dialog_ctx = source.dialogContext();
+  void* dialog_ctx = source.getDialog().ctx;
   ASSERT_NE(dialog_ctx, nullptr);
 
   auto dialog = PJ::DialogHandle::borrowed(*dialog_vt, dialog_ctx);
@@ -101,7 +101,7 @@ TEST(SourceDialogIntegration, SharedStateBetweenDialogAndSource) {
   ASSERT_TRUE(dialog_vt) << dialog_vt.error();
 
   auto source = lib->createHandle();
-  void* dialog_ctx = source.dialogContext();
+  void* dialog_ctx = source.getDialog().ctx;
   ASSERT_NE(dialog_ctx, nullptr);
 
   auto dialog = PJ::DialogHandle::borrowed(*dialog_vt, dialog_ctx);
@@ -114,7 +114,9 @@ TEST(SourceDialogIntegration, SharedStateBetweenDialogAndSource) {
   EXPECT_EQ(dialog_cfg["host"], "shared-host");
 
   // Source's saveConfig should match (same underlying state)
-  auto source_cfg = nlohmann::json::parse(source.saveConfig());
+  std::string source_saved;
+  ASSERT_TRUE(source.saveConfig(source_saved));
+  auto source_cfg = nlohmann::json::parse(source_saved);
   EXPECT_EQ(source_cfg["host"], "shared-host");
 }
 
@@ -128,7 +130,7 @@ TEST(SourceDialogIntegration, HeadlessDialogTicksWork) {
   ASSERT_TRUE(dialog_vt) << dialog_vt.error();
 
   auto source = lib->createHandle();
-  auto dialog = PJ::DialogHandle::borrowed(*dialog_vt, source.dialogContext());
+  auto dialog = PJ::DialogHandle::borrowed(*dialog_vt, source.getDialog().ctx);
 
   // Connect first
   (void)dialog.sendEvent("connect_btn", R"({"clicked": true})");
@@ -160,17 +162,19 @@ TEST(SourceDialogIntegration, ConfigPersistence) {
   // Set some config via dialog
   auto dialog_vt = lib->resolveDialogVtable();
   ASSERT_TRUE(dialog_vt) << dialog_vt.error();
-  auto dialog = PJ::DialogHandle::borrowed(*dialog_vt, source.dialogContext());
+  auto dialog = PJ::DialogHandle::borrowed(*dialog_vt, source.getDialog().ctx);
   (void)dialog.sendEvent("host_input", R"({"text": "persist-host"})");
   (void)dialog.sendEvent("port_input", R"({"value": 7777})");
 
   // Save and reload
-  std::string saved = source.saveConfig();
+  std::string saved;
+  ASSERT_TRUE(source.saveConfig(saved));
   auto source2 = lib->createHandle();
   EXPECT_TRUE(source2.loadConfig(saved));
 
   // Verify round-trip
-  std::string reloaded = source2.saveConfig();
+  std::string reloaded;
+  ASSERT_TRUE(source2.saveConfig(reloaded));
   auto j1 = nlohmann::json::parse(saved);
   auto j2 = nlohmann::json::parse(reloaded);
   EXPECT_EQ(j1["host"], j2["host"]);
@@ -190,7 +194,7 @@ TEST(SourceDialogIntegration, NoDialogPluginReturnsNull) {
   EXPECT_EQ(source.capabilities() & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG, 0u);
 
   // dialogContext should return null
-  EXPECT_EQ(source.dialogContext(), nullptr);
+  EXPECT_EQ(source.getDialog().ctx, nullptr);
 
   // resolveDialogVtable should fail (no dialog vtable exported)
   auto dialog_vt = lib->resolveDialogVtable();

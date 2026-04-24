@@ -1,5 +1,11 @@
 # Writing a MessageParser Plugin
 
+> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). The parser
+> write-host stays per-record in v4 (parsers decode one message at a
+> time; the host coalesces into Arrow batches internally before
+> committing to storage). For ABI evolution rules, error semantics, and
+> noexcept discipline see `ARCHITECTURE.md`.
+
 ## What is a MessageParser?
 
 A MessageParser plugin is a shared library (`.so` / `.dylib` / `.dll`) that
@@ -123,7 +129,16 @@ topic.
 | `ensureField(name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. Returns a `FieldHandle`. |
 | `appendRecord(timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(timestamp, fields)` | Write using pre-resolved field handles (faster). |
-| `appendArrowIpc(ipc_stream, timestamp_col)` | Write an Arrow IPC stream directly. |
+
+The parser write surface is **per-record only** in v4. There is no
+`appendArrowStream` / `appendArrowIpc` slot on the parser write host:
+one `parse()` call decodes one message, so batch boundaries are the
+host's concern, not the parser's. The host coalesces per-record
+writes into Arrow batches internally before committing them to
+storage. If you are porting a plugin that used to emit whole IPC
+streams directly (a Parquet-to-Arrow bulk loader, for example), it
+belongs as a **DataSource** plugin instead — see
+`data-source-guide.md` for the `appendArrowStream` contract.
 
 ### Named vs bound writes
 
@@ -153,20 +168,6 @@ const PJ::sdk::BoundFieldValue fields[] = {
     {.field = *hum_field, .value = 61.0}};
 writeHost().appendBoundRecord(timestamp_ns, PJ::Span(fields));
 ```
-
-### Arrow IPC bulk writes
-
-For parsers that decode into Arrow columnar format (e.g. a Parquet-to-Arrow
-parser), use `appendArrowIpc()` to write an entire IPC stream in one call:
-
-```cpp
-// ipc_buffer is a Span<const uint8_t> containing a valid Arrow IPC stream.
-auto status = writeHost().appendArrowIpc(ipc_buffer, "_timestamp");
-```
-
-The `timestamp_column` parameter names the column holding nanosecond
-timestamps (defaults to `"_timestamp"`). Prefer this when your decoded data
-is already columnar — it avoids per-row overhead.
 
 ## Optional Features
 
@@ -247,7 +248,7 @@ The host resolves the dialog via `MessageParserLibrary::resolveDialogVtable()`.
 #### Ownership model — independent owned instance
 
 Unlike a DataSource dialog (which is a member of the source, accessed via a
-borrowed handle through `dialogContext()`), a **parser dialog is an independent
+borrowed handle through `getDialog()`), a **parser dialog is an independent
 owned instance**. The host creates it via `dialog_vt->create()`, runs it
 through `DialogEngine`, and feeds the resulting config JSON to parser instances
 via `load_config()`. The dialog and parser classes share a JSON config schema
@@ -418,6 +419,38 @@ DataSource                        Host                         MessageParser
 
 The parser is topic-scoped — the host binds a separate write host per topic,
 so `ensureField("x")` in the parser creates `"sensor/imu/x"` in the datastore.
+
+## Testing
+
+Use `PJ::sdk::testing::ParserWriteRecorder` from
+`pj_base/include/pj_base/sdk/testing/parser_write_recorder.hpp` to write
+parser unit tests without re-implementing the fake write-host vtable:
+
+```cpp
+#include <pj_base/sdk/testing/parser_write_recorder.hpp>
+
+TEST(MyParserTest, Basic) {
+  auto library = PJ::MessageParserLibrary::load(PJ_MY_PARSER_PLUGIN_PATH);
+  auto handle = library->createHandle();
+
+  PJ::sdk::testing::ParserWriteRecorder recorder;
+  PJ::ServiceRegistryBuilder registry;
+  registry.registerService<PJ::sdk::ParserWriteHostService>(recorder.makeHost());
+  ASSERT_TRUE(handle.bind(registry.view()));
+
+  const uint8_t payload[] = { /* ... */ };
+  ASSERT_TRUE(handle.parse(1000, payload));
+
+  ASSERT_EQ(recorder.rows().size(), 1u);
+  EXPECT_EQ(recorder.rows()[0].fields[0].name, "temperature");
+  EXPECT_DOUBLE_EQ(recorder.rows()[0].fields[0].numeric, 23.5);
+}
+```
+
+Each `RecordedField` exposes the primitive type plus `.numeric` (for all
+integer/float types, plus `1.0/0.0` for bools), `.bool_value`, and
+`.string_value`, so tests can assert uniformly without writing type
+dispatch code.
 
 ## Examples
 
