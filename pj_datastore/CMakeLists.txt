@@ -17,6 +17,9 @@ add_library(pj_datastore STATIC
   src/derived_engine.cpp
   src/builtin_transforms.cpp
   src/plugin_data_host.cpp
+  src/colormap_registry.cpp
+  src/colormap_registry_host.cpp
+  src/object_store.cpp
 )
 target_include_directories(pj_datastore PUBLIC include)
 target_compile_features(pj_datastore PUBLIC cxx_std_20)
@@ -54,6 +57,7 @@ if(PJ_BUILD_TESTS)
     tests/array_expansion_test.cpp
     tests/regression_test.cpp
     tests/plugin_host_read_test.cpp
+    tests/object_store_test.cpp
   )
 
   foreach(test_src ${PJ_DATASTORE_TESTS})

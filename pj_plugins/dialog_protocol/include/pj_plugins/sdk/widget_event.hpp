@@ -94,6 +94,47 @@ class WidgetEvent {
     return getInt("item_double_clicked_index");
   }
 
+  /// Code editor: code changed
+  std::optional<std::string> codeChanged() const {
+    return getString("code_changed");
+  }
+
+  /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
+  std::optional<std::vector<std::string>> itemsDropped() const {
+    auto it = data_.find("items_dropped");
+    if (it == data_.end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      if (item.is_string()) {
+        result.push_back(item.get<std::string>());
+      }
+    }
+    return result;
+  }
+
+  /// ChartPreviewWidget: visible range changed via zoom or pan.
+  struct ChartViewState {
+    double x_min;
+    double x_max;
+    double y_min;
+    double y_max;
+  };
+
+  std::optional<ChartViewState> chartViewChanged() const {
+    auto xmin = data_.find("chart_x_min");
+    auto xmax = data_.find("chart_x_max");
+    auto ymin = data_.find("chart_y_min");
+    auto ymax = data_.find("chart_y_max");
+    if (xmin == data_.end() || !xmin->is_number() || xmax == data_.end() || !xmax->is_number() ||
+        ymin == data_.end() || !ymin->is_number() || ymax == data_.end() || !ymax->is_number()) {
+      return std::nullopt;
+    }
+    return ChartViewState{xmin->get<double>(), xmax->get<double>(), ymin->get<double>(), ymax->get<double>()};
+  }
+
   /// Check if a key exists in the event data
   bool has(std::string_view key) const {
     return data_.contains(std::string(key));

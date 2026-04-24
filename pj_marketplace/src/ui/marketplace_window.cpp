@@ -227,7 +227,8 @@ void MarketplaceWindow::populateCards() {
     auto* btn_box = new QHBoxLayout();
     btn_box->setSpacing(6);
 
-    if (pending_restart_ids_.contains(ext.id)) {
+    if (pending_restart_ids_.contains(ext.id) || ext_mgr_->hasPendingInstall(ext.id) ||
+        ext_mgr_->hasPendingUninstall(ext.id)) {
       auto* badge = new QPushButton("Needs Restart", card);
       badge->setFixedWidth(90);
       badge->setEnabled(false);

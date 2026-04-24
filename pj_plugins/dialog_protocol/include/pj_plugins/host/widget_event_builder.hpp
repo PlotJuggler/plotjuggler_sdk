@@ -94,6 +94,30 @@ struct WidgetEventBuilder {
     j["item_double_clicked_index"] = index;
     return j.dump();
   }
+
+  /// Code editor: code changed
+  [[nodiscard]] static std::string codeChanged(std::string_view code) {
+    nlohmann::json j;
+    j["code_changed"] = code;
+    return j.dump();
+  }
+
+  /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
+  [[nodiscard]] static std::string itemsDropped(const std::vector<std::string>& labels) {
+    nlohmann::json j;
+    j["items_dropped"] = labels;
+    return j.dump();
+  }
+
+  /// ChartPreviewWidget: visible range changed via zoom or pan.
+  [[nodiscard]] static std::string chartViewChanged(double x_min, double x_max, double y_min, double y_max) {
+    nlohmann::json j;
+    j["chart_x_min"] = x_min;
+    j["chart_x_max"] = x_max;
+    j["chart_y_min"] = y_min;
+    j["chart_y_max"] = y_max;
+    return j.dump();
+  }
 };
 
 }  // namespace PJ

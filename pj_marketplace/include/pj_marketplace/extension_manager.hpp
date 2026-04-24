@@ -80,6 +80,14 @@ class ExtensionManager : public QObject {
 
   bool isInstalled(const QString& id) const;
 
+  // Returns true if the extension is staged in the pending directory and will
+  // become active after the next restart (Windows update path).
+  bool hasPendingInstall(const QString& id) const;
+
+  // Returns true if the extension directory contains a pending-uninstall marker
+  // and will be deleted at the next startup (Windows uninstall path).
+  bool hasPendingUninstall(const QString& id) const;
+
   // Compares the registry version against the installed one using QVersionNumber,
   // which handles multi-segment semver correctly ("1.10.0" > "1.9.0").
   // Returns false if the extension is not installed.

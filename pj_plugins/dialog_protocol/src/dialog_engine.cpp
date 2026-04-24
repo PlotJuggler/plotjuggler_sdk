@@ -2,6 +2,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QGroupBox>
 #include <QSettings>
@@ -11,6 +12,7 @@
 #include <pj_plugins/host/widget_data_view.hpp>
 #include <pj_plugins/host/widget_event_builder.hpp>
 #include <pj_plugins/host_qt/dialog_engine.hpp>
+#include <pj_plugins/host_qt/drop_event_filter.hpp>
 #include <pj_plugins/host_qt/widget_binding.hpp>
 
 namespace PJ {
@@ -101,7 +103,11 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(loaded);
+  }
 
+  // Wire buttonBox signals — works whether the loaded widget was a QDialog
+  // or a plain QWidget. Needed so Close/OK/Cancel buttons function correctly.
+  {
     auto* button_box = loaded->findChild<QDialogButtonBox*>("buttonBox");
     if (button_box) {
       QObject::connect(button_box, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
@@ -378,6 +384,36 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     show_folder_picker_for(name, &handle_, binding_root, prev_data);
   });
 
+  // 5b. Install button keyboard shortcuts declared in widget data
+  {
+    PJ::WidgetDataView shortcut_view(handle_.widget_data());
+    installButtonShortcuts(dialog, shortcut_view);
+  }
+
+  // 5c. Install drop event filter for declared drop targets
+  {
+    PJ::WidgetDataView drop_view(initial_raw);
+    auto targets = drop_view.dropTargets();
+    if (!targets.empty()) {
+      auto* drop_filter =
+          new DropEventFilter(dialog, [&](const std::string& name, const std::string& event_json) {
+            stats_.event_count++;
+            if (handle_.sendEvent(name, event_json)) {
+              auto ar =
+                  apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+              if (ar.wants_accept) {
+                dialog->accept();
+                return;
+              }
+              maybe_open_sub_dialog(ar);
+            }
+          });
+      for (const auto& t : targets) {
+        drop_filter->addTarget(t);
+      }
+    }
+  }
+
   // 6. Start tick timer
   QTimer tick_timer;
   tick_timer.setInterval(config_.tick_interval_ms);
@@ -390,8 +426,19 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   });
   tick_timer.start();
 
-  // 7. Run dialog
-  int result = dialog->exec();
+  // 7. Run dialog (modal or non-modal)
+  int result;
+  if (config_.non_modal) {
+    dialog->setWindowModality(Qt::NonModal);
+    dialog->show();
+    dialog->activateWindow();
+    QEventLoop loop;
+    QObject::connect(dialog, &QDialog::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+    result = dialog->result();
+  } else {
+    result = dialog->exec();
+  }
   tick_timer.stop();
 
   // 8. Notify plugin and clean up

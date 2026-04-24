@@ -65,6 +65,24 @@ inline bool ToolboxPluginBase::trampoline_bind_runtime_host(void* ctx, PJ_toolbo
   }
 }
 
+inline bool ToolboxPluginBase::trampoline_bind_colormap_registry(void* ctx, PJ_colormap_registry_t registry) {
+  auto* self = static_cast<ToolboxPluginBase*>(ctx);
+  try {
+    auto status = self->bindColorMapRegistry(registry);
+    if (!status) {
+      self->last_error_ = std::move(status).error();
+      return false;
+    }
+    return true;
+  } catch (const std::exception& e) {
+    self->last_error_ = e.what();
+    return false;
+  } catch (...) {
+    self->last_error_ = "Unknown exception in bind_colormap_registry";
+    return false;
+  }
+}
+
 inline const char* ToolboxPluginBase::trampoline_save_config(void* ctx) {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
@@ -116,6 +134,17 @@ inline const char* ToolboxPluginBase::trampoline_get_last_error(void* ctx) {
     self->last_error_ = "Unknown exception in get_last_error";
   }
   return self->last_error_.empty() ? nullptr : self->last_error_.c_str();
+}
+
+inline void ToolboxPluginBase::trampoline_on_data_changed(void* ctx) {
+  auto* self = static_cast<ToolboxPluginBase*>(ctx);
+  try {
+    self->onDataChanged();
+  } catch (const std::exception& e) {
+    self->last_error_ = e.what();
+  } catch (...) {
+    self->last_error_ = "Unknown exception in on_data_changed";
+  }
 }
 
 }  // namespace PJ

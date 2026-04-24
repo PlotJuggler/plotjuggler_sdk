@@ -31,6 +31,7 @@ enum class ToolboxMessageLevel : uint32_t {
 /// @name Capability flag constants
 /// @{
 constexpr uint64_t kToolboxCapabilityHasDialog = PJ_TOOLBOX_CAPABILITY_HAS_DIALOG;
+constexpr uint64_t kToolboxCapabilityNonModalDialog = PJ_TOOLBOX_CAPABILITY_NON_MODAL_DIALOG;
 /// @}
 
 /**
@@ -121,6 +122,13 @@ class ToolboxPluginBase {
     return okStatus();
   }
 
+  /// Bind the optional colormap registry service. Override for plugins that
+  /// publish colormaps. Default accepts the registry (valid or not) as a no-op.
+  virtual Status bindColorMapRegistry(PJ_colormap_registry_t registry) {
+    colormap_registry_ = registry;
+    return okStatus();
+  }
+
   /// Serialize plugin configuration to JSON. Default returns "{}".
   virtual std::string saveConfig() const {
     return "{}";
@@ -143,6 +151,10 @@ class ToolboxPluginBase {
     return nullptr;
   }
 
+  /// Override to react to new records being appended to the datastore.
+  /// Default is a no-op.
+  virtual void onDataChanged() {}
+
   template <typename CreateFn>
   static const PJ_toolbox_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
@@ -157,10 +169,12 @@ class ToolboxPluginBase {
         trampoline_capabilities,
         trampoline_bind_toolbox_host,
         trampoline_bind_runtime_host,
+        trampoline_bind_colormap_registry,
         trampoline_save_config,
         trampoline_load_config,
         trampoline_get_dialog_context,
         trampoline_get_last_error,
+        trampoline_on_data_changed,
     };
     return &vt;
   }
@@ -182,6 +196,14 @@ class ToolboxPluginBase {
     return ToolboxRuntimeHostView(runtime_host_);
   }
 
+  [[nodiscard]] sdk::ColorMapRegistryView colorMapRegistry() const {
+    return sdk::ColorMapRegistryView(colormap_registry_);
+  }
+
+  [[nodiscard]] bool colorMapRegistryBound() const {
+    return colormap_registry_.ctx != nullptr && colormap_registry_.vtable != nullptr;
+  }
+
   void setLastError(std::string error) {
     last_error_ = std::move(error);
   }
@@ -189,6 +211,7 @@ class ToolboxPluginBase {
  private:
   PJ_toolbox_host_t toolbox_host_{};
   PJ_toolbox_runtime_host_t runtime_host_{};
+  PJ_colormap_registry_t colormap_registry_{};
   std::string config_buf_;
   mutable std::string last_error_;
 
@@ -198,10 +221,12 @@ class ToolboxPluginBase {
   static uint64_t trampoline_capabilities(void* ctx);
   static bool trampoline_bind_toolbox_host(void* ctx, PJ_toolbox_host_t toolbox_host);
   static bool trampoline_bind_runtime_host(void* ctx, PJ_toolbox_runtime_host_t runtime_host);
+  static bool trampoline_bind_colormap_registry(void* ctx, PJ_colormap_registry_t registry);
   static const char* trampoline_save_config(void* ctx);
   static bool trampoline_load_config(void* ctx, const char* config_json);
   static void* trampoline_get_dialog_context(void* ctx);
   static const char* trampoline_get_last_error(void* ctx);
+  static void trampoline_on_data_changed(void* ctx);
 };
 
 }  // namespace PJ

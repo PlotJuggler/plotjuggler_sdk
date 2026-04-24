@@ -20,6 +20,7 @@
 #include <pj_base/toolbox_protocol.h>
 
 #include <cassert>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -83,6 +84,14 @@ class ToolboxHandle {
     return vt_->bind_runtime_host(ctx_, runtime_host);
   }
 
+  /// Bind the optional colormap registry service. Returns true when the plugin
+  /// accepts the registry (plugins that don't use it still return true as a
+  /// no-op) or when the plugin does not implement the binding at all.
+  [[nodiscard]] bool bindColorMapRegistry(PJ_colormap_registry_t registry) {
+    if (vt_->bind_colormap_registry == nullptr) return true;
+    return vt_->bind_colormap_registry(ctx_, registry);
+  }
+
   [[nodiscard]] std::string saveConfig() const {
     return safeString(vt_->save_config(ctx_));
   }
@@ -97,6 +106,21 @@ class ToolboxHandle {
 
   [[nodiscard]] std::string lastError() const {
     return safeString(vt_->get_last_error(ctx_));
+  }
+
+  /// Notify the plugin that new records have been appended to the datastore.
+  /// No-op for plugins compiled against an older SDK revision whose vtable
+  /// does not include the `on_data_changed` slot.
+  void onDataChanged() const {
+    if (vt_ == nullptr || ctx_ == nullptr) {
+      return;
+    }
+    constexpr size_t required_size =
+        offsetof(PJ_toolbox_vtable_t, on_data_changed) + sizeof(vt_->on_data_changed);
+    if (vt_->struct_size < required_size || vt_->on_data_changed == nullptr) {
+      return;
+    }
+    vt_->on_data_changed(ctx_);
   }
 
   [[nodiscard]] const PJ_toolbox_vtable_t* vtable() const {

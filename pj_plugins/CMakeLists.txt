@@ -102,6 +102,7 @@ target_compile_options(pj_toolbox_host PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(pj_toolbox_host
   PUBLIC
     pj_base
+    pj_dialog_protocol
   PRIVATE
     ${CMAKE_DL_LIBS}
 )

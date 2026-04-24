@@ -27,6 +27,13 @@ class MockToolbox : public PJ::ToolboxPluginBase {
     return this;
   }
 
+  void onDataChanged() override {
+    ++data_changed_count_;
+    if (runtimeHostBound()) {
+      runtimeHost().notifyDataChanged();
+    }
+  }
+
  private:
   void applyTransform() {
     auto host = toolboxHost();
@@ -49,6 +56,7 @@ class MockToolbox : public PJ::ToolboxPluginBase {
   }
 
   std::string config_ = "{}";
+  int data_changed_count_ = 0;
 };
 
 }  // namespace

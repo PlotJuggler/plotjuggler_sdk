@@ -121,9 +121,9 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   }
 
   ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
+  ext_mgr_->applyPendingInstalls();
   ext_mgr_->applyPendingUninstalls();
   registry_.scanDirectory();
-  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
 
   // --- Toolbar ---
   auto* toolbar = addToolBar("Main");
@@ -131,13 +131,13 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
 
   auto* btn_load = new QPushButton("Load File");
   auto* btn_stream = new QPushButton("Start Stream");
-  auto* btn_marketplace = new QPushButton("Marketplace");
+  btn_marketplace_ = new QPushButton("Marketplace");
   auto* btn_clear_data = new QPushButton("Clear Data");
   auto* btn_clear_plots = new QPushButton("Clear Plots");
 
   toolbar->addWidget(btn_load);
   toolbar->addWidget(btn_stream);
-  toolbar->addWidget(btn_marketplace);
+  toolbar->addWidget(btn_marketplace_);
   toolbar->addSeparator();
   toolbar->addWidget(btn_clear_data);
   toolbar->addWidget(btn_clear_plots);
@@ -153,7 +153,7 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
 
   connect(btn_load, &QPushButton::clicked, this, &MainWindow::onLoadFile);
   connect(btn_stream, &QPushButton::clicked, this, &MainWindow::onStartStream);
-  connect(btn_marketplace, &QPushButton::clicked, this, &MainWindow::onOpenMarketplace);
+  connect(btn_marketplace_, &QPushButton::clicked, this, &MainWindow::onOpenMarketplace);
   connect(btn_clear_data, &QPushButton::clicked, this, &MainWindow::onClearData);
   connect(btn_clear_plots, &QPushButton::clicked, this, &MainWindow::onClearPlots);
 
@@ -167,6 +167,13 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   connect(tree_view_, &QTreeView::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
 
   chart_panel_ = new ChartPanel(engine_);
+  // Feed the chart a live view of the colormap registry: the lambda captures
+  // the registry by reference, so any plugin that later activates a colormap
+  // takes effect on the next refresh without re-wiring the chart.
+  chart_panel_->setColorMap([this](double v) -> QColor {
+    std::string color_str = colormap_registry_.evaluate(v);
+    return color_str.empty() ? QColor() : QColor(QString::fromStdString(color_str));
+  });
 
   auto* splitter = new QSplitter(Qt::Horizontal);
   splitter->addWidget(tree_view_);
@@ -186,6 +193,10 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
     chart_panel_->updateData(begin, end);
   });
   connect(&refresh_timer_, &QTimer::timeout, this, &MainWindow::onRefreshTimer);
+
+  // --- Tools menu ---
+  tools_menu_ = menuBar()->addMenu("&Tools");
+  setupToolboxPanels(tools_menu_);
 
   setWindowTitle("PlotJuggler Proto");
 }
@@ -688,7 +699,53 @@ void MainWindow::onOpenMarketplace() {
   window.resize(700, 500);
   window.exec();
   if (window.installationsChanged()) {
+    toolbox_sessions_.clear();
+    open_toolbox_dialogs_ = 0;
     registry_.reload();
+    tools_menu_->clear();
+    setupToolboxPanels(tools_menu_);
+  }
+}
+
+void MainWindow::setupToolboxPanels(QMenu* tools_menu) {
+  for (const auto& tb : registry_.allToolboxes()) {
+    auto session = std::make_unique<ToolboxSession>(
+        engine_, const_cast<PJ::ToolboxLibrary&>(tb.library), colormap_registry_, tb.name, this);
+    if (!session->init()) {
+      continue;
+    }
+
+    connect(session.get(), &ToolboxSession::dataChanged, this, [this]() {
+      auto [begin, end] = computeVisibleRange();
+      chart_panel_->updateData(begin, end);
+      tree_model_.rebuildIfChanged();
+    });
+
+    // Non-modal toolbox dialogs share the event loop with the rest of the UI.
+    // Block the Marketplace while any toolbox dialog is open: a reload would
+    // dlclose the plugin whose code is still live on the stack (runDialog).
+    connect(session.get(), &ToolboxSession::dialogOpened, this, [this]() {
+      ++open_toolbox_dialogs_;
+      btn_marketplace_->setEnabled(open_toolbox_dialogs_ == 0);
+    });
+    connect(session.get(), &ToolboxSession::dialogClosed, this, [this]() {
+      --open_toolbox_dialogs_;
+      btn_marketplace_->setEnabled(open_toolbox_dialogs_ == 0);
+    });
+
+    ToolboxSession* raw_session = session.get();
+
+    tools_menu->addAction(QString::fromStdString(tb.name), this, [this, raw_session]() {
+      if (raw_session->hasDialog()) {
+        if (raw_session->runDialog(this)) {
+          auto [begin, end] = computeVisibleRange();
+          chart_panel_->updateData(begin, end);
+          tree_model_.rebuildIfChanged();
+        }
+      }
+    });
+
+    toolbox_sessions_.push_back(std::move(session));
   }
 }
 

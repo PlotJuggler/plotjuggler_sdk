@@ -119,9 +119,87 @@ class WidgetDataView {
     return result;
   }
 
+  [[nodiscard]] std::optional<std::vector<int>> disabledRows(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("disabled_rows");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<int> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      if (item.is_number_integer()) {
+        result.push_back(item.get<int>());
+      }
+    }
+    return result;
+  }
+
+  // --- Chart (QFrame used as chart container) ---
+
+  struct ChartSeriesView {
+    std::string label;
+    std::vector<std::pair<double, double>> points;  // {x, y}
+    std::string color;  // optional hex "#rrggbb"; empty means use chart theme default
+  };
+
+  [[nodiscard]] std::optional<std::vector<ChartSeriesView>> chartSeries(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("chart_series");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<ChartSeriesView> result;
+    result.reserve(it->size());
+    for (const auto& s : *it) {
+      if (!s.is_object()) {
+        continue;
+      }
+      ChartSeriesView sv;
+      auto label_it = s.find("label");
+      if (label_it != s.end() && label_it->is_string()) {
+        sv.label = label_it->get<std::string>();
+      }
+      auto pts_it = s.find("points");
+      if (pts_it != s.end() && pts_it->is_array()) {
+        sv.points.reserve(pts_it->size());
+        for (const auto& pt : *pts_it) {
+          if (pt.is_array() && pt.size() == 2 && pt[0].is_number() && pt[1].is_number()) {
+            sv.points.emplace_back(pt[0].get<double>(), pt[1].get<double>());
+          }
+        }
+      }
+      auto color_it = s.find("color");
+      if (color_it != s.end() && color_it->is_string()) {
+        sv.color = color_it->get<std::string>();
+      }
+      result.push_back(std::move(sv));
+    }
+    return result;
+  }
+
+  /// Returns whether interactive zoom is enabled on this chart widget.
+  [[nodiscard]] std::optional<bool> chartZoomEnabled(std::string_view name) const {
+    return getBool(name, "chart_zoom_enabled");
+  }
+
   // --- QPlainTextEdit ---
   [[nodiscard]] std::optional<std::string> plainText(std::string_view name) const {
     return getString(name, "plain_text");
+  }
+
+  // --- Code editor ---
+  [[nodiscard]] std::optional<std::string> codeContent(std::string_view name) const {
+    return getString(name, "code_content");
+  }
+  [[nodiscard]] std::optional<std::string> codeLanguage(std::string_view name) const {
+    return getString(name, "code_language");
   }
 
   // --- QLabel ---
@@ -132,6 +210,14 @@ class WidgetDataView {
   // --- QPushButton ---
   [[nodiscard]] std::optional<std::string> buttonText(std::string_view name) const {
     return getString(name, "button_text");
+  }
+
+  [[nodiscard]] std::optional<std::string> buttonIconSvg(std::string_view name) const {
+    return getString(name, "button_icon_svg");
+  }
+
+  [[nodiscard]] std::optional<std::string> shortcut(std::string_view name) const {
+    return getString(name, "shortcut");
   }
 
   // --- File picker ---
@@ -173,6 +259,26 @@ class WidgetDataView {
   // --- QTabWidget ---
   [[nodiscard]] std::optional<int> tabIndex(std::string_view name) const {
     return getInt(name, "tab_index");
+  }
+
+  // --- Drop target ---
+  [[nodiscard]] bool isDropTarget(std::string_view name) const {
+    return getBool(name, "drop_target").value_or(false);
+  }
+
+  /// Return all widget names that declare drop_target: true.
+  [[nodiscard]] std::vector<std::string> dropTargets() const {
+    std::vector<std::string> result;
+    if (!data_.is_object()) return result;
+    for (const auto& [key, val] : data_.items()) {
+      if (val.is_object()) {
+        auto it = val.find("drop_target");
+        if (it != val.end() && it->is_boolean() && it->get<bool>()) {
+          result.push_back(key);
+        }
+      }
+    }
+    return result;
   }
 
   // --- Generic (any widget) ---

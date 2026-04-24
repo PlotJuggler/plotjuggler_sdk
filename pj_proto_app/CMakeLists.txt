@@ -8,6 +8,7 @@ add_executable(pj_proto_app
   src/main_window.cpp
   src/plugin_registry.cpp
   src/data_source_session.cpp
+  src/toolbox_session.cpp
   src/series_tree_model.cpp
   src/chart_panel.cpp
   src/time_range_slider.cpp
@@ -20,6 +21,7 @@ target_link_libraries(pj_proto_app PRIVATE
   pj_datastore
   pj_data_source_host
   pj_message_parser_host
+  pj_toolbox_host
   pj_dialog_engine_qt
   pj_marketplace
   pj_marketplace_ui

@@ -7,16 +7,24 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPainter>
+#include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QSvgRenderer>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QVBoxLayout>
 #include <pj_plugins/host/widget_event_builder.hpp>
+#include <pj_plugins/host_qt/chart_preview_widget.hpp>
 #include <pj_plugins/host_qt/widget_binding.hpp>
+#include "lua_syntax_highlighter.hpp"
+#include "python_syntax_highlighter.hpp"
 #include <set>
 
 namespace PJ {
@@ -52,8 +60,30 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QPlainTextEdit ---
   if (auto* pte = qobject_cast<QPlainTextEdit*>(w)) {
-    if (auto v = view.plainText(name)) {
-      pte->setPlainText(QString::fromStdString(*v));
+    if (auto code = view.codeContent(name)) {
+      // Code editor mode: only update if content actually differs (preserve cursor).
+      QString new_text = QString::fromStdString(*code);
+      if (pte->toPlainText() != new_text) {
+        pte->setPlainText(new_text);
+      }
+      // Install or swap syntax highlighter when the language changes.
+      if (auto lang = view.codeLanguage(name)) {
+        QString current = pte->property("_pj_code_lang").toString();
+        QString requested = QString::fromStdString(*lang);
+        if (current != requested) {
+          pte->setProperty("_pj_code_lang", requested);
+          if (auto* old = pte->document()->findChild<QSyntaxHighlighter*>()) {
+            delete old;
+          }
+          if (*lang == "lua") {
+            new PJ::LuaSyntaxHighlighter(pte->document());
+          } else if (*lang == "python") {
+            new PJ::PythonSyntaxHighlighter(pte->document());
+          }
+        }
+      }
+    } else if (auto pt = view.plainText(name)) {
+      pte->setPlainText(QString::fromStdString(*pt));
     }
     if (auto v = view.readOnly(name)) {
       pte->setReadOnly(*v);
@@ -161,6 +191,25 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
         }
       }
     }
+    if (auto v = view.disabledRows(name)) {
+      std::set<int> disabled(v->begin(), v->end());
+      for (int r = 0; r < tw->rowCount(); ++r) {
+        bool is_disabled = disabled.count(r) > 0;
+        for (int c = 0; c < tw->columnCount(); ++c) {
+          if (auto* item = tw->item(r, c)) {
+            auto flags = item->flags();
+            if (is_disabled) {
+              flags &= ~Qt::ItemIsEnabled;
+              flags &= ~Qt::ItemIsSelectable;
+            } else {
+              flags |= Qt::ItemIsEnabled;
+              flags |= Qt::ItemIsSelectable;
+            }
+            item->setFlags(flags);
+          }
+        }
+      }
+    }
     if (auto v = view.selectedRows(name)) {
       tw->clearSelection();
       for (int r : *v) {
@@ -189,6 +238,18 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
     if (auto v = view.buttonText(name)) {
       btn->setText(QString::fromStdString(*v));
     }
+    if (auto svg = view.buttonIconSvg(name)) {
+      QByteArray svg_data = QByteArray::fromStdString(*svg);
+      QSvgRenderer renderer(svg_data);
+      if (renderer.isValid()) {
+        int sz = btn->iconSize().height() > 0 ? btn->iconSize().height() : 16;
+        QPixmap pix(sz, sz);
+        pix.fill(Qt::transparent);
+        QPainter painter(&pix);
+        renderer.render(&painter);
+        btn->setIcon(QIcon(pix));
+      }
+    }
     return;
   }
 
@@ -210,10 +271,42 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
     return;
   }
 
-  // Containers (QFrame, QGroupBox, QWidget) — only generic properties applied above.
+  // --- QFrame with chart_series or chart_zoom_enabled → ChartPreviewWidget ---
+  if (auto* frame = qobject_cast<QFrame*>(w)) {
+    auto series_data = view.chartSeries(name);
+    auto zoom_enabled = view.chartZoomEnabled(name);
+    if (series_data || zoom_enabled) {
+      // Find or create the ChartPreviewWidget inside this frame.
+      auto* chart = frame->findChild<PJ::ChartPreviewWidget*>();
+      if (!chart) {
+        auto* layout = frame->layout();
+        if (!layout) {
+          layout = new QVBoxLayout(frame);
+          layout->setContentsMargins(0, 0, 0, 0);
+        }
+        chart = new PJ::ChartPreviewWidget(frame);
+        layout->addWidget(chart);
+      }
+      if (series_data) {
+        // Convert WidgetDataView series to ChartPreviewWidget series.
+        std::vector<PJ::ChartPreviewWidget::Series> chart_series;
+        chart_series.reserve(series_data->size());
+        for (const auto& s : *series_data) {
+          chart_series.push_back({s.label, s.points, s.color});
+        }
+        chart->setSeries(chart_series);
+      }
+      if (zoom_enabled) {
+        chart->setZoomEnabled(*zoom_enabled);
+      }
+    }
+    return;
+  }
+
+  // Containers (QGroupBox, QWidget) — only generic properties applied above.
   // Warn about widget types that have data in the view but aren't handled.
   // Skip known container types that only use generic enabled/visible properties.
-  if (!qobject_cast<QFrame*>(w) && !qobject_cast<QGroupBox*>(w) && !qobject_cast<QSplitter*>(w)) {
+  if (!qobject_cast<QGroupBox*>(w) && !qobject_cast<QSplitter*>(w)) {
     qWarning(
         "WidgetBinding: unsupported widget type '%s' for '%s'; "
         "see dialog-plugin-guide.md for supported types",
@@ -242,6 +335,21 @@ static bool is_internal_widget_name(const QString& name) {
 void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
   using PJ::WidgetEventBuilder;
 
+  // ChartPreviewWidget instances are unnamed children of their parent QFrame.
+  // Wire their viewChanged signals using the parent frame's objectName as the event widget name.
+  // Must run after applyWidgetData() so charts that were created on first apply are found here.
+  for (auto* chart : root->findChildren<PJ::ChartPreviewWidget*>()) {
+    auto* parent_frame = qobject_cast<QFrame*>(chart->parent());
+    if (!parent_frame || parent_frame->objectName().isEmpty()) {
+      continue;
+    }
+    std::string chart_name = parent_frame->objectName().toStdString();
+    QObject::connect(chart, &PJ::ChartPreviewWidget::viewChanged, chart,
+                     [callback, chart_name](double x_min, double x_max, double y_min, double y_max) {
+                       callback(chart_name, WidgetEventBuilder::chartViewChanged(x_min, x_max, y_min, y_max));
+                     });
+  }
+
   for (auto* w : root->findChildren<QWidget*>()) {
     QString qname = w->objectName();
     if (qname.isEmpty() || is_internal_widget_name(qname)) {
@@ -253,6 +361,15 @@ void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
       QObject::connect(le, &QLineEdit::textChanged, le, [callback, name](const QString& text) {
         callback(name, WidgetEventBuilder::textChanged(text.toStdString()));
       });
+      continue;
+    }
+    if (auto* pte = qobject_cast<QPlainTextEdit*>(w)) {
+      // Only wire code editors (marked by _pj_code_lang property), not read-only plain text.
+      if (pte->property("_pj_code_lang").isValid()) {
+        QObject::connect(pte, &QPlainTextEdit::textChanged, pte, [callback, name, pte]() {
+          callback(name, WidgetEventBuilder::codeChanged(pte->toPlainText().toStdString()));
+        });
+      }
       continue;
     }
     if (auto* cb = qobject_cast<QComboBox*>(w)) {
@@ -325,6 +442,25 @@ void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
       });
       continue;
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// installButtonShortcuts — create QShortcuts for buttons declaring a shortcut
+// ---------------------------------------------------------------------------
+
+void installButtonShortcuts(QWidget* root, const PJ::WidgetDataView& view) {
+  for (const auto& name : view.widgetNames()) {
+    auto sc = view.shortcut(name);
+    if (!sc) {
+      continue;
+    }
+    auto* btn = root->findChild<QPushButton*>(QString::fromStdString(name));
+    if (!btn) {
+      continue;
+    }
+    auto* shortcut = new QShortcut(QKeySequence(QString::fromStdString(*sc)), root);
+    QObject::connect(shortcut, &QShortcut::activated, btn, &QPushButton::click);
   }
 }
 

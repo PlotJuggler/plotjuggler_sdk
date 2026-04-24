@@ -59,11 +59,35 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  virtual bool onCodeChanged(std::string_view /*widget_name*/, std::string_view /*code*/) {
+    return false;
+  }
+
+  virtual bool onItemsDropped(std::string_view /*widget_name*/, const std::vector<std::string>& /*items*/) {
+    return false;
+  }
+
+  /// ChartPreviewWidget: zoom or pan changed the visible range.
+  /// Only called when the plugin has declared setChartZoomEnabled for this widget.
+  virtual bool onChartViewChanged(std::string_view /*widget_name*/, double /*x_min*/, double /*x_max*/,
+                                  double /*y_min*/, double /*y_max*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
 
+    if (auto v = event.chartViewChanged()) {
+      return onChartViewChanged(widget_name, v->x_min, v->x_max, v->y_min, v->y_max);
+    }
+    if (auto v = event.itemsDropped()) {
+      return onItemsDropped(widget_name, *v);
+    }
+    if (auto v = event.codeChanged()) {
+      return onCodeChanged(widget_name, *v);
+    }
     if (auto v = event.text()) {
       return onTextChanged(widget_name, *v);
     }

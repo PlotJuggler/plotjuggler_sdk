@@ -8,6 +8,7 @@
 
 #include "pj_plugins/host/data_source_library.hpp"
 #include "pj_plugins/host/message_parser_library.hpp"
+#include "pj_plugins/host/toolbox_library.hpp"
 
 namespace proto {
 
@@ -25,6 +26,14 @@ struct LoadedMessageParser {
   std::string path;
   std::string name;
   std::vector<std::string> encodings;
+  std::filesystem::file_time_type loaded_mtime;
+};
+
+struct LoadedToolbox {
+  PJ::ToolboxLibrary library;
+  std::string path;
+  std::string name;
+  uint64_t capabilities = 0;
   std::filesystem::file_time_type loaded_mtime;
 };
 
@@ -50,6 +59,9 @@ class PluginRegistry {
   /// Returns e.g. ["json","cbor","protobuf"]. Returns "[]" if no parsers loaded.
   [[nodiscard]] std::string listAvailableEncodings() const;
 
+  /// Get all loaded toolbox plugins.
+  [[nodiscard]] const std::vector<LoadedToolbox>& allToolboxes() const { return toolbox_plugins_; }
+
  private:
   /// Try to load a DataSource plugin and register it. Returns true on success.
   bool loadAndRegisterDataSource(const std::filesystem::path& so_path);
@@ -57,9 +69,13 @@ class PluginRegistry {
   /// Try to load a MessageParser plugin and register it. Returns true on success.
   bool loadAndRegisterMessageParser(const std::filesystem::path& so_path);
 
+  /// Try to load a Toolbox plugin and register it. Returns true on success.
+  bool loadAndRegisterToolbox(const std::filesystem::path& so_path);
+
   std::string plugin_dir_;
   std::vector<LoadedDataSource> data_sources_;
   std::vector<LoadedMessageParser> message_parsers_;
+  std::vector<LoadedToolbox> toolbox_plugins_;
 };
 
 }  // namespace proto

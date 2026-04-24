@@ -1,6 +1,9 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QMenu>
+#include <QMenuBar>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTimer>
@@ -10,9 +13,11 @@
 
 #include "chart_panel.hpp"
 #include "data_source_session.hpp"
+#include "pj_datastore/colormap_registry.hpp"
 #include "pj_datastore/engine.hpp"
 #include "plugin_registry.hpp"
 #include "series_tree_model.hpp"
+#include "toolbox_session.hpp"
 
 #include "pj_marketplace/extension_manager.hpp"
 
@@ -43,6 +48,8 @@ class MainWindow : public QMainWindow {
   void onTreeContextMenu(const QPoint& pos);
 
  private:
+  void setupToolboxPanels(QMenu* tools_menu);
+
   /// Compute the current visible time range based on data and streaming state.
   std::pair<PJ::Timestamp, PJ::Timestamp> computeVisibleRange() const;
 
@@ -53,6 +60,7 @@ class MainWindow : public QMainWindow {
   void restartSession(DataSourceSession* session);
 
   PJ::DataEngine engine_;
+  PJ::ColorMapRegistry colormap_registry_;
   PJ::TimeDomainId default_td_id_ = 0;
   PluginRegistry registry_;
   std::vector<std::unique_ptr<DataSourceSession>> sessions_;
@@ -63,9 +71,14 @@ class MainWindow : public QMainWindow {
   QTreeView* tree_view_ = nullptr;
   ChartPanel* chart_panel_ = nullptr;
   QSpinBox* buffer_spinbox_ = nullptr;
+  QPushButton* btn_marketplace_ = nullptr;
+  QMenu* tools_menu_ = nullptr;
   QTimer refresh_timer_;
   int refresh_tick_ = 0;
   bool streaming_active_ = false;
+  int open_toolbox_dialogs_ = 0;
+
+  std::vector<std::unique_ptr<ToolboxSession>> toolbox_sessions_;
 };
 
 }  // namespace proto
