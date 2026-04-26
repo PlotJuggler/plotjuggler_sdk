@@ -5,6 +5,7 @@
 
 namespace PJ {
 
+// Installed extension discovered from an embedded plugin manifest on disk.
 struct InstalledExtension {
   QString id;  ///< Matches Extension::id from the registry
   QString version;

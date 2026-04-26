@@ -149,16 +149,20 @@ Expected<ManifestCandidate> findEmbeddedManifest(void* handle) {
   return unexpected(out.str());
 }
 
-std::vector<std::string> readStringArray(const nlohmann::json& j, std::string_view key) {
+Expected<std::vector<std::string>> readStringArray(const nlohmann::json& j, std::string_view key) {
   std::vector<std::string> values;
   const auto it = j.find(std::string(key));
-  if (it == j.end() || !it->is_array()) {
+  if (it == j.end()) {
     return values;
   }
+  if (!it->is_array()) {
+    return unexpected(std::string("plugin embedded manifest key must be an array of strings: ") + std::string(key));
+  }
   for (const auto& value : *it) {
-    if (value.is_string()) {
-      values.push_back(value.get<std::string>());
+    if (!value.is_string()) {
+      return unexpected(std::string("plugin embedded manifest key contains a non-string value: ") + std::string(key));
     }
+    values.push_back(value.get<std::string>());
   }
   return values;
 }
@@ -172,7 +176,7 @@ Expected<PluginDescriptor> decodeManifest(
   nlohmann::json j;
   try {
     j = nlohmann::json::parse(manifest_json);
-  } catch (const nlohmann::json::parse_error& e) {
+  } catch (const nlohmann::json::exception& e) {
     return unexpected(std::string("plugin embedded manifest is invalid JSON: ") + e.what());
   }
 
@@ -184,6 +188,16 @@ Expected<PluginDescriptor> decodeManifest(
     const auto it = j.find(std::string(key));
     if (it == j.end() || !it->is_string() || it->get<std::string>().empty()) {
       return unexpected(std::string("plugin embedded manifest missing required string key: ") + std::string(key));
+    }
+    return it->get<std::string>();
+  };
+  auto optionalString = [&](std::string_view key) -> Expected<std::string> {
+    const auto it = j.find(std::string(key));
+    if (it == j.end()) {
+      return std::string{};
+    }
+    if (!it->is_string()) {
+      return unexpected(std::string("plugin embedded manifest key must be a string: ") + std::string(key));
     }
     return it->get<std::string>();
   };
@@ -209,10 +223,28 @@ Expected<PluginDescriptor> decodeManifest(
   d.id = *id;
   d.name = *name;
   d.version = *version;
-  d.description = j.value("description", "");
-  d.category = j.value("category", "");
-  d.file_extensions = readStringArray(j, "file_extensions");
-  d.capabilities = readStringArray(j, "capabilities");
+
+  auto description = optionalString("description");
+  if (!description) {
+    return unexpected(description.error());
+  }
+  auto category = optionalString("category");
+  if (!category) {
+    return unexpected(category.error());
+  }
+  auto file_extensions = readStringArray(j, "file_extensions");
+  if (!file_extensions) {
+    return unexpected(file_extensions.error());
+  }
+  auto capabilities = readStringArray(j, "capabilities");
+  if (!capabilities) {
+    return unexpected(capabilities.error());
+  }
+
+  d.description = *description;
+  d.category = *category;
+  d.file_extensions = *file_extensions;
+  d.capabilities = *capabilities;
 
   if (family == PluginFamily::kMessageParser) {
     auto encoding = requiredString("encoding");
@@ -220,8 +252,12 @@ Expected<PluginDescriptor> decodeManifest(
       return unexpected(encoding.error());
     }
     d.encoding = *encoding;
-  } else if (j.contains("encoding") && j["encoding"].is_string()) {
-    d.encoding = j["encoding"].get<std::string>();
+  } else {
+    auto encoding = optionalString("encoding");
+    if (!encoding) {
+      return unexpected(encoding.error());
+    }
+    d.encoding = *encoding;
   }
 
   return d;

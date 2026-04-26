@@ -30,17 +30,18 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 |                    | Search               | Search by name, description, tags, and publisher              |
 |                    | Category filtering   | Data Loader, Data Streamer, Parser, Toolbox                   |
 |                    | Extension detail     | Panel with complete information, changelog, and dependencies  |
+|                    | Startup snapshot     | Host app may seed the marketplace with already-loaded plugin ids/versions before first render |
 | **Installation**   | Secure download      | ZIP artifact download with SHA256 verification                |
 |                    | Automatic extraction | Decompression to extensions directory                         |
 |                    | Platform detection   | Automatic selection of correct artifact (Linux/Windows/macOS) |
-| **Updates**        | Update detection     | Local vs registry version comparison (semver)                 |
+| **Updates**        | Update detection     | Local vs registry version comparison (semver); local-newer state is surfaced explicitly |
 |                    | Individual update    | Update a specific extension                                   |
 |                    | Bulk update          | "Update All" for multiple extensions                          |
 |                    | Automatic backup     | Backup of previous version before updating                    |
 | **Uninstallation** | Clean removal        | Directory deletion + local state update                       |
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
 | **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
-|                    | Rollback             | Automatic restoration if a plugin fails to load               |
+|                    | Backup diagnostics   | Report retained backup paths when an update install fails     |
 |                    | Persistent state     | Installed state derived from plugin DSOs; each embedded plugin manifest is the source of truth |
 |                    | Registry URL settings | Configure registry URL at runtime via ⚙ settings dialog; change triggers immediate refresh |
 |                    | Registry URL persistence | Last configured registry URL saved and restored between sessions |
@@ -105,7 +106,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | F-06 | Download ZIP with SHA256 verification | Download fails if checksum doesn't match |
 | F-07 | Extract ZIP to extensions directory | ZIP contents are extracted to correct location |
 | F-08 | Register installed extension | Installed state is derived from disk by scanning extension DSOs and reading each embedded plugin manifest |
-| F-09 | Detect updates (local vs registry version) | User sees "Update available" badge when newer version exists |
+| F-09 | Detect updates (local vs registry version) | User sees "Update available" badge when registry is newer, and "Local newer" when the installed version is ahead |
 | F-10 | Uninstall extension | User can remove installed extensions |
 
 ### 4.2 P1 — Robustness
@@ -269,7 +270,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | Scenario | Expected Behavior |
 |----------|-------------------|
 | Extension requires newer PlotJuggler | Show warning, prevent install |
-| Downgrade requested | Allow with warning |
+| Downgrade requested | Reject with a diagnostic; keep the local install unchanged |
 | Same version reinstall | Ask confirmation, then reinstall |
 
 ### 8.4 Windows-Specific
@@ -287,6 +288,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | Plugin crashes on load | Report load failure; automatic rollback is deferred |
 | Plugin incompatible with current SDK | Clear error message, don't load |
 | Manifest missing or invalid | Reject install or staged promotion with diagnostics |
+| Marketplace opens in a host app | Seed the initial UI from the host's loaded-plugin snapshot, then reconcile with disk refreshes on demand |
 
 ---
 
@@ -417,18 +419,9 @@ Fields read from the embedded plugin manifest:
 
 ---
 
-## 12. Pending Decisions
+## 12. Open Follow-Ups
 
-| # | Topic | Options | Impact |
-|---|-------|---------|--------|
-| 1 | ZIP library | Resolved: libarchive | Build complexity |
-| 2 | Markdown rendering | QTextBrowser vs plain text | README display |
-| 3 | Metrics source | Registry JSON vs GitHub API | Data freshness |
-| 4 | Icons | URL in registry vs bundled in ZIP | Download size |
-| 5 | Semver parsing | C++ library vs string compare | Correctness |
-| 6 | New extension registration | Manual PR vs automated | Developer experience |
-| 7 | Pixi timeline | When to add as alternative | Community adoption |
-| 8 | Paid plugins | License management approach | Business model |
+Remaining implementation follow-ups are tracked in [TODO.md](TODO.md).
 
 ---
 

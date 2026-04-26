@@ -39,9 +39,8 @@ Development will begin with a standalone prototype to validate the concept, with
 13. [Code Structure](#13-code-structure)
 14. [Functional Requirements](#14-functional-requirements)
 15. [Non-Functional Requirements](#15-non-functional-requirements)
-16. [Implementation Plan](#16-implementation-plan)
-17. [Pending Decisions](#17-pending-decisions)
-18. [Acceptance Criteria](#18-acceptance-criteria)
+16. [Remaining Work](#16-remaining-work)
+17. [Acceptance Criteria](#17-acceptance-criteria)
 
 ---
 
@@ -65,8 +64,8 @@ Development will begin with a standalone prototype to validate the concept, with
 | **Uninstallation** | Clean removal        | Directory deletion + local state update                       |
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
 | **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
-|                    | Rollback             | Automatic restoration if a plugin fails to load               |
-|                    | Persistent state     | Local storage of installed extensions (JSON)                  |
+|                    | Backup diagnostics   | Report retained backup paths when an update install fails     |
+|                    | Persistent state     | Installed state derived from embedded plugin manifests        |
 | **UI/UX**          | Download progress    | Progress bar in status bar                                    |
 |                    | Notifications        | Status messages and available update alerts                   |
 |                    | Context menu         | Quick actions per installed extension                         |
@@ -452,6 +451,10 @@ package = "cmake --install build/release --prefix dist && cd dist && zip -r ../a
 7. Plugin DSO is loaded and its embedded manifest is validated against the registry id/version
 8. Installed cache is refreshed from discovery
 
+When the marketplace opens inside a host application, it may be seeded with the host's
+already-loaded plugin snapshot before the first render. That snapshot is initialization
+data only; the embedded manifest remains the authority for installed version reporting.
+
 ### 8.3 Backup and Rollback Status
 
 ![Rollback Flow](diagrams/rollback-flow.png)
@@ -603,7 +606,7 @@ The solution is a staging system similar to what Windows installers use:
 The flow is:
 
 1. User clicks "Update"
-2. New version downloads to a temporary folder (`.pending/`)
+2. New version downloads to a temporary folder (`.extension_windows_staging/`)
 3. The staged DSO is loaded and its embedded manifest is validated against the registry id/version
 4. A transient `.pj_pending_install` intent is written with the registry id/version
 5. Message shown: "Update will be applied when PlotJuggler restarts"
@@ -611,7 +614,7 @@ The flow is:
    - Detects pending updates
    - Reads `.pj_pending_install`
    - Revalidates the staged DSO against that registry intent
-   - Moves new version from `.pending/` to `extensions/`
+   - Moves new version from `.extension_windows_staging/` to `extensions/`
 7. If validation fails, the broken stage is removed and the active install is left untouched
 
 ### 11.3 Directory Structure
@@ -621,7 +624,7 @@ The flow is:
 ├── extensions/              ← Active plugins
 │   ├── ros2-streaming/
 │   └── csv-loader/
-├── .pending/                ← Staging (Windows)
+├── .extension_windows_staging/ ← Staging (Windows)
 │   └── plugin-id/.pj_pending_install
 ├── .backup/                 ← Non-Windows update backups; automatic rollback deferred
 │   ├── ros2-streaming-1.2.2/
@@ -765,6 +768,7 @@ The detail panel includes:
 | Not installed               | Install                    |
 | Installed, up-to-date       | Disable, Uninstall         |
 | Installed, update available | Update, Disable, Uninstall |
+| Installed, local newer      | Local newer, Uninstall     |
 | Disabled                    | Enable, Uninstall          |
 
 ### 12.5 Dialogs
@@ -775,7 +779,7 @@ The detail panel includes:
 | Confirm Uninstall | Click Uninstall     | "Remove {name}?"               |
 | Restart Required  | Post install/update | "Restart to activate changes?" |
 | Update All        | Multiple updates    | List of extensions to update   |
-| Rollback          | Plugin fails        | "Extension failed. Rollback?"  |
+| Diagnostics       | Plugin/install fails | Recent lifecycle diagnostics   |
 
 ---
 
@@ -864,75 +868,13 @@ marketplace/
 
 ---
 
-## 16. Implementation Plan
+## 16. Remaining Work
 
-### Phase 1: Skeleton + Mock (Day 1-2)
-
-- CMake + Qt6 project setup
-- Data structs (Extension, InstalledExtension)
-- MarketplaceWindow with QSplitter
-- MarketplaceWindow cards and ExtensionDetailDialog
-- Hardcoded mock data
-- Functional search and filter
-
-**Deliverable:** App that shows list, navigates, and filters.
-
-### Phase 2: Networking + Registry (Day 2-3)
-
-- RegistryManager: fetch JSON, parsing, cache
-- DownloadManager: download with progress
-- SHA256 verification
-- Status bar with progress
-- Network error handling
-
-**Deliverable:** App that loads registry from GitHub.
-
-### Phase 3: Extension Management (Day 3-4)
-
-- ExtensionManager: install, uninstall
-- Update detection (semver)
-- Update flow with backup
-- Local state persistence
-- Enable/Disable
-
-**Deliverable:** Complete management cycle.
-
-### Phase 4: Platform + Polish (Day 4-5)
-
-- Windows staging
-- Rollback mechanism
-- Update All
-- Confirmation dialogs
-- Edge-case error handling
-- Visual polish
-
-**Deliverable:** Prototype ready for demo.
-
-### Phase 5: Integration (Future)
-
-- Extract core as library
-- Integrate into PlotJuggler
-- Hook with plugin loading system
-- Update notification at startup
+Open follow-ups are tracked in [TODO.md](TODO.md).
 
 ---
 
-## 17. Pending Decisions
-
-| #   | Topic                      | Options                           |
-| --- | -------------------------- | --------------------------------- |
-| 1   | ZIP library                | Resolved: libarchive              |
-| 2   | Markdown rendering         | QTextBrowser vs plain text        |
-| 3   | Metrics                    | Registry JSON vs GitHub API       |
-| 4   | Icons                      | URL in registry vs bundled in ZIP |
-| 5   | Semver parsing             | C++ library vs string compare     |
-| 6   | New extension registration | Manual PR to registry             |
-| 7   | Pixi timeline              | When it complements Conan         |
-| 8   | Paid plugins               | License management (future)       |
-
----
-
-## 18. Acceptance Criteria
+## 17. Acceptance Criteria
 
 The prototype is successful if:
 

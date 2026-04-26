@@ -47,11 +47,13 @@ struct PluginDescriptor {
   std::vector<std::string> capabilities;     ///< optional capability tags
 };
 
+/// Diagnostic for a candidate DSO that could not produce a valid descriptor.
 struct PluginDiagnostic {
   std::filesystem::path path;
   std::string message;
 };
 
+/// Result of a directory scan: valid descriptors plus per-DSO diagnostics.
 struct PluginScanResult {
   std::vector<PluginDescriptor> plugins;
   std::vector<PluginDiagnostic> diagnostics;

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "pj_marketplace/platform_utils.hpp"
+#include <QFileInfo>
 #include <filesystem>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -27,7 +28,9 @@ bool PluginRegistry::loadAndRegisterDataSource(const std::filesystem::path& so_p
   loaded.capabilities = handle.capabilities();
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
+    loaded.id = manifest.value("id", so_path.stem().string());
     loaded.name = manifest.value("name", so_path.stem().string());
+    loaded.version = manifest.value("version", so_path.stem().string());
     if (manifest.contains("file_extensions")) {
       for (const auto& ext : manifest["file_extensions"]) {
         loaded.file_extensions.push_back(ext.get<std::string>());
@@ -56,7 +59,9 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
   auto handle = loaded.library.createHandle();
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
+    loaded.id = manifest.value("id", so_path.stem().string());
     loaded.name = manifest.value("name", so_path.stem().string());
+    loaded.version = manifest.value("version", so_path.stem().string());
     // Helper to push encoding(s) from a JSON value (string or array of strings)
     auto push_encodings = [&](const nlohmann::json& enc) {
     if (enc.is_array()) {
@@ -98,7 +103,9 @@ bool PluginRegistry::loadAndRegisterToolbox(const std::filesystem::path& so_path
   loaded.capabilities = handle.capabilities();
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
+    loaded.id = manifest.value("id", so_path.stem().string());
     loaded.name = manifest.value("name", so_path.stem().string());
+    loaded.version = manifest.value("version", so_path.stem().string());
   } catch (...) {
     loaded.name = so_path.stem().string();
   }
@@ -348,6 +355,40 @@ std::string PluginRegistry::listAvailableEncodings() const {
   }
   json += "]";
   return json;
+}
+
+QMap<QString, PJ::InstalledExtension> PluginRegistry::loadedExtensionsSnapshot() const {
+  QMap<QString, PJ::InstalledExtension> snapshot;
+
+  auto add_loaded = [&](const std::string& id, const std::string& version, const std::string& path) {
+    if (id.empty()) {
+      return;
+    }
+    const QString qid = QString::fromStdString(id);
+    if (snapshot.contains(qid)) {
+      return;
+    }
+
+    PJ::InstalledExtension record;
+    record.id = qid;
+    record.version = QString::fromStdString(version);
+    record.path = QString::fromStdString(path);
+    record.install_date = QFileInfo(record.path).lastModified();
+    record.enabled = true;
+    snapshot.insert(qid, record);
+  };
+
+  for (const auto& ds : data_sources_) {
+    add_loaded(ds.id, ds.version, ds.path);
+  }
+  for (const auto& parser : message_parsers_) {
+    add_loaded(parser.id, parser.version, parser.path);
+  }
+  for (const auto& toolbox : toolbox_plugins_) {
+    add_loaded(toolbox.id, toolbox.version, toolbox.path);
+  }
+
+  return snapshot;
 }
 
 }  // namespace proto

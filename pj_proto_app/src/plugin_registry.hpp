@@ -6,6 +6,10 @@
 #include <string_view>
 #include <vector>
 
+#include <QMap>
+#include <QString>
+
+#include "pj_marketplace/installed_extension.hpp"
 #include "pj_plugins/host/data_source_library.hpp"
 #include "pj_plugins/host/message_parser_library.hpp"
 #include "pj_plugins/host/toolbox_library.hpp"
@@ -16,6 +20,8 @@ struct LoadedDataSource {
   PJ::DataSourceLibrary library;
   std::string path;
   std::string name;
+  std::string id;
+  std::string version;
   std::vector<std::string> file_extensions;
   uint64_t capabilities = 0;
   std::filesystem::file_time_type loaded_mtime;
@@ -25,6 +31,8 @@ struct LoadedMessageParser {
   PJ::MessageParserLibrary library;
   std::string path;
   std::string name;
+  std::string id;
+  std::string version;
   std::vector<std::string> encodings;
   std::filesystem::file_time_type loaded_mtime;
 };
@@ -33,6 +41,8 @@ struct LoadedToolbox {
   PJ::ToolboxLibrary library;
   std::string path;
   std::string name;
+  std::string id;
+  std::string version;
   uint64_t capabilities = 0;
   std::filesystem::file_time_type loaded_mtime;
 };
@@ -61,6 +71,9 @@ class PluginRegistry {
 
   /// Get all loaded toolbox plugins.
   [[nodiscard]] const std::vector<LoadedToolbox>& allToolboxes() const { return toolbox_plugins_; }
+
+  /// Build a marketplace-style installed snapshot from loaded plugin manifests.
+  [[nodiscard]] QMap<QString, PJ::InstalledExtension> loadedExtensionsSnapshot() const;
 
  private:
   /// Try to load a DataSource plugin and register it. Returns true on success.

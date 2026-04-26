@@ -715,7 +715,8 @@ std::pair<PJ::Timestamp, PJ::Timestamp> MainWindow::computeVisibleRange() const 
 void MainWindow::onOpenMarketplace() {
   const QUrl registry_url(
       "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry/refs/heads/development/registry.json");
-  PJ::MarketplaceWindow window(ext_mgr_.get(), registry_url, this);
+  const auto loaded_snapshot = registry_.loadedExtensionsSnapshot();
+  PJ::MarketplaceWindow window(ext_mgr_.get(), registry_url, loaded_snapshot, this);
   window.resize(700, 500);
   window.exec();
   if (window.installationsChanged()) {

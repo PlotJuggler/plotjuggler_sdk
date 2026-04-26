@@ -48,10 +48,12 @@ The marketplace window shows a list of all extensions with their status:
 | Column | Content |
 |--------|---------|
 | **Name** | Extension name |
-| **Version** | Current version |
-| **Status** | `[install]`, `[installed]`, or `[update]` |
+| **Version** | Installed version when available, otherwise registry version; registry version is shown for comparison when they differ |
+| **Status** | `[install]`, `[installed]`, `[update]`, or `[local newer]` |
 
 **To see extension details:** Double-click on any extension to open a detail dialog with full information (description, author, changelog).
+
+If PlotJuggler already has the plugin loaded at startup, the marketplace is seeded with that loaded state before the first render so the card version matches what the app already opened.
 
 **Quick tip:** Hover over an extension to see a brief description tooltip.
 
@@ -89,7 +91,7 @@ The marketplace window shows a list of all extensions with their status:
 2. Click on the extension
 3. Click **Update**
 4. The old version is automatically backed up
-5. If something goes wrong, the old version is restored
+5. If something goes wrong, the old version remains in `.backup/` and can be recovered manually
 
 **Update All:** Click "Update All" in the toolbar to update all extensions at once
 
@@ -223,7 +225,8 @@ PJ_DATA_SOURCE_PLUGIN(MyPlugin,
 | "Download failed" | Network issue | Check internet, try again |
 | "Checksum mismatch" | Corrupted download | Try again, report if persistent |
 | "Cannot update (Windows)" | DLL in use | Restart PlotJuggler |
-| "Extension disappeared" | Rollback occurred | Check logs, previous version restored |
+| "Installed version is newer" | Local plugin is ahead of registry | Downgrade is blocked; keep the local version |
+| "Update failed after backup" | New artifact did not install | Check marketplace diagnostics for the retained backup path |
 
 ### 4.2 Log Locations
 
@@ -268,7 +271,7 @@ rmdir /s %USERPROFILE%\.plotjuggler\.cache
 ├── extensions/           # Installed extensions
 │   └── my-extension/
 │       └── libmy_plugin.so
-├── .pending/            # Staged updates (Windows)
+├── .extension_windows_staging/ # Staged updates (Windows)
 │   └── my-extension/.pj_pending_install
 ├── .backup/             # Non-Windows update backups; automatic rollback is deferred
 ├── .cache/              # Registry cache
@@ -323,7 +326,7 @@ This is the **PlotJuggler Marketplace**, an extension distribution system for Pl
 | `REQUIREMENTS.md` | What the system should do |
 | `ARCHITECTURE.md` | How the system is designed |
 | `USER_MANUAL.md` | This file - how to use it |
-| `PLAN.md` | Current work plan and TODOs |
+| `TODO.md` | Remaining work and deferred follow-ups |
 
 ### 6.3 Common Tasks
 

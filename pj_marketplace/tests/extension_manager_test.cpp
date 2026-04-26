@@ -167,6 +167,12 @@ bool copyFixturePlugin(const QString& dst_dir, const QString& fixture_id, const 
   return QFile::copy(pluginPathForId(fixture_id, version), QDir(dst_dir).absoluteFilePath(pluginFileName()));
 }
 
+bool directoryHasNoChildren(const QString& path) {
+  const QFileInfoList entries =
+      QDir(path).entryInfoList(QDir::Dirs | QDir::Files | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+  return entries.isEmpty();
+}
+
 QByteArray pluginZipWithDso(const QString& ext_id, const QString& fixture_id, const QString& version = "1.0.0") {
   const QByteArray plugin = readAll(pluginPathForId(fixture_id, version));
   if (plugin.isEmpty()) {
@@ -431,6 +437,48 @@ TEST_F(ExtensionManagerTest, InstallRejectsExtensionDirectoryWithConflictingEmbe
   EXPECT_FALSE(QDir(ext_dir_.path() + "/mock-data-source").exists());
 }
 
+TEST_F(ExtensionManagerTest, InstallRejectsWrongTopLevelDirectoryWithoutLeavingStrays) {
+  server_.setBody(pluginZipWithDso("wrong-root", "mock-data-source"));
+  const Extension ext = makeExtension("mock-data-source", "1.0.0", server_.url());
+
+  QSignalSpy spy_finished(mgr_, &ExtensionManager::installFinished);
+  QSignalSpy spy_error(mgr_, &ExtensionManager::installError);
+
+  mgr_->install(ext);
+
+  ASSERT_TRUE(waitForSignal(spy_finished));
+  EXPECT_FALSE(spy_finished.first().at(1).toBool());
+  ASSERT_EQ(spy_error.count(), 1);
+  EXPECT_TRUE(spy_error.first().at(1).toString().contains("top-level directory"));
+  EXPECT_FALSE(QDir(ext_dir_.path() + "/wrong-root").exists());
+  EXPECT_FALSE(QDir(ext_dir_.path() + "/mock-data-source").exists());
+  EXPECT_TRUE(directoryHasNoChildren(ext_dir_.path()));
+  EXPECT_FALSE(mgr_->isInstalled("mock-data-source"));
+}
+
+TEST_F(ExtensionManagerTest, InstallRejectsExtraTopLevelDirectoryWithoutLeavingStrays) {
+  server_.setBody(buildZip({
+      {"mock-data-source/" + pluginFileName(), readAll(pluginPathForId("mock-data-source"))},
+      {"unrelated-extension/" + pluginFileName(), readAll(pluginPathForId("mock-file-source"))},
+  }));
+  const Extension ext = makeExtension("mock-data-source", "1.0.0", server_.url());
+
+  QSignalSpy spy_finished(mgr_, &ExtensionManager::installFinished);
+  QSignalSpy spy_error(mgr_, &ExtensionManager::installError);
+
+  mgr_->install(ext);
+
+  ASSERT_TRUE(waitForSignal(spy_finished));
+  EXPECT_FALSE(spy_finished.first().at(1).toBool());
+  ASSERT_EQ(spy_error.count(), 1);
+  EXPECT_TRUE(spy_error.first().at(1).toString().contains("top-level directory"));
+  EXPECT_FALSE(QDir(ext_dir_.path() + "/mock-data-source").exists());
+  EXPECT_FALSE(QDir(ext_dir_.path() + "/unrelated-extension").exists());
+  EXPECT_TRUE(directoryHasNoChildren(ext_dir_.path()));
+  EXPECT_FALSE(mgr_->isInstalled("mock-data-source"));
+  EXPECT_FALSE(mgr_->isInstalled("unrelated-extension"));
+}
+
 // ---------------------------------------------------------------------------
 // [3] Uninstall
 // ---------------------------------------------------------------------------
@@ -592,6 +640,9 @@ TEST_F(ExtensionManagerTest, UpdateKeepsBackupWhenInstallFails) {
   EXPECT_TRUE(QDir(backup_dir).exists()) << "backup must survive a failed install — files are recoverable";
   EXPECT_TRUE(QFile::exists(backup_dir + "/" + pluginFileName()))
       << "original plugin binary must be preserved in backup";
+  EXPECT_TRUE(spy_error.first().at(1).toString().contains(backup_dir));
+  ASSERT_FALSE(local_mgr.diagnostics().isEmpty());
+  EXPECT_TRUE(local_mgr.diagnostics().back().message.contains(backup_dir));
 
   QDir(backup_dir).removeRecursively();
 }
@@ -654,6 +705,20 @@ TEST_F(ExtensionManagerTest, HasUpdateHandlesMultiSegmentVersionsCorrectly) {
   EXPECT_TRUE(mgr_->hasUpdate(ext_registry));
 }
 
+TEST_F(ExtensionManagerTest, HasNewerInstalledVersionReturnsTrueWhenLocalVersionIsAhead) {
+  server_.setBody(dummyPluginZip("mock-data-source", "2.0.0"));
+  const Extension ext_v2 = makeExtension("mock-data-source", "2.0.0", server_.url());
+
+  QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
+  mgr_->install(ext_v2);
+  ASSERT_TRUE(waitForSignal(spy));
+
+  Extension ext_v1 = ext_v2;
+  ext_v1.version = "1.0.0";
+  EXPECT_TRUE(mgr_->hasNewerInstalledVersion(ext_v1));
+  EXPECT_FALSE(mgr_->hasUpdate(ext_v1));
+}
+
 // Returns false when the registry version is older than the installed one (downgrade scenario).
 TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseForOlderVersion) {
   server_.setBody(dummyPluginZip("mock-data-source", "2.0.0"));
@@ -668,11 +733,34 @@ TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseForOlderVersion) {
   EXPECT_FALSE(mgr_->hasUpdate(ext_v1));
 }
 
+TEST_F(ExtensionManagerTest, UpdateRejectsDowngradeWhenInstalledVersionIsNewer) {
+  server_.setBody(dummyPluginZip("mock-data-source", "2.0.0"));
+  const Extension ext_v2 = makeExtension("mock-data-source", "2.0.0", server_.url());
+
+  QSignalSpy spy_install(mgr_, &ExtensionManager::installFinished);
+  mgr_->install(ext_v2);
+  ASSERT_TRUE(waitForSignal(spy_install));
+  ASSERT_TRUE(spy_install.first().at(1).toBool());
+
+  server_.setBody(dummyPluginZip("mock-data-source", "1.0.0"));
+  const Extension ext_v1 = makeExtension("mock-data-source", "1.0.0", server_.url());
+
+  QSignalSpy spy_update(mgr_, &ExtensionManager::installFinished);
+  QSignalSpy spy_error(mgr_, &ExtensionManager::installError);
+  mgr_->update(ext_v1);
+
+  ASSERT_TRUE(waitForSignal(spy_update));
+  EXPECT_FALSE(spy_update.first().at(1).toBool());
+  ASSERT_EQ(spy_error.count(), 1);
+  EXPECT_TRUE(spy_error.first().at(1).toString().contains("newer than registry"));
+  EXPECT_EQ(mgr_->installedExtensions()["mock-data-source"].version, "2.0.0");
+}
+
 // ---------------------------------------------------------------------------
 // [6] applyPendingInstalls — Windows post-restart staging simulation
 //
-// On Windows, DLLs in use cannot be overwritten, so install() extracts to
-// .pending/<id>/ instead. On the next startup, applyPendingInstalls() moves
+// On Windows, DLLs in use cannot be overwritten, so update() stages into
+// the configured pending directory. On the next startup, applyPendingInstalls() moves
 // the directory into extensions/ and registers it from the DSO's embedded manifest.
 // These tests create that directory structure
 // manually and verify the promotion logic on any platform (the function is
@@ -772,7 +860,7 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsRejectsStagedVersionMismatchAga
   EXPECT_FALSE(mgr_->isInstalled("mock-data-source"));
 }
 
-// An entry in .pending/ that lacks the registry-intent marker is rejected and removed;
+// A staged directory that lacks the registry-intent marker is rejected and removed;
 // otherwise every startup would silently skip the same broken stage forever.
 TEST_F(ExtensionManagerTest, ApplyPendingInstallsRejectsEmptyStagingDirectory) {
   const QString staged_dir = pending_dir_.path() + "/bad-extension";
@@ -789,6 +877,8 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsRejectsEmptyStagingDirectory) {
   EXPECT_TRUE(spy_error.first().at(1).toString().contains("registry intent"));
   EXPECT_FALSE(mgr_->isInstalled("bad-extension"));
   EXPECT_FALSE(QDir(staged_dir).exists());
+  ASSERT_FALSE(mgr_->diagnostics().isEmpty());
+  EXPECT_TRUE(mgr_->diagnostics().back().message.contains("registry intent"));
 }
 
 // applyPendingInstalls() is a no-op when the pending directory contains no sub-directories.
@@ -798,7 +888,7 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsIsNoOpForEmptyDirectory) {
   EXPECT_EQ(spy.count(), 0);
 }
 
-// Multiple staged extensions in .pending/ are all promoted in a single call.
+// Multiple staged extensions in the pending directory are all promoted in a single call.
 TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesMultipleExtensions) {
   for (const QString& id : QStringList{"mock-data-source", "mock-file-source"}) {
     const QString staged = pending_dir_.path() + "/" + id;
@@ -886,6 +976,10 @@ TEST_F(ExtensionManagerTest, HasPendingInstallRequiresDsoAndRegistryIntent) {
   QSignalSpy spy_pending(mgr_, &ExtensionManager::installPendingRestart);
   EXPECT_FALSE(mgr_->hasPendingInstall("mock-data-source"));
   EXPECT_EQ(spy_pending.count(), 0);
+
+  ASSERT_TRUE(writePendingIntentForTest(staged_dir, "mock-data-source"));
+  EXPECT_FALSE(mgr_->hasPendingInstall("mock-data-source"));
+  ASSERT_TRUE(QFile::remove(QDir(staged_dir).absoluteFilePath(".pj_pending_install")));
 
   ASSERT_TRUE(copyFixturePlugin(staged_dir, "mock-data-source"));
   EXPECT_FALSE(mgr_->hasPendingInstall("mock-data-source"));

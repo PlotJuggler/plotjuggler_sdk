@@ -90,6 +90,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   target_include_directories(pj_marketplace PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../pj_base/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/dialog_protocol/include
   )
   target_link_libraries(pj_marketplace PUBLIC
     nlohmann_json::nlohmann_json

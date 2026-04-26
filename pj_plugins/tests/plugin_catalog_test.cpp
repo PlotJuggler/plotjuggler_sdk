@@ -3,12 +3,23 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
 namespace PJ {
 namespace {
+
+std::string pluginFileName(const std::string& stem) {
+#if defined(_WIN32)
+  return stem + ".dll";
+#elif defined(__APPLE__)
+  return stem + ".dylib";
+#else
+  return stem + ".so";
+#endif
+}
 
 class PluginCatalogTest : public ::testing::Test {
  protected:
@@ -82,9 +93,20 @@ TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {
   EXPECT_NE(descriptor.error().find("id"), std::string::npos);
 }
 
+TEST_F(PluginCatalogTest, InvalidOptionalManifestFieldIsReportedAsDiagnostic) {
+  copyPlugin(PJ_INVALID_OPTIONAL_PLUGIN_PATH, pluginFileName("invalid_optional"));
+
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_TRUE(result->plugins.empty());
+  ASSERT_EQ(result->diagnostics.size(), 1U);
+  EXPECT_NE(result->diagnostics[0].message.find("description"), std::string::npos);
+  EXPECT_NE(result->diagnostics[0].message.find("invalid_optional"), std::string::npos);
+}
+
 TEST_F(PluginCatalogTest, ScanContinuesAfterBrokenDso) {
-  copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, "libvalid.so");
-  std::ofstream(dir_ / "libbroken.so") << "not a shared library";
+  copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, pluginFileName("valid"));
+  std::ofstream(dir_ / pluginFileName("broken")) << "not a shared library";
   std::ofstream(dir_ / "notes.txt") << "not a candidate";
 
   auto result = scanPluginDsos(dir_);
@@ -92,18 +114,18 @@ TEST_F(PluginCatalogTest, ScanContinuesAfterBrokenDso) {
   ASSERT_EQ(result->plugins.size(), 1U);
   EXPECT_EQ(result->plugins[0].id, "mock-data-source");
   ASSERT_EQ(result->diagnostics.size(), 1U);
-  EXPECT_EQ(result->diagnostics[0].path.filename(), "libbroken.so");
+  EXPECT_EQ(result->diagnostics[0].path.filename(), pluginFileName("broken"));
 }
 
 TEST_F(PluginCatalogTest, ResultIsSortedByPath) {
-  copyPlugin(PJ_MOCK_TOOLBOX_PLUGIN_PATH, "zz_plugin.so");
-  copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, "aa_plugin.so");
+  copyPlugin(PJ_MOCK_TOOLBOX_PLUGIN_PATH, pluginFileName("zz_plugin"));
+  copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, pluginFileName("aa_plugin"));
 
   auto result = scanPluginDsos(dir_);
   ASSERT_TRUE(result.has_value()) << result.error();
   ASSERT_EQ(result->plugins.size(), 2U);
-  EXPECT_EQ(result->plugins[0].dso_path.filename(), "aa_plugin.so");
-  EXPECT_EQ(result->plugins[1].dso_path.filename(), "zz_plugin.so");
+  EXPECT_EQ(result->plugins[0].dso_path.filename(), pluginFileName("aa_plugin"));
+  EXPECT_EQ(result->plugins[1].dso_path.filename(), pluginFileName("zz_plugin"));
 }
 
 TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {

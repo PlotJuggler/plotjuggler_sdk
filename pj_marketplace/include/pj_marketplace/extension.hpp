@@ -7,17 +7,20 @@
 
 namespace PJ {
 
+// Download artifact for one platform in the registry.
 struct Platform {
   QString url;
   QString checksum;  ///< Format: "sha256:<hex>"
 };
 
+// Registry-declared plugin entry kept for backward-compatible metadata display.
 struct ExtensionPlugin {
   QString name;     ///< Plugin class name
   QString type;     ///< "data_loader" | "data_streamer" | "parser" | "toolbox"
   QString library;  ///< Library filename without extension
 };
 
+// Extension record as received from the marketplace registry.
 struct Extension {
   QString id;
   QString name;

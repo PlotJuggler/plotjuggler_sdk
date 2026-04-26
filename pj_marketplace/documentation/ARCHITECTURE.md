@@ -201,6 +201,7 @@ ExtensionManager(DownloadManager* downloader,
 - Local installation state (`QMap<QString, InstalledExtension>`) is a private cache in `ExtensionManager` — populated at construction by scanning `extensions_dir`, loading plugin DSOs, and reading their embedded manifests; testability is preserved via the `extensions_dir` parameter pointing to a temp directory
 - No local installed-state sidecars — disk is scanned, but `id` and `version` come from the embedded DSO manifest
 - Windows staged updates write a transient `.pj_pending_install` intent containing the registry id/version. It is deleted after promotion and exists only so restart-time validation can compare the staged DSO against the registry request that created it.
+- Embedding apps may seed the marketplace with a loaded-plugin snapshot before first render. That snapshot is initialization data, not a second source of truth; the embedded manifest remains the authority for installed state.
 
 ---
 
@@ -254,7 +255,7 @@ title Windows Staging Flow
 
 start
 :Download ZIP;
-:Extract to .pending/{id}/;
+:Extract to .extension_windows_staging/{id}/;
 :Load DSO manifest;
 :Validate registry id/version;
 :Write .pj_pending_install intent;
@@ -266,7 +267,7 @@ start
 :Read .pj_pending_install intent;
 :Validate staged DSO manifest;
 if (Valid?) then (yes)
-:Move .pending/{id}/ to extensions/{id}/;
+:Move .extension_windows_staging/{id}/ to extensions/{id}/;
   :Plugin active;
 else (no)
   :Remove broken stage;
@@ -328,7 +329,7 @@ stop
 │   │   └── ros2_streaming.ui
 │   └── csv-loader/
 │       └── libcsv_loader.so
-├── .pending/                # Staging area (Windows)
+├── .extension_windows_staging/ # Staging area (Windows)
 │   └── ros2-streaming/      # Ready to install on restart
 ├── .backup/                 # Non-Windows update backups; automatic rollback deferred
 │   ├── ros2-streaming-1.2.2/

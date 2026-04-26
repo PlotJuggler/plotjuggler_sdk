@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMouseEvent>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QVBoxLayout>
@@ -28,6 +29,28 @@ static constexpr const char* kDefaultRegistryUrl =
     "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry"
     "/refs/heads/development/registry.json";
 
+namespace {
+
+bool installedStatesEqual(const QMap<QString, InstalledExtension>& lhs, const QMap<QString, InstalledExtension>& rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  for (auto it = lhs.cbegin(); it != lhs.cend(); ++it) {
+    const auto rhs_it = rhs.find(it.key());
+    if (rhs_it == rhs.cend()) {
+      return false;
+    }
+    const InstalledExtension& a = it.value();
+    const InstalledExtension& b = rhs_it.value();
+    if (a.id != b.id || a.version != b.version || a.enabled != b.enabled) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
 MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
     : QDialog(parent), ui_(new Ui::MarketplaceWindow) {
   download_mgr_ = new DownloadManager(this);
@@ -40,6 +63,8 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
   ui_->setupUi(this);
   setupUi();
   setupSignals();
+  updateDiagnosticsButton();
+  showLatestDiagnostic();
   ext_mgr_->applyPendingUninstalls();
   ext_mgr_->applyPendingInstalls();
   registry_mgr_->fetchRegistry(registry_url_);
@@ -56,6 +81,28 @@ MarketplaceWindow::MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& regi
   ui_->setupUi(this);
   setupUi();
   setupSignals();
+  updateDiagnosticsButton();
+  showLatestDiagnostic();
+  registry_mgr_->fetchRegistry(registry_url_);
+}
+
+MarketplaceWindow::MarketplaceWindow(
+    ExtensionManager* ext_mgr, const QUrl& registry_url, const QMap<QString, InstalledExtension>& installed,
+    QWidget* parent)
+    : QDialog(parent), ui_(new Ui::MarketplaceWindow) {
+  registry_mgr_ = new RegistryManager(this);
+  ext_mgr_ = ext_mgr;
+  initial_snapshot_provided_ = true;
+  QSettings settings("PlotJuggler", "Marketplace");
+  const QString saved = settings.value("registry_url").toString();
+  registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);
+
+  ui_->setupUi(this);
+  setupUi();
+  setupSignals();
+  ext_mgr_->setInstalledExtensions(installed);
+  updateDiagnosticsButton();
+  showLatestDiagnostic();
   registry_mgr_->fetchRegistry(registry_url_);
 }
 
@@ -83,6 +130,7 @@ void MarketplaceWindow::setupUi() {
   connect(ui_->refresh_btn_, &QPushButton::clicked, this, &MarketplaceWindow::onRefreshClicked);
   connect(ui_->update_all_btn_, &QPushButton::clicked, this, &MarketplaceWindow::onUpdateAllClicked);
   connect(ui_->settings_btn_, &QPushButton::clicked, this, &MarketplaceWindow::onSettingsClicked);
+  connect(ui_->diagnostics_btn_, &QPushButton::clicked, this, &MarketplaceWindow::onDiagnosticsClicked);
 }
 
 // ─── Signal wiring ───────────────────────────────────────────────────────────
@@ -103,6 +151,7 @@ void MarketplaceWindow::setupSignals() {
 
   connect(ext_mgr_, &ExtensionManager::installPendingRestart, this, [this](const QString& id) {
     ui_->progress_bar_->setVisible(false);
+    status_error_sticky_ = false;
     populateCards();
     setStatus(QString("Extension %1 staged — will be active after restart").arg(id));
     processInstallQueue();
@@ -110,6 +159,7 @@ void MarketplaceWindow::setupSignals() {
 
   connect(ext_mgr_, &ExtensionManager::uninstallPendingRestart, this, [this](const QString& id) {
     ui_->progress_bar_->setVisible(false);
+    status_error_sticky_ = false;
     populateCards();
     setStatus(QString("Extension %1 staged — will be uninstalled after restart").arg(id));
   });
@@ -142,6 +192,7 @@ void MarketplaceWindow::setupSignals() {
     }
     populateCards();
     if (success) {
+      status_error_sticky_ = false;
       for (const auto& ext : extensions_) {
         if (ext.id == id) {
           setStatus("Installed " + ext.name + " v" + ext.version);
@@ -161,6 +212,7 @@ void MarketplaceWindow::setupSignals() {
 
   connect(ext_mgr_, &ExtensionManager::uninstallFinished, this, [this](const QString& id, bool success) {
     if (success) {
+      status_error_sticky_ = false;
       installations_changed_ = true;
       populateCards();
       for (const auto& ext : extensions_) {
@@ -176,6 +228,15 @@ void MarketplaceWindow::setupSignals() {
   connect(ext_mgr_, &ExtensionManager::uninstallError, this, [this](const QString& /*id*/, const QString& error) {
     setStatus("Uninstall failed: " + error, true);
   });
+
+  connect(
+      ext_mgr_, &ExtensionManager::diagnosticReported, this,
+      [this](const QString& /*id*/, const QString& message, bool is_error) {
+        updateDiagnosticsButton();
+        if (is_error) {
+          setStatus("Marketplace diagnostic: " + message, true);
+        }
+      });
 }
 
 // ─── Cards Population ─────────────────────────────────────────────────────────
@@ -216,13 +277,19 @@ void MarketplaceWindow::populateCards() {
     name_lbl->setFont(f);
 
     const bool has_update = ext_mgr_->hasUpdate(ext);
+    const bool has_newer_local = ext_mgr_->hasNewerInstalledVersion(ext);
     if (has_update) {
       has_updatable = true;
     }
 
     QString version_text = ext.version;
-    if (has_update && installed.contains(ext.id)) {
-      version_text = installed[ext.id].version + " \u2192 " + ext.version;
+    if (installed.contains(ext.id)) {
+      version_text = installed[ext.id].version;
+      if (has_update) {
+        version_text += " \u2192 " + ext.version;
+      } else if (has_newer_local) {
+        version_text += " \u2191 " + ext.version;
+      }
     }
     auto* version_lbl = new QLabel(version_text, card);
     version_lbl->setStyleSheet("color: palette(text);");
@@ -247,6 +314,14 @@ void MarketplaceWindow::populateCards() {
           "QPushButton:hover { background:#f0b820; }");
       connect(btn, &QPushButton::clicked, this, [this, ext_id]() { onActionButtonClicked(ext_id); });
       btn_box->addWidget(btn);
+    } else if (has_newer_local) {
+      auto* badge = new QPushButton("Local newer", card);
+      badge->setFixedWidth(90);
+      badge->setEnabled(false);
+      badge->setStyleSheet(
+          "QPushButton:disabled { background:#607d8b; color:white; border:none;"
+          "  border-radius:4px; padding:4px 0px; font-weight:bold; }");
+      btn_box->addWidget(badge);
     } else if (installed.contains(ext.id)) {
       auto* badge = new QPushButton("Installed", card);
       badge->setFixedWidth(90);
@@ -349,8 +424,31 @@ void MarketplaceWindow::applyFilters() {
 }
 
 void MarketplaceWindow::setStatus(const QString& msg, bool is_error) {
+  if (!is_error && status_error_sticky_) {
+    return;
+  }
+  status_error_sticky_ = is_error;
   ui_->status_label_->setText(msg);
   ui_->status_label_->setStyleSheet(is_error ? "color: #d32f2f; font-weight: bold;" : "");
+}
+
+void MarketplaceWindow::clearStickyStatus() {
+  status_error_sticky_ = false;
+}
+
+void MarketplaceWindow::showLatestDiagnostic() {
+  const QList<ExtensionDiagnostic> diagnostics = ext_mgr_->diagnostics();
+  if (diagnostics.isEmpty()) {
+    return;
+  }
+  const ExtensionDiagnostic& diagnostic = diagnostics.back();
+  setStatus("Marketplace diagnostic: " + diagnostic.message, diagnostic.is_error);
+}
+
+void MarketplaceWindow::updateDiagnosticsButton() {
+  const int count = ext_mgr_->diagnostics().size();
+  ui_->diagnostics_btn_->setVisible(count > 0);
+  ui_->diagnostics_btn_->setText(count > 1 ? QString("Details (%1)").arg(count) : "Details");
 }
 
 // ─── Slots ────────────────────────────────────────────────────────────────────
@@ -363,10 +461,11 @@ void MarketplaceWindow::onCategoryChanged(int /*index*/) {
 }
 
 void MarketplaceWindow::onRefreshClicked() {
+  clearStickyStatus();
   setStatus("Refreshing...");
-  const int before = ext_mgr_->installedExtensions().size();
+  const auto before = ext_mgr_->installedExtensions();
   ext_mgr_->refreshInstalledFromDisk();
-  if (ext_mgr_->installedExtensions().size() != before) {
+  if (!installedStatesEqual(ext_mgr_->installedExtensions(), before)) {
     installations_changed_ = true;
   }
   populateCards();
@@ -375,12 +474,19 @@ void MarketplaceWindow::onRefreshClicked() {
 
 void MarketplaceWindow::showEvent(QShowEvent* event) {
   if (ext_mgr_ != nullptr) {
-    const int before = ext_mgr_->installedExtensions().size();
-    ext_mgr_->refreshInstalledFromDisk();
-    if (ext_mgr_->installedExtensions().size() != before) {
-      installations_changed_ = true;
+    if (initial_snapshot_provided_) {
+      initial_snapshot_provided_ = false;
       populateCards();
+    } else {
+      const auto before = ext_mgr_->installedExtensions();
+      ext_mgr_->refreshInstalledFromDisk();
+      if (!installedStatesEqual(ext_mgr_->installedExtensions(), before)) {
+        installations_changed_ = true;
+        populateCards();
+      }
     }
+    updateDiagnosticsButton();
+    showLatestDiagnostic();
   }
   QDialog::showEvent(event);
 }
@@ -415,6 +521,7 @@ void MarketplaceWindow::onSettingsClicked() {
     return;
   }
 
+  clearStickyStatus();
   registry_url_ = new_url;
   QSettings("PlotJuggler", "Marketplace").setValue("registry_url", registry_url_.toString());
 
@@ -427,8 +534,11 @@ void MarketplaceWindow::onActionButtonClicked(const QString& ext_id) {
     if (ext.id != ext_id) {
       continue;
     }
+    clearStickyStatus();
     if (ext_mgr_->hasUpdate(ext)) {
       ext_mgr_->update(ext);
+    } else if (ext_mgr_->hasNewerInstalledVersion(ext)) {
+      setStatus("Installed version is newer than registry version", true);
     } else if (!ext_mgr_->isInstalled(ext.id)) {
       ext_mgr_->install(ext);
     }
@@ -437,10 +547,12 @@ void MarketplaceWindow::onActionButtonClicked(const QString& ext_id) {
 }
 
 void MarketplaceWindow::onUninstallButtonClicked(const QString& ext_id) {
+  clearStickyStatus();
   ext_mgr_->uninstall(ext_id);
 }
 
 void MarketplaceWindow::onUpdateAllClicked() {
+  clearStickyStatus();
   update_queue_.clear();
   for (const auto& ext : filtered_) {
     if (ext_mgr_->hasUpdate(ext)) {
@@ -453,6 +565,31 @@ void MarketplaceWindow::onUpdateAllClicked() {
   ui_->update_all_btn_->setEnabled(false);
   setStatus("Updating " + QString::number(update_queue_.size()) + " extensions...");
   processInstallQueue();
+}
+
+void MarketplaceWindow::onDiagnosticsClicked() {
+  QDialog dlg(this);
+  dlg.setWindowTitle("Marketplace Diagnostics");
+  dlg.resize(640, 360);
+
+  auto* layout = new QVBoxLayout(&dlg);
+  auto* text = new QPlainTextEdit(&dlg);
+  text->setReadOnly(true);
+
+  QStringList lines;
+  for (const ExtensionDiagnostic& diagnostic : ext_mgr_->diagnostics()) {
+    const QString level = diagnostic.is_error ? "ERROR" : "INFO";
+    const QString id = diagnostic.id.isEmpty() ? "-" : diagnostic.id;
+    lines.append(QString("[%1] %2 %3: %4")
+                     .arg(diagnostic.timestamp.toLocalTime().toString(Qt::ISODate), level, id, diagnostic.message));
+  }
+  text->setPlainText(lines.isEmpty() ? "No diagnostics." : lines.join('\n'));
+  layout->addWidget(text);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  layout->addWidget(buttons);
+  dlg.exec();
 }
 
 void MarketplaceWindow::processInstallQueue() {
