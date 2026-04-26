@@ -220,6 +220,10 @@ void MainWindow::loadFile(const QString& file_path) {
   auto session =
       std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
+  if (!session->bindForDialog()) {
+    qWarning("Bind failed for '%s': %s", display_name.c_str(), session->lastError().c_str());
+    return;
+  }
   if (!session->startFileImport(config)) {
     qWarning("Import failed for '%s': %s", display_name.c_str(), session->lastError().c_str());
   }
