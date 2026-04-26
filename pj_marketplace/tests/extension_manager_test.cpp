@@ -115,11 +115,21 @@ QByteArray buildZip(const QMap<QString, QByteArray>& files) {
   return QByteArray(buf.data(), static_cast<int>(used));
 }
 
-// Returns a minimal ZIP that mimics a real artifact: an <id>/ root directory containing
-// manifest.json (with id and version) and a placeholder binary. The <id>/ prefix matches
-// the CI packaging convention, so extraction to extensions_dir produces the correct
-// extensions_dir/<id>/manifest.json layout that loadState() expects.
-QByteArray dummyPluginZip(const QString& ext_id, const QString& version = "1.0.0") {
+// Returns a minimal ZIP that mimics a real artifact: an <id>/ root directory
+// containing only a placeholder binary. Plugin self-description (capabilities,
+// file_extensions, name, etc.) is read from the .so's vt_->manifest_json at
+// load time; the host-owned pj_meta.json bookkeeping file is written by
+// ExtensionManager at install completion. There is no plugin-author sidecar.
+QByteArray dummyPluginZip(const QString& ext_id, const QString& /*version*/ = "1.0.0") {
+  return buildZip({
+      {ext_id + "/" + ext_id + ".plugin", "placeholder binary content"},
+  });
+}
+
+// Legacy ZIP shape that bakes manifest.json into the artifact. Used by the
+// backward-compat test that exercises loadState's fallback for installations
+// from before the sidecar removal.
+QByteArray legacyPluginZipWithManifest(const QString& ext_id, const QString& version = "1.0.0") {
   const QByteArray manifest =
       QJsonDocument(QJsonObject{{"id", ext_id}, {"version", version}}).toJson();
   return buildZip({
@@ -582,10 +592,13 @@ TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesStagedExtension) {
 
 // An entry in .pending/ that lacks manifest.json is silently skipped — it may be
 // a leftover from an incomplete extraction and must not cause a crash or bad state.
-TEST_F(ExtensionManagerTest, ApplyPendingInstallsSkipsDirectoryWithoutMetaFile) {
+TEST_F(ExtensionManagerTest, ApplyPendingInstallsSkipsEmptyStagingDirectory) {
   const QString staged_dir = pending_dir_.path() + "/bad-extension";
   ASSERT_TRUE(QDir().mkpath(staged_dir));
-  // Intentionally omit manifest.json to simulate a broken staging directory.
+  // Intentionally leave the directory empty to simulate a broken staging
+  // operation. Under the new sidecar-free layout the directory name would
+  // otherwise be taken as the id; the empty-dir guard prevents a phantom
+  // installation from being recorded.
 
   QSignalSpy spy(mgr_, &ExtensionManager::installFinished);
   mgr_->applyPendingInstalls();
@@ -702,6 +715,43 @@ TEST_F(ExtensionManagerTest, ApplyPendingUninstallsIgnoresUnmarkedDirectory) {
 // applyPendingUninstalls() is a no-op when extensions_dir contains no sub-directories.
 TEST_F(ExtensionManagerTest, ApplyPendingUninstallsIsNoOpForEmptyDirectory) {
   mgr_->applyPendingUninstalls();  // must not crash
+}
+
+// Backward compatibility: a pre-existing installation laid out by an older host
+// version (manifest.json present, no pj_meta.json) must still be visible in
+// installedExtensions() after a fresh ExtensionManager loads its state.
+TEST_F(ExtensionManagerTest, LoadStateFallsBackToManifestJsonForLegacyInstalls) {
+  // Simulate a legacy install by extracting a legacy ZIP straight into the
+  // extensions directory under <id>/, without ever calling install().
+  QTemporaryDir legacy_extensions(QDir::tempPath() + "/legacy_ext_XXXXXX");
+  ASSERT_TRUE(legacy_extensions.isValid());
+  const QString id = "csv-loader";
+  const QString version = "1.2.3";
+  ASSERT_TRUE(QDir(legacy_extensions.path()).mkpath(id));
+  const QByteArray manifest =
+      QJsonDocument(QJsonObject{{"id", id}, {"version", version}}).toJson();
+  QFile mfile(legacy_extensions.path() + "/" + id + "/manifest.json");
+  ASSERT_TRUE(mfile.open(QIODevice::WriteOnly));
+  mfile.write(manifest);
+  mfile.close();
+  // Touch the placeholder binary so isInstalled() filesystem check passes too
+  // (resilience-fix invariant: isInstalled stats the path).
+  QFile bin(legacy_extensions.path() + "/" + id + "/" + id + ".plugin");
+  ASSERT_TRUE(bin.open(QIODevice::WriteOnly));
+  bin.write("placeholder");
+  bin.close();
+
+  // A fresh manager rooted on the legacy directory should reconstruct
+  // installed_ from manifest.json without help from pj_meta.json.
+  DownloadManager dl;
+  ExtensionManager mgr(&dl, legacy_extensions.path(), pending_dir_.path());
+  EXPECT_TRUE(mgr.isInstalled(id));
+  EXPECT_EQ(mgr.installedExtensions()[id].version, version);
+
+  // Backward-compat helper coverage: the legacy ZIP shape we use elsewhere
+  // round-trips through the host as expected.
+  const QByteArray bytes = legacyPluginZipWithManifest(id, version);
+  EXPECT_FALSE(bytes.isEmpty());
 }
 
 // ---------------------------------------------------------------------------

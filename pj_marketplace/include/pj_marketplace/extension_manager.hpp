@@ -136,7 +136,12 @@ class ExtensionManager : public QObject {
   void loadState();
   void saveState();
   void disconnectDlConns();
-  void savePendingMeta(const Extension& ext);
+  // Writes pj_meta.json (host-owned bookkeeping: id, version, install_date)
+  // into <dir>/. This is the persistent record that loadState() reads at
+  // startup; it replaces the plugin-author-supplied manifest.json sidecar
+  // for host-side bookkeeping. Plugin self-description (capabilities,
+  // file_extensions, name, etc.) still comes from the .so's vt_->manifest_json.
+  void writeInstalledMeta(const Extension& ext, const QString& dir);
   void schedulePendingUninstall(const QString& path);
 
   DownloadManager* downloader_ = nullptr;

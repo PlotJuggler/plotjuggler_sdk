@@ -115,24 +115,24 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
     pending_op_id_ = -1;
 
     if (staging) {
+      // Persist host-owned metadata into the staged dir so applyPendingInstalls
+      // (next startup) can read id/version without parsing the plugin-author
+      // manifest.json sidecar.
+      writeInstalledMeta(ext, pending_dir_ + "/" + ext.id);
       emit installPendingRestart(finished_id);
     } else {
       const QString ext_root = extensions_dir_ + "/" + ext.id;
 
       InstalledExtension record;
       record.id = ext.id;
-      record.version = ext.version;
+      record.version = ext.version;  // authoritative source: registry struct
       record.install_date = QDateTime::currentDateTimeUtc();
       record.path = ext_root;
       record.enabled = true;
 
-      QFile manifest_file(ext_root + "/" + kManifestFileName);
-      if (manifest_file.open(QIODevice::ReadOnly)) {
-        const QJsonObject manifest = QJsonDocument::fromJson(manifest_file.readAll()).object();
-        if (!manifest["version"].toString().isEmpty()) {
-          record.version = manifest["version"].toString();
-        }
-      }
+      // Persist host-owned bookkeeping. loadState() at next startup reads this
+      // file (with a manifest.json fallback for legacy installs).
+      writeInstalledMeta(ext, ext_root);
 
       installed_[ext.id] = record;
       emit installFinished(finished_id, true);
@@ -259,19 +259,32 @@ void ExtensionManager::applyPendingInstalls() {
 
   for (const QFileInfo& entry : pending.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
     const QString src = entry.absoluteFilePath();
-    const QString dst = extensions_dir_ + "/" + entry.fileName();
-
-    // manifest.json is part of the artifact — read it before moving the directory.
-    QFile manifest_file(src + "/" + kManifestFileName);
-    if (!manifest_file.open(QIODevice::ReadOnly)) {
-      continue;
-    }
-    const QJsonObject manifest = QJsonDocument::fromJson(manifest_file.readAll()).object();
-    manifest_file.close();
-
-    const QString id = manifest["id"].toString();
+    // Directory name IS the id — install() always creates pending_dir_/<ext.id>/,
+    // so we don't need to parse a sidecar to recover it.
+    const QString id = entry.fileName();
     if (id.isEmpty()) {
       continue;
+    }
+    // Sanity: a real staged install always contains at least the plugin binary.
+    // A bare directory is a sign of a broken staging operation; skip it rather
+    // than promote a phantom installation that would later confuse loadState.
+    if (QDir(src).entryInfoList(QDir::Files | QDir::NoDotAndDotDot).isEmpty()) {
+      continue;
+    }
+    const QString dst = extensions_dir_ + "/" + id;
+
+    // Version comes from the host-owned pj_meta.json that doInstall() wrote
+    // when staging completed. Fall back to manifest.json for legacy staged
+    // installs from before the sidecar removal.
+    QString version;
+    QFile pj_meta_file(src + "/pj_meta.json");
+    if (pj_meta_file.open(QIODevice::ReadOnly)) {
+      version = QJsonDocument::fromJson(pj_meta_file.readAll()).object()["version"].toString();
+    } else {
+      QFile legacy(src + "/" + kManifestFileName);
+      if (legacy.open(QIODevice::ReadOnly)) {
+        version = QJsonDocument::fromJson(legacy.readAll()).object()["version"].toString();
+      }
     }
 
     // Remove any existing installation so the rename cannot fail on a non-empty target.
@@ -283,7 +296,7 @@ void ExtensionManager::applyPendingInstalls() {
 
     InstalledExtension record;
     record.id = id;
-    record.version = manifest["version"].toString();
+    record.version = version;
     record.install_date = QDateTime::currentDateTimeUtc();
     record.path = dst;
     record.enabled = true;
@@ -299,12 +312,8 @@ void ExtensionManager::applyPendingUninstalls() {
     if (!QFile::exists(entry.absoluteFilePath() + "/" + kPendingUninstallMarker)) {
       continue;
     }
-    QFile manifest_file(entry.absoluteFilePath() + "/" + kManifestFileName);
-    QString id;
-    if (manifest_file.open(QIODevice::ReadOnly)) {
-      id = QJsonDocument::fromJson(manifest_file.readAll()).object()["id"].toString();
-      manifest_file.close();
-    }
+    // Directory name IS the id — install() always creates extensions_dir_/<id>/.
+    const QString id = entry.fileName();
     if (QDir(entry.absoluteFilePath()).removeRecursively() && !id.isEmpty()) {
       installed_.remove(id);
     }
@@ -349,22 +358,13 @@ void ExtensionManager::reconcileInstalledWithDisk() {
 }
 
 bool ExtensionManager::hasPendingInstall(const QString& id) const {
-  const QDir pending(pending_dir_);
-  if (!pending.exists()) {
+  // Directory name IS the id; if pending_dir_/<id>/ exists, the install is staged.
+  const QString staged = pending_dir_ + "/" + id;
+  if (!QFileInfo::exists(staged)) {
     return false;
   }
-  for (const QFileInfo& entry : pending.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-    QFile manifest_file(entry.absoluteFilePath() + "/" + kManifestFileName);
-    if (!manifest_file.open(QIODevice::ReadOnly)) {
-      continue;
-    }
-    const QString manifest_id = QJsonDocument::fromJson(manifest_file.readAll()).object()["id"].toString();
-    if (manifest_id == id) {
-      emit const_cast<ExtensionManager*>(this)->installPendingRestart(id);
-      return true;
-    }
-  }
-  return false;
+  emit const_cast<ExtensionManager*>(this)->installPendingRestart(id);
+  return true;
 }
 
 bool ExtensionManager::hasPendingUninstall(const QString& id) const {
@@ -404,16 +404,18 @@ void ExtensionManager::schedulePendingUninstall(const QString& path) {
   marker.open(QIODevice::WriteOnly);  // content irrelevant; existence is the signal
 }
 
-void ExtensionManager::savePendingMeta(const Extension& ext) {
+void ExtensionManager::writeInstalledMeta(const Extension& ext, const QString& dir) {
   QJsonObject obj;
   obj["id"] = ext.id;
   obj["version"] = ext.version;
   obj["install_date"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
 
-  QFile file(pending_dir_ + "/" + ext.id + "/pj_meta.json");
-  if (file.open(QIODevice::WriteOnly)) {
-    file.write(QJsonDocument(obj).toJson());
+  QFile file(dir + "/pj_meta.json");
+  if (!file.open(QIODevice::WriteOnly)) {
+    qWarning("ExtensionManager: failed to write pj_meta.json under '%s'", qPrintable(dir));
+    return;
   }
+  file.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
 // ---------------------------------------------------------------------------
@@ -429,19 +431,30 @@ void ExtensionManager::loadState() {
       continue;
     }
 
-    QFile manifest_file(ext_root + "/" + kManifestFileName);
-    if (!manifest_file.open(QIODevice::ReadOnly)) {
-      continue;
-    }
-    const QJsonObject manifest = QJsonDocument::fromJson(manifest_file.readAll()).object();
-    const QString id = manifest["id"].toString();
+    // Directory name IS the id (install always creates extensions_dir_/<ext.id>/).
+    const QString id = entry.fileName();
     if (id.isEmpty()) {
       continue;
     }
 
+    // Version comes from the host-owned pj_meta.json. For installations made
+    // before the sidecar removal, fall back to the plugin-author manifest.json
+    // — that fallback can be deleted once all users have re-installed at least
+    // once under the new layout.
+    QString version;
+    QFile pj_meta_file(ext_root + "/pj_meta.json");
+    if (pj_meta_file.open(QIODevice::ReadOnly)) {
+      version = QJsonDocument::fromJson(pj_meta_file.readAll()).object()["version"].toString();
+    } else {
+      QFile legacy(ext_root + "/" + kManifestFileName);
+      if (legacy.open(QIODevice::ReadOnly)) {
+        version = QJsonDocument::fromJson(legacy.readAll()).object()["version"].toString();
+      }
+    }
+
     InstalledExtension inst;
     inst.id = id;
-    inst.version = manifest["version"].toString();
+    inst.version = version;
     inst.install_date = entry.lastModified();
     inst.path = ext_root;
     inst.enabled = true;
