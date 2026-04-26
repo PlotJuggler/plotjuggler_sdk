@@ -32,9 +32,11 @@ add_library(pj_marketplace STATIC
   src/core/DownloadManager.cpp
   src/core/ExtensionManager.cpp
   src/core/PlatformUtils.cpp
+  src/core/QtDiagnosticBridge.cpp
   src/core/RegistryManager.cpp
   include/pj_marketplace/download_manager.hpp
   include/pj_marketplace/extension_manager.hpp
+  include/pj_marketplace/qt_diagnostic_bridge.hpp
   include/pj_marketplace/registry_manager.hpp
 )
 
@@ -80,14 +82,28 @@ target_link_libraries(pj_marketplace_ui PUBLIC
 )
 
 # pj_base provides expected.hpp (header-only for our usage).
-# When built as part of plotjuggler_core the target already exists;
-# in standalone mode we expose the include directory directly.
+# When built as part of plotjuggler_core the targets already exist;
+# in standalone mode we synthesize a pj_plugin_catalog target so downstream
+# consumers always link a single, non-duplicated symbol set regardless of build mode.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  target_include_directories(pj_marketplace PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_base/include
-  )
+  find_package(nlohmann_json REQUIRED)
+  if(NOT TARGET pj_plugin_catalog)
+    add_library(pj_plugin_catalog STATIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/src/plugin_catalog.cpp
+    )
+    target_include_directories(pj_plugin_catalog PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_base/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/dialog_protocol/include
+    )
+    target_link_libraries(pj_plugin_catalog PUBLIC
+      nlohmann_json::nlohmann_json
+      ${CMAKE_DL_LIBS}
+    )
+  endif()
+  target_link_libraries(pj_marketplace PUBLIC pj_plugin_catalog)
 else()
-  target_link_libraries(pj_marketplace PUBLIC pj_base)
+  target_link_libraries(pj_marketplace PUBLIC pj_base pj_plugin_catalog)
 endif()
 
 target_compile_options(pj_marketplace PRIVATE ${PJ_WARNING_FLAGS})
@@ -143,22 +159,34 @@ set_target_properties(registry_manager_test PROPERTIES
 target_compile_options(registry_manager_test PRIVATE -Wall -Wextra)
 add_test(NAME registry_manager_test COMMAND registry_manager_test)
 
-add_executable(extension_manager_test
-  tests/extension_manager_test.cpp
-)
+if(TARGET mock_data_source_plugin AND TARGET mock_file_source_plugin
+   AND TARGET mock_data_source_v2_plugin AND TARGET missing_id_data_source_plugin)
+  add_executable(extension_manager_test
+    tests/extension_manager_test.cpp
+  )
+  target_compile_definitions(extension_manager_test PRIVATE
+    PJ_MARKETPLACE_TESTING
+    PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
+    PJ_MOCK_DATA_SOURCE_V2_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_v2_plugin>"
+    PJ_MOCK_FILE_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_file_source_plugin>"
+    PJ_MISSING_ID_PLUGIN_PATH="$<TARGET_FILE:missing_id_data_source_plugin>"
+  )
+  add_dependencies(extension_manager_test mock_data_source_plugin mock_file_source_plugin
+                   mock_data_source_v2_plugin missing_id_data_source_plugin)
 
-target_link_libraries(extension_manager_test PRIVATE
-  pj_marketplace
-  Qt6::Network
-  Qt6::Test
-  GTest::gtest
-  LibArchive::LibArchive
-)
-set_target_properties(extension_manager_test PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
-)
-target_compile_options(extension_manager_test PRIVATE ${PJ_WARNING_FLAGS})
-add_test(NAME extension_manager_test COMMAND extension_manager_test)
+  target_link_libraries(extension_manager_test PRIVATE
+    pj_marketplace
+    Qt6::Network
+    Qt6::Test
+    GTest::gtest
+    LibArchive::LibArchive
+  )
+  set_target_properties(extension_manager_test PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+  )
+  target_compile_options(extension_manager_test PRIVATE ${PJ_WARNING_FLAGS})
+  add_test(NAME extension_manager_test COMMAND extension_manager_test)
+endif()
 
 # Integration test — requires network access, excluded from CTest by default.
 # Run manually: ./tests/extension_manager_integration_test

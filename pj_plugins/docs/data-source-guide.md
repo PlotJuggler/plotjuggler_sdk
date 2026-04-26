@@ -19,7 +19,7 @@ internals) and communicate through a stable C ABI.
 1. Subclass `PJ::FileSourceBase` (file importer) or `PJ::StreamSourceBase`
    (live stream), or `PJ::DataSourcePluginBase` for full control.
 2. Implement the required virtuals (see Common Patterns below).
-3. Export with `PJ_DATA_SOURCE_PLUGIN(YourClass, R"({"name":"...","version":"..."})")`
+3. Export with `PJ_DATA_SOURCE_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. Build as a shared library linking `pj_base`
 
 A complete example lives at `pj_plugins/examples/mock_data_source.cpp`.
@@ -74,7 +74,7 @@ manifest string literal (see Manifest Schema below):
 
 ```cpp
 PJ_DATA_SOURCE_PLUGIN(MyCsvLoader,
-    R"({"name":"CSV Loader","version":"1.0.0","file_extensions":[".csv"]})")
+    R"({"id":"csv-loader","name":"CSV Loader","version":"1.0.0","file_extensions":[".csv"]})")
 ```
 
 This generates the `extern "C"` entry point that the host resolves via dlsym.
@@ -199,7 +199,7 @@ class CsvFileLoader : public PJ::FileSourceBase {
 };
 
 PJ_DATA_SOURCE_PLUGIN(CsvFileLoader,
-    R"({"name":"CSV File Loader","version":"1.0.0",)"
+    R"({"id":"csv-file-loader","name":"CSV File Loader","version":"1.0.0",)"
     R"("description":"Import numeric CSV files",)"
     R"("file_extensions":[".csv",".tsv"]})")
 ```
@@ -350,7 +350,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
 };
 
 PJ_DATA_SOURCE_PLUGIN(UdpReceiver,
-    R"({"name":"UDP Receiver","version":"1.0.0",)"
+    R"({"id":"udp-receiver","name":"UDP Receiver","version":"1.0.0",)"
     R"("description":"Receive datagrams on UDP 9870 with delegated parsing"})")
 ```
 
@@ -543,6 +543,7 @@ it without instantiating the plugin.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
+| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
@@ -551,6 +552,7 @@ it without instantiating the plugin.
 Example:
 ```json
 {
+  "id": "csv-loader",
   "name": "CSV Loader",
   "version": "1.0.0",
   "description": "Import numeric CSV files",
@@ -788,7 +790,7 @@ class MySource : public PJ::StreamSourceBase {
 **3. Export both vtables** at file scope:
 
 ```cpp
-PJ_DATA_SOURCE_PLUGIN(MySource, R"({"name":"My Source","version":"1.0.0"})")
+PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
 PJ_DIALOG_PLUGIN(MyDialog)
 ```
 

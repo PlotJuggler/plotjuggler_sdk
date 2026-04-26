@@ -1,6 +1,6 @@
 @startuml
 skinparam backgroundColor white
-title Rollback Flow
+title Rollback Flow (Deferred)
 
 start
 :PlotJuggler starts;
@@ -10,11 +10,11 @@ while (More plugins?) is (yes)
   if (Load OK?) then (yes)
     :Plugin active;
   else (no)
-    if (Backup exists?) then (yes)
-      :Restore backup;
-    else (no)
-      :Disable extension;
-    endif
+    :Report load failure;
+    note right
+      Automatic backup restore
+      is deferred.
+    end note
   endif
 endwhile (no)
 :System ready;

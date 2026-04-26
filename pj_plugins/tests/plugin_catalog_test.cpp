@@ -1,20 +1,25 @@
-/**
- * @file plugin_catalog_test.cpp
- * @brief Tests for the sidecar-based plugin discovery scanner (Phase 1d).
- *
- * The scanner is pure filesystem + JSON — no dlopen. We write synthetic
- * sidecars into a temp directory and verify the descriptors round-trip.
- */
 #include "pj_plugins/host/plugin_catalog.hpp"
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
 namespace PJ {
 namespace {
+
+std::string pluginFileName(const std::string& stem) {
+#if defined(_WIN32)
+  return stem + ".dll";
+#elif defined(__APPLE__)
+  return stem + ".dylib";
+#else
+  return stem + ".so";
+#endif
+}
 
 class PluginCatalogTest : public ::testing::Test {
  protected:
@@ -30,105 +35,97 @@ class PluginCatalogTest : public ::testing::Test {
     std::filesystem::remove_all(dir_, ec);
   }
 
-  void writeSidecar(const std::string& stem, const std::string& json) {
-    std::ofstream out(dir_ / (stem + ".pjmanifest.json"));
-    out << json;
+  std::filesystem::path copyPlugin(const std::string& source, const std::string& name) {
+    const std::filesystem::path dst = dir_ / name;
+    std::filesystem::copy_file(source, dst, std::filesystem::copy_options::overwrite_existing);
+    return dst;
   }
 
   std::filesystem::path dir_;
 };
 
 TEST_F(PluginCatalogTest, MissingDirectoryReturnsError) {
-  auto result = scanPluginSidecars("/nonexistent/path/xyz");
+  auto result = scanPluginDsos("/nonexistent/path/xyz");
   EXPECT_FALSE(result.has_value());
 }
 
-TEST_F(PluginCatalogTest, EmptyDirectoryReturnsEmptyVector) {
-  auto result = scanPluginSidecars(dir_);
+TEST_F(PluginCatalogTest, EmptyDirectoryReturnsEmptyResult) {
+  auto result = scanPluginDsos(dir_);
   ASSERT_TRUE(result.has_value()) << result.error();
-  EXPECT_TRUE(result->empty());
+  EXPECT_TRUE(result->plugins.empty());
+  EXPECT_TRUE(result->diagnostics.empty());
 }
 
-TEST_F(PluginCatalogTest, ValidSidecarDecodes) {
-  writeSidecar("my_plugin", R"({
-    "name": "My Plugin",
-    "version": "1.2.3",
-    "abi_major": 4,
-    "family": "data_source",
-    "description": "A test plugin",
-    "category": "File",
-    "file_extensions": [".csv", ".tsv"]
-  })");
+TEST_F(PluginCatalogTest, InspectDataSourceDsoUsesEmbeddedManifest) {
+  auto descriptor = inspectPluginDso(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "mock-data-source");
+  EXPECT_EQ(descriptor->name, "Mock DataSource");
+  EXPECT_EQ(descriptor->version, "1.0.0");
+  EXPECT_EQ(descriptor->family, PluginFamily::kDataSource);
+}
 
-  auto result = scanPluginSidecars(dir_);
+TEST_F(PluginCatalogTest, InspectMessageParserRequiresEncoding) {
+  auto descriptor = inspectPluginDso(PJ_MOCK_JSON_PARSER_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "mock-json-parser");
+  EXPECT_EQ(descriptor->family, PluginFamily::kMessageParser);
+  EXPECT_EQ(descriptor->encoding, "json");
+}
+
+TEST_F(PluginCatalogTest, InspectToolboxDsoUsesEmbeddedManifest) {
+  auto descriptor = inspectPluginDso(PJ_MOCK_TOOLBOX_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "mock-toolbox");
+  EXPECT_EQ(descriptor->family, PluginFamily::kToolbox);
+}
+
+TEST_F(PluginCatalogTest, InspectDialogDsoUsesEmbeddedManifest) {
+  auto descriptor = inspectPluginDso(PJ_MOCK_DIALOG_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "mock-dialog");
+  EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
+}
+
+TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {
+  auto descriptor = inspectPluginDso(PJ_MISSING_ID_PLUGIN_PATH);
+  ASSERT_FALSE(descriptor.has_value());
+  EXPECT_NE(descriptor.error().find("id"), std::string::npos);
+}
+
+TEST_F(PluginCatalogTest, InvalidOptionalManifestFieldIsReportedAsDiagnostic) {
+  copyPlugin(PJ_INVALID_OPTIONAL_PLUGIN_PATH, pluginFileName("invalid_optional"));
+
+  auto result = scanPluginDsos(dir_);
   ASSERT_TRUE(result.has_value()) << result.error();
-  ASSERT_EQ(result->size(), 1U);
-  const auto& d = (*result)[0];
-
-  EXPECT_EQ(d.name, "My Plugin");
-  EXPECT_EQ(d.version, "1.2.3");
-  EXPECT_EQ(d.abi_major, 4U);
-  EXPECT_EQ(d.family, PluginFamily::kDataSource);
-  EXPECT_EQ(d.description, "A test plugin");
-  EXPECT_EQ(d.category, "File");
-  ASSERT_EQ(d.file_extensions.size(), 2U);
-  EXPECT_EQ(d.file_extensions[0], ".csv");
-  EXPECT_EQ(d.file_extensions[1], ".tsv");
-  EXPECT_EQ(d.sidecar_path.filename(), "my_plugin.pjmanifest.json");
+  EXPECT_TRUE(result->plugins.empty());
+  ASSERT_EQ(result->diagnostics.size(), 1U);
+  EXPECT_NE(result->diagnostics[0].message.find("description"), std::string::npos);
+  EXPECT_NE(result->diagnostics[0].message.find("invalid_optional"), std::string::npos);
 }
 
-TEST_F(PluginCatalogTest, MalformedJsonIsSkipped) {
-  writeSidecar("broken", "{ this is not valid json");
-  writeSidecar("good", R"({"name":"G","version":"1","abi_major":4,"family":"toolbox"})");
+TEST_F(PluginCatalogTest, ScanContinuesAfterBrokenDso) {
+  copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, pluginFileName("valid"));
+  std::ofstream(dir_ / pluginFileName("broken")) << "not a shared library";
+  std::ofstream(dir_ / "notes.txt") << "not a candidate";
 
-  auto result = scanPluginSidecars(dir_);
-  ASSERT_TRUE(result.has_value());
-  ASSERT_EQ(result->size(), 1U);
-  EXPECT_EQ((*result)[0].name, "G");
-}
-
-TEST_F(PluginCatalogTest, MissingRequiredKeyIsSkipped) {
-  writeSidecar("no_version", R"({"name":"X","abi_major":4,"family":"dialog"})");
-  writeSidecar("no_family", R"({"name":"Y","version":"1","abi_major":4})");
-  writeSidecar("complete", R"({"name":"Z","version":"1","abi_major":4,"family":"message_parser"})");
-
-  auto result = scanPluginSidecars(dir_);
-  ASSERT_TRUE(result.has_value());
-  ASSERT_EQ(result->size(), 1U);
-  EXPECT_EQ((*result)[0].name, "Z");
-  EXPECT_EQ((*result)[0].family, PluginFamily::kMessageParser);
-}
-
-TEST_F(PluginCatalogTest, UnknownFamilyIsSkipped) {
-  writeSidecar("bogus", R"({"name":"B","version":"1","abi_major":4,"family":"something_else"})");
-  auto result = scanPluginSidecars(dir_);
-  ASSERT_TRUE(result.has_value());
-  EXPECT_TRUE(result->empty());
-}
-
-TEST_F(PluginCatalogTest, NonSidecarFilesAreIgnored) {
-  writeSidecar("p1", R"({"name":"P1","version":"1","abi_major":4,"family":"data_source"})");
-  // Write a non-sidecar file
-  std::ofstream(dir_ / "random.txt") << "hello";
-  std::ofstream(dir_ / "libp1.so") << "fake binary";
-
-  auto result = scanPluginSidecars(dir_);
-  ASSERT_TRUE(result.has_value());
-  ASSERT_EQ(result->size(), 1U);
-  EXPECT_EQ((*result)[0].name, "P1");
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  ASSERT_EQ(result->plugins.size(), 1U);
+  EXPECT_EQ(result->plugins[0].id, "mock-data-source");
+  ASSERT_EQ(result->diagnostics.size(), 1U);
+  EXPECT_EQ(result->diagnostics[0].path.filename(), pluginFileName("broken"));
 }
 
 TEST_F(PluginCatalogTest, ResultIsSortedByPath) {
-  writeSidecar("zz_plugin", R"({"name":"Z","version":"1","abi_major":4,"family":"toolbox"})");
-  writeSidecar("aa_plugin", R"({"name":"A","version":"1","abi_major":4,"family":"toolbox"})");
-  writeSidecar("mm_plugin", R"({"name":"M","version":"1","abi_major":4,"family":"toolbox"})");
+  copyPlugin(PJ_MOCK_TOOLBOX_PLUGIN_PATH, pluginFileName("zz_plugin"));
+  copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, pluginFileName("aa_plugin"));
 
-  auto result = scanPluginSidecars(dir_);
-  ASSERT_TRUE(result.has_value());
-  ASSERT_EQ(result->size(), 3U);
-  EXPECT_EQ((*result)[0].name, "A");
-  EXPECT_EQ((*result)[1].name, "M");
-  EXPECT_EQ((*result)[2].name, "Z");
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  ASSERT_EQ(result->plugins.size(), 2U);
+  EXPECT_EQ(result->plugins[0].dso_path.filename(), pluginFileName("aa_plugin"));
+  EXPECT_EQ(result->plugins[1].dso_path.filename(), pluginFileName("zz_plugin"));
 }
 
 TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {
@@ -141,30 +138,3 @@ TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {
 
 }  // namespace
 }  // namespace PJ
-
-// ---------------------------------------------------------------------------
-// Integration test: scan the actual build-tree plugin directory if present.
-// Lets us verify that the pj_emit_plugin_manifest CMake helper produces
-// sidecars that scanPluginSidecars actually consumes correctly.
-// ---------------------------------------------------------------------------
-
-#ifdef PJ_PORTED_PLUGINS_BIN_DIR
-TEST(PluginCatalogIntegration, ScansPortedPluginsBinDir) {
-  const std::filesystem::path bin_dir = PJ_PORTED_PLUGINS_BIN_DIR;
-  if (!std::filesystem::exists(bin_dir)) {
-    GTEST_SKIP() << "ported plugins bin dir not present: " << bin_dir;
-  }
-
-  auto result = PJ::scanPluginSidecars(bin_dir);
-  ASSERT_TRUE(result.has_value()) << result.error();
-
-  // Every entry must parse cleanly and have abi_major == 4.
-  EXPECT_FALSE(result->empty()) << "no sidecars found in " << bin_dir;
-  for (const auto& d : *result) {
-    EXPECT_EQ(d.abi_major, 4U) << "sidecar " << d.sidecar_path << " has abi_major != 4";
-    EXPECT_NE(d.family, PJ::PluginFamily::kUnknown);
-    EXPECT_FALSE(d.name.empty());
-    EXPECT_FALSE(d.version.empty());
-  }
-}
-#endif

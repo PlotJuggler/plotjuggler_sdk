@@ -93,6 +93,15 @@ typedef struct PJ_toolbox_vtable_t {
   /** [main-thread] Destroy an instance previously created by create(). */
   void (*destroy)(void* ctx) PJ_NOEXCEPT;
 
+  /**
+   * Static JSON manifest. Compile-time constant.
+   *
+   * Required keys:
+   *   "id"      — stable plugin identifier (string). Used by the host catalog
+   *               and the marketplace; must be unique per plugin.
+   *   "name"    — human-readable plugin name (string).
+   *   "version" — semver version string (string).
+   */
   const char* manifest_json;
   /** [main-thread] Return capability bitmask (PJ_TOOLBOX_CAPABILITY_* flags). */
   uint64_t (*capabilities)(void* ctx) PJ_NOEXCEPT;

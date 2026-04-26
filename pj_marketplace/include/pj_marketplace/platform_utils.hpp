@@ -15,6 +15,7 @@ class PlatformUtils {
   // Format: "<os>-<arch>", e.g. "linux-x86_64", "windows-x86_64", "macos-arm64".
   static QString currentPlatform();
 
+  // Returns true on Windows builds.
   static bool isWindows();
 
   // Returns the shared library extension for the current platform:
@@ -32,7 +33,7 @@ class PlatformUtils {
   // ~/.plotjuggler/extensions/ — active, loaded extensions.
   static QString extensionsDir();
 
-  // ~/.plotjuggler/.pending/ — staging area for extensions awaiting a restart (Windows only).
+  // <config-root>/.extension_staging/ — restart staging for Windows updates.
   static QString pendingDir();
 
   // ~/.plotjuggler/.backup/ — pre-update backups (F-12, deferred to April+).

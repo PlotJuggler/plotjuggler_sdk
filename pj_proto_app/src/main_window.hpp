@@ -1,5 +1,8 @@
 #pragma once
 
+#include <QAction>
+#include <QDateTime>
+#include <QList>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
@@ -15,6 +18,7 @@
 #include "data_source_session.hpp"
 #include "pj_datastore/colormap_registry.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_marketplace/qt_diagnostic_bridge.hpp"
 #include "plugin_registry.hpp"
 #include "series_tree_model.hpp"
 #include "toolbox_session.hpp"
@@ -46,6 +50,8 @@ class MainWindow : public QMainWindow {
   void onClearPlots();
   void onRefreshTimer();
   void onTreeContextMenu(const QPoint& pos);
+  void onDiagnosticReported(int level, QString source, QString id, QString message);
+  void onShowDiagnosticsDialog();
 
  private:
   void setupToolboxPanels(QMenu* tools_menu);
@@ -62,9 +68,21 @@ class MainWindow : public QMainWindow {
   PJ::DataEngine engine_;
   PJ::ColorMapRegistry colormap_registry_;
   PJ::TimeDomainId default_td_id_ = 0;
-  PluginRegistry registry_;
+  PJ::QtDiagnosticBridge* diag_bridge_ = nullptr;
+  std::unique_ptr<PluginRegistry> registry_;
   std::vector<std::unique_ptr<DataSourceSession>> sessions_;
   SeriesTreeModel tree_model_;
+
+  // Recent diagnostics, capped, shown in the Diagnostics dialog.
+  struct UiDiagnostic {
+    int level;
+    QString source;
+    QString id;
+    QString message;
+    QDateTime timestamp;
+  };
+  QList<UiDiagnostic> diagnostics_;
+  QAction* diagnostics_action_ = nullptr;
 
   std::unique_ptr<PJ::ExtensionManager> ext_mgr_;
 

@@ -26,7 +26,7 @@
  *       return PJ::okStatus();
  *     }
  *   };
- *   PJ_DATA_SOURCE_PLUGIN(MyImporter, R"({"name":"My Importer","version":"1.0.0"})")
+ *   PJ_DATA_SOURCE_PLUGIN(MyImporter, R"({"id":"my-importer","name":"My Importer","version":"1.0.0"})")
  * @endcode
  *
  * @see examples/sdk_consumer/minimal_data_source.cpp for the smallest possible plugin.

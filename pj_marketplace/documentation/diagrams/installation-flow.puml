@@ -8,13 +8,13 @@ start
 :Download ZIP;
 :Verify SHA256;
 if (Checksum OK?) then (yes)
-  :Extract to temp;
-  :Validate manifest;
   if (Is update?) then (yes)
     :Backup current;
   endif
-  :Move to extensions/;
-  :Update installed.json;
+  :Extract to extensions/;
+  :Load DSO manifest;
+  :Validate registry id/version;
+  :Refresh installed cache;
 else (no)
   :Error: invalid checksum;
 endif

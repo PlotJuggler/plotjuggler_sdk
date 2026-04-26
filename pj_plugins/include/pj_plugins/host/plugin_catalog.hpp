@@ -2,23 +2,12 @@
 
 /**
  * @file plugin_catalog.hpp
- * @brief Pre-dlopen plugin discovery via `.pjmanifest.json` sidecars.
+ * @brief Plugin discovery from each DSO's embedded manifest.
  *
- * Each v4 plugin DSO ships with a sidecar JSON file written next to it by
- * CMake's pj_emit_plugin_manifest helper. The host scans a directory for
- * these sidecars at startup, building a catalog of what's available —
- * WITHOUT dlopen'ing any DSO. dlopen happens only when the user actually
- * activates a plugin.
- *
- * This matters at scale: at 20-50 plugins the cold-start cost of dlopen'ing
- * every candidate (for file-extension filters, parser encodings, toolbox
- * menus, etc.) becomes noticeable and noisy. The sidecar scan keeps
- * startup proportional to the number of JSON files, not the number of
- * shared libraries.
- *
- * On activation, the host dlopens the DSO, calls get_plugin_manifest(),
- * and verifies the runtime manifest matches the sidecar. Mismatch is a
- * warning, not a fatal error — DSO truth wins.
+ * Plugin DSOs export a family-specific vtable whose `manifest_json` field is
+ * the source of truth for local plugin metadata. The scanner walks plugin files,
+ * inspects those exports, parses the embedded manifest, and reports both valid
+ * descriptors and diagnostics for candidates that could not be used.
  */
 
 #include <cstdint>
@@ -30,7 +19,7 @@
 
 namespace PJ {
 
-/// Plugin family as advertised by the sidecar's "family" key.
+/// Plugin family inferred from the DSO's exported protocol vtable.
 enum class PluginFamily : uint32_t {
   kUnknown = 0,
   kDataSource = 1,
@@ -39,16 +28,16 @@ enum class PluginFamily : uint32_t {
   kDialog = 4,
 };
 
-/// Plugin descriptor parsed from a single `.pjmanifest.json` sidecar.
-/// All fields except `dso_path`, `abi_major`, `family`, `name`, and
-/// `version` are optional and may be empty.
+/// Plugin descriptor parsed from a DSO's embedded manifest.
+/// All fields except `dso_path`, `family`, `id`, `name`, and `version` are
+/// optional and may be empty.
 struct PluginDescriptor {
-  std::filesystem::path sidecar_path;
-  std::filesystem::path dso_path;  // inferred as sidecar_path minus ".pjmanifest.json" plus platform DSO suffix
+  std::filesystem::path dso_path;
 
   uint32_t abi_major = 0;
   PluginFamily family = PluginFamily::kUnknown;
 
+  std::string id;
   std::string name;
   std::string version;
   std::string description;
@@ -58,15 +47,26 @@ struct PluginDescriptor {
   std::vector<std::string> capabilities;     ///< optional capability tags
 };
 
-/// Scan a directory (non-recursive) for `*.pjmanifest.json` sidecars and
-/// return the parsed descriptors. Invalid sidecars are skipped silently.
-/// Returns an error only for filesystem-level problems (missing/unreadable
-/// directory).
-///
-/// Does NOT dlopen anything.
-[[nodiscard]] Expected<std::vector<PluginDescriptor>> scanPluginSidecars(const std::filesystem::path& directory);
+/// Diagnostic for a candidate DSO that could not produce a valid descriptor.
+struct PluginDiagnostic {
+  std::filesystem::path path;
+  std::string message;
+};
 
-/// Human-readable name for a family. Inverse of the string used in the sidecar.
+/// Result of a directory scan: valid descriptors plus per-DSO diagnostics.
+struct PluginScanResult {
+  std::vector<PluginDescriptor> plugins;
+  std::vector<PluginDiagnostic> diagnostics;
+};
+
+/// Inspect one DSO and return its embedded plugin descriptor.
+[[nodiscard]] Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path);
+
+/// Recursively scan a directory for platform plugin DSOs. Invalid candidates are
+/// reported in diagnostics while discovery continues.
+[[nodiscard]] Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory);
+
+/// Human-readable name for a plugin family.
 [[nodiscard]] std::string_view toString(PluginFamily family) noexcept;
 
 }  // namespace PJ

@@ -44,16 +44,23 @@ template <typename E>
 /// Minimal value-or-error container.
 template <typename T, typename E = std::string>
 class Expected {
+  struct ErrorStorage {
+    constexpr explicit ErrorStorage(const E& error) : value(error) {}
+    constexpr explicit ErrorStorage(E&& error) : value(std::move(error)) {}
+
+    E value;
+  };
+
  public:
   /// Construct a success value.
-  constexpr Expected(const T& value) : storage_(value) {}
+  constexpr Expected(const T& value) : storage_(std::in_place_index<0>, value) {}
   /// Construct a success value.
-  constexpr Expected(T&& value) : storage_(std::move(value)) {}
+  constexpr Expected(T&& value) : storage_(std::in_place_index<0>, std::move(value)) {}
 
   /// Construct an error state.
-  constexpr Expected(const Unexpected<E>& error) : storage_(error.value()) {}
+  constexpr Expected(const Unexpected<E>& error) : storage_(std::in_place_index<1>, error.value()) {}
   /// Construct an error state.
-  constexpr Expected(Unexpected<E>&& error) : storage_(std::move(error).value()) {}
+  constexpr Expected(Unexpected<E>&& error) : storage_(std::in_place_index<1>, std::move(error).value()) {}
 
   [[nodiscard]] constexpr bool has_value() const noexcept {
     return std::holds_alternative<T>(storage_);
@@ -77,51 +84,51 @@ class Expected {
   /// Arrow operator — access success payload members.
   [[nodiscard]] constexpr T* operator->() {
     PJ_ASSERT(has_value(), "Expected does not contain a value");
-    return &std::get<T>(storage_);
+    return &std::get<0>(storage_);
   }
   [[nodiscard]] constexpr const T* operator->() const {
     PJ_ASSERT(has_value(), "Expected does not contain a value");
-    return &std::get<T>(storage_);
+    return &std::get<0>(storage_);
   }
 
   /// Access success payload. Asserts if this contains an error.
   [[nodiscard]] constexpr T& value() & {
     PJ_ASSERT(has_value(), "Expected does not contain a value");
-    return std::get<T>(storage_);
+    return std::get<0>(storage_);
   }
 
   /// Access success payload. Asserts if this contains an error.
   [[nodiscard]] constexpr const T& value() const& {
     PJ_ASSERT(has_value(), "Expected does not contain a value");
-    return std::get<T>(storage_);
+    return std::get<0>(storage_);
   }
 
   /// Access success payload. Asserts if this contains an error.
   [[nodiscard]] constexpr T&& value() && {
     PJ_ASSERT(has_value(), "Expected does not contain a value");
-    return std::move(std::get<T>(storage_));
+    return std::move(std::get<0>(storage_));
   }
 
   /// Access error payload. Asserts if this contains a value.
   [[nodiscard]] constexpr E& error() & {
     PJ_ASSERT(!has_value(), "Expected does not contain an error");
-    return std::get<E>(storage_);
+    return std::get<1>(storage_).value;
   }
 
   /// Access error payload. Asserts if this contains a value.
   [[nodiscard]] constexpr const E& error() const& {
     PJ_ASSERT(!has_value(), "Expected does not contain an error");
-    return std::get<E>(storage_);
+    return std::get<1>(storage_).value;
   }
 
   /// Access error payload. Asserts if this contains a value.
   [[nodiscard]] constexpr E&& error() && {
     PJ_ASSERT(!has_value(), "Expected does not contain an error");
-    return std::move(std::get<E>(storage_));
+    return std::move(std::get<1>(storage_).value);
   }
 
  private:
-  std::variant<T, E> storage_;
+  std::variant<T, ErrorStorage> storage_;
 };
 
 /// Specialization for void value type (replaces a status-or-error type).

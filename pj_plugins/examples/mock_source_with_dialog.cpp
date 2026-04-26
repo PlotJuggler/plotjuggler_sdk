@@ -370,7 +370,7 @@ class MockStreamerSource : public PJ::StreamSourceBase {
 };
 
 PJ_DATA_SOURCE_PLUGIN(
-    MockStreamerSource, R"({"name":"Mock Streamer Source","version":"1.0.0",)"
+    MockStreamerSource, R"({"id":"mock-streamer-source","name":"Mock Streamer Source","version":"1.0.0",)"
                         R"("description":"Combined DataSource+Dialog mock for integration testing"})")
 
 PJ_DIALOG_PLUGIN(MockStreamerDialog)

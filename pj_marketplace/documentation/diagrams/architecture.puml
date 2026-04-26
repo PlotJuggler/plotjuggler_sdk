@@ -12,9 +12,9 @@ rectangle "GitHub" {
 rectangle "PlotJuggler" {
   component "Marketplace UI" as ui
   component "Extension Manager" as em
-  database "installed.json" as local
+  folder "extensions/\nplugin DSOs" as local
   ui --> em
-  em --> local
+  em --> local : discover embedded manifests
 }
 
 reg ..> ui : HTTPS fetch

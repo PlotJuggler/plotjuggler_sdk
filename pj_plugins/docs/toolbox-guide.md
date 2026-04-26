@@ -25,7 +25,7 @@ editor, custom data transforms.
 1. Subclass `PJ::ToolboxPluginBase`
 2. Override `capabilities()` (required) and optionally `bind()` (for
    acquiring services), `saveConfig()`, `loadConfig()`, `getDialog()`
-3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"name":"...","version":"..."})")`
+3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. If you ship an embedded dialog, also declare it as a
    `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog)`
 5. Build as a shared library linking `pj_base` (+ `pj_dialog_sdk` if
@@ -98,7 +98,7 @@ At file scope, after the class definition:
 
 ```cpp
 PJ_TOOLBOX_PLUGIN(MyToolbox,
-    R"({"name":"My Toolbox","version":"1.0.0",)"
+    R"({"id":"my-toolbox","name":"My Toolbox","version":"1.0.0",)"
     R"("description":"Apply FFT to selected signals"})")
 ```
 
@@ -231,6 +231,7 @@ it without instantiating the plugin.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
+| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
@@ -238,6 +239,7 @@ it without instantiating the plugin.
 Example:
 ```json
 {
+  "id": "fft-toolbox",
   "name": "FFT Toolbox",
   "version": "1.0.0",
   "description": "Apply FFT transforms to selected signals"
@@ -313,6 +315,6 @@ row-of-fields shape. See
 - `pj_plugins/examples/mock_toolbox.cpp` — minimal test fixture that exercises
   the full `ToolboxPluginBase` API surface: capabilities, config persistence,
   host binding, and dialog context.
-- `pj_ported_plugins/toolbox_quaternion/quaternion_plugin_test.cpp` —
-  end-to-end test using `ToolboxTestStore` to drive the quaternion toolbox
-  through several real scenarios.
+- `pj_plugins/tests/toolbox_plugin_test.cpp` — end-to-end host-side test
+  using `PJ::ToolboxTestStore` (in `pj_plugins/include/pj_plugins/testing/`)
+  to drive a toolbox plugin through ingest, transform, and config scenarios.

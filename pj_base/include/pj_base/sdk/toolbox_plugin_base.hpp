@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "pj_base/expected.hpp"
+#include "pj_base/plugin_abi_export.h"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
@@ -152,6 +153,7 @@ class ToolboxPluginBase {
   template <typename CreateFn>
   static const PJ_toolbox_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
+    PJ_ASSERT(std::strstr(manifest, "\"id\"") != nullptr, "manifest must contain an \"id\" key");
     PJ_ASSERT(std::strstr(manifest, "\"name\"") != nullptr, "manifest must contain a \"name\" key");
     PJ_ASSERT(std::strstr(manifest, "\"version\"") != nullptr, "manifest must contain a \"version\" key");
     static const PJ_toolbox_vtable_t vt = {
@@ -232,7 +234,7 @@ class ToolboxPluginBase {
 #include "pj_base/sdk/detail/toolbox_trampolines.hpp"
 
 #define PJ_TOOLBOX_PLUGIN(ClassName, manifest)                                               \
-  extern "C" PJ_TOOLBOX_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;        \
+  PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_TOOLBOX_EXPORT)                                            \
   extern "C" PJ_TOOLBOX_EXPORT const PJ_toolbox_vtable_t* PJ_get_toolbox_vtable() noexcept { \
     static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate(          \
         []() noexcept -> void* {                                                             \

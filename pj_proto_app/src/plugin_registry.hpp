@@ -1,81 +1,64 @@
 #pragma once
 
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "pj_plugins/host/data_source_library.hpp"
-#include "pj_plugins/host/message_parser_library.hpp"
-#include "pj_plugins/host/toolbox_library.hpp"
+#include <QMap>
+#include <QString>
+
+#include "pj_base/diagnostic_sink.hpp"
+#include "pj_marketplace/installed_extension.hpp"
+#include "pj_plugins/host/plugin_runtime_catalog.hpp"
 
 namespace proto {
 
-struct LoadedDataSource {
-  PJ::DataSourceLibrary library;
-  std::string path;
-  std::string name;
-  std::vector<std::string> file_extensions;
-  uint64_t capabilities = 0;
-  std::filesystem::file_time_type loaded_mtime;
-};
+using LoadedDataSource = PJ::RuntimeDataSourcePlugin;
+using LoadedMessageParser = PJ::RuntimeMessageParserPlugin;
+using LoadedToolbox = PJ::RuntimeToolboxPlugin;
 
-struct LoadedMessageParser {
-  PJ::MessageParserLibrary library;
-  std::string path;
-  std::string name;
-  std::vector<std::string> encodings;
-  std::filesystem::file_time_type loaded_mtime;
-};
-
-struct LoadedToolbox {
-  PJ::ToolboxLibrary library;
-  std::string path;
-  std::string name;
-  uint64_t capabilities = 0;
-  std::filesystem::file_time_type loaded_mtime;
-};
-
+// Proto-app compatibility wrapper over PJ::PluginRuntimeCatalog.
 class PluginRegistry {
  public:
-  explicit PluginRegistry(std::string_view plugin_dir);
+  // Creates a registry rooted at plugin_dir with optional diagnostics.
+  explicit PluginRegistry(std::string_view plugin_dir, PJ::DiagnosticSink sink = {});
 
+  // Clears current state and loads every valid plugin.
   void scanDirectory();
+
+  // Reconciles loaded state with current files on disk.
   void reload();
 
+  // Returns file-import capable DataSource plugins.
   [[nodiscard]] std::vector<LoadedDataSource*> fileImportSources();
+
+  // Returns streaming-capable DataSource plugins.
   [[nodiscard]] std::vector<LoadedDataSource*> streamSources();
+
+  // Builds a QFileDialog-compatible filter string.
   [[nodiscard]] std::string buildFileFilter() const;
+
+  // Finds file-import DataSources that handle ext.
   [[nodiscard]] std::vector<LoadedDataSource*> findSourcesForExtension(std::string_view ext);
 
-  /// Find a parser library by encoding name (e.g. "cdr", "protobuf", "json").
+  // Finds a parser library by encoding name.
   [[nodiscard]] LoadedMessageParser* findParserByEncoding(std::string_view encoding);
 
-  /// Get all loaded message parsers.
-  [[nodiscard]] const std::vector<LoadedMessageParser>& allMessageParsers() const { return message_parsers_; }
+  // Returns all loaded message parsers.
+  [[nodiscard]] const std::vector<LoadedMessageParser>& allMessageParsers() const { return catalog_.messageParsers(); }
 
-  /// List all unique encodings from loaded parsers as a JSON array string.
-  /// Returns e.g. ["json","cbor","protobuf"]. Returns "[]" if no parsers loaded.
+  // Lists parser encodings as a JSON string array.
   [[nodiscard]] std::string listAvailableEncodings() const;
 
-  /// Get all loaded toolbox plugins.
-  [[nodiscard]] const std::vector<LoadedToolbox>& allToolboxes() const { return toolbox_plugins_; }
+  // Returns all loaded toolbox plugins.
+  [[nodiscard]] const std::vector<LoadedToolbox>& allToolboxes() const { return catalog_.toolboxes(); }
+
+  // Builds a marketplace-style installed snapshot from loaded manifests.
+  [[nodiscard]] QMap<QString, PJ::InstalledExtension> loadedExtensionsSnapshot() const;
 
  private:
-  /// Try to load a DataSource plugin and register it. Returns true on success.
-  bool loadAndRegisterDataSource(const std::filesystem::path& so_path);
-
-  /// Try to load a MessageParser plugin and register it. Returns true on success.
-  bool loadAndRegisterMessageParser(const std::filesystem::path& so_path);
-
-  /// Try to load a Toolbox plugin and register it. Returns true on success.
-  bool loadAndRegisterToolbox(const std::filesystem::path& so_path);
-
-  std::string plugin_dir_;
-  std::vector<LoadedDataSource> data_sources_;
-  std::vector<LoadedMessageParser> message_parsers_;
-  std::vector<LoadedToolbox> toolbox_plugins_;
+  PJ::PluginRuntimeCatalog catalog_;
 };
 
 }  // namespace proto

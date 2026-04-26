@@ -72,7 +72,7 @@ QScrollArea > QWidget > QWidget { background: palette(mid); }</string>
        <property name="spacing"><number>6</number></property>
        <property name="leftMargin"><number>0</number></property>
        <property name="topMargin"><number>0</number></property>
-       <property name="rightMargin"><number>0</number></property>
+       <property name="rightMargin"><number>6</number></property>
        <property name="bottomMargin"><number>0</number></property>
        <item>
         <spacer name="cards_stretch">
@@ -98,10 +98,20 @@ QScrollArea > QWidget > QWidget { background: palette(mid); }</string>
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QProgressBar" name="progress_bar_">
+	      </widget>
+	     </item>
+	     <item>
+	      <widget class="QPushButton" name="diagnostics_btn_">
+	       <property name="text"><string>Details</string></property>
+	       <property name="toolTip"><string>Show marketplace diagnostics</string></property>
+	       <property name="visible"><bool>false</bool></property>
+	       <property name="maximumSize">
+	        <size><width>80</width><height>16777215</height></size>
+	       </property>
+	      </widget>
+	     </item>
+	     <item>
+	      <widget class="QProgressBar" name="progress_bar_">
        <property name="visible"><bool>false</bool></property>
        <property name="maximum"><number>100</number></property>
        <property name="value"><number>0</number></property>

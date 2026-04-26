@@ -32,7 +32,7 @@ rectangle "PlotJuggler" {
   component "Extension Manager" as em
   folder "extensions/" as local
   ui --> em
-  em --> local : scan manifest.json
+  em --> local : scan plugin DSOs
 }
 
 reg ..> ui : HTTPS fetch
@@ -89,7 +89,7 @@ The C++ ecosystem has multiple dependency managers, and PlotJuggler has used sev
 | **Pixi**   | Under observation | It's gaining traction in the ROS community. Offers reproducible environments similar to conda but lighter. |
 | **Colcon** | Abandoned         | Was necessary for ROS 1/2 integration, but added unnecessary complexity outside that context.              |
 
-The current decision is to **use Conan for the plugin template**, but design the system so that generated artifacts are independent of the build tool. A ZIP with a `.so` and a `manifest.json` works the same whether it was generated with Conan, Pixi, or manual compilation.
+The current decision is to **use Conan for the plugin template**, but design the system so that generated artifacts are independent of the build tool. A ZIP with one or more plugin DSOs works the same whether it was generated with Conan, Pixi, or manual compilation; installed metadata is read from each DSO's embedded manifest.
 
 **Pixi timeline:**
 1. **Short term:** Template uses Conan (already works, already tested)
@@ -114,32 +114,31 @@ This means a simple JSON file is more than sufficient as a registry. We don't ne
 
 ### 3.1 Core Components
 
+Public headers live under `include/pj_marketplace/`; sources are split between `src/core/` (CamelCase) and `src/ui/` (snake_case to match `.ui` filenames).
+
 ```
-marketplace/
+pj_marketplace/
 ├── CMakeLists.txt
 ├── main.cpp
-├── src/
-│   ├── models/
-│   │   ├── Extension.h           # Extension metadata struct
-│   │   ├── InstalledExtension.h  # Local installation info
-│   │   └── Registry.h            # Full registry model
-│   ├── core/
-│   │   ├── RegistryManager.h/cpp # Fetch, parse, cache registry
-│   │   ├── ExtensionManager.h/cpp # Install, uninstall, update
-│   │   ├── DownloadManager.h/cpp  # HTTP download with progress
-│   │   └── PlatformUtils.h/cpp    # OS detection, paths
-│   ├── ui/
-│   │   ├── MarketplaceWindow.h/cpp       # Main window/dialog
-│   │   ├── ExtensionListWidget.h/cpp     # Extension list (table or list)
-│   │   ├── ExtensionDetailDialog.h/cpp   # Detail dialog (Approach A - POC)
-│   │   ├── ExtensionDetailWidget.h/cpp   # Detail panel (Approach B - future)
-│   │   └── StatusBarManager.h/cpp        # Progress/status
-│   └── utils/
-│       ├── ChecksumVerifier.h/cpp # SHA256 verification
-│       └── ZipExtractor.h/cpp     # ZIP decompression
-└── resources/
-    ├── icons/
-    └── marketplace.qrc
+├── include/
+│   └── pj_marketplace/
+│       ├── extension.hpp                 # Extension metadata struct
+│       ├── installed_extension.hpp       # Local installation record
+│       ├── extension_manager.hpp         # Install/uninstall/update API + signals
+│       ├── registry_manager.hpp          # Registry fetch/parse API
+│       ├── download_manager.hpp          # HTTP + checksum + libarchive extraction
+│       ├── platform_utils.hpp            # OS detection, standard paths
+│       ├── marketplace_window.hpp        # Main dialog
+│       └── extension_detail_dialog.hpp   # Per-extension detail dialog
+└── src/
+    ├── core/
+    │   ├── ExtensionManager.cpp
+    │   ├── RegistryManager.cpp
+    │   ├── DownloadManager.cpp
+    │   └── PlatformUtils.cpp
+    └── ui/
+        ├── marketplace_window.{cpp,ui}
+        └── extension_detail_dialog.{cpp,ui}
 ```
 
 ### 3.2 Data Models
@@ -176,7 +175,6 @@ struct InstalledExtension {
     QDateTime install_date;
     QString path;
     bool enabled;
-    QString backup_path;      // Optional
 };
 ```
 
@@ -185,10 +183,8 @@ struct InstalledExtension {
 | Component | Responsibility | Dependencies |
 |-----------|---------------|--------------|
 | **RegistryManager** | Fetch JSON, parse, cache with TTL | QNetworkAccessManager |
-| **ExtensionManager** | Install, uninstall, update, rollback | DownloadManager, ZipExtractor, PlatformUtils |
-| **DownloadManager** | HTTP GET with progress signals | QNetworkAccessManager |
-| **ChecksumVerifier** | SHA256 verification | QCryptographicHash |
-| **ZipExtractor** | Extract ZIP to directory | QuaZip/minizip |
+| **ExtensionManager** | Install, uninstall, update, staged promotion | DownloadManager, PlatformUtils, plugin catalog |
+| **DownloadManager** | HTTP GET with progress, SHA256 verification, ZIP extraction | QNetworkAccessManager, QCryptographicHash, libarchive |
 | **PlatformUtils** | Detect OS, get paths | Qt platform macros |
 
 #### ExtensionManager — Constructor Design
@@ -207,14 +203,40 @@ ExtensionManager(DownloadManager* downloader,
 **Design decisions:**
 - No `setExtensionsDir()` public setter — directory is fixed at construction time
 - No `detectPlatform()` private method — delegated to `PlatformUtils::currentPlatform()`
-- Local installation state (`QMap<QString, InstalledExtension>`) is a private member of `ExtensionManager` — populated at construction by scanning `extensions_dir` and reading each subdirectory's `manifest.json`; testability is preserved via the `extensions_dir` parameter pointing to a temp directory
-- No `installed.json` — disk is the source of truth; `manifest.json` inside each extension directory provides `id` and `version`
+- Local installation state (`QMap<QString, InstalledExtension>`) is a private cache in `ExtensionManager` — populated at construction by scanning `extensions_dir`, loading plugin DSOs, and reading their embedded manifests; testability is preserved via the `extensions_dir` parameter pointing to a temp directory
+- No local installed-state sidecars — disk is scanned, but `id` and `version` come from the embedded DSO manifest
+- Windows staged updates write a transient `.pj_pending_install` intent containing the registry id/version. It is deleted after promotion and exists only so restart-time validation can compare the staged DSO against the registry request that created it. Both the id and the version inside the intent file are validated against the same safe-path/regex rules used elsewhere, so a tampered intent cannot escape `extensions_dir`.
+- Embedding apps may seed the marketplace with a loaded-plugin snapshot before first render. That snapshot is initialization data, not a second source of truth; the embedded manifest remains the authority for installed state.
+- **Pending queues drained at construction.** `ExtensionManager::initComponents()` runs `applyPendingUninstalls()` then `applyPendingInstalls()` before computing the installed snapshot, so restart-deferred work is processed regardless of which `MarketplaceWindow` constructor (or host wiring) ends up using the manager.
+- **Restart-cleanup marker honors write failures.** `schedulePendingUninstall` returns `bool`; if the marker file cannot be written the in-memory entry is left intact and `uninstallError` is emitted, so a Windows uninstall that cannot mark the directory does not silently revert on the next start.
+- **Broken staged installs are quarantined, not retried forever.** When `applyPendingInstalls` fails to remove a rejected stage, the directory is renamed to `.pj_quarantine_<name>_<uuid>/` next to it. The next startup ignores quarantine entries and reports the path in the diagnostic so the user can inspect and clean it up.
+
+#### ExtensionManager — Diagnostic propagation
+
+`ExtensionManager` exposes its diagnostics three ways simultaneously:
+
+| Channel | Audience | Notes |
+|---------|----------|-------|
+| `diagnostics()` accessor + 50-entry ring buffer | UI snapshot at any time | The marketplace window's "Diagnostics" dialog reads this. |
+| `diagnosticReported(QString id, QString message, bool is_error)` Qt signal | Standalone marketplace UI | Pushes into the status bar. |
+| Optional `PJ::DiagnosticSink` constructor parameter | Embedding hosts | Lets `PluginRegistry`, `ExtensionManager`, and any other module feed one chronological stream into a single GUI sink. |
+
+See `pj_base/include/pj_base/diagnostic_sink.hpp` for the sink contract; the standalone `pj_marketplace_app` does not pass a sink, preserving the previous behavior unchanged.
 
 ---
 
 ## 4. Key Flows
 
 ### 4.1 Installation Flow
+
+Both the immediate (Linux/macOS) and deferred (Windows) paths extract the
+download into a hidden transaction directory (`.pj_install_<id>_<uuid>/`) on
+the same filesystem as its final destination, so the eventual rename is
+atomic. The DSO is **dlopened and its embedded manifest validated** inside
+the transaction directory before promotion, then **re-validated at the final
+location** after the rename — this catches DSOs that depend on rpath/relative
+paths that hold in the staging area but break in `extensions/`. On failure
+the transaction directory is removed and no partial state survives.
 
 ![Installation Flow](diagrams/installation-flow.png)
 
@@ -232,13 +254,20 @@ start
 :Download ZIP;
 :Verify SHA256;
 if (Checksum OK?) then (yes)
-  :Extract to temp;
-  :Validate manifest;
   if (Is update?) then (yes)
     :Backup current;
   endif
-  :Move to extensions/;
-  :Read manifest.json → register in memory;
+  :Extract to .pj_install_<id>_<uuid>/ (transaction dir);
+  :Load DSO manifest;
+  :Validate registry id/version;
+  :Atomic rename to extensions/<id>/;
+  :Re-validate promoted DSO (post-promotion gate);
+  if (Re-validation OK?) then (yes)
+    :Register discovery cache;
+  else (no)
+    :Move to .pj_quarantine_<id>_<uuid>/;
+    :Notify install error;
+  endif
 else (no)
   :Error: invalid checksum;
 endif
@@ -262,21 +291,25 @@ title Windows Staging Flow
 
 start
 :Download ZIP;
-:Extract to .pending/{id}/;
-note right: Staging folder
+:Extract to .pj_install_<id>_<uuid>/ (transaction dir under .extension_staging/);
+:Load DSO manifest;
+:Validate registry id/version;
+:Atomic rename to .extension_staging/<id>/;
+:Write .extension_staging/<id>/.pj_pending_install intent;
 :Notify "Restart required";
 stop
 
 start
 :PlotJuggler restarts;
-:Move .pending/{id}/ to extensions/{id}/;
-note right: Previous backup in\n.backup/{id}-{ver}/
-:Load plugin;
-if (Load successful?) then (yes)
+:applyPendingInstalls() scans .extension_staging/;
+:Read .pj_pending_install intent;
+:Validate staged DSO manifest;
+if (Valid?) then (yes)
+  :Move .extension_staging/<id>/ to extensions/<id>/;
   :Plugin active;
 else (no)
-  :Restore from backup;
-  :Notify rollback;
+  :Move to .pj_quarantine_<id>_<uuid>/;
+  :Notify install error;
 endif
 stop
 @enduml
@@ -284,6 +317,19 @@ stop
 </details>
 
 ### 4.3 Rollback Flow
+
+Every successful update — Linux, macOS, and Windows — moves the previous
+version into `.backup/<id>-<oldversion>/` before the new version takes its
+place. On Linux/macOS this happens synchronously inside `update()`; on
+Windows it happens at restart inside `applyPendingInstalls()`, just before
+the staged directory is renamed over the existing one. If the staged
+promotion fails after the backup move, `applyPendingInstalls()` attempts
+to roll the backup back into place; if even the rollback fails, the
+diagnostic surfaces both paths so the user can recover manually.
+
+Automatic *post-load* rollback (restoring from backup if the freshly
+installed plugin later fails to load) is deferred. The backup directory
+is the manual recovery point.
 
 ![Rollback Flow](diagrams/rollback-flow.png)
 
@@ -293,7 +339,7 @@ stop
 ```plantuml
 @startuml
 skinparam backgroundColor white
-title Rollback Flow
+title Rollback Flow (Deferred)
 
 start
 :PlotJuggler starts;
@@ -303,11 +349,11 @@ while (More plugins?) is (yes)
   if (Load OK?) then (yes)
     :Plugin active;
   else (no)
-    if (Backup exists?) then (yes)
-      :Restore backup;
-    else (no)
-      :Disable extension;
-    endif
+    :Report load failure;
+    note right
+      Automatic backup restore
+      is deferred.
+    end note
   endif
 endwhile (no)
 :System ready;
@@ -322,30 +368,30 @@ stop
 
 ### 5.1 Installation Directories
 
+The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.local/share/plotjuggler/`, macOS: `~/Library/Application Support/plotjuggler/`, Windows: `%LOCALAPPDATA%/plotjuggler/`).
+
 ```
-~/.plotjuggler/
-├── extensions/              # Active plugins
+<config-root>/
+├── extensions/                      # Active plugins
 │   ├── ros2-streaming/
-│   │   ├── manifest.json
 │   │   ├── libros2_streaming.so
 │   │   └── ros2_streaming.ui
 │   └── csv-loader/
-│       ├── manifest.json
 │       └── libcsv_loader.so
-├── .pending/                # Staging area (Windows)
-│   └── ros2-streaming/      # Ready to install on restart
-├── .backup/                 # Rollback backups
-│   ├── ros2-streaming-1.2.2/
-│   └── csv-loader-0.9.0/
-└── .cache/                  # Registry cache
-    └── registry.json
+├── .extension_staging/      # Staging area (all platforms — Windows uses it
+│   │                                # for restart-time install; Linux/macOS
+│   │                                # use it as the post-promotion validation gate)
+│   └── ros2-streaming/              # Ready to install on restart (Windows)
+│       └── .pj_pending_install      # Intent file (Windows-only)
+└── .backup/                         # Pre-update backups (all platforms); automatic rollback deferred — restore manually
+    ├── ros2-streaming-1.2.2/
+    └── csv-loader-0.9.0/
 ```
 
 ### 5.2 Extension ZIP Structure
 
 ```
 ros2-streaming-linux-x86_64.zip
-├── manifest.json              # Required: extension metadata
 ├── libros2_streaming.so       # Required: compiled plugin(s)
 ├── ros2_streaming.ui          # Optional: Qt Creator UI file
 ├── README.md                  # Optional: description
@@ -397,7 +443,7 @@ Binary compatibility (ABI) is the biggest technical challenge:
 
 ### 6.3 Compatibility Policy
 
-- Each plugin declares `min_plotjuggler_version` in manifest
+- The registry declares `min_plotjuggler_version` for each extension
 - If SDK changes incompatibly, PlotJuggler provides internal adapter
 - **Existing plugins are never broken by PlotJuggler updates**
 - Stability target: Qt LTS 6.8 (support until 2028)
@@ -408,44 +454,12 @@ Binary compatibility (ABI) is the biggest technical challenge:
 
 ### 7.1 CMakeLists.txt (Marketplace)
 
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(pj_marketplace VERSION 1.0.0 LANGUAGES CXX)
+The actual CMakeLists.txt is the source of truth — see `pj_marketplace/CMakeLists.txt`. Notable points:
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
-find_package(QuaZip-Qt6 REQUIRED)  # Or alternative ZIP library
-
-add_library(pj_marketplace SHARED
-    src/models/Extension.cpp
-    src/core/RegistryManager.cpp
-    src/core/ExtensionManager.cpp
-    src/core/DownloadManager.cpp
-    src/core/PlatformUtils.cpp
-    src/ui/MarketplaceWindow.cpp
-    src/ui/ExtensionListWidget.cpp
-    src/ui/ExtensionCardDelegate.cpp
-    src/ui/ExtensionDetailWidget.cpp
-    src/utils/ChecksumVerifier.cpp
-    src/utils/ZipExtractor.cpp
-    resources/marketplace.qrc
-)
-
-target_link_libraries(pj_marketplace PRIVATE
-    Qt6::Widgets
-    Qt6::Network
-    QuaZip::QuaZip
-)
-
-target_include_directories(pj_marketplace PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-```
+- The marketplace splits into two static libs: `pj_marketplace` (core: ExtensionManager, RegistryManager, DownloadManager, PlatformUtils) and `pj_marketplace_ui` (MarketplaceWindow, ExtensionDetailDialog).
+- `pj_marketplace` depends on `pj_plugin_catalog` (from `pj_plugins/`) for embedded-DSO-manifest discovery; the standalone build inlines the same `plugin_catalog.cpp` source.
+- C++20, `-Wall -Wextra -Werror -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-qual -Wconversion -Woverloaded-virtual -Wpedantic`.
+- Tests built only when fixture plugin targets exist (`mock_data_source_plugin`, `mock_file_source_plugin`, `mock_data_source_v2_plugin`, `missing_id_data_source_plugin`).
 
 ### 7.2 Dummy Plugin CMakeLists.txt (POC)
 
@@ -468,23 +482,21 @@ set_target_properties(dummy_extension PROPERTIES
 )
 
 install(TARGETS dummy_extension DESTINATION .)
-install(FILES manifest.json DESTINATION .)
 ```
 
 **dummy_plugin.cpp:**
 ```cpp
-extern "C" {
-    const char* getPluginMetadata() {
-        return R"({
-            "id": "dummy-extension",
-            "name": "Dummy Extension",
-            "version": "1.0.0"
-        })";
-    }
-}
+#include <pj_base/sdk/data_source_plugin_base.hpp>
+
+class DummySource final : public PJ::DataSourcePluginBase {
+    // Implement the SDK interface...
+};
+
+PJ_DATA_SOURCE_PLUGIN(DummySource,
+    R"({"id":"dummy-extension","name":"Dummy Extension","version":"1.0.0"})")
 ```
 
-> **Note:** Each dummy extension folder is an independent C++ project with its own CMakeLists.txt. No Qt dependency means trivial cross-platform compilation.
+> **Note:** Each dummy extension folder is an independent C++ project with its own CMakeLists.txt. The plugin DSO embeds its manifest through the SDK export macro; there is no Qt dependency in the plugin.
 
 ### 7.3 Real Plugin Template CMakeLists.txt (Post-POC)
 
@@ -514,7 +526,6 @@ set_target_properties(my_plugin PROPERTIES
 
 install(TARGETS my_plugin DESTINATION .)
 install(FILES my_dialog.ui DESTINATION .)
-install(FILES manifest.json DESTINATION .)
 install(FILES README.md LICENSE DESTINATION .)
 ```
 
@@ -600,7 +611,6 @@ plotjuggler/extension-template/
 ├── CMakeLists.txt
 ├── conanfile.py
 ├── pixi.toml                       # Future alternative
-├── manifest.json.in
 ├── conan_profiles/
 │   ├── linux_static
 │   ├── windows_static
@@ -875,7 +885,7 @@ This more elaborate approach can be implemented after the POC if a richer UX is 
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Qt Widget Hierarchy (Approach B):**
+**Qt Widget Hierarchy (conceptual target; current code keeps cards in `MarketplaceWindow` and opens `ExtensionDetailDialog` for details):**
 
 ```
 MarketplaceWindow (QMainWindow or QDialog)
@@ -910,7 +920,7 @@ MarketplaceWindow (QMainWindow or QDialog)
 | GUI Framework | Qt 6 Widgets | QML | Consistency with PlotJuggler |
 | HTTP Client | QNetworkAccessManager | libcurl | Already in Qt, no extra deps |
 | JSON Parsing | QJsonDocument | nlohmann/json | Already in Qt |
-| ZIP Library | QuaZip | minizip, libzip | Qt integration, well maintained |
+| ZIP Library | libarchive | QuaZip, minizip, libzip | Already used by `DownloadManager`; supports ZIP extraction without Qt-specific archive wrappers |
 | Checksum | QCryptographicHash | OpenSSL | Already in Qt |
 | Build System | CMake + Conan | Meson, Bazel | Industry standard, team experience |
 

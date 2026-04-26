@@ -47,7 +47,7 @@ cd build && ctest --output-on-failure
 pj_marketplace/
 ├── src/
 │   ├── core/
-│   │   ├── DownloadManager.cpp/.h    # HTTP download + checksum + extraction
+│   │   ├── DownloadManager.cpp/.h    # HTTP download + checksum + libarchive extraction
 │   │   ├── ExtensionManager.cpp/.h   # Install/uninstall/update lifecycle
 │   │   ├── PlatformUtils.cpp/.h      # Cross-platform paths and detection
 │   │   └── RegistryManager.cpp/.h    # Remote registry fetching
@@ -57,6 +57,7 @@ pj_marketplace/
 │       └── Platform.h                # Platform-specific artifact
 ├── tests/
 │   ├── download_manager_test.cpp
+│   ├── extension_manager_test.cpp
 │   └── registry_manager_test.cpp
 ├── build.sh                          # Standalone build script
 ├── conanfile.txt                     # Conan dependencies

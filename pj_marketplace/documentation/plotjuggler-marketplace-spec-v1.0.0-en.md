@@ -39,9 +39,8 @@ Development will begin with a standalone prototype to validate the concept, with
 13. [Code Structure](#13-code-structure)
 14. [Functional Requirements](#14-functional-requirements)
 15. [Non-Functional Requirements](#15-non-functional-requirements)
-16. [Implementation Plan](#16-implementation-plan)
-17. [Pending Decisions](#17-pending-decisions)
-18. [Acceptance Criteria](#18-acceptance-criteria)
+16. [Remaining Work](#16-remaining-work)
+17. [Acceptance Criteria](#17-acceptance-criteria)
 
 ---
 
@@ -62,11 +61,10 @@ Development will begin with a standalone prototype to validate the concept, with
 |                    | Individual update    | Update a specific extension                                   |
 |                    | Bulk update          | "Update All" for multiple extensions                          |
 |                    | Automatic backup     | Backup of previous version before updating                    |
-| **Uninstallation** | Clean removal        | Directory deletion + local state update                       |
+| **Uninstallation** | Clean removal        | Directory deletion + installed cache refresh                  |
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
-| **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
-|                    | Rollback             | Automatic restoration if a plugin fails to load               |
-|                    | Persistent state     | Local storage of installed extensions (JSON)                  |
+| **Management**     | Backup diagnostics   | Report retained backup paths when an update install fails     |
+|                    | Persistent state     | Installed state derived from embedded plugin manifests        |
 | **UI/UX**          | Download progress    | Progress bar in status bar                                    |
 |                    | Notifications        | Status messages and available update alerts                   |
 |                    | Context menu         | Quick actions per installed extension                         |
@@ -78,7 +76,7 @@ Development will begin with a standalone prototype to validate the concept, with
 | **Build**      | Cross-platform compilation | Matrix build for Linux, Windows, and macOS                 |
 |                | Static linking             | All dependencies embedded in the artifact                  |
 |                | Dependency management      | Support for Conan (current) and Pixi (future)              |
-| **Packaging**  | ZIP generation             | Automatic packaging with manifest, binaries, and resources |
+| **Packaging**  | ZIP generation             | Automatic packaging with plugin binaries and resources |
 |                | Checksums                  | Automatic SHA256 generation per artifact                   |
 |                | Versioning                 | Version extraction from git tag                            |
 | **Publishing** | GitHub Release             | Automatic release creation with attached artifacts         |
@@ -110,7 +108,7 @@ Development will begin with a standalone prototype to validate the concept, with
 | **Registry**   | Static JSON file on GitHub with the catalog of available extensions.            |
 | **Plugin SDK** | Abstract library (no Qt) that plugins use for UI and data access.               |
 | **Artifact**   | Compiled binary of an extension for a specific platform.                        |
-| **Manifest**   | JSON file inside the ZIP describing the extension contents.                     |
+| **Embedded manifest** | JSON string exported by each plugin DSO describing the installed plugin.  |
 
 ---
 
@@ -132,7 +130,11 @@ This architecture has an additional advantage: **any company can have their own 
 
 ![System Architecture](diagrams/architecture.png)
 
-### 3.3 Design Principles
+### 3.3 Diagnostic propagation
+
+`ExtensionManager` exposes its lifecycle events through three channels at once: a 50-entry ring buffer accessible via `diagnostics()`, the existing `diagnosticReported(QString id, QString message, bool is_error)` Qt signal, and an optional `PJ::DiagnosticSink` (declared in `pj_base/include/pj_base/diagnostic_sink.hpp`) that is fed in addition to the other two when the host passes one to the constructor. The sink is a `std::function<void(const PJ::Diagnostic&)>` carrying a level (Info / Warning / Error), a `source` ("ExtensionManager", "PluginRegistry", ...), an optional plugin/extension `id`, a message, and a timestamp. Hosts that wire the same sink into both `ExtensionManager` and any non-marketplace component (e.g. `PJ::PluginRuntimeCatalog`) see one unified, ordered diagnostic stream they can render in a status bar, dialog, or log file. Modules in pure C++ remain Qt-free; `PJ::QtDiagnosticBridge` in `pj_marketplace` converts each event into a queued signal emission.
+
+### 3.4 Design Principles
 
 The design is guided by several principles that emerged from previous experiences with plugin systems:
 
@@ -181,7 +183,7 @@ The C++ ecosystem has multiple dependency managers, and PlotJuggler has used sev
 | **Pixi**   | Under observation | It's gaining traction in the ROS community. Offers reproducible environments similar to conda but lighter. |
 | **Colcon** | Abandoned         | Was necessary for ROS 1/2 integration, but added unnecessary complexity outside that context.              |
 
-The current decision is to **use Conan for the plugin template**, but design the system so that generated artifacts are independent of the build tool. A ZIP with a `.so` and a `manifest.json` works the same whether it was generated with Conan, Pixi, or manual compilation.
+The current decision is to **use Conan for the plugin template**, but design the system so that generated artifacts are independent of the build tool. A ZIP with one or more plugin DSOs works the same whether it was generated with Conan, Pixi, or manual compilation; installed metadata is read from the embedded manifest exported by each DSO.
 
 ### 4.4 Pixi: A Future Bet
 
@@ -297,22 +299,9 @@ github.com/plotjuggler/marketplace-registry/
 
 ### 5.4 Local State
 
-Local JSON file recording installed extensions:
-
-```json
-{
-  "installed": [
-    {
-      "id": "ros2-streaming",
-      "version": "1.2.3",
-      "install_date": "2026-03-04T10:30:00Z",
-      "path": "/home/user/.plotjuggler/extensions/ros2-streaming/",
-      "enabled": true,
-      "backup_path": "/home/user/.plotjuggler/extensions/.backup/ros2-streaming-1.2.2/"
-    }
-  ]
-}
-```
+There is no local state JSON. `ExtensionManager` rebuilds its installed cache by
+scanning `extensions/`, loading candidate plugin DSOs, and reading each DSO's
+embedded manifest. The remote registry remains the pre-install catalog.
 
 ---
 
@@ -322,29 +311,17 @@ Local JSON file recording installed extensions:
 
 ```
 ros2-streaming-linux-x86_64.zip
-├── manifest.json              ← Extension metadata
 ├── libros2_streaming.so       ← Compiled plugin(s)
 ├── ros2_streaming.ui          ← Qt Creator UI file (pure XML)
 ├── README.md                  ← Description (optional)
 └── LICENSE                    ← License
 ```
 
-### 6.2 Manifest
+### 6.2 Embedded Plugin Manifest
 
-```json
-{
-  "id": "ros2-streaming",
-  "version": "1.2.3",
-  "min_plotjuggler_version": "4.0.0",
-  "plugins": [
-    {
-      "name": "ROS2StreamerPlugin",
-      "type": "data_streamer",
-      "library": "libros2_streaming",
-      "ui_file": "ros2_streaming.ui"
-    }
-  ]
-}
+```cpp
+PJ_DATA_SOURCE_PLUGIN(ROS2StreamerPlugin,
+    R"({"id":"ros2-streaming","name":"ROS 2 Streaming","version":"1.2.3"})")
 ```
 
 ### 6.3 Compilation Requirements
@@ -384,7 +361,6 @@ set_target_properties(my_plugin PROPERTIES
 
 install(TARGETS my_plugin DESTINATION .)
 install(FILES my_dialog.ui DESTINATION .)
-install(FILES manifest.json DESTINATION .)
 install(FILES README.md LICENSE DESTINATION .)
 ```
 
@@ -459,7 +435,7 @@ package = "cmake --install build/release --prefix dist && cd dist && zip -r ../a
 1. Developer creates a tag (`git tag v1.2.3`)
 2. GitHub Actions detects the tag and runs the release workflow
 3. Compiles for all 3 platforms in parallel (matrix build)
-4. Packages artifacts in ZIPs with manifest and checksums
+4. Packages artifacts in ZIPs with plugin binaries and checksums
 5. Creates a GitHub Release with attached artifacts
 6. Generates an automatic PR to the registry with the new version
 7. PR is automatically validated (schema, URLs, checksums)
@@ -473,21 +449,31 @@ package = "cmake --install build/release --prefix dist && cd dist && zip -r ../a
 2. Current platform is verified
 3. Corresponding ZIP is downloaded
 4. SHA256 checksum is verified
-5. Extracted to temporary directory
-6. Manifest is validated
-7. If update, current version is backed up
-8. Moved to extensions directory
-9. Local state updated (installed.json)
+5. If update on a non-staged platform, current version is backed up
+6. Extracted to extensions directory
+7. Plugin DSO is loaded and its embedded manifest is validated against the registry id/version
+8. Installed cache is refreshed from discovery
 
-### 8.3 Automatic Rollback
+When the marketplace opens inside a host application, it may be seeded with the host's
+already-loaded plugin snapshot before the first render. That snapshot is initialization
+data only; the embedded manifest remains the authority for installed version reporting.
+
+### 8.3 Backup and Rollback Status
 
 ![Rollback Flow](diagrams/rollback-flow.png)
 
-1. PlotJuggler starts and loads plugins
-2. If a plugin fails (crash/segfault):
-   - If backup exists → restore previous version
-   - If no backup → disable extension
-3. Notify user of rollback/disabling
+Every successful update — Linux, macOS, and Windows — moves the previous
+version into `.backup/<id>-<oldversion>/` before the new version takes its
+place. On Linux/macOS this happens synchronously inside `update()`. On
+Windows it happens at restart inside `applyPendingInstalls()`, just before
+the staged directory is renamed over the existing one; if the rename fails
+after the backup, the marketplace attempts to roll the backup back into
+place, and if that also fails the diagnostic surfaces both paths so the
+user can recover manually.
+
+Automatic *post-load* rollback (restoring from backup if the freshly
+installed plugin later fails to load) is deferred. The backup directory
+is the manual recovery point.
 
 ---
 
@@ -511,7 +497,6 @@ plotjuggler/extension-template/
 ├── CMakeLists.txt
 ├── conanfile.py
 ├── pixi.toml                       ← Future alternative
-├── manifest.json.in
 ├── conan_profiles/
 │   ├── linux_static
 │   ├── windows_static
@@ -607,7 +592,7 @@ This means a plugin compiled today will continue to work when PlotJuggler migrat
 
 The commitment to plugin developers:
 
-- Each plugin declares `min_plotjuggler_version` in its manifest
+- The registry declares `min_plotjuggler_version` for each extension
 - If the SDK changes incompatibly, PlotJuggler provides an internal adapter
 - **Existing plugins are never broken by PlotJuggler updates**
 - Stability target: Qt LTS 6.8 (support until 2028)
@@ -633,27 +618,33 @@ The solution is a staging system similar to what Windows installers use:
 The flow is:
 
 1. User clicks "Update"
-2. New version downloads to a temporary folder (`.pending/`)
-3. Message shown: "Update will be applied when PlotJuggler restarts"
-4. When PlotJuggler starts:
-   - Detects pending updates
-   - Backs up current version to `.backup/`
-   - Moves new version from `.pending/` to `extensions/`
-   - Loads the plugin
-5. If plugin fails to load, automatically restores from backup
+2. New version downloads to a hidden transaction folder `.pj_install_<id>_<uuid>/` (created under `.extension_staging/` on Windows, under `extensions/` on Linux/macOS)
+3. The staged DSO is loaded and its embedded manifest is validated against the registry id/version
+4. A transient `.pj_pending_install` intent is written with the registry id/version
+5. Message shown: "Update will be applied when PlotJuggler restarts"
+6. When PlotJuggler starts:
+   - Reads `.pj_pending_install`
+   - Validates the intent's id/version against safe-path/regex rules (rejects path traversal or non-semver tokens)
+   - Revalidates the staged DSO against that intent
+   - Moves the new version from `.extension_staging/` to `extensions/`
+   - Re-validates the DSO from its final location (catches rpath/dep issues that hold in staging but break in `extensions/`)
+7. If any validation step fails the active install is left untouched. The broken stage is removed; if removal also fails (file lock), the directory is renamed to `.pj_quarantine_<name>_<uuid>/` and the path is included in the diagnostic so the user can clean it up manually instead of facing the same error every startup.
 
 ### 11.3 Directory Structure
 
+The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.local/share/plotjuggler/`, macOS: `~/Library/Application Support/plotjuggler/`, Windows: `%LOCALAPPDATA%/plotjuggler/`).
+
 ```
-~/.plotjuggler/
+<config-root>/
 ├── extensions/              ← Active plugins
 │   ├── ros2-streaming/
 │   └── csv-loader/
-├── .pending/                ← Staging (Windows)
-├── .backup/                 ← Backups for rollback
-│   ├── ros2-streaming-1.2.2/
-│   └── csv-loader-0.9.0/
-└── installed.json           ← Local state
+├── .extension_staging/      ← Staging area (all platforms; Windows uses it for restart-time installs, Linux/macOS as the post-promotion validation gate)
+│   └── plugin-id/
+│       └── .pj_pending_install      ← Intent file (Windows-only)
+└── .backup/                 ← Pre-update backups (all platforms); automatic rollback deferred — restore manually
+    ├── ros2-streaming-1.2.2/
+    └── csv-loader-0.9.0/
 ```
 
 ---
@@ -781,7 +772,7 @@ The detail panel includes:
 - Icon (64x64)
 - Name and publisher
 - Metrics (downloads, rating)
-- Action buttons (Install/Update/Disable/Uninstall)
+- Action buttons (Install/Update/Uninstall)
 - Metadata (category, tags, platforms, minimum version)
 - Tabs: Details (README), Changelog, Dependencies
 
@@ -790,9 +781,14 @@ The detail panel includes:
 | State                       | Actions                    |
 | --------------------------- | -------------------------- |
 | Not installed               | Install                    |
-| Installed, up-to-date       | Disable, Uninstall         |
-| Installed, update available | Update, Disable, Uninstall |
-| Disabled                    | Enable, Uninstall          |
+| Installed, up-to-date       | Uninstall                  |
+| Installed, update available | Update, Uninstall          |
+| Installed, local newer      | Local newer, Uninstall     |
+
+Enabling or disabling an installed extension without uninstalling it is **out
+of scope** for the marketplace — it belongs to the host application's plugin
+loader / config (e.g. a per-user knob in `pj_app` that filters which
+discovered DSOs are instantiated at startup).
 
 ### 12.5 Dialogs
 
@@ -802,7 +798,7 @@ The detail panel includes:
 | Confirm Uninstall | Click Uninstall     | "Remove {name}?"               |
 | Restart Required  | Post install/update | "Restart to activate changes?" |
 | Update All        | Multiple updates    | List of extensions to update   |
-| Rollback          | Plugin fails        | "Extension failed. Rollback?"  |
+| Diagnostics       | Plugin/install fails | Recent lifecycle diagnostics   |
 
 ---
 
@@ -817,7 +813,6 @@ marketplace/
 │   │   ├── Extension.h
 │   │   ├── InstalledExtension.h
 │   │   ├── Registry.h
-│   │   └── LocalState.h
 │   ├── core/
 │   │   ├── RegistryManager.h/cpp
 │   │   ├── ExtensionManager.h/cpp
@@ -825,13 +820,7 @@ marketplace/
 │   │   └── PlatformUtils.h/cpp
 │   ├── ui/
 │   │   ├── MarketplaceWindow.h/cpp
-│   │   ├── ExtensionListWidget.h/cpp
-│   │   ├── ExtensionCardDelegate.h/cpp
-│   │   ├── ExtensionDetailWidget.h/cpp
-│   │   └── StatusBarManager.h/cpp
-│   └── utils/
-│       ├── ChecksumVerifier.h/cpp
-│       └── ZipExtractor.h/cpp
+│   │   └── ExtensionDetailDialog.h/cpp
 └── resources/
     ├── icons/
     └── marketplace.qrc
@@ -852,7 +841,7 @@ marketplace/
 | F-05 | Show selected extension detail                      |
 | F-06 | Download ZIP with SHA256 verification               |
 | F-07 | Extract ZIP to extensions directory                 |
-| F-08 | Register installed extension (installed.json)       |
+| F-08 | Register installed extension from embedded DSO manifest |
 | F-09 | Detect updates (local vs registry version)          |
 | F-10 | Uninstall extension                                 |
 
@@ -862,9 +851,8 @@ marketplace/
 | ---- | ----------------------------------- |
 | F-11 | Local registry cache with TTL       |
 | F-12 | Backup previous version on updates  |
-| F-13 | Automatic rollback if plugin fails  |
+| F-13 | Automatic rollback if plugin fails (deferred) |
 | F-14 | Windows staging: apply on restart   |
-| F-15 | Enable/Disable without uninstalling |
 | F-16 | Cancel download in progress         |
 | F-17 | Update All                          |
 | F-18 | Confirmation dialogs                |
@@ -898,76 +886,13 @@ marketplace/
 
 ---
 
-## 16. Implementation Plan
+## 16. Remaining Work
 
-### Phase 1: Skeleton + Mock (Day 1-2)
-
-- CMake + Qt6 project setup
-- Data structs (Extension, InstalledExtension)
-- MarketplaceWindow with QSplitter
-- ExtensionListWidget with custom cards
-- ExtensionDetailWidget with tabs
-- Hardcoded mock data
-- Functional search and filter
-
-**Deliverable:** App that shows list, navigates, and filters.
-
-### Phase 2: Networking + Registry (Day 2-3)
-
-- RegistryManager: fetch JSON, parsing, cache
-- DownloadManager: download with progress
-- SHA256 verification
-- Status bar with progress
-- Network error handling
-
-**Deliverable:** App that loads registry from GitHub.
-
-### Phase 3: Extension Management (Day 3-4)
-
-- ExtensionManager: install, uninstall
-- Update detection (semver)
-- Update flow with backup
-- Local state persistence
-- Enable/Disable
-
-**Deliverable:** Complete management cycle.
-
-### Phase 4: Platform + Polish (Day 4-5)
-
-- Windows staging
-- Rollback mechanism
-- Update All
-- Confirmation dialogs
-- Edge-case error handling
-- Visual polish
-
-**Deliverable:** Prototype ready for demo.
-
-### Phase 5: Integration (Future)
-
-- Extract core as library
-- Integrate into PlotJuggler
-- Hook with plugin loading system
-- Update notification at startup
+Open follow-ups are tracked in [TODO.md](TODO.md).
 
 ---
 
-## 17. Pending Decisions
-
-| #   | Topic                      | Options                           |
-| --- | -------------------------- | --------------------------------- |
-| 1   | ZIP library                | QuaZip vs minizip vs libzip       |
-| 2   | Markdown rendering         | QTextBrowser vs plain text        |
-| 3   | Metrics                    | Registry JSON vs GitHub API       |
-| 4   | Icons                      | URL in registry vs bundled in ZIP |
-| 5   | Semver parsing             | C++ library vs string compare     |
-| 6   | New extension registration | Manual PR to registry             |
-| 7   | Pixi timeline              | When it complements Conan         |
-| 8   | Paid plugins               | License management (future)       |
-
----
-
-## 18. Acceptance Criteria
+## 17. Acceptance Criteria
 
 The prototype is successful if:
 

@@ -22,6 +22,7 @@ target_link_libraries(pj_proto_app PRIVATE
   pj_data_source_host
   pj_message_parser_host
   pj_toolbox_host
+  pj_plugin_runtime_catalog
   pj_dialog_engine_qt
   pj_marketplace
   pj_marketplace_ui
@@ -29,3 +30,33 @@ target_link_libraries(pj_proto_app PRIVATE
   Qt6::Widgets
   Qt6::Charts
 )
+
+if(PJ_BUILD_TESTS)
+  add_executable(proto_plugin_registry_test
+    tests/plugin_registry_test.cpp
+    src/plugin_registry.cpp
+  )
+  target_include_directories(proto_plugin_registry_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+  )
+  target_compile_definitions(proto_plugin_registry_test PRIVATE
+    PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
+    PJ_MOCK_JSON_PARSER_PLUGIN_PATH="$<TARGET_FILE:mock_json_parser_plugin>"
+  )
+  target_link_libraries(proto_plugin_registry_test PRIVATE
+    pj_datastore
+    pj_data_source_host
+    pj_message_parser_host
+    pj_toolbox_host
+    pj_plugin_runtime_catalog
+    pj_marketplace
+    GTest::gtest_main
+    nlohmann_json::nlohmann_json
+    Qt6::Core
+  )
+  add_dependencies(proto_plugin_registry_test mock_data_source_plugin mock_json_parser_plugin)
+  set_target_properties(proto_plugin_registry_test PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
+  )
+  add_test(NAME proto_plugin_registry_test COMMAND proto_plugin_registry_test)
+endif()

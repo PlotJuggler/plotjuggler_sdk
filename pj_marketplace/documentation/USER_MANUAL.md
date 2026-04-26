@@ -48,10 +48,12 @@ The marketplace window shows a list of all extensions with their status:
 | Column | Content |
 |--------|---------|
 | **Name** | Extension name |
-| **Version** | Current version |
-| **Status** | `[install]`, `[installed]`, or `[update]` |
+| **Version** | Installed version when available, otherwise registry version; registry version is shown for comparison when they differ |
+| **Status** | `[install]`, `[installed]`, `[update]`, or `[local newer]` |
 
 **To see extension details:** Double-click on any extension to open a detail dialog with full information (description, author, changelog).
+
+If PlotJuggler already has the plugin loaded at startup, the marketplace is seeded with that loaded state before the first render so the card version matches what the app already opened.
 
 **Quick tip:** Hover over an extension to see a brief description tooltip.
 
@@ -68,9 +70,7 @@ The marketplace window shows a list of all extensions with their status:
 - Parser
 - Toolbox
 
-**Quick filters:**
-- `@installed` — Show only installed extensions
-- `@updates` — Show extensions with available updates
+**Quick filters:** *(planned — not yet implemented)*
 
 ### 2.4 Installing an Extension
 
@@ -89,7 +89,7 @@ The marketplace window shows a list of all extensions with their status:
 2. Click on the extension
 3. Click **Update**
 4. The old version is automatically backed up
-5. If something goes wrong, the old version is restored
+5. If something goes wrong, the old version remains in `.backup/` and can be recovered manually
 
 **Update All:** Click "Update All" in the toolbar to update all extensions at once
 
@@ -102,14 +102,7 @@ The marketplace window shows a list of all extensions with their status:
 
 ### 2.7 Enabling/Disabling Extensions
 
-You can disable an extension without uninstalling:
-1. Click on the installed extension
-2. Click **Disable**
-3. Extension remains installed but won't load
-
-To re-enable:
-1. Click on the disabled extension
-2. Click **Enable**
+*Planned — see [TODO.md](TODO.md). Today, removing an extension requires Uninstall.*
 
 ---
 
@@ -144,7 +137,7 @@ To re-enable:
 
 2. **Modify the plugin:**
    - Edit `src/my_plugin.cpp`
-   - Update `manifest.json.in` with your extension info
+   - Update the embedded manifest string passed to the SDK export macro
    - Add UI in `ui/my_dialog.ui` (optional)
 
 3. **Build locally:**
@@ -155,7 +148,7 @@ To re-enable:
    ```
 
 4. **Test locally:**
-   - Copy built files to `~/.plotjuggler/extensions/my-extension/`
+   - Copy built files to your platform's extensions directory (Linux: `~/.local/share/plotjuggler/extensions/my-extension/` — see §5.1 for other OSes)
    - Open PlotJuggler and verify plugin loads
 
 5. **Release:**
@@ -175,36 +168,23 @@ To re-enable:
    - Review the auto-generated PR
    - Merge to add to public marketplace
 
-### 3.2 Extension Manifest
+### 3.2 Embedded Plugin Manifest
 
-Every extension needs a `manifest.json`:
+Every plugin DSO must export an embedded manifest through the SDK macro:
 
-```json
-{
-  "id": "my-extension",
-  "version": "1.0.0",
-  "min_plotjuggler_version": "4.0.0",
-  "plugins": [
-    {
-      "name": "MyPlugin",
-      "type": "data_loader",
-      "library": "libmy_plugin",
-      "ui_file": "my_dialog.ui"
-    }
-  ]
-}
+```cpp
+PJ_DATA_SOURCE_PLUGIN(MyPlugin,
+    R"({"id":"my-extension","name":"My Extension","version":"1.0.0"})")
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | Yes | Unique identifier (lowercase, hyphens) |
+| `name` | Yes | Human-readable plugin name |
 | `version` | Yes | Semantic version (X.Y.Z) |
-| `min_plotjuggler_version` | Yes | Minimum compatible PJ version |
-| `plugins` | Yes | Array of plugins in this extension |
-| `plugins[].name` | Yes | C++ class name |
-| `plugins[].type` | Yes | data_loader, data_streamer, parser, toolbox |
-| `plugins[].library` | Yes | Library name without extension |
-| `plugins[].ui_file` | No | Qt Designer .ui file |
+| `encoding` | Parsers only | Message encoding handled by a parser plugin |
+| `file_extensions` | No | File suffixes handled by a file source plugin |
+| `capabilities` | No | Optional capability tags |
 
 ### 3.3 Plugin Types
 
@@ -228,6 +208,12 @@ Every extension needs a `manifest.json`:
 
 ## 4. Troubleshooting
 
+### 4.0 Diagnostics dialog
+
+The marketplace toolbar shows a **Details** button whenever there are recent diagnostics. Click it to open a read-only log of marketplace lifecycle events (install/uninstall/staged-promotion failures, quarantine moves, registry-fetch failures). The most recent error also appears in the status bar; a successful registry refresh clears the sticky error so progress messages aren't suppressed.
+
+When the marketplace runs **inside** a host application (e.g. PlotJuggler), the host can subscribe to the same diagnostic stream alongside its own plugin-load events; see ARCHITECTURE.md §3.3 *ExtensionManager — Diagnostic propagation*.
+
 ### 4.1 Common Issues
 
 | Problem | Cause | Solution |
@@ -236,7 +222,12 @@ Every extension needs a `manifest.json`:
 | "Download failed" | Network issue | Check internet, try again |
 | "Checksum mismatch" | Corrupted download | Try again, report if persistent |
 | "Cannot update (Windows)" | DLL in use | Restart PlotJuggler |
-| "Extension disappeared" | Rollback occurred | Check logs, previous version restored |
+| "Installed version is newer" | Local plugin is ahead of registry | Downgrade is blocked; keep the local version |
+| "Update failed after backup" | New artifact did not install | Check marketplace diagnostics for the retained backup path |
+| "Post-promotion validation failed" | The DSO loads in the staging area but not from `extensions/` (rpath/dep issue) | The install is rolled back; check the diagnostic for the linker error |
+| "Could not mark … for restart cleanup" | Marketplace could not write the `.pj_pending_uninstall` marker (Windows; permissions or AV) | The uninstall is **not** scheduled; resolve the file-permission issue and retry |
+| "Moved to quarantine: …" | A previous staged update could not be removed; it has been moved aside | Inspect the quarantined directory and delete it manually once safe |
+| "Invalid registry URL" | The Settings dialog rejected a malformed URL | Use a `http://`, `https://`, or `file://` URL |
 
 ### 4.2 Log Locations
 
@@ -248,18 +239,19 @@ Every extension needs a `manifest.json`:
 
 ### 4.3 Reset Marketplace
 
-If the marketplace is broken:
+If the marketplace is broken, remove the extensions and staging directories under your platform's config root (see §5.1):
 
 ```bash
-# Linux/macOS
-rm -rf ~/.plotjuggler/extensions/
-rm ~/.plotjuggler/installed.json
-rm -rf ~/.plotjuggler/.cache/
+# Linux
+rm -rf ~/.local/share/plotjuggler/extensions/
+rm -rf ~/.local/share/plotjuggler/.extension_staging/
+
+# macOS
+rm -rf ~/Library/Application\ Support/plotjuggler/extensions/
 
 # Windows
-rmdir /s %USERPROFILE%\.plotjuggler\extensions
-del %USERPROFILE%\.plotjuggler\installed.json
-rmdir /s %USERPROFILE%\.plotjuggler\.cache
+rmdir /s %LOCALAPPDATA%\plotjuggler\extensions
+rmdir /s %LOCALAPPDATA%\plotjuggler\.extension_staging
 ```
 
 ### 4.4 Reporting Bugs
@@ -278,27 +270,34 @@ rmdir /s %USERPROFILE%\.plotjuggler\.cache
 
 ### 5.1 Directory Structure
 
+The marketplace uses the OS-standard writable data location (resolved by `QStandardPaths::GenericDataLocation`):
+
+| OS | Root |
+|----|------|
+| Linux | `~/.local/share/plotjuggler/` |
+| macOS | `~/Library/Application Support/plotjuggler/` |
+| Windows | `%LOCALAPPDATA%/plotjuggler/` |
+
+Inside that root:
+
 ```
-~/.plotjuggler/
-├── extensions/           # Installed extensions
+<config-root>/
+├── extensions/                      # Active installed extensions
 │   └── my-extension/
-│       ├── manifest.json
 │       └── libmy_plugin.so
-├── .pending/            # Staged updates (Windows)
-├── .backup/             # Backup of previous versions
-├── .cache/              # Registry cache
-│   └── registry.json
-└── installed.json       # Local state
+├── .extension_staging/      # Staging area (all platforms — Windows uses it
+│   │                                # for restart-time installs; Linux/macOS
+│   │                                # use it as the post-promotion validation gate)
+│   └── my-extension/
+│       └── .pj_pending_install      # Intent file (Windows-only restart-time apply)
+└── .backup/                         # Pre-update backups (all platforms); automatic rollback deferred — restore manually
 ```
 
 ### 5.2 Registry URL
 
 **Default:** `https://raw.githubusercontent.com/plotjuggler/marketplace-registry/main/registry.json`
 
-**Custom registry:** Set in PlotJuggler settings or environment variable:
-```bash
-export PLOTJUGGLER_REGISTRY_URL=https://your-company.com/registry.json
-```
+**Custom registry:** Open the marketplace, click ⚙ Settings, paste the new URL, click OK. The URL is persisted under `QSettings("PlotJuggler", "Marketplace")/registry_url` and restored on next launch.
 
 ### 5.3 Supported Platforms
 
@@ -339,7 +338,7 @@ This is the **PlotJuggler Marketplace**, an extension distribution system for Pl
 | `REQUIREMENTS.md` | What the system should do |
 | `ARCHITECTURE.md` | How the system is designed |
 | `USER_MANUAL.md` | This file - how to use it |
-| `PLAN.md` | Current work plan and TODOs |
+| `TODO.md` | Remaining work and deferred follow-ups |
 
 ### 6.3 Common Tasks
 
@@ -367,7 +366,7 @@ This is the **PlotJuggler Marketplace**, an extension distribution system for Pl
 | Installation logic | `src/core/ExtensionManager.cpp` |
 | Download handling | `src/core/DownloadManager.cpp` |
 | Main UI | `src/ui/MarketplaceWindow.cpp` |
-| Extension list | `src/ui/ExtensionListWidget.cpp` |
+| Extension detail dialog | `src/ui/extension_detail_dialog.cpp` |
 | Data models | `src/models/` |
 
 ### 6.5 Testing

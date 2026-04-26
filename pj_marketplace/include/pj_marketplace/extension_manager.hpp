@@ -1,10 +1,13 @@
 #pragma once
 
+#include <QDateTime>
+#include <QList>
 #include <QMap>
 #include <QMetaObject>
 #include <QObject>
 #include <QString>
 
+#include "pj_base/diagnostic_sink.hpp"
 #include "pj_marketplace/extension.hpp"
 #include "pj_marketplace/installed_extension.hpp"
 #include "pj_marketplace/platform_utils.hpp"
@@ -13,119 +16,148 @@ namespace PJ {
 
 class DownloadManager;
 
-// Orchestrates the full install/uninstall/update lifecycle for marketplace extensions.
-//
-// Responsibilities:
-//   - Resolves the correct download artifact for the current platform
-//   - On Linux: delegates the full pipeline (download + checksum + extraction) to
-//     DownloadManager, then registers the extension immediately
-//   - On Windows update: extracts to a staging directory (.pending/) because in-use
-//     DLLs cannot be overwritten; the extension becomes active after the next restart
-//   - On Windows fresh install: installs directly (no staging needed — no DLL loaded)
-//   - On Windows uninstall: if the directory cannot be removed (DLL still mapped),
-//     schedules it for deletion at the next startup via applyPendingUninstalls()
-//   - At startup: applies any pending staged installs via applyPendingInstalls()
-//     and deletes any directories deferred from a previous uninstall via applyPendingUninstalls()
-//   - Discovers installed extensions by scanning extensions_dir and reading manifest.json
-//
-// All constructor dependencies are injected, so tests can pass a DownloadManager stub
-// and temp directories to exercise the full flow without touching the real filesystem
-// or the network.
-//
-// Only one install/update can run at a time. Calling install() while an operation is
-// in progress emits installError() and returns immediately.
+// One user-visible diagnostic emitted by marketplace lifecycle operations.
+struct ExtensionDiagnostic {
+  QString id;       ///< Registry or embedded plugin id, when known.
+  QString message;  ///< Human-readable diagnostic.
+  bool is_error = false;
+  QDateTime timestamp;  ///< UTC timestamp.
+};
+
+// Manages marketplace extension installs, updates, uninstalls, and startup cleanup.
+// Installed metadata is derived from embedded DSO manifests, not local sidecars.
 class ExtensionManager : public QObject {
   Q_OBJECT
 
  public:
-  // Convenience constructor: creates an owned DownloadManager and uses the
-  // standard user paths. Equivalent to the injecting constructor with defaults.
+  // Creates an owned DownloadManager and uses the standard user directories.
   ExtensionManager();
 
-  // `extensions_dir` and `pending_dir` default to the standard user paths.
-  // Pass QTemporaryDir paths in tests to get a clean, isolated state.
+  // Uses the supplied downloader and directories; tests pass isolated temp paths.
+  // The optional sink receives the same diagnostics as diagnosticReported() —
+  // hosts can subscribe to one stream that also carries non-marketplace events.
   explicit ExtensionManager(
-      DownloadManager* downloader,
-      const QString& extensions_dir = PlatformUtils::extensionsDir(),
-      const QString& pending_dir = PlatformUtils::pendingDir(),
+      DownloadManager* downloader, const QString& extensions_dir = PlatformUtils::extensionsDir(),
+      const QString& pending_dir = PlatformUtils::pendingDir(), DiagnosticSink sink = {},
       QObject* parent = nullptr);
 
-  // Starts an async install of `ext` for the running platform.
-  // Emits installStarted() synchronously before the download begins.
-  // No-op (emits installError) if another install is already in progress or if
-  // the extension is already installed — use update() to upgrade.
+  // Starts an async install for the current platform.
   void install(const Extension& ext);
 
-  // Synchronously deletes <extensions_dir>/<id>/ and removes the entry from
-  // memory. Emits uninstallFinished(id, false) if the directory cannot
-  // be removed (e.g. a DLL is still loaded on Windows — F-14 staging is deferred).
+  // Removes an installed extension or schedules Windows cleanup after restart.
   void uninstall(const QString& extension_id);
 
-  // Moves the current version to ~/.plotjuggler/.backup/<id>-<version>/ and
-  // re-installs from the registry. If the rename fails (cross-device or DLL locked
-  // on Windows) the old directory is deleted instead so the install gets a clean target.
-  // On success the backup path is recorded in installed.json so that future automatic
-  // rollback (F-13, April+) can find it.
+  // Replaces an installed extension, staging on Windows and backing up elsewhere.
   void update(const Extension& ext);
 
-  // Moves any staged extensions from .pending/ into extensions/ and registers them.
-  // Should be called once at application startup. On Linux this is always a no-op
-  // because staging is never used, but it is safe to call on any platform.
+  // Promotes validated staged installs from PlatformUtils::pendingDir().
   void applyPendingInstalls();
 
-  // Deletes any extension directories that could not be removed during a previous
-  // uninstall() because their DLL was still loaded (Windows only).
-  // Should be called once at application startup. Safe to call on any platform.
+  // Deletes extension directories previously marked for restart cleanup.
   void applyPendingUninstalls();
 
+  // Returns true when the latest disk scan found this extension id.
   bool isInstalled(const QString& id) const;
 
-  // Returns true if the extension is staged in the pending directory and will
-  // become active after the next restart (Windows update path).
+  // Rebuilds installed state by scanning extension directories for plugin DSOs.
+  void refreshInstalledFromDisk();
+
+  // Replaces the installed-state cache with a caller-provided snapshot.
+  void setInstalledExtensions(QMap<QString, InstalledExtension> installed);
+
+  // Returns true when a staged install has a matching intent and valid DSO.
   bool hasPendingInstall(const QString& id) const;
 
-  // Returns true if the extension directory contains a pending-uninstall marker
-  // and will be deleted at the next startup (Windows uninstall path).
+  // Returns true when an installed directory is marked for restart cleanup.
   bool hasPendingUninstall(const QString& id) const;
 
-  // Compares the registry version against the installed one using QVersionNumber,
-  // which handles multi-segment semver correctly ("1.10.0" > "1.9.0").
-  // Returns false if the extension is not installed.
+  // Returns true when the installed version is newer than the registry version.
+  bool hasNewerInstalledVersion(const Extension& ext) const;
+
+  // Compares registry and installed versions using QVersionNumber.
   bool hasUpdate(const Extension& ext) const;
 
-  // Snapshot of the currently installed extensions, keyed by id.
+  // Returns the current installed-extension snapshot keyed by id.
   QMap<QString, InstalledExtension> installedExtensions() const;
 
+  // Returns recent lifecycle diagnostics for UI display.
+  QList<ExtensionDiagnostic> diagnostics() const;
+
+  // Clears the in-memory diagnostic history.
+  void clearDiagnostics();
+
+  // Root directory where extension DSOs are discovered and managed.
+  QString extensionsDir() const { return extensions_dir_; }
+
+#ifdef PJ_MARKETPLACE_TESTING
+  // Test hook for forcing direct or staged install paths.
+  void testDoInstall(const Extension& ext, bool staging, bool allow_existing = false) {
+    doInstall(ext, staging, allow_existing);
+  }
+
+#endif
+
  signals:
+  // Emitted when an install or update starts.
   void installStarted(const QString& id);
+
+  // Emitted with percentage progress for the active download.
   void installProgress(const QString& id, int percent);
+
+  // Emitted when install or update completes.
   void installFinished(const QString& id, bool success);
-  // Human-readable description of what went wrong; always followed by installFinished(id, false).
+
+  // Human-readable failure detail; followed by installFinished(id, false).
   void installError(const QString& id, const QString& error_message);
+
   // Emitted on Windows when the extension is staged and will be active after a restart.
   void installPendingRestart(const QString& id);
 
+  // Emitted when uninstall completes.
   void uninstallFinished(const QString& id, bool success);
+
+  // Human-readable uninstall failure detail.
   void uninstallError(const QString& id, const QString& error_message);
-  // Emitted on Windows when the extension is deregistered but its directory could not
-  // be removed (DLL still loaded). The directory will be deleted on the next startup
-  // via applyPendingUninstalls().
+
+  // Emitted when uninstall requires restart cleanup.
   void uninstallPendingRestart(const QString& id);
+
+  // Emitted whenever a diagnostic is appended to diagnostics().
+  void diagnosticReported(const QString& id, const QString& message, bool is_error);
 
  private:
   // Called by both constructors to finish setup after members are assigned.
   void initComponents();
 
-  void doInstall(const Extension& ext, bool staging);
-  void loadState();
-  void saveState();
+  // Shared install implementation for direct and staged destinations.
+  void doInstall(const Extension& ext, bool staging, bool allow_existing = false);
+
+  // Disconnects downloader signals for the current operation.
   void disconnectDlConns();
-  void savePendingMeta(const Extension& ext);
-  void schedulePendingUninstall(const QString& path);
+
+  // Writes the restart-cleanup marker into an installed extension directory.
+  // Returns false if the marker file could not be created — caller must NOT remove
+  // the in-memory entry in that case, otherwise the directory will leak.
+  bool schedulePendingUninstall(const QString& path);
+
+  // Appends a diagnostic and notifies observers.
+  void reportDiagnostic(const QString& id, const QString& message, bool is_error);
+
+  // Emits installError + installFinished(false) and records a diagnostic.
+  void emitInstallFailure(const QString& id, const QString& message);
+
+  // Stamps a freshly-promoted directory with its absolute path + mtime and
+  // adds it to the installed_ map under `id`. Caller supplies the record
+  // already populated from the embedded manifest.
+  void registerInstalledExtension(const QString& id, const QString& dst, InstalledExtension record);
+
+  // Emits uninstallError + uninstallFinished(false) and records a diagnostic.
+  void emitUninstallFailure(const QString& id, const QString& message);
 
   DownloadManager* downloader_ = nullptr;
   QString extensions_dir_;
   QString pending_dir_;
+  DiagnosticSink sink_;
 
   QMap<QString, InstalledExtension> installed_;
 
@@ -137,6 +169,11 @@ class ExtensionManager : public QObject {
   bool disk_space_checked_ = false;
   // Set before calling cancel() to preserve the real reason shown to the user.
   QString cancel_reason_;
+  // Transaction directory used by the currently running fetch/extract operation.
+  QString pending_extract_dir_;
+  // Non-Windows update backup location, used for failure diagnostics.
+  QString pending_backup_path_;
+  QList<ExtensionDiagnostic> diagnostics_;
 
   // Stored so we can disconnect cleanly after each operation completes.
   QMetaObject::Connection dl_progress_conn_;

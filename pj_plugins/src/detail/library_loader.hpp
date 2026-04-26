@@ -20,12 +20,10 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // LOAD_WITH_ALTERED_SEARCH_PATH adds the directory of the loaded DLL to the
   // search path for resolving its dependencies — matches dlopen's default on
   // Linux. Without it, deps are only searched in the .exe directory, System32
-  // and PATH, so plugins cannot ship their own sibling DLLs 
-  HMODULE module = LoadLibraryExA(std::string(path).c_str(), nullptr,
-                                  LOAD_WITH_ALTERED_SEARCH_PATH);
+  // and PATH, so plugins cannot ship their own sibling DLLs
+  HMODULE module = LoadLibraryExA(std::string(path).c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
   if (module == nullptr) {
-    return unexpected("LoadLibraryExA failed (error " +
-                      std::to_string(GetLastError()) + ")");
+    return unexpected("LoadLibraryExA failed (error " + std::to_string(GetLastError()) + ")");
   }
   return reinterpret_cast<void*>(module);
 #else
@@ -43,7 +41,6 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // is instead achieved by building plugins with -fvisibility=hidden and
   // explicitly marking only the boot-level exports
   // (pj_plugin_abi_version + PJ_get_<family>_vtable) as default visible.
-  // See cmake/PjPluginManifest.cmake for the plugin build flags.
   int flags = RTLD_NOW | RTLD_LOCAL;
   void* handle = dlopen(std::string(path).c_str(), flags);
   if (handle == nullptr) {
@@ -81,11 +78,14 @@ inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
 inline Expected<void> checkPluginAbiVersion(void* handle) {
   auto sym = resolveSymbol(handle, "pj_plugin_abi_version");
   if (!sym) {
-    return unexpected(std::string("plugin missing pj_plugin_abi_version symbol"));
+    return unexpected(std::string("plugin missing pj_plugin_abi_version symbol: ") + sym.error());
   }
   const auto* plugin_abi = static_cast<const uint32_t*>(*sym);
   if (plugin_abi == nullptr || *plugin_abi != PJ_ABI_VERSION) {
-    return unexpected(std::string("plugin pj_plugin_abi_version mismatch (expected 4)"));
+    const std::string actual = plugin_abi == nullptr ? "null" : std::to_string(*plugin_abi);
+    return unexpected(
+        std::string("plugin pj_plugin_abi_version mismatch (expected ") + std::to_string(PJ_ABI_VERSION) + ", got " +
+        actual + ")");
   }
   return {};
 }

@@ -35,9 +35,13 @@ extern "C" {
  * up is `pj_plugin_abi_version` (a regular C identifier, not a preprocessor
  * token).
  *
- * Contract for plugin authors: every plugin SDK macro (PJ_DATA_SOURCE_PLUGIN,
- * PJ_MESSAGE_PARSER_PLUGIN, etc.) emits `pj_plugin_abi_version` automatically.
- * Do not redefine it.
+ * Contract for plugin authors: the symbol is emitted automatically at file
+ * scope by `pj_base/plugin_abi_export.h`, which is transitively included by
+ * every family SDK header (data_source_plugin_base.hpp, dialog_plugin_base.hpp,
+ * etc.). Weak linkage lets multiple TUs in the same DSO each emit a definition
+ * and have the linker fold them into one COMDAT entry — so co-resident DSOs
+ * (e.g. DataSource + Dialog in one .so) work without any extra ceremony.
+ * Do not redefine it manually.
  *
  * v4 plugins advertise version 4. Breaking v3→v4 changes:
  *   - Arrow C Data Interface replaces Arrow IPC bytes at the boundary
@@ -52,7 +56,7 @@ extern "C" {
 /**
  * Convention for plugin-loaders:
  *
- *   1. `dlsym("pj_plugin_abi_version")` — reject if missing or not equal to 3.
+ *   1. `dlsym("pj_plugin_abi_version")` — reject if missing or not equal to PJ_ABI_VERSION.
  *   2. `dlsym("PJ_get_<family>_vtable")` — reject if missing.
  *   3. Check `vtable->protocol_version == PJ_<FAMILY>_PROTOCOL_VERSION`.
  *   4. Check `vtable->struct_size >= PJ_<FAMILY>_MIN_VTABLE_SIZE`

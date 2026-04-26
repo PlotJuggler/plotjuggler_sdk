@@ -115,13 +115,20 @@ The `name` field in `NamedFieldValue` is `std::string` (not `string_view`). You 
 fields.push_back({prefix + "/" + key, value});  // safe — name is owned
 ```
 
-### Bulk Arrow IPC Import
+### Bulk Arrow Import
 
-For high-throughput file importers that already have Arrow data:
+For high-throughput file importers that already have Arrow data, use the
+Arrow C Data Interface (`ArrowArrayStream`). The byte-based `appendArrowIpc`
+slot was removed in ABI v4.
 
 ```cpp
-writeHost().appendArrowIpc(*topic, ipc_stream_bytes, timestamp_column_name);
+PJ::sdk::ArrowStreamHolder stream(buildMyStream());
+auto status = writeHost().appendArrowStream(*topic, std::move(stream), "timestamp");
 ```
+
+`ArrowStreamHolder` is an RAII wrapper that auto-releases the stream; the
+`std::move` overload disarms it on success. See `pj_base/sdk/arrow.hpp` for
+the holder + stream-builder helpers.
 
 ---
 

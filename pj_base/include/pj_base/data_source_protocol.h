@@ -267,6 +267,8 @@ typedef struct PJ_data_source_vtable_t {
    * Static JSON manifest. Compile-time constant string literal.
    *
    * Required keys:
+   *   "id"      — stable plugin identifier (string). Used by the host catalog
+   *               and the marketplace; must be unique per plugin.
    *   "name"    — human-readable plugin name (string).
    *   "version" — semver version string (string).
    *

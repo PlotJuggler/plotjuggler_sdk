@@ -67,6 +67,8 @@ typedef struct PJ_message_parser_vtable_t {
    * Static JSON manifest. Compile-time constant.
    *
    * Required keys:
+   *   "id"       — stable plugin identifier (string). Used by the host catalog
+   *                and the marketplace; must be unique per plugin.
    *   "name"     — human-readable plugin name (string).
    *   "version"  — semver version string (string).
    *   "encoding" — encoding this parser handles (string). The host uses

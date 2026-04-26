@@ -19,7 +19,7 @@ renders the widgets, and relays events to the plugin over the C vtable.
 
 1. Subclass `PJ::DialogPluginTyped`.
 2. Provide inline Qt Designer `.ui` XML via `ui_content()`.
-3. Override `manifest()` with a JSON string (name, version, etc.).
+3. Override `manifest()` with a JSON string (`id`, name, version, etc.).
 4. Implement `widget_data()` to push state to the UI.
 5. Override the typed event handlers you need (`onTextChanged`,
    `onIndexChanged`, `onToggled`, etc.) — return `true` when state changes.
@@ -44,6 +44,7 @@ class MyDialog : public PJ::DialogPluginTyped {
  public:
   std::string manifest() const override {
     return R"({
+      "id": "my-dialog",
       "name": "My Dialog",
       "version": "1.0.0",
       "description": "Example dialog plugin"
@@ -224,6 +225,22 @@ target_link_libraries(my_dialog_plugin PRIVATE pj_dialog_sdk)
 ```
 
 No Qt dependency is needed in the plugin — only the host links Qt.
+
+## Manifest Schema
+
+`manifest()` returns a JSON string. Unlike the other plugin families, the
+dialog manifest is built at runtime (not a string literal in the vtable), but
+the same required keys apply.
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
+| `name` | string | yes | Human-readable plugin name. |
+| `version` | string | yes | Semver version string. |
+| `description` | string | no | Short description of the dialog. |
+
+The host validates these keys when it inspects the dialog vtable; manifests
+missing a required string are rejected.
 
 ## The Reactive Loop
 
@@ -551,9 +568,9 @@ class MySource : public PJ::StreamSourceBase {
   MyDialog dialog_;
 };
 
-PJ_DATA_SOURCE_PLUGIN(MySource, R"({"name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN(MyDialog)   // also specialises PJ::dialogVtableFor<MyDialog>()
-                             // so PJ::borrowDialog picks up the right vtable.
+PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
+PJ_DIALOG_PLUGIN(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
+                            // so PJ::borrowDialog picks up the right vtable.
 ```
 
 The host resolves both vtables, creates a borrowed `DialogHandle` from the

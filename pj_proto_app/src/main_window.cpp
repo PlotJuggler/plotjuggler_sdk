@@ -1,14 +1,18 @@
 #include "main_window.hpp"
 
 #include <QAction>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
+#include <QStatusBar>
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -17,8 +21,10 @@
 #include <nlohmann/json.hpp>
 
 #include "pj_datastore/reader.hpp"
+#include "pj_marketplace/download_manager.hpp"
 #include "pj_marketplace/extension_manager.hpp"
 #include "pj_marketplace/marketplace_window.hpp"
+#include "pj_marketplace/platform_utils.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
 #include "plugin_registry.hpp"
 
@@ -112,17 +118,27 @@ ShowMessageBoxCallback makeMessageBoxCallback(QWidget* parent) {
 
 }  // namespace
 
-MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
-    : QMainWindow(parent), registry_(plugin_dir), tree_model_(engine_) {
+MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent) : QMainWindow(parent), tree_model_(engine_) {
   auto td_result = engine_.createTimeDomain("default");
   if (td_result) {
     default_td_id_ = *td_result;
   }
 
-  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
-  ext_mgr_->applyPendingInstalls();
-  ext_mgr_->applyPendingUninstalls();
-  registry_.scanDirectory();
+  // Bridge constructed FIRST so subsystems built below can route diagnostics
+  // through it. Sink is thread-safe and outlive-safe via a QPointer.
+  diag_bridge_ = new PJ::QtDiagnosticBridge(this);
+  connect(diag_bridge_, &PJ::QtDiagnosticBridge::diagnosticReported, this, &MainWindow::onDiagnosticReported);
+
+  registry_ = std::make_unique<PluginRegistry>(plugin_dir, diag_bridge_->sink());
+
+  // ExtensionManager: forwards its existing diagnostics through the same sink
+  // so plugin-load and marketplace events feed one chronological UI stream.
+  auto* downloader = new PJ::DownloadManager(this);
+  ext_mgr_ = std::make_unique<PJ::ExtensionManager>(
+      downloader, PJ::PlatformUtils::extensionsDir(), PJ::PlatformUtils::pendingDir(), diag_bridge_->sink(), this);
+  // initComponents() already drained pending install/uninstall queues.
+
+  registry_->scanDirectory();
 
   // --- Toolbar ---
   auto* toolbar = addToolBar("Main");
@@ -186,6 +202,17 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   layout->addWidget(splitter, 1);
   setCentralWidget(central);
 
+  // --- Status bar ---
+  // statusBar()->showMessage(...) is the transient channel for warnings/errors
+  // pushed via diag_bridge_; the corner button opens the full diagnostics log.
+  diagnostics_action_ = new QAction("Diagnostics…", this);
+  connect(diagnostics_action_, &QAction::triggered, this, &MainWindow::onShowDiagnosticsDialog);
+  auto* diag_btn = new QPushButton("Diagnostics", this);
+  diag_btn->setFlat(true);
+  diag_btn->setToolTip("Open the recent diagnostics log");
+  connect(diag_btn, &QPushButton::clicked, this, &MainWindow::onShowDiagnosticsDialog);
+  statusBar()->addPermanentWidget(diag_btn);
+
   // --- Signals ---
   connect(chart_panel_, &ChartPanel::seriesDropped, this, [this]() {
     auto [begin, end] = computeVisibleRange();
@@ -205,7 +232,7 @@ void MainWindow::loadFile(const QString& file_path) {
   if (!ext.isEmpty()) {
     ext = "." + ext;
   }
-  auto sources = registry_.findSourcesForExtension(ext.toStdString());
+  auto sources = registry_->findSourcesForExtension(ext.toStdString());
 
   if (sources.empty()) {
     qWarning("No DataSource plugin handles %s files", qPrintable(ext));
@@ -218,7 +245,7 @@ void MainWindow::loadFile(const QString& file_path) {
   auto display_name = QFileInfo(file_path).fileName().toStdString();
 
   auto session =
-      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
+      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, registry_.get(), this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
   if (!session->bindForDialog()) {
     qWarning("Bind failed for '%s': %s", display_name.c_str(), session->lastError().c_str());
@@ -260,7 +287,7 @@ void MainWindow::plotFirstFields(int count) {
 void MainWindow::onLoadFile() {
   QSettings settings;
   auto last_dir = settings.value("ProtoApp/lastLoadDir", "").toString();
-  auto filter = registry_.buildFileFilter();
+  auto filter = registry_->buildFileFilter();
   auto file_path = QFileDialog::getOpenFileName(this, "Load File", last_dir, QString::fromStdString(filter));
   if (file_path.isEmpty()) {
     return;
@@ -271,7 +298,7 @@ void MainWindow::onLoadFile() {
   if (!ext.isEmpty()) {
     ext = "." + ext;
   }
-  auto sources = registry_.findSourcesForExtension(ext.toStdString());
+  auto sources = registry_->findSourcesForExtension(ext.toStdString());
 
   if (sources.empty()) {
     QMessageBox::warning(this, "No Plugin", "No DataSource plugin handles " + ext + " files.");
@@ -312,7 +339,7 @@ void MainWindow::onLoadFile() {
 
   // Create session early so the dialog can call listAvailableEncodings()
   auto session =
-      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
+      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, registry_.get(), this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
 
   // Bind the plugin with the full service registry BEFORE showing the dialog
@@ -333,7 +360,7 @@ void MainWindow::onLoadFile() {
       if (borrowed.ctx != nullptr) {
         auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, borrowed.ctx);
         PJ::DialogEngineConfig engine_config;
-        engine_config.parser_dialog_provider = makeParserDialogProvider(&registry_);
+        engine_config.parser_dialog_provider = makeParserDialogProvider(registry_.get());
         PJ::DialogEngine dialog_engine(std::move(dialog_handle), engine_config);
         if (dialog_engine.showDialog(this) == PJ::DialogResult::kRejected) {
           return;
@@ -356,7 +383,7 @@ void MainWindow::onLoadFile() {
 }
 
 void MainWindow::onStartStream() {
-  auto sources = registry_.streamSources();
+  auto sources = registry_->streamSources();
   if (sources.empty()) {
     QMessageBox::warning(this, "No Plugin", "No streaming DataSource plugins found.");
     return;
@@ -386,7 +413,7 @@ void MainWindow::onStartStream() {
   // Create session first so the dialog runs on the SAME handle that will stream.
   // This matches the original plugin architecture: one object, one socket.
   auto session =
-      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, source->name, &registry_, this);
+      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, source->name, registry_.get(), this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
 
   // Bind the plugin with the full service registry BEFORE showing the dialog
@@ -410,7 +437,7 @@ void MainWindow::onStartStream() {
       if (borrowed.ctx != nullptr) {
         auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, borrowed.ctx);
         PJ::DialogEngineConfig engine_config;
-        engine_config.parser_dialog_provider = makeParserDialogProvider(&registry_);
+        engine_config.parser_dialog_provider = makeParserDialogProvider(registry_.get());
         engine_config.initial_parser_config = saved_parser_config;
         PJ::DialogEngine dialog_engine(std::move(dialog_handle), engine_config);
         if (dialog_engine.showDialog(this) == PJ::DialogResult::kRejected) {
@@ -443,7 +470,7 @@ void MainWindow::onStartStream() {
 }
 
 void MainWindow::startDummyStream() {
-  auto sources = registry_.streamSources();
+  auto sources = registry_->streamSources();
   LoadedDataSource* dummy = nullptr;
   for (auto* s : sources) {
     if (s->name == "Dummy Streamer") {
@@ -457,7 +484,7 @@ void MainWindow::startDummyStream() {
   }
 
   auto session =
-      std::make_unique<DataSourceSession>(engine_, dummy->library, default_td_id_, dummy->name, &registry_, this);
+      std::make_unique<DataSourceSession>(engine_, dummy->library, default_td_id_, dummy->name, registry_.get(), this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
   if (!session->bindForDialog()) {
     qWarning("Dummy Streamer bind failed: %s", session->lastError().c_str());
@@ -672,7 +699,7 @@ void MainWindow::restartSession(DataSourceSession* session) {
   tree_model_.hideDataset(dataset_id);
 
   // Create and start a new session with the same config
-  auto new_session = std::make_unique<DataSourceSession>(engine_, library, default_td_id_, name, &registry_, this);
+  auto new_session = std::make_unique<DataSourceSession>(engine_, library, default_td_id_, name, registry_.get(), this);
   new_session->setMessageBoxCallback(makeMessageBoxCallback(this));
   if (!new_session->bindForDialog()) {
     qWarning("Restart bind failed: %s", new_session->lastError().c_str());
@@ -715,20 +742,21 @@ std::pair<PJ::Timestamp, PJ::Timestamp> MainWindow::computeVisibleRange() const 
 void MainWindow::onOpenMarketplace() {
   const QUrl registry_url(
       "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry/refs/heads/development/registry.json");
-  PJ::MarketplaceWindow window(ext_mgr_.get(), registry_url, this);
+  const auto loaded_snapshot = registry_->loadedExtensionsSnapshot();
+  PJ::MarketplaceWindow window(ext_mgr_.get(), registry_url, loaded_snapshot, this);
   window.resize(700, 500);
   window.exec();
   if (window.installationsChanged()) {
     toolbox_sessions_.clear();
     open_toolbox_dialogs_ = 0;
-    registry_.reload();
+    registry_->reload();
     tools_menu_->clear();
     setupToolboxPanels(tools_menu_);
   }
 }
 
 void MainWindow::setupToolboxPanels(QMenu* tools_menu) {
-  for (const auto& tb : registry_.allToolboxes()) {
+  for (const auto& tb : registry_->allToolboxes()) {
     auto session = std::make_unique<ToolboxSession>(
         engine_, const_cast<PJ::ToolboxLibrary&>(tb.library), colormap_registry_, tb.name, this);
     if (!session->init()) {
@@ -767,6 +795,55 @@ void MainWindow::setupToolboxPanels(QMenu* tools_menu) {
 
     toolbox_sessions_.push_back(std::move(session));
   }
+}
+
+void MainWindow::onDiagnosticReported(int level, QString source, QString id, QString message) {
+  // Cap retained history; older entries are dropped silently. The dialog shows
+  // "(N earlier diagnostics elided)" when the cap is hit.
+  static constexpr int kMaxKept = 200;
+  diagnostics_.append(UiDiagnostic{level, source, id, message, QDateTime::currentDateTimeUtc()});
+  while (diagnostics_.size() > kMaxKept) {
+    diagnostics_.removeFirst();
+  }
+
+  // Status bar surfaces only warnings and errors; info-level events stay in the
+  // dialog so the user isn't flashed with every successful plugin load.
+  const auto lv = static_cast<PJ::DiagnosticLevel>(level);
+  if (lv == PJ::DiagnosticLevel::kWarning || lv == PJ::DiagnosticLevel::kError) {
+    const QString prefix = (lv == PJ::DiagnosticLevel::kError) ? QStringLiteral("Error") : QStringLiteral("Warning");
+    const QString display = source.isEmpty() ? message : source + ": " + message;
+    statusBar()->showMessage(prefix + " — " + display, /*timeout_ms=*/8000);
+  }
+  Q_UNUSED(id);
+}
+
+void MainWindow::onShowDiagnosticsDialog() {
+  QDialog dlg(this);
+  dlg.setWindowTitle("Diagnostics");
+  dlg.resize(720, 420);
+
+  auto* layout = new QVBoxLayout(&dlg);
+  auto* text = new QPlainTextEdit(&dlg);
+  text->setReadOnly(true);
+
+  QStringList lines;
+  for (const UiDiagnostic& d : diagnostics_) {
+    const char* lv =
+        (d.level == static_cast<int>(PJ::DiagnosticLevel::kError))    ? "ERROR"
+      : (d.level == static_cast<int>(PJ::DiagnosticLevel::kWarning))  ? "WARN"
+                                                                      : "INFO";
+    const QString src = d.source.isEmpty() ? QStringLiteral("-") : d.source;
+    const QString id = d.id.isEmpty() ? QStringLiteral("-") : d.id;
+    lines.append(QString("[%1] %2 %3 %4: %5")
+                     .arg(d.timestamp.toLocalTime().toString(Qt::ISODate), lv, src, id, d.message));
+  }
+  text->setPlainText(lines.isEmpty() ? "No diagnostics." : lines.join('\n'));
+  layout->addWidget(text);
+
+  auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+  connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  layout->addWidget(buttons);
+  dlg.exec();
 }
 
 }  // namespace proto

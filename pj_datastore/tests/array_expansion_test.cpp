@@ -179,7 +179,7 @@ TEST(ArrayExpansionTest, VarLenArray_ExpandIsIdempotent_ShrinkIsNoop) {
   desc.schema_id = sid;
   auto topic_id = *writer.registerTopic(ds, desc);
 
-  *writer.expandArray(topic_id, "data", 3u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 3u).has_value());
 
   // Try to shrink: must be no-op, return current count (3)
   auto result = writer.expandArray(topic_id, "data", 2u);
@@ -203,7 +203,7 @@ TEST(ArrayExpansionTest, VarLenArray_WriteAndRead_BasicValues) {
   desc.schema_id = sid;
   auto topic_id = *writer.registerTopic(ds, desc);
 
-  *writer.expandArray(topic_id, "data", 3u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 3u).has_value());
 
   for (int i = 0; i < 4; ++i) {
     ASSERT_TRUE(writer.beginRow(topic_id, PJ::Timestamp(i) * 1000).has_value());
@@ -291,16 +291,16 @@ TEST(ArrayExpansionTest, MaxObservedArrayLength_TrackedInMetadata) {
   desc.array_expansion_limit = 10;
   auto topic_id = *writer.registerTopic(ds, desc);
 
-  writer.expandArray(topic_id, "data", 3u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 3u).has_value());
 
   const TopicStorage* storage = engine.getTopicStorage(topic_id);
   ASSERT_NE(storage, nullptr);
   EXPECT_EQ(storage->maxObservedArrayLength(), 3u);
 
-  writer.expandArray(topic_id, "data", 5u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 5u).has_value());
   EXPECT_EQ(storage->maxObservedArrayLength(), 5u);
 
-  writer.expandArray(topic_id, "data", 8u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 8u).has_value());
   EXPECT_EQ(storage->maxObservedArrayLength(), 8u);
 }
 
@@ -322,15 +322,15 @@ TEST(ArrayExpansionTest, TruncatedSampleCount_TrackedOnClamping) {
   const TopicStorage* storage = engine.getTopicStorage(topic_id);
 
   // expand to 10 exceeds limit=3 → 1 truncation
-  writer.expandArray(topic_id, "data", 10u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 10u).has_value());
   EXPECT_EQ(storage->truncatedSampleCount(), 1u);
 
   // expand to 2 — no-op (current=3 >= 2); no new truncation
-  writer.expandArray(topic_id, "data", 2u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 2u).has_value());
   EXPECT_EQ(storage->truncatedSampleCount(), 1u);
 
   // expand to 20 — actual=3 (same as current), but still truncated (20 > limit)
-  writer.expandArray(topic_id, "data", 20u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 20u).has_value());
   EXPECT_EQ(storage->truncatedSampleCount(), 2u);
 }
 
@@ -348,7 +348,7 @@ TEST(ArrayExpansionTest, Metadata_ExposedViaTopicMetadata) {
   desc.array_expansion_limit = 4;
   auto topic_id = *writer.registerTopic(ds, desc);
 
-  writer.expandArray(topic_id, "data", 10u);  // clamped to 4; 1 truncation; max_observed=10
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 10u).has_value());  // clamped to 4; 1 truncation; max_observed=10
 
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());
   writer.set(topic_id, 0, 1.0);
@@ -384,7 +384,7 @@ TEST(ArrayExpansionTest, CrossChunkExpansion_OldChunksHaveFewerColumns) {
   auto topic_id = *writer.registerTopic(ds, desc);
 
   // Phase 1: expand to 2, write 10 rows (8 auto-sealed + 2 in builder)
-  *writer.expandArray(topic_id, "data", 2u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 2u).has_value());
   for (int i = 0; i < 10; ++i) {
     ASSERT_TRUE(writer.beginRow(topic_id, PJ::Timestamp(i) * 1000).has_value());
     writer.set(topic_id, 0, i * 1.0);
@@ -449,7 +449,7 @@ TEST(ArrayExpansionTest, UnsetElementsAutoNullFilled) {
   desc.schema_id = sid;
   auto topic_id = *writer.registerTopic(ds, desc);
 
-  *writer.expandArray(topic_id, "data", 4u);
+  ASSERT_TRUE(writer.expandArray(topic_id, "data", 4u).has_value());
 
   // Write row with only first 2 elements; cols 2 and 3 are unset
   ASSERT_TRUE(writer.beginRow(topic_id, 1000).has_value());

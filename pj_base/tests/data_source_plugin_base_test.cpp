@@ -142,7 +142,7 @@ class MockDataSource : public PJ::DataSourcePluginBase {
   int poll_count_ = 0;
 };
 
-constexpr const char* kMockManifest = R"({"name":"Mock DataSource","version":"1.0.0"})";
+constexpr const char* kMockManifest = R"({"id":"mock-data-source","name":"Mock DataSource","version":"1.0.0"})";
 
 const PJ_data_source_vtable_t* mockVtable() {
   static const PJ_data_source_vtable_t* vt =
