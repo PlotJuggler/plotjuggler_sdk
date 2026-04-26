@@ -318,9 +318,18 @@ stop
 
 ### 4.3 Rollback Flow
 
-Automatic rollback is deferred. Non-Windows updates keep the previous version in
-`.backup/`, but the marketplace does not currently restore it automatically if a
-plugin later fails to load.
+Every successful update — Linux, macOS, and Windows — moves the previous
+version into `.backup/<id>-<oldversion>/` before the new version takes its
+place. On Linux/macOS this happens synchronously inside `update()`; on
+Windows it happens at restart inside `applyPendingInstalls()`, just before
+the staged directory is renamed over the existing one. If the staged
+promotion fails after the backup move, `applyPendingInstalls()` attempts
+to roll the backup back into place; if even the rollback fails, the
+diagnostic surfaces both paths so the user can recover manually.
+
+Automatic *post-load* rollback (restoring from backup if the freshly
+installed plugin later fails to load) is deferred. The backup directory
+is the manual recovery point.
 
 ![Rollback Flow](diagrams/rollback-flow.png)
 
@@ -374,7 +383,7 @@ The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.l
 │   │                                # use it as the post-promotion validation gate)
 │   └── ros2-streaming/              # Ready to install on restart (Windows)
 │       └── .pj_pending_install      # Intent file (Windows-only)
-└── .backup/                         # Non-Windows update backups; automatic rollback deferred
+└── .backup/                         # Pre-update backups (all platforms); automatic rollback deferred — restore manually
     ├── ros2-streaming-1.2.2/
     └── csv-loader-0.9.0/
 ```

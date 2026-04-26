@@ -462,9 +462,18 @@ data only; the embedded manifest remains the authority for installed version rep
 
 ![Rollback Flow](diagrams/rollback-flow.png)
 
-Automatic rollback is deferred. On non-staged platforms an update keeps the
-previous version in `.backup/`, but the marketplace does not currently restore
-that backup automatically if a later plugin load fails.
+Every successful update — Linux, macOS, and Windows — moves the previous
+version into `.backup/<id>-<oldversion>/` before the new version takes its
+place. On Linux/macOS this happens synchronously inside `update()`. On
+Windows it happens at restart inside `applyPendingInstalls()`, just before
+the staged directory is renamed over the existing one; if the rename fails
+after the backup, the marketplace attempts to roll the backup back into
+place, and if that also fails the diagnostic surfaces both paths so the
+user can recover manually.
+
+Automatic *post-load* rollback (restoring from backup if the freshly
+installed plugin later fails to load) is deferred. The backup directory
+is the manual recovery point.
 
 ---
 
@@ -633,7 +642,7 @@ The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.l
 ├── .extension_staging/      ← Staging area (all platforms; Windows uses it for restart-time installs, Linux/macOS as the post-promotion validation gate)
 │   └── plugin-id/
 │       └── .pj_pending_install      ← Intent file (Windows-only)
-└── .backup/                 ← Non-Windows update backups; automatic rollback deferred
+└── .backup/                 ← Pre-update backups (all platforms); automatic rollback deferred — restore manually
     ├── ros2-streaming-1.2.2/
     └── csv-loader-0.9.0/
 ```

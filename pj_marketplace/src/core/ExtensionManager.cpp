@@ -576,17 +576,61 @@ void ExtensionManager::applyPendingInstalls() {
     }
 
     const QString dst = extRoot(extensions_dir_, intent.id);
-    if (QDir(dst).exists() && !QDir(dst).removeRecursively()) {
-      qWarning("ExtensionManager: failed to remove existing extension directory '%s'", qPrintable(dst));
-      emitInstallFailure(intent.id, QString("Could not remove existing extension directory \"%1\"").arg(dst));
-      continue;
+
+    // If an extension is already installed at `dst`, move it aside to the
+    // backup dir before promoting the staged version. This is the Windows
+    // counterpart to the synchronous backup that `update()` performs on
+    // Linux/macOS — without it, a Windows update would silently overwrite
+    // the previous version with no recovery path.
+    pending_backup_path_.clear();
+    if (QDir(dst).exists()) {
+      const DirectoryDiscovery existing = discoverExtensionDirectory(dst);
+      const QString version_tag = (existing.found_plugin && !existing.record.version.isEmpty())
+                                      ? existing.record.version
+                                      : QString("unknown-") + QUuid::createUuid().toString(QUuid::Id128);
+
+      QDir().mkpath(PlatformUtils::backupDir());
+      QString candidate = QDir(PlatformUtils::backupDir()).absoluteFilePath(intent.id + "-" + version_tag);
+      if (QDir(candidate).exists()) {
+        // Leftover backup from an earlier failed update with the same
+        // id/version. Don't clobber it — keep both.
+        candidate += "_" + QUuid::createUuid().toString(QUuid::Id128);
+      }
+
+      if (!QDir().rename(dst, candidate)) {
+        qWarning("ExtensionManager: failed to back up '%s' before promoting staged install", qPrintable(dst));
+        emitInstallFailure(
+            intent.id,
+            QString("Could not back up \"%1\" before update — staged install left in \"%2\"").arg(dst, staged_dir));
+        continue;
+      }
+      pending_backup_path_ = candidate;
+      installed_.remove(intent.id);
     }
-    installed_.remove(intent.id);
 
     if (!QDir().rename(staged_dir, dst)) {
       qWarning(
           "ExtensionManager: failed to promote staged install '%s' to '%s'", qPrintable(staged_dir), qPrintable(dst));
-      emitInstallFailure(intent.id, QString("Could not promote staged install to \"%1\"").arg(dst));
+      QString message = QString("Could not promote staged install to \"%1\"").arg(dst);
+
+      // Best-effort rollback so the user is never left with no extension.
+      if (!pending_backup_path_.isEmpty()) {
+        if (QDir().rename(pending_backup_path_, dst)) {
+          message += " Previous version restored.";
+          pending_backup_path_.clear();
+          // Re-register the restored install so isInstalled() reflects reality.
+          const DirectoryDiscovery restored = discoverExtensionDirectory(dst);
+          if (restored.found_plugin) {
+            InstalledExtension record = restored.record;
+            record.path = dst;
+            record.install_date = QFileInfo(dst).lastModified();
+            installed_[intent.id] = record;
+          }
+        }
+        // If the rollback rename also failed, leave pending_backup_path_ set
+        // so emitInstallFailure surfaces "Previous version remains in backup".
+      }
+      emitInstallFailure(intent.id, message);
       continue;
     }
 
@@ -595,6 +639,7 @@ void ExtensionManager::applyPendingInstalls() {
     record.path = dst;
     record.install_date = QFileInfo(dst).lastModified();
     installed_[intent.id] = record;
+    pending_backup_path_.clear();
     emit installFinished(intent.id, true);
   }
 }

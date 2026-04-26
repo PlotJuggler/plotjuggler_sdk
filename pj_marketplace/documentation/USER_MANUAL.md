@@ -290,7 +290,7 @@ Inside that root:
 │   │                                # use it as the post-promotion validation gate)
 │   └── my-extension/
 │       └── .pj_pending_install      # Intent file (Windows-only restart-time apply)
-└── .backup/                         # Non-Windows update backups; automatic rollback deferred
+└── .backup/                         # Pre-update backups (all platforms); automatic rollback deferred — restore manually
 ```
 
 ### 5.2 Registry URL
