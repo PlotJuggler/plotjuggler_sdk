@@ -220,6 +220,12 @@ Extension makeExtension(const QString& id, const QString& version, const QUrl& u
 class ExtensionManagerTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    // Several tests place their own QTemporaryDir under PlatformUtils::configDir()
+    // (next to backupDir()) so QDir::rename() into the backup is an atomic same-fs
+    // move. QTemporaryDir refuses to create itself when the parent does not exist,
+    // which is exactly the state of a fresh CI runner. Pre-create configDir() here
+    // so those constructions succeed regardless of host history.
+    ASSERT_TRUE(QDir().mkpath(PlatformUtils::configDir()));
     ASSERT_TRUE(ext_dir_.isValid());
     ASSERT_TRUE(pending_dir_.isValid());
     downloader_ = new DownloadManager();
