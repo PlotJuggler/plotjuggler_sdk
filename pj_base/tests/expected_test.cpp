@@ -39,5 +39,15 @@ TEST(ExpectedTest, MutableAccessToError) {
   EXPECT_EQ(result.error(), "error");
 }
 
+TEST(ExpectedTest, AllowsValueAndErrorToUseSameType) {
+  Expected<std::string> value_result = std::string("value");
+  ASSERT_TRUE(value_result.has_value());
+  EXPECT_EQ(value_result.value(), "value");
+
+  Expected<std::string> error_result = unexpected(std::string("error"));
+  ASSERT_FALSE(error_result.has_value());
+  EXPECT_EQ(error_result.error(), "error");
+}
+
 }  // namespace
 }  // namespace PJ
