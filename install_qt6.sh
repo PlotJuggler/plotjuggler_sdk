@@ -13,11 +13,11 @@ fi
 
 if ! command -v aqt &>/dev/null; then
   echo "Installing aqtinstall..."
-  pip install aqtinstall
+  pip install 'aqtinstall>=3.1'
 fi
 
 echo "Installing Qt ${QT_VERSION} via aqtinstall..."
-aqt install-qt linux desktop "$QT_VERSION" gcc_64 \
+aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64 \
   --modules qtcharts qtwebsockets \
   --outputdir "${SCRIPT_DIR}/.qt"
 
