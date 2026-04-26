@@ -78,7 +78,17 @@ class ExtensionManager : public QObject {
   // Should be called once at application startup. Safe to call on any platform.
   void applyPendingUninstalls();
 
+  // Returns true if the extension is in the in-memory installed map AND its
+  // .so/.dll is still on disk. If the path has vanished (user deleted it
+  // outside the marketplace UI), self-evicts the stale entry and returns
+  // false. Subsequent reads then see the truth.
   bool isInstalled(const QString& id) const;
+
+  // Walks every entry in the in-memory installed map and verifies the on-disk
+  // path still exists. Evicts stale records and emits extensionEvictedExternally
+  // for each. Called from the marketplace dialog's Refresh button and showEvent
+  // so the displayed state always matches disk on dialog open.
+  void reconcileInstalledWithDisk();
 
   // Returns true if the extension is staged in the pending directory and will
   // become active after the next restart (Windows update path).
@@ -111,6 +121,12 @@ class ExtensionManager : public QObject {
   // be removed (DLL still loaded). The directory will be deleted on the next startup
   // via applyPendingUninstalls().
   void uninstallPendingRestart(const QString& id);
+
+  // Emitted when isInstalled() or reconcileInstalledWithDisk() observes that an
+  // installed plugin's path no longer exists on disk and self-evicts the
+  // in-memory record. UI layers (and PJ4's ExtensionCatalogService) can use this
+  // to refresh views without an explicit marketplace reload trip.
+  void extensionEvictedExternally(const QString& id);
 
  private:
   // Called by both constructors to finish setup after members are assigned.

@@ -313,7 +313,39 @@ void ExtensionManager::applyPendingUninstalls() {
 
 
 bool ExtensionManager::isInstalled(const QString& id) const {
-  return installed_.contains(id);
+  auto it = installed_.find(id);
+  if (it == installed_.end()) {
+    return false;
+  }
+  if (QFileInfo::exists(it->path)) {
+    return true;
+  }
+  // The .so/.dll was removed externally. Evict the stale entry so subsequent
+  // reads see the truth and so a future install of the same id starts clean.
+  // const_cast is the price of a const-correct public API; every UI caller
+  // (populateCards) iterates per-paint and would otherwise observe the lie.
+  qWarning("ExtensionManager: evicting stale installed entry for '%s' — file vanished: %s",
+           qPrintable(id), qPrintable(it->path));
+  auto* self = const_cast<ExtensionManager*>(this);
+  self->installed_.erase(it);
+  emit self->extensionEvictedExternally(id);
+  return false;
+}
+
+void ExtensionManager::reconcileInstalledWithDisk() {
+  // Snapshot the keys first; we can't mutate `installed_` while iterating it.
+  QStringList stale_ids;
+  for (auto it = installed_.constBegin(); it != installed_.constEnd(); ++it) {
+    if (!QFileInfo::exists(it->path)) {
+      stale_ids << it.key();
+    }
+  }
+  for (const QString& id : stale_ids) {
+    qWarning("ExtensionManager: reconcile evicting '%s' — file vanished: %s",
+             qPrintable(id), qPrintable(installed_[id].path));
+    installed_.remove(id);
+    emit extensionEvictedExternally(id);
+  }
 }
 
 bool ExtensionManager::hasPendingInstall(const QString& id) const {
