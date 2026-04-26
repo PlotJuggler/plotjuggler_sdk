@@ -26,7 +26,7 @@ class DownloadManager;
 //     schedules it for deletion at the next startup via applyPendingUninstalls()
 //   - At startup: applies any pending staged installs via applyPendingInstalls()
 //     and deletes any directories deferred from a previous uninstall via applyPendingUninstalls()
-//   - Discovers installed extensions by scanning extensions_dir and reading manifest.json
+//   - Discovers installed extensions by scanning plugin DSOs and reading their embedded manifest
 //
 // All constructor dependencies are injected, so tests can pass a DownloadManager stub
 // and temp directories to exercise the full flow without touching the real filesystem
@@ -45,10 +45,8 @@ class ExtensionManager : public QObject {
   // `extensions_dir` and `pending_dir` default to the standard user paths.
   // Pass QTemporaryDir paths in tests to get a clean, isolated state.
   explicit ExtensionManager(
-      DownloadManager* downloader,
-      const QString& extensions_dir = PlatformUtils::extensionsDir(),
-      const QString& pending_dir = PlatformUtils::pendingDir(),
-      QObject* parent = nullptr);
+      DownloadManager* downloader, const QString& extensions_dir = PlatformUtils::extensionsDir(),
+      const QString& pending_dir = PlatformUtils::pendingDir(), QObject* parent = nullptr);
 
   // Starts an async install of `ext` for the running platform.
   // Emits installStarted() synchronously before the download begins.
@@ -61,11 +59,10 @@ class ExtensionManager : public QObject {
   // be removed (e.g. a DLL is still loaded on Windows — F-14 staging is deferred).
   void uninstall(const QString& extension_id);
 
-  // Moves the current version to ~/.plotjuggler/.backup/<id>-<version>/ and
-  // re-installs from the registry. If the rename fails (cross-device or DLL locked
-  // on Windows) the old directory is deleted instead so the install gets a clean target.
-  // On success the backup path is recorded in installed.json so that future automatic
-  // rollback (F-13, April+) can find it.
+  // On Windows, downloads the replacement into .pending/<id>/ and leaves the
+  // active DLL in place until applyPendingInstalls() runs on the next startup.
+  // On other platforms, moves the current version to
+  // ~/.plotjuggler/.backup/<id>-<version>/ and installs the registry version.
   void update(const Extension& ext);
 
   // Moves any staged extensions from .pending/ into extensions/ and registers them.
@@ -78,17 +75,13 @@ class ExtensionManager : public QObject {
   // Should be called once at application startup. Safe to call on any platform.
   void applyPendingUninstalls();
 
-  // Returns true if the extension is in the in-memory installed map AND its
-  // .so/.dll is still on disk. If the path has vanished (user deleted it
-  // outside the marketplace UI), self-evicts the stale entry and returns
-  // false. Subsequent reads then see the truth.
+  // Returns true if the extension is present in the latest DSO discovery cache.
   bool isInstalled(const QString& id) const;
 
-  // Walks every entry in the in-memory installed map and verifies the on-disk
-  // path still exists. Evicts stale records and emits extensionEvictedExternally
-  // for each. Called from the marketplace dialog's Refresh button and showEvent
-  // so the displayed state always matches disk on dialog open.
-  void reconcileInstalledWithDisk();
+  // Rebuilds the installed cache from plugin DSOs on disk. Cheap enough for
+  // marketplace dialog open/refresh and keeps UI state aligned with external
+  // filesystem changes.
+  void refreshInstalledFromDisk();
 
   // Returns true if the extension is staged in the pending directory and will
   // become active after the next restart (Windows update path).
@@ -106,6 +99,12 @@ class ExtensionManager : public QObject {
   // Snapshot of the currently installed extensions, keyed by id.
   QMap<QString, InstalledExtension> installedExtensions() const;
 
+#ifdef PJ_MARKETPLACE_TESTING
+  void testDoInstall(const Extension& ext, bool staging, bool allow_existing = false) {
+    doInstall(ext, staging, allow_existing);
+  }
+#endif
+
  signals:
   void installStarted(const QString& id);
   void installProgress(const QString& id, int percent);
@@ -122,26 +121,12 @@ class ExtensionManager : public QObject {
   // via applyPendingUninstalls().
   void uninstallPendingRestart(const QString& id);
 
-  // Emitted when isInstalled() or reconcileInstalledWithDisk() observes that an
-  // installed plugin's path no longer exists on disk and self-evicts the
-  // in-memory record. UI layers (and PJ4's ExtensionCatalogService) can use this
-  // to refresh views without an explicit marketplace reload trip.
-  void extensionEvictedExternally(const QString& id);
-
  private:
   // Called by both constructors to finish setup after members are assigned.
   void initComponents();
 
-  void doInstall(const Extension& ext, bool staging);
-  void loadState();
-  void saveState();
+  void doInstall(const Extension& ext, bool staging, bool allow_existing = false);
   void disconnectDlConns();
-  // Writes pj_meta.json (host-owned bookkeeping: id, version, install_date)
-  // into <dir>/. This is the persistent record that loadState() reads at
-  // startup; it replaces the plugin-author-supplied manifest.json sidecar
-  // for host-side bookkeeping. Plugin self-description (capabilities,
-  // file_extensions, name, etc.) still comes from the .so's vt_->manifest_json.
-  void writeInstalledMeta(const Extension& ext, const QString& dir);
   void schedulePendingUninstall(const QString& path);
 
   DownloadManager* downloader_ = nullptr;

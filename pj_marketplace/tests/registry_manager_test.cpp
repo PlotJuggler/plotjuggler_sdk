@@ -6,6 +6,8 @@
 //   [3] Emits fetchStarted, fetchFinished, and fetchError with the right values
 //   [4] Handles network errors gracefully (connection refused, invalid JSON, missing fields)
 
+#include "pj_marketplace/registry_manager.hpp"
+
 #include <gtest/gtest.h>
 
 #include <QByteArray>
@@ -16,8 +18,6 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUrl>
-
-#include "pj_marketplace/registry_manager.hpp"
 
 // ---------------------------------------------------------------------------
 // Minimal HTTP/1.1 server — serves one fixed JSON body per connection
@@ -212,7 +212,10 @@ TEST_F(RegistryManagerTest, ParsesOptionalStringFields) {
   mgr.fetchRegistry(server_->url());
   ASSERT_TRUE(spy_finished.wait(3000));
 
-  const Extension& ext = mgr.extensions().at(0);
+  const QList<Extension> exts = mgr.extensions();
+  ASSERT_EQ(exts.size(), 1);
+
+  const Extension& ext = exts.at(0);
   EXPECT_EQ(ext.description, "Load CSV/TSV files");
   EXPECT_EQ(ext.author, "Test Author");
   EXPECT_EQ(ext.publisher, "test-org");

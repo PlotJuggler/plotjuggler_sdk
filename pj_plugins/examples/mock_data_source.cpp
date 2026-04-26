@@ -133,5 +133,5 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 }  // namespace
 
 PJ_DATA_SOURCE_PLUGIN(
-    MockDataSource, R"({"name":"Mock DataSource","version":"1.0.0",)"
+    MockDataSource, R"({"id":"mock-data-source","name":"Mock DataSource","version":"1.0.0",)"
                     R"("description":"Test data source for protocol and host integration"})")

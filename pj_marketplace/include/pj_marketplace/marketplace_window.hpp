@@ -1,11 +1,13 @@
 #pragma once
 
 #include <QDialog>
-#include <QSet>
 #include <QUrl>
+
 #include "pj_marketplace/extension.hpp"
 
-namespace Ui { class MarketplaceWindow; }
+namespace Ui {
+class MarketplaceWindow;
+}
 
 namespace PJ {
 
@@ -21,19 +23,19 @@ class MarketplaceWindow : public QDialog {
 
   // Overload for callers that own an ExtensionManager and want to inject it.
   // The window does not take ownership of ext_mgr.
-  explicit MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& registry_url,
-                             QWidget* parent = nullptr);
+  explicit MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& registry_url, QWidget* parent = nullptr);
 
   ~MarketplaceWindow() override;
 
-  bool installationsChanged() const { return installations_changed_; }
+  bool installationsChanged() const {
+    return installations_changed_;
+  }
 
  protected:
   bool eventFilter(QObject* obj, QEvent* event) override;
 
-  // Reconciles `installed_` against disk on every dialog open so phantom
-  // entries (`.so` removed externally between sessions) don't render as
-  // "Installed" badges. See ExtensionManager::reconcileInstalledWithDisk.
+  // Refreshes the installed DSO cache on every dialog open so external
+  // filesystem changes are reflected before cards are painted.
   void showEvent(QShowEvent* event) override;
 
  private slots:
@@ -54,17 +56,16 @@ class MarketplaceWindow : public QDialog {
   void openDetail(const QString& ext_id);
   void processInstallQueue();
 
-  Ui::MarketplaceWindow* ui_           = nullptr;
-  DownloadManager*       download_mgr_ = nullptr;
-  RegistryManager*       registry_mgr_ = nullptr;
-  ExtensionManager*      ext_mgr_      = nullptr;
-  QUrl                   registry_url_;
+  Ui::MarketplaceWindow* ui_ = nullptr;
+  DownloadManager* download_mgr_ = nullptr;
+  RegistryManager* registry_mgr_ = nullptr;
+  ExtensionManager* ext_mgr_ = nullptr;
+  QUrl registry_url_;
 
   QList<Extension> extensions_;  // populated from RegistryManager::fetchFinished
   QList<Extension> filtered_;
   QList<Extension> update_queue_;
-  QSet<QString>    pending_restart_ids_;
-  bool             installations_changed_ = false;
+  bool installations_changed_ = false;
 };
 
 }  // namespace PJ

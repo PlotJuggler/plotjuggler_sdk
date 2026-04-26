@@ -11,7 +11,6 @@ struct InstalledExtension {
   QDateTime install_date;
   QString path;  ///< Absolute path to ~/.plotjuggler/extensions/<id>/
   bool enabled = true;
-  QString backup_path;  ///< Optional: populated when a previous version was kept
 };
 
 }  // namespace PJ

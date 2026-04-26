@@ -41,7 +41,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
 | **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
 |                    | Rollback             | Automatic restoration if a plugin fails to load               |
-|                    | Persistent state     | Installed state derived from disk — each extension's manifest.json is the source of truth |
+|                    | Persistent state     | Installed state derived from plugin DSOs; each embedded plugin manifest is the source of truth |
 |                    | Registry URL settings | Configure registry URL at runtime via ⚙ settings dialog; change triggers immediate refresh |
 |                    | Registry URL persistence | Last configured registry URL saved and restored between sessions |
 | **UI/UX**          | Download progress    | Progress bar in status bar                                    |
@@ -55,7 +55,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | **Build**      | Cross-platform compilation | Matrix build for Linux, Windows, and macOS                 |
 |                | Static linking             | All dependencies embedded in the artifact                  |
 |                | Dependency management      | Support for Conan (current) and Pixi (future)              |
-| **Packaging**  | ZIP generation             | Automatic packaging with manifest, binaries, and resources |
+| **Packaging**  | ZIP generation             | Automatic packaging with plugin binaries and resources |
 |                | Checksums                  | Automatic SHA256 generation per artifact                   |
 |                | Versioning                 | Version extraction from git tag                            |
 | **Publishing** | GitHub Release             | Automatic release creation with attached artifacts         |
@@ -87,7 +87,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | **Registry** | Static JSON file with the catalog of available extensions. |
 | **Plugin SDK** | Abstract library (no Qt) that plugins use for UI and data access. |
 | **Artifact** | Compiled binary of an extension for a specific platform. |
-| **Manifest** | JSON file inside the ZIP describing the extension contents. |
+| **Embedded manifest** | JSON string exported by each plugin DSO describing the installed plugin. |
 
 ---
 
@@ -104,7 +104,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | F-05 | Show selected extension detail | Clicking an extension shows full information panel |
 | F-06 | Download ZIP with SHA256 verification | Download fails if checksum doesn't match |
 | F-07 | Extract ZIP to extensions directory | ZIP contents are extracted to correct location |
-| F-08 | Register installed extension | Installed state is derived from disk by scanning extensions_dir and reading manifest.json from each subdirectory |
+| F-08 | Register installed extension | Installed state is derived from disk by scanning extension DSOs and reading each embedded plugin manifest |
 | F-09 | Detect updates (local vs registry version) | User sees "Update available" badge when newer version exists |
 | F-10 | Uninstall extension | User can remove installed extensions |
 
@@ -116,7 +116,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | F-25 | Persist registry URL between sessions | The last configured registry URL is saved and automatically restored on next launch |
 | F-11 | Local registry cache with TTL | Registry is cached locally, refreshed after expiration |
 | F-12 | Backup previous version on updates | Old version saved before overwriting |
-| F-13 | Automatic rollback if plugin fails | If plugin crashes on load, previous version is restored |
+| F-13 | Automatic rollback if plugin fails | Deferred; backups may exist, but automatic restore is not implemented |
 | F-14 | Windows staging: apply on restart | Updates downloaded but applied only after restart (Windows) |
 | F-15 | Enable/Disable without uninstalling | User can deactivate extension without removing files |
 | F-16 | Cancel download in progress | User can abort a download |
@@ -201,7 +201,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 **Postconditions:** Extension removed, local state updated
 
-### UC-04: Plugin Fails to Load (Rollback)
+### UC-04: Plugin Fails to Load (Rollback Deferred)
 
 **Actor:** System
 **Preconditions:** Extension recently updated, backup exists
@@ -209,11 +209,10 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 1. PlotJuggler starts
 2. System attempts to load plugin
 3. Plugin crashes/fails
-4. System detects failure
-5. System restores backup version
-6. System notifies user of rollback
+4. System reports the plugin load failure
+5. Automatic backup restore is deferred
 
-**Postconditions:** Previous version restored, user notified
+**Postconditions:** User is notified; any backup remains available for manual recovery
 
 ### UC-05: Developer Publishes Extension
 
@@ -222,7 +221,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 **Flow:**
 1. Developer creates tag (v1.0.0)
 2. CI compiles for all platforms
-3. CI packages ZIPs with manifest
+3. CI packages ZIPs with plugin binaries and resources
 4. CI creates GitHub Release
 5. CI submits PR to registry repository
 6. Registry validates schema and URLs
@@ -278,16 +277,16 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | Scenario | Expected Behavior |
 |----------|-------------------|
 | Plugin DLL in use (can't overwrite) | Stage update, apply on restart |
-| User cancels pending update | Remove staged files |
+| Invalid staged update | Remove staged files and leave active install untouched |
 | PlotJuggler crashes before applying update | Pending update remains for next start |
 
 ### 8.5 Plugin Loading
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
-| Plugin crashes on load | Rollback to backup if exists, else disable |
+| Plugin crashes on load | Report load failure; automatic rollback is deferred |
 | Plugin incompatible with current SDK | Clear error message, don't load |
-| Manifest missing or invalid | Extension marked as corrupted |
+| Manifest missing or invalid | Reject install or staged promotion with diagnostics |
 
 ---
 
@@ -383,20 +382,22 @@ The minimum viable product is successful if:
 ### 11.2 Installed State
 
 There is no separate local state file. Installed extensions are discovered at runtime by
-scanning `extensions_dir` and reading the `manifest.json` present in each subdirectory.
-The `manifest.json` is part of the artifact ZIP and is never modified by the marketplace.
+scanning `extensions_dir`, loading candidate plugin DSOs, and reading each DSO's embedded
+plugin manifest. The marketplace never writes installed-state or plugin-manifest sidecars.
+Windows staged updates use a transient `.pj_pending_install` intent file so restart-time
+promotion can revalidate the staged DSO against the registry id/version that created it.
 
-Fields read from `manifest.json`:
+Fields read from the embedded plugin manifest:
 
 | Field | Source |
 |-------|--------|
-| `id` | `manifest.json → "id"` |
-| `version` | `manifest.json → "version"` |
+| `id` | Embedded plugin manifest key `"id"` |
+| `version` | Embedded plugin manifest key `"version"` |
 | `install_date` | Last-modified timestamp of the extension root directory |
 | `path` | The scanned subdirectory itself |
 | `enabled` | Always `true` by default (no persistence yet) |
 
-### 11.3 Extension Manifest Schema
+### 11.3 Registry Extension Schema
 
 ```json
 {
@@ -420,7 +421,7 @@ Fields read from `manifest.json`:
 
 | # | Topic | Options | Impact |
 |---|-------|---------|--------|
-| 1 | ZIP library | QuaZip vs minizip vs libzip | Build complexity |
+| 1 | ZIP library | Resolved: libarchive | Build complexity |
 | 2 | Markdown rendering | QTextBrowser vs plain text | README display |
 | 3 | Metrics source | Registry JSON vs GitHub API | Data freshness |
 | 4 | Icons | URL in registry vs bundled in ZIP | Download size |

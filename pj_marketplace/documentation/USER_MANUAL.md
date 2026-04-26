@@ -144,7 +144,7 @@ To re-enable:
 
 2. **Modify the plugin:**
    - Edit `src/my_plugin.cpp`
-   - Update `manifest.json.in` with your extension info
+   - Update the embedded manifest string passed to the SDK export macro
    - Add UI in `ui/my_dialog.ui` (optional)
 
 3. **Build locally:**
@@ -175,36 +175,23 @@ To re-enable:
    - Review the auto-generated PR
    - Merge to add to public marketplace
 
-### 3.2 Extension Manifest
+### 3.2 Embedded Plugin Manifest
 
-Every extension needs a `manifest.json`:
+Every plugin DSO must export an embedded manifest through the SDK macro:
 
-```json
-{
-  "id": "my-extension",
-  "version": "1.0.0",
-  "min_plotjuggler_version": "4.0.0",
-  "plugins": [
-    {
-      "name": "MyPlugin",
-      "type": "data_loader",
-      "library": "libmy_plugin",
-      "ui_file": "my_dialog.ui"
-    }
-  ]
-}
+```cpp
+PJ_DATA_SOURCE_PLUGIN(MyPlugin,
+    R"({"id":"my-extension","name":"My Extension","version":"1.0.0"})")
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | Yes | Unique identifier (lowercase, hyphens) |
+| `name` | Yes | Human-readable plugin name |
 | `version` | Yes | Semantic version (X.Y.Z) |
-| `min_plotjuggler_version` | Yes | Minimum compatible PJ version |
-| `plugins` | Yes | Array of plugins in this extension |
-| `plugins[].name` | Yes | C++ class name |
-| `plugins[].type` | Yes | data_loader, data_streamer, parser, toolbox |
-| `plugins[].library` | Yes | Library name without extension |
-| `plugins[].ui_file` | No | Qt Designer .ui file |
+| `encoding` | Parsers only | Message encoding handled by a parser plugin |
+| `file_extensions` | No | File suffixes handled by a file source plugin |
+| `capabilities` | No | Optional capability tags |
 
 ### 3.3 Plugin Types
 
@@ -253,12 +240,10 @@ If the marketplace is broken:
 ```bash
 # Linux/macOS
 rm -rf ~/.plotjuggler/extensions/
-rm ~/.plotjuggler/installed.json
 rm -rf ~/.plotjuggler/.cache/
 
 # Windows
 rmdir /s %USERPROFILE%\.plotjuggler\extensions
-del %USERPROFILE%\.plotjuggler\installed.json
 rmdir /s %USERPROFILE%\.plotjuggler\.cache
 ```
 
@@ -282,13 +267,12 @@ rmdir /s %USERPROFILE%\.plotjuggler\.cache
 ~/.plotjuggler/
 ├── extensions/           # Installed extensions
 │   └── my-extension/
-│       ├── manifest.json
 │       └── libmy_plugin.so
 ├── .pending/            # Staged updates (Windows)
-├── .backup/             # Backup of previous versions
+│   └── my-extension/.pj_pending_install
+├── .backup/             # Non-Windows update backups; automatic rollback is deferred
 ├── .cache/              # Registry cache
 │   └── registry.json
-└── installed.json       # Local state
 ```
 
 ### 5.2 Registry URL
@@ -367,7 +351,7 @@ This is the **PlotJuggler Marketplace**, an extension distribution system for Pl
 | Installation logic | `src/core/ExtensionManager.cpp` |
 | Download handling | `src/core/DownloadManager.cpp` |
 | Main UI | `src/ui/MarketplaceWindow.cpp` |
-| Extension list | `src/ui/ExtensionListWidget.cpp` |
+| Extension detail dialog | `src/ui/extension_detail_dialog.cpp` |
 | Data models | `src/models/` |
 
 ### 6.5 Testing

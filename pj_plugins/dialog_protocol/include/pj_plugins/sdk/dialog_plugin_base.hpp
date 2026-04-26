@@ -236,7 +236,10 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 
 }  // namespace PJ
 
-/// Macro to export the vtable entry point for a plugin class.
+/// Macro to export only the dialog vtable entry point for a plugin class.
+///
+/// Use this when the dialog is co-resident with another plugin family that
+/// already exports `pj_plugin_abi_version`.
 ///
 /// Emits two things:
 ///   1. The `PJ_get_dialog_vtable()` C symbol the host loader resolves
@@ -245,7 +248,7 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 ///      other plugin code (notably a host's `getDialog()` override) obtain
 ///      the vtable pointer type-safely via `PJ::borrowDialog(member)` —
 ///      no `extern "C"` forward declaration required in the plugin source.
-#define PJ_DIALOG_PLUGIN(ClassName)                                                                       \
+#define PJ_DIALOG_PLUGIN_VTABLE(ClassName)                                                                \
   extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept {                 \
     static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate([]() noexcept -> void* { \
       try {                                                                                               \
@@ -262,3 +265,8 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
     return PJ_get_dialog_vtable();                                                                        \
   }                                                                                                       \
   }
+
+/// Macro to export a standalone dialog plugin DSO.
+#define PJ_DIALOG_PLUGIN(ClassName)                                                  \
+  extern "C" PJ_DIALOG_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION; \
+  PJ_DIALOG_PLUGIN_VTABLE(ClassName)

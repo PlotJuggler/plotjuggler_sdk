@@ -2,6 +2,8 @@
 
 > **Target:** Integrated prototype by end of March / early April 2026
 > **Owner:** Pablo (IBRobotics)
+> **Status:** Historical planning document; see `ARCHITECTURE.md` and
+> `REQUIREMENTS.md` for current implementation behavior.
 
 ---
 
@@ -84,7 +86,7 @@
 | F-05 | Show selected extension detail |
 | F-06 | Download ZIP with SHA256 verification |
 | F-07 | Extract ZIP to extensions directory |
-| F-08 | Register installed extension (installed.json) |
+| F-08 | Register installed extension from embedded DSO manifest |
 | F-10 | Uninstall extension |
 
 ### Daily Breakdown
@@ -95,7 +97,7 @@
 | Fri | 6 Mar | UI skeleton: MarketplaceWindow + list | Window with splitter |
 | Mon | 9 Mar | ExtensionCardDelegate + search | Nice cards, filter works |
 | Tue | 10 Mar | RegistryManager: fetch + parse JSON | Loads from GitHub |
-| Wed | 11 Mar | DownloadManager + SHA256 + ZipExtractor | Installs dummy ZIP |
+| Wed | 11 Mar | DownloadManager + SHA256 + libarchive extraction | Installs dummy ZIP |
 
 ### Success Criteria Week 1
 
@@ -150,7 +152,7 @@
 | Day | Date | Main Task | Deliverable |
 |-----|------|-----------|-------------|
 | Thu | 19 Mar | Create example plugin: Simple CSV Loader | Minimal plugin |
-| Fri | 20 Mar | Package as ZIP with manifest | csv-loader-linux-x86_64.zip |
+| Fri | 20 Mar | Package as ZIP with embedded plugin manifest | csv-loader-linux-x86_64.zip |
 | Mon | 23 Mar | Publish to test registry | GitHub Release + registry.json |
 | Tue | 24 Mar | Testing: install from marketplace | Plugin appears in PJ |
 | Wed | 25 Mar | Testing: use the plugin | Load a real CSV file |
@@ -211,7 +213,7 @@
 | F-05 | Show extension detail | W1 | ⬜ |
 | F-06 | Download ZIP with SHA256 | W1 | ⬜ |
 | F-07 | Extract to extensions dir | W1 | ⬜ |
-| F-08 | Register in installed.json | W1 | ⬜ |
+| F-08 | Register from embedded DSO manifest | W1 | ⬜ |
 | F-09 | Detect updates | W3 | ⬜ |
 | F-10 | Uninstall extension | W1 | ⬜ |
 

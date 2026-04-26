@@ -22,4 +22,5 @@ class MockJsonParser : public PJ::MessageParserPluginBase {
 
 }  // namespace
 
-PJ_MESSAGE_PARSER_PLUGIN(MockJsonParser, R"({"name":"Mock JSON Parser","version":"1.0.0","encoding":"json"})")
+PJ_MESSAGE_PARSER_PLUGIN(
+    MockJsonParser, R"({"id":"mock-json-parser","name":"Mock JSON Parser","version":"1.0.0","encoding":"json"})")

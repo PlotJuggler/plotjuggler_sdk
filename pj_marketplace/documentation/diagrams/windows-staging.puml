@@ -6,20 +6,22 @@ title Windows Staging Flow
 start
 :Download ZIP;
 :Extract to .pending/{id}/;
-note right: Staging folder
+:Load DSO manifest;
+:Validate registry id/version;
+:Write .pj_pending_install intent;
 :Notify "Restart required";
 stop
 
 start
 :PlotJuggler restarts;
+:Read .pj_pending_install intent;
+:Validate staged DSO manifest;
+if (Valid?) then (yes)
 :Move .pending/{id}/ to extensions/{id}/;
-note right: Previous backup in\n.backup/{id}-{ver}/
-:Load plugin;
-if (Load successful?) then (yes)
   :Plugin active;
 else (no)
-  :Restore from backup;
-  :Notify rollback;
+  :Remove broken stage;
+  :Notify install error;
 endif
 stop
 @enduml

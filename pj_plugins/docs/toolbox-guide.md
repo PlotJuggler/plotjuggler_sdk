@@ -25,9 +25,9 @@ editor, custom data transforms.
 1. Subclass `PJ::ToolboxPluginBase`
 2. Override `capabilities()` (required) and optionally `bind()` (for
    acquiring services), `saveConfig()`, `loadConfig()`, `getDialog()`
-3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"name":"...","version":"..."})")`
+3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. If you ship an embedded dialog, also declare it as a
-   `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog)`
+   `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN_VTABLE(YourDialog)`
 5. Build as a shared library linking `pj_base` (+ `pj_dialog_sdk` if
    you have a dialog)
 
@@ -98,7 +98,7 @@ At file scope, after the class definition:
 
 ```cpp
 PJ_TOOLBOX_PLUGIN(MyToolbox,
-    R"({"name":"My Toolbox","version":"1.0.0",)"
+    R"({"id":"my-toolbox","name":"My Toolbox","version":"1.0.0",)"
     R"("description":"Apply FFT to selected signals"})")
 ```
 

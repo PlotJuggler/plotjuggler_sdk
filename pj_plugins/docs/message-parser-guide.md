@@ -23,7 +23,7 @@ the host, which routes them to the appropriate parser based on encoding name.
 1. Subclass `PJ::MessageParserPluginBase`
 2. Override `parse()` (required) and optionally `bindSchema()`, `saveConfig()`,
    `loadConfig()`
-3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"name":"...","version":"...","encoding":"..."})")`
+3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"...","encoding":"..."})")`
 4. Build as a shared library linking `pj_base`
 
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
@@ -79,7 +79,7 @@ manifest string literal (see Manifest Schema below):
 
 ```cpp
 PJ_MESSAGE_PARSER_PLUGIN(MyJsonParser,
-    R"({"name":"JSON Parser","version":"1.0.0","encoding":"json"})")
+    R"({"id":"json-parser","name":"JSON Parser","version":"1.0.0","encoding":"json"})")
 ```
 
 This generates the `extern "C"` entry point that the host resolves via dlsym.
@@ -271,7 +271,7 @@ needed.
 │    loadConfig(json) applies it   │
 │                                  │
 │  PJ_MESSAGE_PARSER_PLUGIN(...)   │  → exports parser vtable
-│  PJ_DIALOG_PLUGIN(ProtoDialog)   │  → exports dialog vtable
+│  PJ_DIALOG_PLUGIN_VTABLE(ProtoDialog) │  → exports dialog vtable
 └──────────────────────────────────┘
 ```
 

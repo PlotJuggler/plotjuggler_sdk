@@ -79,5 +79,5 @@ class MockToolbox : public PJ::ToolboxPluginBase {
 }  // namespace
 
 PJ_TOOLBOX_PLUGIN(
-    MockToolbox, R"({"name":"Mock Toolbox","version":"1.0.0",)"
+    MockToolbox, R"({"id":"mock-toolbox","name":"Mock Toolbox","version":"1.0.0",)"
                  R"("description":"Test toolbox for protocol and host integration"})")

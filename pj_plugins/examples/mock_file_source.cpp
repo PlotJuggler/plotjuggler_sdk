@@ -56,6 +56,6 @@ class MockFileSource : public PJ::FileSourceBase {
 }  // namespace
 
 PJ_DATA_SOURCE_PLUGIN(
-    MockFileSource, R"({"name":"Mock File Source","version":"1.0.0",)"
+    MockFileSource, R"({"id":"mock-file-source","name":"Mock File Source","version":"1.0.0",)"
                     R"("description":"Test FileSourceBase lifecycle and progress",)"
                     R"("file_extensions":[".mock"]})")

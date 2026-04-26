@@ -1,35 +1,167 @@
-#include "pj_marketplace/extension_manager.hpp"
-
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QStorageInfo>
 #include <QVersionNumber>
+#include <filesystem>
 
 #include "pj_marketplace/download_manager.hpp"
+#include "pj_marketplace/extension_manager.hpp"
 #include "pj_marketplace/platform_utils.hpp"
+#include "pj_plugins/host/plugin_catalog.hpp"
 
 namespace PJ {
+
+namespace {
+
+static constexpr const char* kPendingUninstallMarker = ".pj_pending_uninstall";
+static constexpr const char* kPendingInstallIntent = ".pj_pending_install";
+
+QString extRoot(const QString& extensions_dir, const QString& id) {
+  return QDir(extensions_dir).absoluteFilePath(id);
+}
+
+QString pendingRoot(const QString& pending_dir, const QString& id) {
+  return QDir(pending_dir).absoluteFilePath(id);
+}
+
+struct DirectoryDiscovery {
+  bool found_plugin = false;
+  QString error;
+  InstalledExtension record;
+};
+
+struct PendingInstallIntent {
+  bool valid = false;
+  QString id;
+  QString version;
+  QString error;
+};
+
+QString pendingInstallIntentPath(const QString& root) {
+  return QDir(root).absoluteFilePath(kPendingInstallIntent);
+}
+
+DirectoryDiscovery discoverExtensionDirectory(const QString& ext_root) {
+  DirectoryDiscovery result;
+  const auto scan = scanPluginDsos(std::filesystem::path(ext_root.toStdString()));
+  if (!scan) {
+    result.error = QString::fromStdString(scan.error());
+    return result;
+  }
+
+  for (const auto& diag : scan->diagnostics) {
+    qWarning(
+        "ExtensionManager: plugin discovery diagnostic for '%s': %s", diag.path.string().c_str(), diag.message.c_str());
+  }
+
+  if (scan->plugins.empty()) {
+    if (!scan->diagnostics.empty()) {
+      result.error = QString::fromStdString(scan->diagnostics.front().message);
+      return result;
+    }
+    result.error = QStringLiteral("no valid plugin DSO found");
+    return result;
+  }
+
+  const PluginDescriptor& first = scan->plugins.front();
+  for (const PluginDescriptor& descriptor : scan->plugins) {
+    if (descriptor.id != first.id) {
+      result.error = QStringLiteral("multiple embedded plugin ids in one extension directory: \"%1\" and \"%2\"")
+                         .arg(QString::fromStdString(first.id), QString::fromStdString(descriptor.id));
+      return result;
+    }
+    if (descriptor.version != first.version) {
+      result.error = QStringLiteral("multiple embedded plugin versions in one extension directory for \"%1\"")
+                         .arg(QString::fromStdString(first.id));
+      return result;
+    }
+  }
+
+  result.found_plugin = true;
+  result.record.id = QString::fromStdString(first.id);
+  result.record.version = QString::fromStdString(first.version);
+  result.record.install_date = QFileInfo(ext_root).lastModified();
+  result.record.path = ext_root;
+  result.record.enabled = true;
+  return result;
+}
+
+QString validateRegistryIntent(
+    const DirectoryDiscovery& discovered, const QString& registry_id, const QString& registry_version) {
+  if (!discovered.found_plugin) {
+    return QString("Installed artifact is not a valid plugin: %1").arg(discovered.error);
+  }
+  if (discovered.record.id != registry_id) {
+    return QString("Embedded plugin id \"%1\" does not match registry id \"%2\"")
+        .arg(discovered.record.id, registry_id);
+  }
+  if (discovered.record.version != registry_version) {
+    return QString("Embedded plugin version \"%1\" does not match registry version \"%2\"")
+        .arg(discovered.record.version, registry_version);
+  }
+  return {};
+}
+
+bool writePendingInstallIntent(const QString& root, const Extension& ext, QString* error) {
+  QFile file(pendingInstallIntentPath(root));
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    if (error != nullptr) {
+      *error = QString("Could not write staged install intent: %1").arg(file.errorString());
+    }
+    return false;
+  }
+
+  const QByteArray data = ext.id.toUtf8() + '\n' + ext.version.toUtf8() + '\n';
+  if (file.write(data) != data.size()) {
+    if (error != nullptr) {
+      *error = QString("Could not write staged install intent: %1").arg(file.errorString());
+    }
+    return false;
+  }
+  return true;
+}
+
+PendingInstallIntent readPendingInstallIntent(const QString& root) {
+  PendingInstallIntent intent;
+  QFile file(pendingInstallIntentPath(root));
+  if (!file.exists()) {
+    intent.error = "Staged install is missing registry intent";
+    return intent;
+  }
+  if (!file.open(QIODevice::ReadOnly)) {
+    intent.error = QString("Could not read staged install intent: %1").arg(file.errorString());
+    return intent;
+  }
+
+  const QList<QByteArray> lines = file.readAll().split('\n');
+  if (lines.size() < 2 || lines[0].trimmed().isEmpty() || lines[1].trimmed().isEmpty()) {
+    intent.error = "Staged install registry intent is invalid";
+    return intent;
+  }
+
+  intent.valid = true;
+  intent.id = QString::fromUtf8(lines[0].trimmed());
+  intent.version = QString::fromUtf8(lines[1].trimmed());
+  return intent;
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
 ExtensionManager::ExtensionManager()
-    : QObject(nullptr),
-      extensions_dir_(PlatformUtils::extensionsDir()),
-      pending_dir_(PlatformUtils::pendingDir()) {
+    : QObject(nullptr), extensions_dir_(PlatformUtils::extensionsDir()), pending_dir_(PlatformUtils::pendingDir()) {
   initComponents();
 }
 
-ExtensionManager::ExtensionManager(DownloadManager* downloader, const QString& extensions_dir,
-                                   const QString& pending_dir, QObject* parent)
+ExtensionManager::ExtensionManager(
+    DownloadManager* downloader, const QString& extensions_dir, const QString& pending_dir, QObject* parent)
     : QObject(parent), downloader_(downloader), extensions_dir_(extensions_dir), pending_dir_(pending_dir) {
-    initComponents();
+  initComponents();
 }
 
 void ExtensionManager::initComponents() {
@@ -37,34 +169,31 @@ void ExtensionManager::initComponents() {
     downloader_ = new DownloadManager(this);
   }
   QDir().mkpath(extensions_dir_);
-  loadState();
+  refreshInstalledFromDisk();
 }
-
-static constexpr const char* kManifestFileName = "manifest.json";
-static constexpr const char* kPendingUninstallMarker = ".pj_pending_uninstall";
 
 // ---------------------------------------------------------------------------
 // Public interface
 // ---------------------------------------------------------------------------
 
 void ExtensionManager::install(const Extension& ext) {
+  refreshInstalledFromDisk();
   doInstall(ext, /*staging=*/false);
 }
 
-void ExtensionManager::doInstall(const Extension& ext, bool staging) {
+void ExtensionManager::doInstall(const Extension& ext, bool staging, bool allow_existing) {
   if (!pending_id_.isEmpty()) {
     emit installError(ext.id, QString("Install of \"%1\" is already in progress").arg(pending_id_));
     emit installFinished(ext.id, false);
     return;
   }
 
-  if (isInstalled(ext.id)) {
+  if (!allow_existing && isInstalled(ext.id)) {
     emit installError(ext.id, QString("Extension \"%1\" is already installed").arg(ext.id));
     emit installFinished(ext.id, false);
     return;
   }
 
-  // Resolve the artifact for the running platform before touching the network.
   const QString platform = PlatformUtils::currentPlatform();
   if (!ext.platforms.contains(platform)) {
     emit installError(ext.id, QString("No artifact available for platform \"%1\"").arg(platform));
@@ -73,9 +202,10 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
   }
   const Platform& artifact = ext.platforms[platform];
 
-  // When staging (Windows update), DLLs that are currently loaded cannot be overwritten.
-  // Extract to a staging directory (.pending/) and let the user restart to activate.
   const QString dest_dir = staging ? pending_dir_ : extensions_dir_;
+  if (staging) {
+    QDir(pendingRoot(pending_dir_, ext.id)).removeRecursively();
+  }
 
   pending_id_ = ext.id;
   emit installStarted(ext.id);
@@ -88,8 +218,6 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
 
         if (total > 0 && !disk_space_checked_) {
           disk_space_checked_ = true;
-          // Extracted content is typically 2-4x the compressed size; 3 is a conservative estimate.
-          // If Content-Length is absent (total == 0) the check is skipped entirely.
           constexpr qint64 kExtractionOverheadFactor = 3;
           if (QStorageInfo(extensions_dir_).bytesAvailable() < total * kExtractionOverheadFactor) {
             cancel_reason_ = "Not enough disk space to install the extension";
@@ -102,7 +230,6 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
         emit installProgress(pending_id_, percent);
       });
 
-  // Capture ext and staging by value: they may go out of scope before the fetch completes.
   dl_finished_conn_ = connect(downloader_, &DownloadManager::finished, this, [this, ext, staging](int id) {
     if (id != pending_op_id_) {
       return;
@@ -114,29 +241,30 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
     pending_id_.clear();
     pending_op_id_ = -1;
 
-    if (staging) {
-      // Persist host-owned metadata into the staged dir so applyPendingInstalls
-      // (next startup) can read id/version without parsing the plugin-author
-      // manifest.json sidecar.
-      writeInstalledMeta(ext, pending_dir_ + "/" + ext.id);
-      emit installPendingRestart(finished_id);
-    } else {
-      const QString ext_root = extensions_dir_ + "/" + ext.id;
-
-      InstalledExtension record;
-      record.id = ext.id;
-      record.version = ext.version;  // authoritative source: registry struct
-      record.install_date = QDateTime::currentDateTimeUtc();
-      record.path = ext_root;
-      record.enabled = true;
-
-      // Persist host-owned bookkeeping. loadState() at next startup reads this
-      // file (with a manifest.json fallback for legacy installs).
-      writeInstalledMeta(ext, ext_root);
-
-      installed_[ext.id] = record;
-      emit installFinished(finished_id, true);
+    const QString root = staging ? pendingRoot(pending_dir_, ext.id) : extRoot(extensions_dir_, ext.id);
+    const DirectoryDiscovery discovered = discoverExtensionDirectory(root);
+    const QString validation_error = validateRegistryIntent(discovered, ext.id, ext.version);
+    if (!validation_error.isEmpty()) {
+      QDir(root).removeRecursively();
+      emit installError(finished_id, validation_error);
+      emit installFinished(finished_id, false);
+      return;
     }
+
+    if (staging) {
+      QString intent_error;
+      if (!writePendingInstallIntent(root, ext, &intent_error)) {
+        QDir(root).removeRecursively();
+        emit installError(finished_id, intent_error);
+        emit installFinished(finished_id, false);
+        return;
+      }
+      emit installPendingRestart(finished_id);
+      return;
+    }
+
+    installed_[ext.id] = discovered.record;
+    emit installFinished(finished_id, true);
   });
 
   dl_failed_conn_ = connect(downloader_, &DownloadManager::failed, this, [this](int id, const QString& error) {
@@ -150,9 +278,6 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
     pending_id_.clear();
     pending_op_id_ = -1;
 
-    // Partial files are intentionally preserved on failure: the directory may have contained
-    // a previous valid installation that pre-dates this failed attempt. Cleanup on cancel
-    // is handled separately because a cancel is always user-initiated on a fresh install.
     emit installError(failed_id, error);
     emit installFinished(failed_id, false);
   });
@@ -168,10 +293,8 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
     pending_op_id_ = -1;
     disk_space_checked_ = false;
 
-    // Remove any partial files written to disk before the cancel arrived.
-    // Both possible locations are cleaned regardless of platform to handle edge cases.
-    QDir(extensions_dir_ + "/" + cancelled_id).removeRecursively();
-    QDir(pending_dir_ + "/" + cancelled_id).removeRecursively();
+    QDir(extRoot(extensions_dir_, cancelled_id)).removeRecursively();
+    QDir(pendingRoot(pending_dir_, cancelled_id)).removeRecursively();
 
     const QString reason = cancel_reason_.isEmpty() ? "Installation was cancelled" : cancel_reason_;
     cancel_reason_.clear();
@@ -183,6 +306,8 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging) {
 }
 
 void ExtensionManager::uninstall(const QString& extension_id) {
+  refreshInstalledFromDisk();
+
   if (!installed_.contains(extension_id)) {
     emit uninstallError(extension_id, QString("Extension \"%1\" is not installed").arg(extension_id));
     emit uninstallFinished(extension_id, false);
@@ -193,8 +318,6 @@ void ExtensionManager::uninstall(const QString& extension_id) {
 
   if (!QDir(dir_path).removeRecursively()) {
     if (PlatformUtils::isWindows()) {
-      // The DLL is still mapped by the host process. Deregister the extension immediately
-      // and mark the directory for deletion at the next startup.
       schedulePendingUninstall(dir_path);
       installed_.remove(extension_id);
       emit uninstallPendingRestart(extension_id);
@@ -211,41 +334,27 @@ void ExtensionManager::uninstall(const QString& extension_id) {
 }
 
 void ExtensionManager::update(const Extension& ext) {
-  QString backup_path;
+  refreshInstalledFromDisk();
+
+  if (PlatformUtils::isWindows()) {
+    doInstall(ext, /*staging=*/true, /*allow_existing=*/true);
+    return;
+  }
 
   if (installed_.contains(ext.id)) {
     const QString current_version = installed_[ext.id].version;
-    const QString current_path    = installed_[ext.id].path;
+    const QString current_path = installed_[ext.id].path;
 
-    // Back up the current version before downloading the new one (F-12).
-    // If the install subsequently fails, the files remain in backup_path and
-    // can be restored manually until automatic rollback (F-13, April+) is implemented.
     const QString candidate = PlatformUtils::backupDir() + "/" + ext.id + "-" + current_version;
     QDir().mkpath(PlatformUtils::backupDir());
 
     if (!QDir().rename(current_path, candidate)) {
-      emit installError(ext.id,
-          QString("Could not back up \"%1\" — update aborted to prevent data loss")
-              .arg(current_path));
+      emit installError(
+          ext.id, QString("Could not back up \"%1\" — update aborted to prevent data loss").arg(current_path));
       emit installFinished(ext.id, false);
       return;
     }
-    backup_path = candidate;
-
     installed_.remove(ext.id);
-  }
-
-  // Once the install completes successfully, attach the backup location to the
-  // new record so future rollback code (F-13, April+) can find it.
-  if (!backup_path.isEmpty()) {
-    connect(this, &ExtensionManager::installFinished, this,
-        [this, backup_path](const QString& finished_id, bool success) {
-          if (success && installed_.contains(finished_id)) {
-            installed_[finished_id].backup_path = backup_path;
-            saveState();
-          }
-        },
-        Qt::SingleShotConnection);
   }
 
   doInstall(ext, PlatformUtils::isWindows());
@@ -258,51 +367,64 @@ void ExtensionManager::applyPendingInstalls() {
   }
 
   for (const QFileInfo& entry : pending.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-    const QString src = entry.absoluteFilePath();
-    // Directory name IS the id — install() always creates pending_dir_/<ext.id>/,
-    // so we don't need to parse a sidecar to recover it.
-    const QString id = entry.fileName();
-    if (id.isEmpty()) {
-      continue;
-    }
-    // Sanity: a real staged install always contains at least the plugin binary.
-    // A bare directory is a sign of a broken staging operation; skip it rather
-    // than promote a phantom installation that would later confuse loadState.
-    if (QDir(src).entryInfoList(QDir::Files | QDir::NoDotAndDotDot).isEmpty()) {
-      continue;
-    }
-    const QString dst = extensions_dir_ + "/" + id;
+    const QString staged_dir = entry.absoluteFilePath();
+    const QString staged_name = entry.fileName();
 
-    // Version comes from the host-owned pj_meta.json that doInstall() wrote
-    // when staging completed. Fall back to manifest.json for legacy staged
-    // installs from before the sidecar removal.
-    QString version;
-    QFile pj_meta_file(src + "/pj_meta.json");
-    if (pj_meta_file.open(QIODevice::ReadOnly)) {
-      version = QJsonDocument::fromJson(pj_meta_file.readAll()).object()["version"].toString();
-    } else {
-      QFile legacy(src + "/" + kManifestFileName);
-      if (legacy.open(QIODevice::ReadOnly)) {
-        version = QJsonDocument::fromJson(legacy.readAll()).object()["version"].toString();
-      }
-    }
+    auto failStagedInstall = [&](const QString& signal_id, const QString& message) {
+      qWarning(
+          "ExtensionManager: staged install '%s' failed validation: %s", qPrintable(staged_dir), qPrintable(message));
+      QDir(staged_dir).removeRecursively();
+      emit installError(signal_id, message);
+      emit installFinished(signal_id, false);
+    };
 
-    // Remove any existing installation so the rename cannot fail on a non-empty target.
-    QDir(dst).removeRecursively();
-
-    if (!QDir().rename(src, dst)) {
+    if (staged_name.isEmpty()) {
+      failStagedInstall(staged_name, "Staged install directory has no id");
       continue;
     }
 
-    InstalledExtension record;
-    record.id = id;
-    record.version = version;
-    record.install_date = QDateTime::currentDateTimeUtc();
+    const PendingInstallIntent intent = readPendingInstallIntent(staged_dir);
+    if (!intent.valid) {
+      failStagedInstall(staged_name, intent.error);
+      continue;
+    }
+    if (intent.id != staged_name) {
+      failStagedInstall(
+          staged_name,
+          QString("Staged install directory \"%1\" does not match registry id \"%2\"").arg(staged_name, intent.id));
+      continue;
+    }
+
+    const DirectoryDiscovery discovered = discoverExtensionDirectory(staged_dir);
+    const QString validation_error = validateRegistryIntent(discovered, intent.id, intent.version);
+    if (!validation_error.isEmpty()) {
+      failStagedInstall(intent.id, validation_error);
+      continue;
+    }
+
+    const QString dst = extRoot(extensions_dir_, intent.id);
+    if (QDir(dst).exists() && !QDir(dst).removeRecursively()) {
+      qWarning("ExtensionManager: failed to remove existing extension directory '%s'", qPrintable(dst));
+      emit installError(intent.id, QString("Could not remove existing extension directory \"%1\"").arg(dst));
+      emit installFinished(intent.id, false);
+      continue;
+    }
+    installed_.remove(intent.id);
+
+    if (!QDir().rename(staged_dir, dst)) {
+      qWarning(
+          "ExtensionManager: failed to promote staged install '%s' to '%s'", qPrintable(staged_dir), qPrintable(dst));
+      emit installError(intent.id, QString("Could not promote staged install to \"%1\"").arg(dst));
+      emit installFinished(intent.id, false);
+      continue;
+    }
+
+    QFile::remove(pendingInstallIntentPath(dst));
+    InstalledExtension record = discovered.record;
     record.path = dst;
-    record.enabled = true;
-
-    installed_[id] = record;
-    emit installFinished(id, true);
+    record.install_date = QFileInfo(dst).lastModified();
+    installed_[intent.id] = record;
+    emit installFinished(intent.id, true);
   }
 }
 
@@ -312,7 +434,6 @@ void ExtensionManager::applyPendingUninstalls() {
     if (!QFile::exists(entry.absoluteFilePath() + "/" + kPendingUninstallMarker)) {
       continue;
     }
-    // Directory name IS the id — install() always creates extensions_dir_/<id>/.
     const QString id = entry.fileName();
     if (QDir(entry.absoluteFilePath()).removeRecursively() && !id.isEmpty()) {
       installed_.remove(id);
@@ -320,56 +441,19 @@ void ExtensionManager::applyPendingUninstalls() {
   }
 }
 
-
 bool ExtensionManager::isInstalled(const QString& id) const {
-  auto it = installed_.find(id);
-  if (it == installed_.end()) {
-    return false;
-  }
-  if (QFileInfo::exists(it->path)) {
-    return true;
-  }
-  // The .so/.dll was removed externally. Evict the stale entry so subsequent
-  // reads see the truth and so a future install of the same id starts clean.
-  // const_cast is the price of a const-correct public API; every UI caller
-  // (populateCards) iterates per-paint and would otherwise observe the lie.
-  qWarning("ExtensionManager: evicting stale installed entry for '%s' — file vanished: %s",
-           qPrintable(id), qPrintable(it->path));
-  auto* self = const_cast<ExtensionManager*>(this);
-  self->installed_.erase(it);
-  emit self->extensionEvictedExternally(id);
-  return false;
-}
-
-void ExtensionManager::reconcileInstalledWithDisk() {
-  // Snapshot the keys first; we can't mutate `installed_` while iterating it.
-  QStringList stale_ids;
-  for (auto it = installed_.constBegin(); it != installed_.constEnd(); ++it) {
-    if (!QFileInfo::exists(it->path)) {
-      stale_ids << it.key();
-    }
-  }
-  for (const QString& id : stale_ids) {
-    qWarning("ExtensionManager: reconcile evicting '%s' — file vanished: %s",
-             qPrintable(id), qPrintable(installed_[id].path));
-    installed_.remove(id);
-    emit extensionEvictedExternally(id);
-  }
+  return installed_.contains(id);
 }
 
 bool ExtensionManager::hasPendingInstall(const QString& id) const {
-  // Directory name IS the id; if pending_dir_/<id>/ exists, the install is staged.
-  const QString staged = pending_dir_ + "/" + id;
-  if (!QFileInfo::exists(staged)) {
-    return false;
-  }
-  emit const_cast<ExtensionManager*>(this)->installPendingRestart(id);
-  return true;
+  // Marker existence is enough for UI predicates; applyPendingInstalls() does
+  // the full validation (intent contents, DSO presence, registry-vs-embedded
+  // match) and tears down anything broken on next startup.
+  return QFile::exists(pendingInstallIntentPath(pendingRoot(pending_dir_, id)));
 }
 
 bool ExtensionManager::hasPendingUninstall(const QString& id) const {
-    const QString path = extensions_dir_ + "/" + id;                                                                                                                  
-    return QFile::exists(path + "/" + kPendingUninstallMarker);  
+  return QFile::exists(extRoot(extensions_dir_, id) + "/" + kPendingUninstallMarker);
 }
 
 bool ExtensionManager::hasUpdate(const Extension& ext) const {
@@ -377,8 +461,6 @@ bool ExtensionManager::hasUpdate(const Extension& ext) const {
     return false;
   }
 
-  // QVersionNumber handles multi-segment comparison correctly:
-  // "1.10.0" > "1.9.0", unlike a raw string compare which would invert them.
   const QVersionNumber installed_ver = QVersionNumber::fromString(installed_[ext.id].version);
   const QVersionNumber latest = QVersionNumber::fromString(ext.version);
   return QVersionNumber::compare(latest, installed_ver) > 0;
@@ -404,87 +486,29 @@ void ExtensionManager::schedulePendingUninstall(const QString& path) {
   marker.open(QIODevice::WriteOnly);  // content irrelevant; existence is the signal
 }
 
-void ExtensionManager::writeInstalledMeta(const Extension& ext, const QString& dir) {
-  QJsonObject obj;
-  obj["id"] = ext.id;
-  obj["version"] = ext.version;
-  obj["install_date"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-
-  QFile file(dir + "/pj_meta.json");
-  if (!file.open(QIODevice::WriteOnly)) {
-    qWarning("ExtensionManager: failed to write pj_meta.json under '%s'", qPrintable(dir));
-    return;
-  }
-  file.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
-}
-
-// ---------------------------------------------------------------------------
-// Private — state persistence
-// ---------------------------------------------------------------------------
-
-void ExtensionManager::loadState() {
+void ExtensionManager::refreshInstalledFromDisk() {
+  QMap<QString, InstalledExtension> discovered;
   const QDir dir(extensions_dir_);
   for (const QFileInfo& entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-    const QString ext_root = entry.absoluteFilePath();
-
-    if (QFile::exists(ext_root + "/" + kPendingUninstallMarker)) {
+    const QString root = entry.absoluteFilePath();
+    if (QFile::exists(root + "/" + kPendingUninstallMarker)) {
       continue;
     }
 
-    // Directory name IS the id (install always creates extensions_dir_/<ext.id>/).
-    const QString id = entry.fileName();
-    if (id.isEmpty()) {
+    const DirectoryDiscovery item = discoverExtensionDirectory(root);
+    if (!item.found_plugin) {
+      qWarning("ExtensionManager: ignoring extension directory '%s': %s", qPrintable(root), qPrintable(item.error));
       continue;
     }
-
-    // Version comes from the host-owned pj_meta.json. For installations made
-    // before the sidecar removal, fall back to the plugin-author manifest.json
-    // — that fallback can be deleted once all users have re-installed at least
-    // once under the new layout.
-    QString version;
-    QFile pj_meta_file(ext_root + "/pj_meta.json");
-    if (pj_meta_file.open(QIODevice::ReadOnly)) {
-      version = QJsonDocument::fromJson(pj_meta_file.readAll()).object()["version"].toString();
-    } else {
-      QFile legacy(ext_root + "/" + kManifestFileName);
-      if (legacy.open(QIODevice::ReadOnly)) {
-        version = QJsonDocument::fromJson(legacy.readAll()).object()["version"].toString();
-      }
+    if (discovered.contains(item.record.id)) {
+      qWarning(
+          "ExtensionManager: duplicate embedded extension id '%s' in '%s'; keeping first", qPrintable(item.record.id),
+          qPrintable(root));
+      continue;
     }
-
-    InstalledExtension inst;
-    inst.id = id;
-    inst.version = version;
-    inst.install_date = entry.lastModified();
-    inst.path = ext_root;
-    inst.enabled = true;
-
-    installed_[id] = inst;
+    discovered[item.record.id] = item.record;
   }
-}
-
-void ExtensionManager::saveState() {
-  // QJsonArray array;
-  // for (const InstalledExtension& inst : installed_) {
-  //   QJsonObject obj;
-  //   obj["id"] = inst.id;
-  //   obj["version"] = inst.version;
-  //   obj["install_date"] = inst.install_date.toString(Qt::ISODate);
-  //   obj["path"] = inst.path;
-  //   obj["enabled"] = inst.enabled;
-  //   if (!inst.backup_path.isEmpty()) {
-  //     obj["backup_path"] = inst.backup_path;
-  //   }
-  //   array.append(obj);
-  // }
-
-  // const QJsonDocument doc(QJsonObject{{"installed", array}});
-
-  // static constexpr const char* kStateFileName = "/installed.json";
-  // QFile file(extensions_dir_ + kStateFileName);
-  // if (file.open(QIODevice::WriteOnly)) {
-  //   file.write(doc.toJson());
-  // }
+  installed_ = std::move(discovered);
 }
 
 }  // namespace PJ

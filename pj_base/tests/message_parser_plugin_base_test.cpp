@@ -58,7 +58,8 @@ class ThrowingParser : public PJ::MessageParserPluginBase {
   }
 };
 
-constexpr const char* kMockManifest = R"({"name":"Mock Parser","version":"1.0.0","encoding":"json"})";
+constexpr const char* kMockManifest =
+    R"({"id":"mock-parser","name":"Mock Parser","version":"1.0.0","encoding":"json"})";
 
 const PJ_message_parser_vtable_t* mockVtable() {
   static const PJ_message_parser_vtable_t* vt =
@@ -68,7 +69,8 @@ const PJ_message_parser_vtable_t* mockVtable() {
 
 const PJ_message_parser_vtable_t* throwingVtable() {
   static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(
-      []() -> void* { return new ThrowingParser(); }, R"({"name":"Thrower","version":"0.1.0","encoding":"test"})");
+      []() -> void* { return new ThrowingParser(); },
+      R"({"id":"throwing-parser","name":"Thrower","version":"0.1.0","encoding":"test"})");
   return vt;
 }
 

@@ -19,7 +19,7 @@ renders the widgets, and relays events to the plugin over the C vtable.
 
 1. Subclass `PJ::DialogPluginTyped`.
 2. Provide inline Qt Designer `.ui` XML via `ui_content()`.
-3. Override `manifest()` with a JSON string (name, version, etc.).
+3. Override `manifest()` with a JSON string (`id`, name, version, etc.).
 4. Implement `widget_data()` to push state to the UI.
 5. Override the typed event handlers you need (`onTextChanged`,
    `onIndexChanged`, `onToggled`, etc.) — return `true` when state changes.
@@ -44,6 +44,7 @@ class MyDialog : public PJ::DialogPluginTyped {
  public:
   std::string manifest() const override {
     return R"({
+      "id": "my-dialog",
       "name": "My Dialog",
       "version": "1.0.0",
       "description": "Example dialog plugin"
@@ -551,9 +552,9 @@ class MySource : public PJ::StreamSourceBase {
   MyDialog dialog_;
 };
 
-PJ_DATA_SOURCE_PLUGIN(MySource, R"({"name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN(MyDialog)   // also specialises PJ::dialogVtableFor<MyDialog>()
-                             // so PJ::borrowDialog picks up the right vtable.
+PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
+PJ_DIALOG_PLUGIN_VTABLE(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
+                                  // so PJ::borrowDialog picks up the right vtable.
 ```
 
 The host resolves both vtables, creates a borrowed `DialogHandle` from the

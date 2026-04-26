@@ -2,8 +2,12 @@
 
 > **Version:** 1.0.0
 > **Last Updated:** 2026-03-05
-> **Status:** In Progress
+> **Status:** Historical planning document; not the current implementation contract
 > **Deadline:** 31 March 2026
+
+> Current implementation notes: installed state is discovered from embedded DSO
+> manifests, ZIP extraction is handled by `DownloadManager` through libarchive,
+> and automatic rollback remains deferred.
 
 ---
 
@@ -58,7 +62,7 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 | F-05 | Show extension detail | W1 | ⬜ TODO |
 | F-06 | Download ZIP with SHA256 | W1 | ⬜ TODO |
 | F-07 | Extract to extensions dir | W1 | ⬜ TODO |
-| F-08 | Register in installed.json | W1 | ⬜ TODO |
+| F-08 | Register from embedded DSO manifest | W1 | ⬜ TODO |
 | F-09 | Detect updates | W3 | ⬜ TODO |
 | F-10 | Uninstall extension | W1 | ⬜ TODO |
 
@@ -118,8 +122,8 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 - [ ] Create DownloadManager class
 - [ ] Implement progress signals
 - [ ] Create ChecksumVerifier (SHA256)
-- [ ] Create ZipExtractor (QuaZip)
-- [ ] Create ExtensionManager — inject DownloadManager, ZipExtractor via constructor; installed state managed internally via private loadState()/saveState()
+- [ ] Use DownloadManager/libarchive for ZIP extraction
+- [ ] Create ExtensionManager — inject DownloadManager via constructor; installed state is rebuilt by scanning plugin DSOs
 - [ ] Use PlatformUtils::extensionsDir() as default extensions directory (no setExtensionsDir setter)
 - [ ] Delegate platform detection to PlatformUtils::currentPlatform() (no private detectPlatform())
 - [ ] Implement install flow
@@ -175,7 +179,7 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 | Day | Date | Tasks | Deliverable |
 |-----|------|-------|-------------|
 | Thu | 19 Mar | Create example plugin: CSV Loader | Minimal plugin |
-| Fri | 20 Mar | Package as ZIP with manifest | csv-loader.zip |
+| Fri | 20 Mar | Package as ZIP with embedded plugin manifest | csv-loader.zip |
 | Mon | 23 Mar | Publish to test registry | GitHub Release |
 | Tue | 24 Mar | Test: install from marketplace | Plugin appears |
 | Wed | 25 Mar | Test: use the plugin | Load CSV file |
@@ -183,7 +187,7 @@ A working prototype integrated into PlotJuggler is expected by the end of March 
 ### TODO Week 3
 
 - [ ] Create SimpleCsvLoader plugin (~100 lines)
-- [ ] Create manifest.json for it
+- [ ] Add embedded manifest to the plugin export
 - [ ] Package as ZIP
 - [ ] Create GitHub repo for test registry
 - [ ] Create registry.json with csv-loader

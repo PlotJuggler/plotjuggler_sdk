@@ -133,6 +133,7 @@ class DataSourcePluginBase {
   template <typename CreateFn>
   static const PJ_data_source_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
+    PJ_ASSERT(std::strstr(manifest, "\"id\"") != nullptr, "manifest must contain an \"id\" key");
     PJ_ASSERT(std::strstr(manifest, "\"name\"") != nullptr, "manifest must contain a \"name\" key");
     PJ_ASSERT(std::strstr(manifest, "\"version\"") != nullptr, "manifest must contain a \"version\" key");
     static const PJ_data_source_vtable_t vt = {
@@ -229,7 +230,7 @@ class DataSourcePluginBase {
  * entry point `PJ_get_data_source_vtable` that the host resolves via dlsym.
  *
  * @param ClassName The DataSourcePluginBase subclass to instantiate.
- * @param manifest  String literal JSON manifest (must have "name" and "version").
+ * @param manifest  String literal JSON manifest (must have "id", "name", and "version").
  */
 #define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                                       \
   extern "C" PJ_DATA_SOURCE_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;                \

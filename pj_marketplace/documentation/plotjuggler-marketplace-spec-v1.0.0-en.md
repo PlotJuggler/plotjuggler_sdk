@@ -78,7 +78,7 @@ Development will begin with a standalone prototype to validate the concept, with
 | **Build**      | Cross-platform compilation | Matrix build for Linux, Windows, and macOS                 |
 |                | Static linking             | All dependencies embedded in the artifact                  |
 |                | Dependency management      | Support for Conan (current) and Pixi (future)              |
-| **Packaging**  | ZIP generation             | Automatic packaging with manifest, binaries, and resources |
+| **Packaging**  | ZIP generation             | Automatic packaging with plugin binaries and resources |
 |                | Checksums                  | Automatic SHA256 generation per artifact                   |
 |                | Versioning                 | Version extraction from git tag                            |
 | **Publishing** | GitHub Release             | Automatic release creation with attached artifacts         |
@@ -181,7 +181,7 @@ The C++ ecosystem has multiple dependency managers, and PlotJuggler has used sev
 | **Pixi**   | Under observation | It's gaining traction in the ROS community. Offers reproducible environments similar to conda but lighter. |
 | **Colcon** | Abandoned         | Was necessary for ROS 1/2 integration, but added unnecessary complexity outside that context.              |
 
-The current decision is to **use Conan for the plugin template**, but design the system so that generated artifacts are independent of the build tool. A ZIP with a `.so` and a `manifest.json` works the same whether it was generated with Conan, Pixi, or manual compilation.
+The current decision is to **use Conan for the plugin template**, but design the system so that generated artifacts are independent of the build tool. A ZIP with one or more plugin DSOs works the same whether it was generated with Conan, Pixi, or manual compilation; installed metadata is read from the embedded manifest exported by each DSO.
 
 ### 4.4 Pixi: A Future Bet
 
@@ -297,22 +297,9 @@ github.com/plotjuggler/marketplace-registry/
 
 ### 5.4 Local State
 
-Local JSON file recording installed extensions:
-
-```json
-{
-  "installed": [
-    {
-      "id": "ros2-streaming",
-      "version": "1.2.3",
-      "install_date": "2026-03-04T10:30:00Z",
-      "path": "/home/user/.plotjuggler/extensions/ros2-streaming/",
-      "enabled": true,
-      "backup_path": "/home/user/.plotjuggler/extensions/.backup/ros2-streaming-1.2.2/"
-    }
-  ]
-}
-```
+There is no local state JSON. `ExtensionManager` rebuilds its installed cache by
+scanning `extensions/`, loading candidate plugin DSOs, and reading each DSO's
+embedded manifest. The remote registry remains the pre-install catalog.
 
 ---
 
@@ -322,29 +309,17 @@ Local JSON file recording installed extensions:
 
 ```
 ros2-streaming-linux-x86_64.zip
-├── manifest.json              ← Extension metadata
 ├── libros2_streaming.so       ← Compiled plugin(s)
 ├── ros2_streaming.ui          ← Qt Creator UI file (pure XML)
 ├── README.md                  ← Description (optional)
 └── LICENSE                    ← License
 ```
 
-### 6.2 Manifest
+### 6.2 Embedded Plugin Manifest
 
-```json
-{
-  "id": "ros2-streaming",
-  "version": "1.2.3",
-  "min_plotjuggler_version": "4.0.0",
-  "plugins": [
-    {
-      "name": "ROS2StreamerPlugin",
-      "type": "data_streamer",
-      "library": "libros2_streaming",
-      "ui_file": "ros2_streaming.ui"
-    }
-  ]
-}
+```cpp
+PJ_DATA_SOURCE_PLUGIN(ROS2StreamerPlugin,
+    R"({"id":"ros2-streaming","name":"ROS 2 Streaming","version":"1.2.3"})")
 ```
 
 ### 6.3 Compilation Requirements
@@ -384,7 +359,6 @@ set_target_properties(my_plugin PROPERTIES
 
 install(TARGETS my_plugin DESTINATION .)
 install(FILES my_dialog.ui DESTINATION .)
-install(FILES manifest.json DESTINATION .)
 install(FILES README.md LICENSE DESTINATION .)
 ```
 
@@ -459,7 +433,7 @@ package = "cmake --install build/release --prefix dist && cd dist && zip -r ../a
 1. Developer creates a tag (`git tag v1.2.3`)
 2. GitHub Actions detects the tag and runs the release workflow
 3. Compiles for all 3 platforms in parallel (matrix build)
-4. Packages artifacts in ZIPs with manifest and checksums
+4. Packages artifacts in ZIPs with plugin binaries and checksums
 5. Creates a GitHub Release with attached artifacts
 6. Generates an automatic PR to the registry with the new version
 7. PR is automatically validated (schema, URLs, checksums)
@@ -473,21 +447,18 @@ package = "cmake --install build/release --prefix dist && cd dist && zip -r ../a
 2. Current platform is verified
 3. Corresponding ZIP is downloaded
 4. SHA256 checksum is verified
-5. Extracted to temporary directory
-6. Manifest is validated
-7. If update, current version is backed up
-8. Moved to extensions directory
-9. Local state updated (installed.json)
+5. If update on a non-staged platform, current version is backed up
+6. Extracted to extensions directory
+7. Plugin DSO is loaded and its embedded manifest is validated against the registry id/version
+8. Installed cache is refreshed from discovery
 
-### 8.3 Automatic Rollback
+### 8.3 Backup and Rollback Status
 
 ![Rollback Flow](diagrams/rollback-flow.png)
 
-1. PlotJuggler starts and loads plugins
-2. If a plugin fails (crash/segfault):
-   - If backup exists → restore previous version
-   - If no backup → disable extension
-3. Notify user of rollback/disabling
+Automatic rollback is deferred. On non-staged platforms an update keeps the
+previous version in `.backup/`, but the marketplace does not currently restore
+that backup automatically if a later plugin load fails.
 
 ---
 
@@ -511,7 +482,6 @@ plotjuggler/extension-template/
 ├── CMakeLists.txt
 ├── conanfile.py
 ├── pixi.toml                       ← Future alternative
-├── manifest.json.in
 ├── conan_profiles/
 │   ├── linux_static
 │   ├── windows_static
@@ -607,7 +577,7 @@ This means a plugin compiled today will continue to work when PlotJuggler migrat
 
 The commitment to plugin developers:
 
-- Each plugin declares `min_plotjuggler_version` in its manifest
+- The registry declares `min_plotjuggler_version` for each extension
 - If the SDK changes incompatibly, PlotJuggler provides an internal adapter
 - **Existing plugins are never broken by PlotJuggler updates**
 - Stability target: Qt LTS 6.8 (support until 2028)
@@ -634,13 +604,15 @@ The flow is:
 
 1. User clicks "Update"
 2. New version downloads to a temporary folder (`.pending/`)
-3. Message shown: "Update will be applied when PlotJuggler restarts"
-4. When PlotJuggler starts:
+3. The staged DSO is loaded and its embedded manifest is validated against the registry id/version
+4. A transient `.pj_pending_install` intent is written with the registry id/version
+5. Message shown: "Update will be applied when PlotJuggler restarts"
+6. When PlotJuggler starts:
    - Detects pending updates
-   - Backs up current version to `.backup/`
+   - Reads `.pj_pending_install`
+   - Revalidates the staged DSO against that registry intent
    - Moves new version from `.pending/` to `extensions/`
-   - Loads the plugin
-5. If plugin fails to load, automatically restores from backup
+7. If validation fails, the broken stage is removed and the active install is left untouched
 
 ### 11.3 Directory Structure
 
@@ -650,10 +622,11 @@ The flow is:
 │   ├── ros2-streaming/
 │   └── csv-loader/
 ├── .pending/                ← Staging (Windows)
-├── .backup/                 ← Backups for rollback
+│   └── plugin-id/.pj_pending_install
+├── .backup/                 ← Non-Windows update backups; automatic rollback deferred
 │   ├── ros2-streaming-1.2.2/
 │   └── csv-loader-0.9.0/
-└── installed.json           ← Local state
+└── .cache/                  ← Registry cache
 ```
 
 ---
@@ -817,7 +790,6 @@ marketplace/
 │   │   ├── Extension.h
 │   │   ├── InstalledExtension.h
 │   │   ├── Registry.h
-│   │   └── LocalState.h
 │   ├── core/
 │   │   ├── RegistryManager.h/cpp
 │   │   ├── ExtensionManager.h/cpp
@@ -825,13 +797,7 @@ marketplace/
 │   │   └── PlatformUtils.h/cpp
 │   ├── ui/
 │   │   ├── MarketplaceWindow.h/cpp
-│   │   ├── ExtensionListWidget.h/cpp
-│   │   ├── ExtensionCardDelegate.h/cpp
-│   │   ├── ExtensionDetailWidget.h/cpp
-│   │   └── StatusBarManager.h/cpp
-│   └── utils/
-│       ├── ChecksumVerifier.h/cpp
-│       └── ZipExtractor.h/cpp
+│   │   └── ExtensionDetailDialog.h/cpp
 └── resources/
     ├── icons/
     └── marketplace.qrc
@@ -852,7 +818,7 @@ marketplace/
 | F-05 | Show selected extension detail                      |
 | F-06 | Download ZIP with SHA256 verification               |
 | F-07 | Extract ZIP to extensions directory                 |
-| F-08 | Register installed extension (installed.json)       |
+| F-08 | Register installed extension from embedded DSO manifest |
 | F-09 | Detect updates (local vs registry version)          |
 | F-10 | Uninstall extension                                 |
 
@@ -862,7 +828,7 @@ marketplace/
 | ---- | ----------------------------------- |
 | F-11 | Local registry cache with TTL       |
 | F-12 | Backup previous version on updates  |
-| F-13 | Automatic rollback if plugin fails  |
+| F-13 | Automatic rollback if plugin fails (deferred) |
 | F-14 | Windows staging: apply on restart   |
 | F-15 | Enable/Disable without uninstalling |
 | F-16 | Cancel download in progress         |
@@ -905,8 +871,7 @@ marketplace/
 - CMake + Qt6 project setup
 - Data structs (Extension, InstalledExtension)
 - MarketplaceWindow with QSplitter
-- ExtensionListWidget with custom cards
-- ExtensionDetailWidget with tabs
+- MarketplaceWindow cards and ExtensionDetailDialog
 - Hardcoded mock data
 - Functional search and filter
 
@@ -956,7 +921,7 @@ marketplace/
 
 | #   | Topic                      | Options                           |
 | --- | -------------------------- | --------------------------------- |
-| 1   | ZIP library                | QuaZip vs minizip vs libzip       |
+| 1   | ZIP library                | Resolved: libarchive              |
 | 2   | Markdown rendering         | QTextBrowser vs plain text        |
 | 3   | Metrics                    | Registry JSON vs GitHub API       |
 | 4   | Icons                      | URL in registry vs bundled in ZIP |

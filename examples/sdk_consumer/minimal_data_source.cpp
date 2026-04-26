@@ -15,4 +15,4 @@ class MinimalDataSource : public PJ::FileSourceBase {
 
 }  // namespace
 
-PJ_DATA_SOURCE_PLUGIN(MinimalDataSource, R"({"name":"Minimal","version":"0.1.0"})")
+PJ_DATA_SOURCE_PLUGIN(MinimalDataSource, R"({"id":"minimal-data-source","name":"Minimal","version":"0.1.0"})")

@@ -58,6 +58,7 @@ class MockDialog : public PJ::DialogPluginTyped {
  public:
   std::string manifest() const override {
     return R"({
+      "id": "mock-dialog",
       "name": "Mock Dialog",
       "version": "1.0.0",
       "description": "A minimal dialog plugin for testing"
