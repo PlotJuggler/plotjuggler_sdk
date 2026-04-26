@@ -324,10 +324,9 @@ message, and a timestamp.
 Embedding apps wire one sink into both their host loaders and
 `pj_marketplace::ExtensionManager` so the GUI shows one chronological
 diagnostic stream covering both module families. Pure-C++ host loaders
-remain Qt-free; the embedding app provides a thin Qt adapter (e.g.
-`pj_proto_app::QtDiagnosticBridge`) that marshals each event onto the Qt
-event loop via `Qt::QueuedConnection` and emits a Qt signal the GUI can
-connect to.
+remain Qt-free; `PJ::QtDiagnosticBridge` in `pj_marketplace` provides the
+thin Qt adapter that marshals each event onto the Qt event loop via
+`Qt::QueuedConnection` and emits a Qt signal the GUI can connect to.
 
 A default-constructed sink discards events at zero cost, so loaders that
 take no sink behave as before.

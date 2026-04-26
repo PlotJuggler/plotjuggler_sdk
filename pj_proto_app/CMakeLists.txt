@@ -7,7 +7,6 @@ add_executable(pj_proto_app
   src/main.cpp
   src/main_window.cpp
   src/plugin_registry.cpp
-  src/qt_diagnostic_bridge.cpp
   src/data_source_session.cpp
   src/toolbox_session.cpp
   src/series_tree_model.cpp
@@ -23,6 +22,7 @@ target_link_libraries(pj_proto_app PRIVATE
   pj_data_source_host
   pj_message_parser_host
   pj_toolbox_host
+  pj_plugin_runtime_catalog
   pj_dialog_engine_qt
   pj_marketplace
   pj_marketplace_ui
@@ -48,6 +48,7 @@ if(PJ_BUILD_TESTS)
     pj_data_source_host
     pj_message_parser_host
     pj_toolbox_host
+    pj_plugin_runtime_catalog
     pj_marketplace
     GTest::gtest_main
     nlohmann_json::nlohmann_json

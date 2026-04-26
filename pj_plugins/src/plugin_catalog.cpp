@@ -312,7 +312,7 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
 Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory) {
   std::error_code ec;
   if (!std::filesystem::exists(directory, ec)) {
-    return unexpected(std::string("plugin directory does not exist: ") + directory.string());
+    return unexpected(std::string("plugin directory not found: ") + directory.string());
   }
   if (!std::filesystem::is_directory(directory, ec)) {
     return unexpected(std::string("plugin path is not a directory: ") + directory.string());

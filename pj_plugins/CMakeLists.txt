@@ -144,6 +144,25 @@ target_link_libraries(pj_toolbox_host
     ${CMAKE_DL_LIBS}
 )
 
+# ---------------------------------------------------------------------------
+# pj_plugin_runtime_catalog — shared host-side plugin loading catalog
+# ---------------------------------------------------------------------------
+
+add_library(pj_plugin_runtime_catalog STATIC
+  src/plugin_runtime_catalog.cpp
+)
+target_include_directories(pj_plugin_runtime_catalog PUBLIC include)
+target_compile_features(pj_plugin_runtime_catalog PUBLIC cxx_std_20)
+target_compile_options(pj_plugin_runtime_catalog PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(pj_plugin_runtime_catalog
+  PUBLIC
+    pj_data_source_host
+    pj_message_parser_host
+    pj_toolbox_host
+    pj_plugin_catalog
+    pj_base
+)
+
 if(PJ_BUILD_TESTS)
 
 # ---------------------------------------------------------------------------

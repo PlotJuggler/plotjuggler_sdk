@@ -126,8 +126,8 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent) : QMainWi
 
   // Bridge constructed FIRST so subsystems built below can route diagnostics
   // through it. Sink is thread-safe and outlive-safe via a QPointer.
-  diag_bridge_ = new QtDiagnosticBridge(this);
-  connect(diag_bridge_, &QtDiagnosticBridge::diagnosticReported, this, &MainWindow::onDiagnosticReported);
+  diag_bridge_ = new PJ::QtDiagnosticBridge(this);
+  connect(diag_bridge_, &PJ::QtDiagnosticBridge::diagnosticReported, this, &MainWindow::onDiagnosticReported);
 
   registry_ = std::make_unique<PluginRegistry>(plugin_dir, diag_bridge_->sink());
 

@@ -32,9 +32,11 @@ add_library(pj_marketplace STATIC
   src/core/DownloadManager.cpp
   src/core/ExtensionManager.cpp
   src/core/PlatformUtils.cpp
+  src/core/QtDiagnosticBridge.cpp
   src/core/RegistryManager.cpp
   include/pj_marketplace/download_manager.hpp
   include/pj_marketplace/extension_manager.hpp
+  include/pj_marketplace/qt_diagnostic_bridge.hpp
   include/pj_marketplace/registry_manager.hpp
 )
 
