@@ -506,7 +506,7 @@ void MarketplaceWindow::onSettingsClicked() {
   url_edit->setPlaceholderText(kDefaultRegistryUrl);
   layout->addRow("Registry URL:", url_edit);
 
-  auto* extensions_path = new QLineEdit(PlatformUtils::extensionsDir(), &dlg);
+  auto* extensions_path = new QLineEdit(ext_mgr_->extensionsDir(), &dlg);
   extensions_path->setReadOnly(true);
   extensions_path->setStyleSheet("QLineEdit { background: palette(window); }");
   layout->addRow("Extensions path:", extensions_path);

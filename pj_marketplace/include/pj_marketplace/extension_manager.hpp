@@ -86,6 +86,9 @@ class ExtensionManager : public QObject {
   // Clears the in-memory diagnostic history.
   void clearDiagnostics();
 
+  // Root directory where extension DSOs are discovered and managed.
+  QString extensionsDir() const { return extensions_dir_; }
+
 #ifdef PJ_MARKETPLACE_TESTING
   // Test hook for forcing direct or staged install paths.
   void testDoInstall(const Extension& ext, bool staging, bool allow_existing = false) {
@@ -142,6 +145,11 @@ class ExtensionManager : public QObject {
 
   // Emits installError + installFinished(false) and records a diagnostic.
   void emitInstallFailure(const QString& id, const QString& message);
+
+  // Stamps a freshly-promoted directory with its absolute path + mtime and
+  // adds it to the installed_ map under `id`. Caller supplies the record
+  // already populated from the embedded manifest.
+  void registerInstalledExtension(const QString& id, const QString& dst, InstalledExtension record);
 
   // Emits uninstallError + uninstallFinished(false) and records a diagnostic.
   void emitUninstallFailure(const QString& id, const QString& message);

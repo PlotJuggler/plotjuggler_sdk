@@ -388,10 +388,7 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging, bool allow_
         removeDirectoryIfSet(transaction_root);
         pending_extract_dir_.clear();
         pending_backup_path_.clear();
-        InstalledExtension record = final_check.record;
-        record.path = dst;
-        record.install_date = QFileInfo(dst).lastModified();
-        installed_[ext.id] = record;
+        registerInstalledExtension(ext.id, dst, final_check.record);
         emit installFinished(finished_id, true);
       });
 
@@ -577,14 +574,13 @@ void ExtensionManager::applyPendingInstalls() {
 
     const QString dst = extRoot(extensions_dir_, intent.id);
 
-    // If an extension is already installed at `dst`, move it aside to the
-    // backup dir before promoting the staged version. This is the Windows
-    // counterpart to the synchronous backup that `update()` performs on
-    // Linux/macOS — without it, a Windows update would silently overwrite
-    // the previous version with no recovery path.
+    // Mirror the Linux/macOS backup that `update()` performs synchronously:
+    // move the existing dir aside before the staged version takes its place,
+    // so a Windows update never silently destroys the previous install.
     pending_backup_path_.clear();
+    DirectoryDiscovery existing;
     if (QDir(dst).exists()) {
-      const DirectoryDiscovery existing = discoverExtensionDirectory(dst);
+      existing = discoverExtensionDirectory(dst);
       const QString version_tag = (existing.found_plugin && !existing.record.version.isEmpty())
                                       ? existing.record.version
                                       : QString("unknown-") + QUuid::createUuid().toString(QUuid::Id128);
@@ -613,32 +609,22 @@ void ExtensionManager::applyPendingInstalls() {
           "ExtensionManager: failed to promote staged install '%s' to '%s'", qPrintable(staged_dir), qPrintable(dst));
       QString message = QString("Could not promote staged install to \"%1\"").arg(dst);
 
-      // Best-effort rollback so the user is never left with no extension.
-      if (!pending_backup_path_.isEmpty()) {
-        if (QDir().rename(pending_backup_path_, dst)) {
-          message += " Previous version restored.";
-          pending_backup_path_.clear();
-          // Re-register the restored install so isInstalled() reflects reality.
-          const DirectoryDiscovery restored = discoverExtensionDirectory(dst);
-          if (restored.found_plugin) {
-            InstalledExtension record = restored.record;
-            record.path = dst;
-            record.install_date = QFileInfo(dst).lastModified();
-            installed_[intent.id] = record;
-          }
+      // Best-effort rollback so the user is never left with no extension. If
+      // the rollback rename also fails, leave pending_backup_path_ set so
+      // emitInstallFailure appends "Previous version remains in backup".
+      if (!pending_backup_path_.isEmpty() && QDir().rename(pending_backup_path_, dst)) {
+        message += " Previous version restored.";
+        pending_backup_path_.clear();
+        if (existing.found_plugin) {
+          registerInstalledExtension(intent.id, dst, existing.record);
         }
-        // If the rollback rename also failed, leave pending_backup_path_ set
-        // so emitInstallFailure surfaces "Previous version remains in backup".
       }
       emitInstallFailure(intent.id, message);
       continue;
     }
 
     QFile::remove(pendingInstallIntentPath(dst));
-    InstalledExtension record = discovered.record;
-    record.path = dst;
-    record.install_date = QFileInfo(dst).lastModified();
-    installed_[intent.id] = record;
+    registerInstalledExtension(intent.id, dst, discovered.record);
     pending_backup_path_.clear();
     emit installFinished(intent.id, true);
   }
@@ -771,6 +757,12 @@ void ExtensionManager::emitUninstallFailure(const QString& id, const QString& me
   reportDiagnostic(id, message, true);
   emit uninstallError(id, message);
   emit uninstallFinished(id, false);
+}
+
+void ExtensionManager::registerInstalledExtension(const QString& id, const QString& dst, InstalledExtension record) {
+  record.path = dst;
+  record.install_date = QFileInfo(dst).lastModified();
+  installed_[id] = record;
 }
 
 void ExtensionManager::refreshInstalledFromDisk() {
