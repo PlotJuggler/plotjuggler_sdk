@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "pj_base/data_source_protocol.h"
+#include "pj_base/toolbox_protocol.h"
 
 namespace PJ {
 
@@ -185,6 +186,22 @@ bool PluginRuntimeCatalog::loadAndRegisterDataSource(const PluginDescriptor& des
   loaded.name = descriptor.name;
   loaded.version = descriptor.version;
   loaded.capabilities = loaded.library.createHandle().capabilities();
+
+  // Fail-fast on plugins that lie about kCapabilityHasDialog: a misbuilt
+  // plugin that advertises the bit but doesn't export the dialog vtable
+  // would otherwise reach the host's dialog flow and silently degrade to
+  // "no dialog", confusing the user. Block it here so the broken plugin
+  // never enters the loaded set.
+  if ((loaded.capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
+    auto vt = loaded.library.resolveDialogVtable();
+    if (!vt) {
+      report(
+          DiagnosticLevel::kError, descriptor.id,
+          descriptor.dso_path.string() + ": advertises kCapabilityHasDialog but " + vt.error());
+      return false;
+    }
+  }
+
   loaded.file_extensions.reserve(descriptor.file_extensions.size());
   for (const auto& ext : descriptor.file_extensions) {
     loaded.file_extensions.push_back(normalizeExtension(ext));
@@ -233,6 +250,18 @@ bool PluginRuntimeCatalog::loadAndRegisterToolbox(const PluginDescriptor& descri
   loaded.name = descriptor.name;
   loaded.version = descriptor.version;
   loaded.capabilities = loaded.library.createHandle().capabilities();
+
+  // Same fail-fast contract as DataSource above: kToolboxCapabilityHasDialog
+  // requires an exported dialog vtable.
+  if ((loaded.capabilities & PJ_TOOLBOX_CAPABILITY_HAS_DIALOG) != 0) {
+    auto vt = loaded.library.resolveDialogVtable();
+    if (!vt) {
+      report(
+          DiagnosticLevel::kError, descriptor.id,
+          descriptor.dso_path.string() + ": advertises kToolboxCapabilityHasDialog but " + vt.error());
+      return false;
+    }
+  }
 
   report(DiagnosticLevel::kInfo, loaded.id, "Loaded Toolbox " + loaded.name + " from " + loaded.path);
   toolbox_plugins_.push_back(std::move(loaded));
