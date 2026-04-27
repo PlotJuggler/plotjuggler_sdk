@@ -39,16 +39,35 @@ function(pj_emit_plugin_manifest TARGET)
     message(FATAL_ERROR "pj_emit_plugin_manifest(${TARGET}): FAMILY is required")
   endif()
 
-  # Hide all symbols by default. The only two that must remain visible are
-  # pj_plugin_abi_version and PJ_get_<family>_vtable — both are explicitly
-  # annotated with visibility("default") by the PJ_*_PLUGIN macros in pj_base.
-  # This is the replacement for RTLD_DEEPBIND: statically bundled deps (e.g.
-  # OpenSSL inside paho-mqtt) cannot conflict with the host's shared libs
-  # because their symbols are hidden and never added to the global namespace.
+  # Symbol isolation — functional replacement for RTLD_DEEPBIND.
+  #
+  # Two complementary mechanisms are needed:
+  #
+  # 1. -fvisibility=hidden (compile-time): hides symbols DEFINED in the plugin's
+  #    own source files. Prevents them from being interposable by the host.
+  #
+  # 2. -Wl,-Bsymbolic-functions (link-time): makes function calls WITHIN the .so
+  #    resolve to the definitions inside it, bypassing the PLT entirely.
+  #    This is critical for statically bundled deps (e.g. libssl.a from Conan)
+  #    that were compiled WITHOUT -fvisibility=hidden: their symbols enter the .so
+  #    with DEFAULT visibility, and without -Bsymbolic-functions their calls would
+  #    still go through PLT → resolved to the host's namespace first → crash.
+  #
+  # Together: all function calls inside the plugin use the embedded static copies.
+  # The two boot-level exports (pj_plugin_abi_version + PJ_get_<family>_vtable)
+  # keep visibility("default") via the PJ_*_PLUGIN macros and are unaffected.
+  # malloc / pthread / system calls are NOT defined in the plugin, so they still
+  # resolve to the host — ASAN malloc interposition works correctly.
+  #
+  # -Bsymbolic-functions is Linux/ELF-specific. On macOS the linker uses
+  # two-level namespace by default (equivalent behavior), so the flag is omitted.
   set_target_properties(${TARGET} PROPERTIES
     CXX_VISIBILITY_PRESET   hidden
     C_VISIBILITY_PRESET     hidden
     VISIBILITY_INLINES_HIDDEN ON
+  )
+  target_link_options(${TARGET} PRIVATE
+    $<$<PLATFORM_ID:Linux>:-Wl,-Bsymbolic-functions>
   )
 
   set(_valid_families data_source message_parser toolbox dialog)
