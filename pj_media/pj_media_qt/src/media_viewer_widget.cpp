@@ -65,7 +65,64 @@ void MediaViewerWidget::resetView() {
 
 void MediaViewerWidget::setMediaSource(MediaSource* source) {
   media_source_ = source;
+  std::lock_guard lock(frame_mutex_);
+  last_overlays_.clear();
+  overlays_dirty_ = true;
 }
+
+namespace {
+
+// Append two interleaved (x, y, r, g, b, a) vertices to `out` for one segment.
+void appendSegment(std::vector<float>& out, const Point2& a, const Point2& b, const ColorRGBA& c) {
+  const float r = static_cast<float>(c.r) / 255.0f;
+  const float g = static_cast<float>(c.g) / 255.0f;
+  const float bl = static_cast<float>(c.b) / 255.0f;
+  const float al = static_cast<float>(c.a) / 255.0f;
+  out.push_back(static_cast<float>(a.x));
+  out.push_back(static_cast<float>(a.y));
+  out.push_back(r);
+  out.push_back(g);
+  out.push_back(bl);
+  out.push_back(al);
+  out.push_back(static_cast<float>(b.x));
+  out.push_back(static_cast<float>(b.y));
+  out.push_back(r);
+  out.push_back(g);
+  out.push_back(bl);
+  out.push_back(al);
+}
+
+// Expand a PointsAnnotation into a flat LineList vertex stream. Required
+// because QRhi does not expose a native LineLoop topology.
+void expandToLineList(const PointsAnnotation& pa, std::vector<float>& out) {
+  const auto& pts = pa.points;
+  if (pts.size() < 2) {
+    return;
+  }
+  switch (pa.topology) {
+    case AnnotationTopology::kLineLoop:
+      for (size_t i = 0; i + 1 < pts.size(); ++i) {
+        appendSegment(out, pts[i], pts[i + 1], pa.color);
+      }
+      appendSegment(out, pts.back(), pts.front(), pa.color);
+      break;
+    case AnnotationTopology::kLineStrip:
+      for (size_t i = 0; i + 1 < pts.size(); ++i) {
+        appendSegment(out, pts[i], pts[i + 1], pa.color);
+      }
+      break;
+    case AnnotationTopology::kLineList:
+      for (size_t i = 0; i + 1 < pts.size(); i += 2) {
+        appendSegment(out, pts[i], pts[i + 1], pa.color);
+      }
+      break;
+    case AnnotationTopology::kPoints:
+      // Skipped — point rendering would need a different topology / shader.
+      break;
+  }
+}
+
+}  // namespace
 
 void MediaViewerWidget::setTimestamp(int64_t ts_ns) {
   if (media_source_ != nullptr) {
@@ -88,6 +145,15 @@ void MediaViewerWidget::releaseResources() {
   sampler_ = nullptr;
   delete uniform_buf_;
   uniform_buf_ = nullptr;
+  delete marker_pipeline_;
+  marker_pipeline_ = nullptr;
+  delete marker_srb_;
+  marker_srb_ = nullptr;
+  delete marker_uniform_buf_;
+  marker_uniform_buf_ = nullptr;
+  delete marker_vbo_;
+  marker_vbo_ = nullptr;
+  marker_vbo_capacity_ = 0;
   tex_width_ = 0;
   tex_height_ = 0;
 }
@@ -155,6 +221,58 @@ void MediaViewerWidget::initialize(QRhiCommandBuffer* /*cb*/) {
     return;
   }
 
+  // ----- Marker / overlay pipeline -----
+  auto marker_vert = loadShader(":/shaders/scene_lines.vert.qsb");
+  auto marker_frag = loadShader(":/shaders/scene_lines.frag.qsb");
+  if (marker_vert.isValid() && marker_frag.isValid()) {
+    marker_uniform_buf_ = r->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, kMarkerUniformBufSize);
+    marker_uniform_buf_->create();
+
+    // Initial VBO capacity ~64KB (≈ 2700 vertices = 340 bboxes' worth).
+    marker_vbo_capacity_ = 64 * 1024;
+    marker_vbo_ = r->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, static_cast<int>(marker_vbo_capacity_));
+    marker_vbo_->create();
+
+    marker_srb_ = r->newShaderResourceBindings();
+    marker_srb_->setBindings({
+        QRhiShaderResourceBinding::uniformBuffer(
+            0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+            marker_uniform_buf_),
+    });
+    marker_srb_->create();
+
+    QRhiVertexInputLayout marker_layout;
+    QRhiVertexInputBinding binding(24);  // stride: 8 (vec2 pos) + 16 (vec4 color)
+    marker_layout.setBindings({binding});
+    QRhiVertexInputAttribute pos_attr(0, 0, QRhiVertexInputAttribute::Float2, 0);
+    QRhiVertexInputAttribute color_attr(0, 1, QRhiVertexInputAttribute::Float4, 8);
+    marker_layout.setAttributes({pos_attr, color_attr});
+
+    marker_pipeline_ = r->newGraphicsPipeline();
+    marker_pipeline_->setShaderStages({QRhiShaderStage(QRhiShaderStage::Vertex, marker_vert),
+                                       QRhiShaderStage(QRhiShaderStage::Fragment, marker_frag)});
+    marker_pipeline_->setTopology(QRhiGraphicsPipeline::Lines);
+    marker_pipeline_->setVertexInputLayout(marker_layout);
+    marker_pipeline_->setShaderResourceBindings(marker_srb_);
+    marker_pipeline_->setRenderPassDescriptor(renderTarget()->renderPassDescriptor());
+
+    QRhiGraphicsPipeline::TargetBlend blend;
+    blend.enable = true;
+    blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
+    blend.dstColor = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    blend.srcAlpha = QRhiGraphicsPipeline::One;
+    blend.dstAlpha = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    marker_pipeline_->setTargetBlends({blend});
+
+    if (!marker_pipeline_->create()) {
+      qWarning("MediaViewerWidget: failed to create marker pipeline");
+      delete marker_pipeline_;
+      marker_pipeline_ = nullptr;
+    }
+  } else {
+    qWarning("MediaViewerWidget: scene_lines shaders not loaded; markers disabled");
+  }
+
   if (has_pending_) {
     update();
   }
@@ -176,14 +294,22 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
   {
     std::lock_guard lock(frame_mutex_);
 
-    // Poll MediaSource if attached
+    // Poll MediaSource if attached. MediaFrame may carry both a pixel base
+    // and vector overlays; capture each independently — a frame can update
+    // either layer in isolation.
     if (media_source_ != nullptr) {
       auto frame = media_source_->takeFrame();
-      if (frame && !frame->isNull()) {
-        pending_decoded_ = std::move(*frame);
-        pending_is_yuv_ = (pending_decoded_.format == PixelFormat::kYUV420P);
-        pending_qimage_ = QImage();
-        has_pending_ = true;
+      if (frame.has_value()) {
+        if (frame->base.has_value() && !frame->base->isNull()) {
+          pending_decoded_ = std::move(*frame->base);
+          pending_is_yuv_ = (pending_decoded_.format == PixelFormat::kYUV420P);
+          pending_qimage_ = QImage();
+          has_pending_ = true;
+        }
+        if (!frame->overlays.empty()) {
+          last_overlays_ = std::move(frame->overlays);
+          overlays_dirty_ = true;
+        }
       }
     }
 
@@ -365,12 +491,70 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
   int32_t fmt = current_pixel_format_;
   updates->updateDynamicBuffer(uniform_buf_, 128, 4, &fmt);
 
+  // ----- Marker pipeline: rebuild VBO + update uniforms -----
+  size_t marker_vertex_count = 0;
+  if (marker_pipeline_ != nullptr) {
+    if (overlays_dirty_) {
+      marker_vertex_data_.clear();
+      // Pre-size to dodge per-segment reallocs. 12 floats per segment (LineList).
+      size_t total_points = 0;
+      for (const auto& sf : last_overlays_) {
+        for (const auto& ia : sf.annotations) {
+          for (const auto& pa : ia.points) {
+            total_points += pa.points.size();
+          }
+        }
+      }
+      marker_vertex_data_.reserve(total_points * 12);
+      for (const auto& sf : last_overlays_) {
+        for (const auto& ia : sf.annotations) {
+          for (const auto& pa : ia.points) {
+            expandToLineList(pa, marker_vertex_data_);
+          }
+        }
+      }
+      const size_t needed = marker_vertex_data_.size() * sizeof(float);
+      if (needed > marker_vbo_capacity_) {
+        marker_vbo_->destroy();
+        marker_vbo_capacity_ = std::max(needed * 2, marker_vbo_capacity_);
+        marker_vbo_->setSize(static_cast<int>(marker_vbo_capacity_));
+        marker_vbo_->create();
+      }
+      if (needed > 0) {
+        updates->updateDynamicBuffer(marker_vbo_, 0, static_cast<int>(needed), marker_vertex_data_.data());
+      }
+      overlays_dirty_ = false;
+    }
+    marker_vertex_count = marker_vertex_data_.size() / 6;  // 6 floats per vertex (vec2 + vec4)
+
+    if (tex_width_ > 0 && tex_height_ > 0) {
+      MarkerUbo ubo{};
+      std::memcpy(ubo.view, view.constData(), sizeof(ubo.view));
+      ubo.frame_size[0] = static_cast<float>(tex_width_);
+      ubo.frame_size[1] = static_cast<float>(tex_height_);
+      updates->updateDynamicBuffer(marker_uniform_buf_, 0, kMarkerUniformBufSize, &ubo);
+    }
+  }
+
   cb->beginPass(rt, QColor::fromRgbF(0.0f, 0.0f, 0.0f, 1.0f), {1.0f, 0}, updates);
   cb->setGraphicsPipeline(pipeline_);
   cb->setViewport(
       QRhiViewport(0, 0, static_cast<float>(output_size.width()), static_cast<float>(output_size.height())));
   cb->setShaderResources(srb_);
   cb->draw(3);
+
+  // Second draw call: vector overlays (markers) on top of the image, blended.
+  // Viewport is reset on pipeline switch in some QRhi backends, so set explicitly.
+  if (marker_pipeline_ != nullptr && marker_vertex_count > 0 && tex_width_ > 0) {
+    cb->setGraphicsPipeline(marker_pipeline_);
+    cb->setViewport(QRhiViewport(0, 0, static_cast<float>(output_size.width()),
+                                 static_cast<float>(output_size.height())));
+    cb->setShaderResources(marker_srb_);
+    const QRhiCommandBuffer::VertexInput vinput(marker_vbo_, 0);
+    cb->setVertexInput(0, 1, &vinput);
+    cb->draw(static_cast<quint32>(marker_vertex_count));
+  }
+
   cb->endPass();
 }
 

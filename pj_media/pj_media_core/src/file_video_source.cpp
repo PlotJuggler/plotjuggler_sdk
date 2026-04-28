@@ -29,7 +29,7 @@ void FileVideoSource::setTimestamp(int64_t ts_ns) {
   backend_->seek(seconds);
 }
 
-std::optional<DecodedFrame> FileVideoSource::takeFrame() {
+std::optional<MediaFrame> FileVideoSource::takeFrame() {
   // processEvents fires the frame callback on the caller's thread,
   // which populates pending_frame_ under frame_mutex_.
   backend_->processEvents();
@@ -38,9 +38,10 @@ std::optional<DecodedFrame> FileVideoSource::takeFrame() {
   if (!pending_frame_.has_value()) {
     return std::nullopt;
   }
-  auto frame = std::move(*pending_frame_);
+  MediaFrame mf;
+  mf.base = std::move(*pending_frame_);
   pending_frame_.reset();
-  return frame;
+  return mf;
 }
 
 double FileVideoSource::duration() const {

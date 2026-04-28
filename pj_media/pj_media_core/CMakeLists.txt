@@ -17,6 +17,11 @@ set(PJ_MEDIA_CORE_SOURCES
   src/codec_pipeline.cpp
   src/codecs.cpp
   src/image_pipeline_source.cpp
+  src/scene_decoder.cpp
+  src/scene_decoder_cdr.cpp
+  src/scene_decoder_protobuf.cpp
+  src/scene_pipeline_source.cpp
+  src/composite_media_source.cpp
 )
 
 if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
@@ -32,7 +37,10 @@ if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
 endif()
 
 add_library(pj_media_core STATIC ${PJ_MEDIA_CORE_SOURCES})
-target_include_directories(pj_media_core PUBLIC include)
+target_include_directories(pj_media_core
+  PUBLIC include
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..  # pj_media/, for <nanocdr/nanocdr.hpp>
+)
 target_compile_features(pj_media_core PUBLIC cxx_std_20)
 target_compile_options(pj_media_core PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
@@ -62,11 +70,16 @@ if(PJ_BUILD_TESTS)
     tests/decoded_frame_test.cpp
     tests/cancel_token_test.cpp
     tests/image_decoder_test.cpp
+    tests/scene_frame_test.cpp
+    tests/scene_decoder_test.cpp
+    tests/scene_pipeline_source_test.cpp
+    tests/composite_media_source_test.cpp
   )
 
   foreach(test_src ${PJ_MEDIA_CORE_TESTS})
     get_filename_component(test_name ${test_src} NAME_WE)
     add_executable(${test_name} ${test_src})
+    target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)  # for <nanocdr/...>
     target_link_libraries(${test_name} PRIVATE pj_media_core PkgConfig::TURBOJPEG PkgConfig::LIBPNG GTest::gtest_main)
     target_compile_options(${test_name} PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
     add_test(NAME ${test_name} COMMAND ${test_name})

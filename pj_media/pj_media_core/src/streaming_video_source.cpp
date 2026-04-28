@@ -32,14 +32,15 @@ void StreamingVideoSource::setTimestamp(int64_t ts_ns) {
   request_cv_.notify_one();
 }
 
-std::optional<DecodedFrame> StreamingVideoSource::takeFrame() {
+std::optional<MediaFrame> StreamingVideoSource::takeFrame() {
   std::lock_guard lock(result_mutex_);
   if (!result_frame_.has_value()) {
     return std::nullopt;
   }
-  auto frame = std::move(*result_frame_);
+  MediaFrame mf;
+  mf.base = std::move(*result_frame_);
   result_frame_.reset();
-  return frame;
+  return mf;
 }
 
 bool StreamingVideoSource::isInitialized() const {

@@ -24,7 +24,7 @@ class ImagePipelineSource : public MediaSource {
   ImagePipelineSource(ObjectStore* store, ObjectTopicId topic, std::unique_ptr<CodecPipeline> pipeline);
 
   void setTimestamp(int64_t ts_ns) override;
-  std::optional<DecodedFrame> takeFrame() override;
+  std::optional<MediaFrame> takeFrame() override;
 
  private:
   ObjectStore* store_;

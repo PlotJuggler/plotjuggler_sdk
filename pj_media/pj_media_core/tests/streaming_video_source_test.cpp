@@ -107,20 +107,22 @@ TEST_F(StreamingVideoSourceTest, DecodeAtTimestamp) {
   source.setTimestamp(mid_ts);
 
   // Poll for the decoded frame
-  std::optional<DecodedFrame> frame;
+  std::optional<MediaFrame> frame;
   auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-  while (!frame.has_value() && std::chrono::steady_clock::now() < deadline) {
+  while ((!frame.has_value() || !frame->base.has_value()) &&
+         std::chrono::steady_clock::now() < deadline) {
     frame = source.takeFrame();
-    if (!frame.has_value()) {
+    if (!frame.has_value() || !frame->base.has_value()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
   }
 
   ASSERT_TRUE(frame.has_value()) << "no frame decoded within 5 seconds";
-  EXPECT_FALSE(frame->isNull());
-  EXPECT_EQ(frame->width, 640);
-  EXPECT_EQ(frame->height, 480);
-  EXPECT_TRUE(frame->isValid());
+  ASSERT_TRUE(frame->base.has_value());
+  EXPECT_FALSE(frame->base->isNull());
+  EXPECT_EQ(frame->base->width, 640);
+  EXPECT_EQ(frame->base->height, 480);
+  EXPECT_TRUE(frame->base->isValid());
 }
 
 TEST_F(StreamingVideoSourceTest, RapidTimestampChanges) {
@@ -142,11 +144,12 @@ TEST_F(StreamingVideoSourceTest, RapidTimestampChanges) {
   }
 
   // Wait for the last decode to complete
-  std::optional<DecodedFrame> frame;
+  std::optional<MediaFrame> frame;
   auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-  while (!frame.has_value() && std::chrono::steady_clock::now() < deadline) {
+  while ((!frame.has_value() || !frame->base.has_value()) &&
+         std::chrono::steady_clock::now() < deadline) {
     frame = source.takeFrame();
-    if (!frame.has_value()) {
+    if (!frame.has_value() || !frame->base.has_value()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
   }

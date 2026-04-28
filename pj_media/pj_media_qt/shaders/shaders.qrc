@@ -4,5 +4,7 @@
     <file alias="shaders/texture.frag.qsb">texture.frag.qsb</file>
     <file alias="shaders/yuv_to_rgb.vert.qsb">yuv_to_rgb.vert.qsb</file>
     <file alias="shaders/yuv_to_rgb.frag.qsb">yuv_to_rgb.frag.qsb</file>
+    <file alias="shaders/scene_lines.vert.qsb">scene_lines.vert.qsb</file>
+    <file alias="shaders/scene_lines.frag.qsb">scene_lines.frag.qsb</file>
   </qresource>
 </RCC>

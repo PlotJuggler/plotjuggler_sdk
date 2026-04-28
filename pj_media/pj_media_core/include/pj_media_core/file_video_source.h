@@ -28,7 +28,7 @@ class FileVideoSource : public MediaSource {
   ~FileVideoSource() override;
 
   void setTimestamp(int64_t ts_ns) override;
-  std::optional<DecodedFrame> takeFrame() override;
+  std::optional<MediaFrame> takeFrame() override;
 
   // --- Additional API beyond MediaSource (for slider/transport UI) ---
 

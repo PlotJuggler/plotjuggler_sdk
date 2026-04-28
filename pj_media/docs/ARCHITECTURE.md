@@ -43,9 +43,9 @@ Pure C++ library. Contains everything that does not touch Qt:
 | `ThumbnailCache` | `thumbnail_cache.h` | JPEG-compressed frame cache: background pre-decode at open, auto-scale to 1920px, YUV420P output (§4.1) |
 | `H264 NAL utils` | `h264_utils.h` | Annex-B keyframe detection (`isH264Keyframe`), SPS/PPS extraction (`extractH264SpsPps`), codec param builder (`makeH264CodecParams`) |
 | `ImageDecoder` | `image_decoder.h` | turbojpeg / libpng / raw-pixel dispatch (§4) |
-| `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) — deferred |
+| `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) — implemented for vision_msgs / yolo_msgs / foxglove ImageAnnotations |
 | `MediaIndexRegistry` | `media_index_registry.h` | Per-topic keyframe timestamp index sidechannel (§6) |
-| `Compositor` | `compositor.h` | Multi-layer decode orchestration and blending (§8) — deferred |
+| `CompositeMediaSource` | `composite_media_source.h` | Multi-layer fan-out: owns N `MediaSource`, fuses their `MediaFrame`s (§5.4 / §8) |
 | `CancelToken` | `cancel_token.h` | Atomic flag polled by decoders between decode units |
 | `DecodedFrame` | `decoded_frame.h` | RAII wrapper for decoded pixel data (YUV planes or RGB buffer) |
 
@@ -406,6 +406,25 @@ or Protobuf wire format into typed scene primitives and annotations
 Output is a `SceneFrame` — a collection of typed primitives ready for
 the compositor to rasterize or overlay.
 
+**Implemented** (`pj_media_core/scene_decoder.h`). The factory
+`makeSceneDecoder(schema_name)` dispatches to the right decoder by exact
+MCAP schema name; unknown schemas return `nullptr` and the caller skips
+the topic. Schema constants live alongside the factory:
+
+| Schema constant                        | Wire | Mapping                                                      |
+|----------------------------------------|------|--------------------------------------------------------------|
+| `kSchemaDetection2DArray`              | CDR  | `vision_msgs/msg/Detection2DArray` → 4-corner LineLoop bboxes|
+| `kSchemaYoloDetectionArray`            | CDR  | `yolo_msgs/msg/DetectionArray` (yolo_ros) → bboxes by class  |
+| `kSchemaFoxgloveImageAnnotations`      | PB   | `foxglove.ImageAnnotations` (PointsAnnotation only for now)  |
+
+The Foxglove decoder is hand-rolled against the protobuf wire format
+(varint / I64 / LEN) — no `protoc`/libprotobuf dependency. CircleAnnotation
+and TextAnnotation fields are recognized but their bodies are skipped;
+rendering for them lands when needed. Color for ROS-style schemas is
+synthesized from `class_id` via a stable 10-entry palette (the messages
+themselves carry no color); Foxglove's outline/fill colors are not yet
+read from the wire.
+
 ### 4.4 StreamingVideoDecoder
 
 Decodes H.264 VideoFrame entries stored in ObjectStore. Unlike
@@ -609,12 +628,31 @@ Internals:
   an internal `FrameSlot`.
 - `takeFrame` polls the `FrameSlot` and returns the latest frame.
 
-### 5.4 Multi-layer (future)
+### 5.4 Multi-layer
 
-When compositing is needed, a `CompositeMediaSource` can own multiple
-`MediaSource` instances, call `takeFrame()` on each, composite on CPU,
-and present the blended result. Same interface, same widget code. This
-is deferred until annotation test data is available.
+`CompositeMediaSource` (`pj_media_core/composite_media_source.h`) owns
+multiple `MediaSource` instances and fuses their `MediaFrame`s on each
+`takeFrame()`. Same `MediaSource` interface — the widget remains agnostic
+of the layer count.
+
+The output of `takeFrame()` is a single `MediaFrame` with two slots:
+
+```cpp
+struct MediaFrame {
+  std::optional<DecodedFrame> base;   // pixel-buffer layer (image/video)
+  std::vector<SceneFrame> overlays;   // vector primitive layers
+};
+```
+
+Fusion rules (see implementation):
+- The first layer that produces a `.base` wins; later bases dropped.
+- Every layer's `.overlays` are concatenated in addition order (later
+  layers render on top).
+- Returns `nullopt` if no layer produced data on this poll.
+
+Layers are owned by the compositor (`std::unique_ptr<MediaSource>`).
+Polling is deterministic (addition order), making z-order configuration
+explicit at construction time.
 
 ---
 
@@ -778,16 +816,26 @@ configured at widget construction time. Layer types:
 
 ### 8.2 Compositing pipeline
 
-When compositing is implemented, a `CompositeMediaSource` (§5.4) would
-own one `MediaSource` per layer. On each tick:
+`CompositeMediaSource` (§5.4) owns one `MediaSource` per layer. On each tick:
 
 1. Calls `takeFrame()` on each layer's `MediaSource`.
-2. Collects decoded outputs.
-3. Applies layer ordering and blending:
-   - Base layer rendered first.
-   - Overlays rasterized on top (annotations as vector primitives,
-     depth/segmentation as alpha-blended pixel buffers).
-4. Returns the composited frame via its own `takeFrame()`.
+2. Collects decoded outputs into a single `MediaFrame` (one `.base` +
+   accumulated `.overlays`).
+3. Returns the fused frame via its own `takeFrame()`.
+
+Layer-specific rasterization happens in the widget that consumes the
+`MediaFrame`:
+- Pixel-buffer layers (`.base`) → texture upload + image shader.
+- Vector overlays (`.overlays`) → per-primitive expansion (e.g. LineLoop
+  → LineList) + a second QRhi pipeline that shares the same
+  viewTransform uniform so overlays track pan/zoom/letterbox with the
+  base. See `MediaViewerWidget::render` for the current implementation
+  (image base + line overlay, blended in the same render pass).
+
+Pixel-buffer overlays (depth colormap, segmentation mask) are recognized
+in §8.1 but not yet wired through `MediaFrame.overlays` — they will need
+either an additional pixel-layer slot or shared-texture composition in a
+follow-up.
 
 ### 8.3 At-or-before semantics
 

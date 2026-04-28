@@ -434,5 +434,120 @@ TEST(ObjectStoreTest, ConcurrentReadWriteSmoke) {
   EXPECT_EQ(store.entryCount(id), static_cast<size_t>(kPushCount));
 }
 
+// Indexer pushes lazy closures while a scrubber resolves them via at().
+TEST(ObjectStoreTest, ConcurrentPushLazyAndAt) {
+  ObjectStore store;
+  auto id = registerTestTopic(store);
+
+  constexpr int kPushCount = 500;
+  std::atomic<size_t> indexed{0};
+
+  std::thread indexer([&]() {
+    for (int i = 0; i < kPushCount; ++i) {
+      auto status = store.pushLazy(id, static_cast<Timestamp>(i) * 100,
+                                   [i]() -> std::vector<uint8_t> { return {static_cast<uint8_t>(i & 0xFF)}; });
+      if (status.has_value()) {
+        indexed.fetch_add(1, std::memory_order_release);
+      }
+    }
+  });
+
+  std::atomic<uint64_t> resolved{0};
+  std::thread scrubber([&]() {
+    for (int i = 0; i < kPushCount * 2; ++i) {
+      size_t n = indexed.load(std::memory_order_acquire);
+      if (n == 0) {
+        std::this_thread::yield();
+        continue;
+      }
+      auto entry = store.at(id, i % n);
+      if (entry.has_value() && entry->data && !entry->data->empty()) {
+        resolved.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
+  });
+
+  indexer.join();
+  scrubber.join();
+  EXPECT_EQ(store.entryCount(id), static_cast<size_t>(kPushCount));
+  EXPECT_GT(resolved.load(), 0u);
+}
+
+// Validates the safe pattern: scope the view, release it, THEN call latestAt().
+TEST(ObjectStoreTest, ConcurrentEntryTimestampsAndAt) {
+  ObjectStore store;
+  auto id = registerTestTopic(store);
+
+  constexpr int kPushCount = 500;
+  std::atomic<size_t> indexed{0};
+
+  std::thread indexer([&]() {
+    for (int i = 0; i < kPushCount; ++i) {
+      auto status = store.pushLazy(id, static_cast<Timestamp>(i) * 100,
+                                   [i]() -> std::vector<uint8_t> { return {static_cast<uint8_t>(i & 0xFF)}; });
+      if (status.has_value()) {
+        indexed.fetch_add(1, std::memory_order_release);
+      }
+    }
+  });
+
+  std::thread scrubber([&]() {
+    for (int i = 0; i < kPushCount * 2; ++i) {
+      size_t n = indexed.load(std::memory_order_acquire);
+      if (n == 0) {
+        std::this_thread::yield();
+        continue;
+      }
+      Timestamp ts = 0;
+      {
+        auto view = store.entryTimestamps(id);
+        size_t idx = static_cast<size_t>(i) % n;
+        if (idx >= view.size()) {
+          continue;
+        }
+        ts = view[idx];
+      }  // release series lock before latestAt()
+      store.latestAt(id, ts);
+    }
+  });
+
+  indexer.join();
+  scrubber.join();
+  EXPECT_EQ(store.entryCount(id), static_cast<size_t>(kPushCount));
+}
+
+// Destroy the store while a writer thread is pushing: closures must drop cleanly.
+TEST(ObjectStoreTest, MidFlightTeardown) {
+  auto store = std::make_unique<ObjectStore>();
+  auto id = registerTestTopic(*store);
+
+  std::atomic<bool> stop{false};
+  std::atomic<size_t> indexed{0};
+
+  // shared_ptr capture: closures may outlive the writer thread.
+  auto captured_state = std::make_shared<std::vector<uint8_t>>(64, 0xCC);
+
+  std::thread indexer([&, captured_state]() {
+    for (int i = 0; i < 100000 && !stop.load(std::memory_order_relaxed); ++i) {
+      auto status = store->pushLazy(id, static_cast<Timestamp>(i) * 100,
+                                    [captured_state]() -> std::vector<uint8_t> { return *captured_state; });
+      if (!status.has_value()) {
+        break;
+      }
+      indexed.fetch_add(1, std::memory_order_relaxed);
+    }
+  });
+
+  while (indexed.load(std::memory_order_relaxed) < 100) {
+    std::this_thread::yield();
+  }
+
+  stop.store(true, std::memory_order_relaxed);
+  indexer.join();
+  store.reset();
+
+  EXPECT_FALSE(captured_state->empty());
+}
+
 }  // namespace
 }  // namespace PJ

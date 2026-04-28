@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <optional>
 
-#include "pj_media_core/decoded_frame.h"
+#include "pj_media_core/media_frame.h"
 
 namespace PJ {
 
@@ -11,10 +11,12 @@ namespace PJ {
 /// MediaViewerWidget.  The main thread calls setTimestamp() when the
 /// global time changes and takeFrame() at render rate.
 ///
-/// Three concrete implementations:
+/// Concrete implementations:
 ///   ImagePipelineSource  — synchronous CodecPipeline + ObjectStore
 ///   FileVideoSource      — wraps FfmpegBackend (file-based video)
 ///   StreamingVideoSource — wraps StreamingVideoDecoder + worker thread
+///   ScenePipelineSource  — vector overlays decoded from ObjectStore
+///   CompositeMediaSource — fans out across N layers, returns one MediaFrame
 class MediaSource {
  public:
   virtual ~MediaSource() = default;
@@ -30,8 +32,9 @@ class MediaSource {
   virtual void setTimestamp(int64_t ts_ns) = 0;
 
   /// Called by main thread at render rate.
-  /// Returns the latest decoded frame, or nullopt if nothing new.
-  virtual std::optional<DecodedFrame> takeFrame() = 0;
+  /// Returns the latest MediaFrame (base pixels and/or overlays), or nullopt
+  /// if nothing new since the last call.
+  virtual std::optional<MediaFrame> takeFrame() = 0;
 };
 
 }  // namespace PJ

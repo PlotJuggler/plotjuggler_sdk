@@ -23,8 +23,10 @@ if(TARGET pj_media_qt)
   target_compile_features(mcap_image_viewer PRIVATE cxx_std_20)
   target_compile_options(mcap_image_viewer PRIVATE ${PJ_WARNING_FLAGS})
   target_compile_definitions(mcap_image_viewer PRIVATE PJ_HAS_RHI_WIDGET)
+  find_package(zstd REQUIRED)
   target_link_libraries(mcap_image_viewer PRIVATE
     pj_media_qt pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
+    zstd::libzstd_static
   )
   # --- Qt demo: multi-channel viewer (color + depth side by side) ---
   add_executable(multi_channel_viewer multi_channel_viewer.cpp)
@@ -32,6 +34,7 @@ if(TARGET pj_media_qt)
   target_compile_options(multi_channel_viewer PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(multi_channel_viewer PRIVATE
     pj_media_qt pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
+    zstd::libzstd_static
   )
 
   # --- Qt demo: simulated live stream (M13) ---

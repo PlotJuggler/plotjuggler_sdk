@@ -82,6 +82,28 @@ thread and push during `poll()` on a single application thread — the
 "single writer" is typically that thread draining the source's input
 queue.
 
+**Lock-order contract for `entryTimestamps()`.** The view returned by
+`entryTimestamps()` retains an internal shared lock on the series mutex
+for its lifetime. Callers MUST release that view (let it go out of
+scope) before invoking `at()` or `latestAt()` on the same store, or the
+lock-order between the store-level and series-level mutexes is inverted
+— concurrent writers can starve, and any future code path that takes
+the store-level mutex exclusively (e.g. `registerTopic`) introduces a
+real deadlock cycle. The safe pattern is a tightly-scoped block:
+
+```cpp
+Timestamp ts = 0;
+{
+  auto view = store->entryTimestamps(topic);     // acquires series shared lock
+  if (index >= view.size()) return;
+  ts = view[index];
+}                                                  // shared lock released here
+auto entry = store->latestAt(topic, ts);          // safe to acquire store + series again
+```
+
+The `ConcurrentEntryTimestampsAndAt` test in `tests/object_store_test.cpp`
+locks this pattern in under TSAN.
+
 Returned `ResolvedObjectEntry` values are **owning**
 (`shared_ptr`-based, see §4), so a reader can release its shared lock
 the moment `latestAt` or `at` returns and continue decoding on its own

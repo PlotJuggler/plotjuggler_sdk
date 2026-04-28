@@ -597,3 +597,42 @@ malformed input, this is an out-of-bounds read.
 `RTLD_DEEPBIND` conflicts with ASAN's runtime interceptors. Fixed by
 defining `PJ_ASAN_ACTIVE` when sanitizers are enabled and skipping
 the flag in that case.
+
+**Don't name a UBO field `imageSize`** in any shader compiled through
+`qsb` for the OpenGL ES backend. `imageSize()` is a built-in GLSL
+function, so SPIRV-Cross renames the struct field to `_imageSize`
+when emitting GLSL 100es. QRhi maps UBO writes to `glUniform*` calls
+by reflected name, but reflection still reports the original
+`imageSize`, so the setter targets a non-existent uniform and the
+field stays zero-initialized — every shader read returns 0, dividing
+by which yields NaN positions and clipped vertices (no rendering, no
+warning). Fix: rename to e.g. `frameSize`. Affects
+`pj_media_qt/shaders/scene_lines.vert`.
+
+**`mcap::ReadMessageOptions::readOrder` defaults to `FileOrder`,
+not `LogTimeOrder`.** On bags with non-chronological chunk layout
+(rosbag2 `compression_mode: MESSAGE` produces these), the default
+iteration surfaces messages out of timestamp order.
+`ObjectStore::pushLazy` then rejects the offending messages because
+of its monotonically non-decreasing timestamp invariant — silent
+partial-load. Always set
+`opts.readOrder = mcap::ReadMessageOptions::ReadOrder::LogTimeOrder`
+in indexers that feed an ObjectStore.
+
+**rosbag2 `compression_mode: MESSAGE` produces zstd-compressed
+payloads.** Each individual message is compressed (magic
+`0x28 0xb5 0x2f 0xfd`); MCAP itself doesn't decompress at the
+message level (only chunks). Loaders must detect and decompress
+before any further parsing — see `pj_media/demos/mcap_helpers.hpp`'s
+`maybeDecompressZstd` (rvalue-ref input so the uncompressed common
+path is move-only).
+
+**Marker pipeline + image pipeline must share `viewTransform`.**
+When `MediaViewerWidget` switches between the image graphics pipeline
+and the marker (line) pipeline within the same render pass, the
+viewport state can be reset on some QRhi backends — call
+`cb->setViewport(...)` again before the second draw. Both pipelines
+must read the same viewTransform matrix uniform; otherwise the
+overlay floats relative to the image during pan/zoom. Cleanest is
+to update the uniform from the same `QMatrix4x4 view = buildViewTransform(...)`
+on every render.

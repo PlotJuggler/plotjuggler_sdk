@@ -353,6 +353,16 @@ A rectangle is `LINE_LOOP` with 4 points. A polygon outline is `LINE_LOOP` with 
 Overlays rendered in image pixel coordinates. These reference an image topic and draw
 on top of it. They are not part of the 3D scene graph.
 
+**Implementation status:** all four type structs (`ImageAnnotation`, `PointsAnnotation`,
+`CircleAnnotation`, `TextAnnotation`) live in
+`pj_media_core/include/pj_media_core/scene_frame.h`, plus a `Point2` and a `ColorRGBA`
+(RGBA8). Decoders for `vision_msgs/msg/Detection2DArray`, `yolo_msgs/msg/DetectionArray`
+(both CDR) and `foxglove.ImageAnnotations` (Protobuf) live in `scene_decoder*.cpp` and
+are wired through the factory `makeSceneDecoder(schema_name)`. `MediaViewerWidget`
+renders `PointsAnnotation` (any topology) via a second QRhi pipeline that shares the
+image's `viewTransform` uniform; `CircleAnnotation` and `TextAnnotation` are decoded
+but not yet rendered.
+
 ### ImageAnnotation
 
 | Field | Type | Notes |

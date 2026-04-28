@@ -115,6 +115,7 @@ class ObjectStore {
 
   std::pair<Timestamp, Timestamp> timeRange(ObjectTopicId id) const;
 
+  // Holds a shared series lock; release before at()/latestAt() (lock-order).
   EntryTimestampsView entryTimestamps(ObjectTopicId id) const;
 
   // --- Retention ---

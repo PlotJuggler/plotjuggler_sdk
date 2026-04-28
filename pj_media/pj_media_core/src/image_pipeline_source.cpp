@@ -26,13 +26,14 @@ void ImagePipelineSource::setTimestamp(int64_t ts_ns) {
   }
 }
 
-std::optional<DecodedFrame> ImagePipelineSource::takeFrame() {
+std::optional<MediaFrame> ImagePipelineSource::takeFrame() {
   if (!pending_frame_.has_value()) {
     return std::nullopt;
   }
-  auto frame = std::move(*pending_frame_);
+  MediaFrame mf;
+  mf.base = std::move(*pending_frame_);
   pending_frame_.reset();
-  return frame;
+  return mf;
 }
 
 }  // namespace PJ

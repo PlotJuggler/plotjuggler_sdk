@@ -9,8 +9,10 @@
 #include <QRhiWidget>
 #include <QWheelEvent>
 #include <mutex>
+#include <vector>
 
 #include "pj_media_core/decoded_frame.h"
+#include "pj_media_core/scene_frame.h"
 
 namespace PJ {
 
@@ -112,6 +114,27 @@ class MediaViewerWidget : public QRhiWidget {
   // int  pixelFormat    (4 bytes, offset 128)
   // padding             (12 bytes)
   static constexpr int kUniformBufSize = 144;
+
+  // ----- Vector overlay pipeline (markers / annotations) -----
+  // Second QRhi pipeline that draws line primitives on top of the image
+  // pass, sharing the viewTransform so markers track pan/zoom/letterbox.
+  QRhiGraphicsPipeline* marker_pipeline_ = nullptr;
+  QRhiBuffer* marker_uniform_buf_ = nullptr;
+  QRhiBuffer* marker_vbo_ = nullptr;
+  QRhiShaderResourceBindings* marker_srb_ = nullptr;
+  size_t marker_vbo_capacity_ = 0;        ///< current VBO byte capacity
+  std::vector<float> marker_vertex_data_; ///< CPU-side scratch (pos.xy + color.rgba)
+  std::vector<SceneFrame> last_overlays_; ///< persisted across renders
+  bool overlays_dirty_ = false;           ///< rebuild VBO on next render
+
+  // Uniform layout for marker pipeline (std140). frameSize is vec4 (only .xy
+  // used) instead of vec2 to dodge a std140 alignment quirk in the OpenGL
+  // backend; see scene_lines.vert for context.
+  struct alignas(16) MarkerUbo {
+    float view[16];
+    float frame_size[4];
+  };
+  static constexpr int kMarkerUniformBufSize = sizeof(MarkerUbo);
 };
 
 }  // namespace PJ

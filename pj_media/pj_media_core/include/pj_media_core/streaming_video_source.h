@@ -41,7 +41,7 @@ class StreamingVideoSource : public MediaSource {
   StreamingVideoSource& operator=(StreamingVideoSource&&) = delete;
 
   void setTimestamp(int64_t ts_ns) override;
-  std::optional<DecodedFrame> takeFrame() override;
+  std::optional<MediaFrame> takeFrame() override;
 
   [[nodiscard]] bool isInitialized() const;
 
