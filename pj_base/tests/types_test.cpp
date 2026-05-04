@@ -2,8 +2,37 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 namespace PJ {
 namespace {
+
+// ---------- Range ----------
+
+TEST(Range, DefaultsToFullNumericRange) {
+  const Range<int> range;
+  EXPECT_EQ(range.min, std::numeric_limits<int>::lowest());
+  EXPECT_EQ(range.max, std::numeric_limits<int>::max());
+  EXPECT_FALSE(range.hasLimits());
+}
+
+TEST(Range, NormalizedSwapsInvertedBounds) {
+  const Range<int> range{.min = 10, .max = -2};
+  const Range<int> normalized = range.normalized();
+  EXPECT_EQ(normalized.min, -2);
+  EXPECT_EQ(normalized.max, 10);
+}
+
+TEST(Range, ClampAndContainsUseInclusiveBounds) {
+  const Range<double> range{.min = -1.0, .max = 2.0};
+  EXPECT_DOUBLE_EQ(range.clamp(-3.0), -1.0);
+  EXPECT_DOUBLE_EQ(range.clamp(3.0), 2.0);
+  EXPECT_TRUE(range.contains(-1.0));
+  EXPECT_TRUE(range.contains(2.0));
+  EXPECT_FALSE(range.contains(3.0));
+  EXPECT_FALSE(range.contains(std::numeric_limits<double>::quiet_NaN()));
+  EXPECT_TRUE(range.hasLimits());
+}
 
 // ---------- numeric_type_size ----------
 

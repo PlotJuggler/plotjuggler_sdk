@@ -4,6 +4,8 @@
 
 #include <deque>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "pj_base/expected.hpp"
@@ -14,6 +16,105 @@
 #include "pj_datastore/type_registry.hpp"
 
 namespace PJ {
+namespace {
+
+[[nodiscard]] bool isSeriesValueType(PrimitiveType type) noexcept {
+  switch (type) {
+    case PrimitiveType::kFloat32:
+    case PrimitiveType::kFloat64:
+    case PrimitiveType::kInt8:
+    case PrimitiveType::kInt16:
+    case PrimitiveType::kInt32:
+    case PrimitiveType::kInt64:
+    case PrimitiveType::kUint8:
+    case PrimitiveType::kUint16:
+    case PrimitiveType::kUint32:
+    case PrimitiveType::kUint64:
+    case PrimitiveType::kBool:
+      return true;
+    case PrimitiveType::kString:
+    case PrimitiveType::kUnspecified:
+      return false;
+  }
+  return false;
+}
+
+void flattenColumns(
+    const TypeTreeNode& node, std::string_view prefix, FieldId& next_id, std::vector<ColumnDescriptor>& out) {
+  const std::string path = prefix.empty() ? node.name : std::string(prefix) + "." + node.name;
+
+  if (node.kind == TypeKind::kStruct) {
+    for (const auto& child : node.children) {
+      flattenColumns(*child, path, next_id, out);
+    }
+    return;
+  }
+
+  if (node.kind == TypeKind::kArray) {
+    if (!node.element_type || !node.fixed_array_size.has_value()) {
+      return;
+    }
+    for (uint32_t i = 0; i < *node.fixed_array_size; ++i) {
+      const std::string element_path = path + "[" + std::to_string(i) + "]";
+      if (node.element_type->kind == TypeKind::kStruct) {
+        for (const auto& child : node.element_type->children) {
+          flattenColumns(*child, element_path, next_id, out);
+        }
+      } else {
+        out.push_back(
+            ColumnDescriptor{
+                .field_id = next_id++,
+                .logical_type = node.element_type->primitive_type.value_or(PrimitiveType::kFloat64),
+                .field_path = element_path,
+            });
+      }
+    }
+    return;
+  }
+
+  out.push_back(
+      ColumnDescriptor{
+          .field_id = next_id++,
+          .logical_type = node.primitive_type.value_or(PrimitiveType::kFloat64),
+          .field_path = path,
+      });
+}
+
+[[nodiscard]] std::vector<ColumnDescriptor> columnsForTopic(const DataEngine& engine, const TopicStorage& storage) {
+  if (!storage.columnDescriptors().empty()) {
+    return storage.columnDescriptors();
+  }
+
+  const auto& chunks = storage.sealedChunks();
+  if (!chunks.empty()) {
+    std::vector<ColumnDescriptor> columns;
+    columns.reserve(chunks.front().columns.size());
+    for (const auto& column : chunks.front().columns) {
+      if (column.descriptor) {
+        columns.push_back(*column.descriptor);
+      }
+    }
+    return columns;
+  }
+
+  const TypeTreeNode* type_tree = engine.typeRegistry().lookup(storage.descriptor().schema_id);
+  if (type_tree == nullptr) {
+    return {};
+  }
+
+  std::vector<ColumnDescriptor> columns;
+  FieldId next_id = 0;
+  if (type_tree->kind == TypeKind::kStruct) {
+    for (const auto& child : type_tree->children) {
+      flattenColumns(*child, "", next_id, columns);
+    }
+  } else {
+    flattenColumns(*type_tree, "", next_id, columns);
+  }
+  return columns;
+}
+
+}  // namespace
 
 DataReader::DataReader(const DataEngine& engine) : engine_(engine) {}
 
@@ -56,6 +157,24 @@ PJ::Expected<std::optional<SampleRow>> DataReader::latestAt(const QueryPoint& po
     return PJ::unexpected(fmt::format("Topic {} not found", point.topic_id));
   }
   return PJ::latestAt(storage->sealedChunks(), point.t);
+}
+
+Expected<SeriesReader> DataReader::series(TopicId topic_id, std::size_t column_index) const {
+  const TopicStorage* storage = engine_.getTopicStorage(topic_id);
+  if (storage == nullptr) {
+    return PJ::unexpected(fmt::format("Topic {} not found", topic_id));
+  }
+
+  const std::vector<ColumnDescriptor> columns = columnsForTopic(engine_, *storage);
+  if (column_index >= columns.size()) {
+    return PJ::unexpected(fmt::format("Column {} not found in topic {}", column_index, topic_id));
+  }
+
+  if (!isSeriesValueType(columns[column_index].logical_type)) {
+    return PJ::unexpected(fmt::format("Column {} in topic {} is not a numeric series", column_index, topic_id));
+  }
+
+  return SeriesReader(storage->sealedChunks(), column_index);
 }
 
 }  // namespace PJ

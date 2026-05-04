@@ -167,6 +167,31 @@ runtimeHost().pushRawMessage(*binding, timestamp_ns, payload_span);
 
 ## 5. Reading Data
 
+### Series Reads
+
+Use `SeriesReader` for application-level access to one numeric/bool field as a
+time series. It is created once from a topic and column index, then behaves like
+a virtual vector of `(timestamp, value)` samples. Null physical rows are skipped:
+if the field has no value at a row timestamp, that row is not a series sample.
+
+```cpp
+auto series_or = reader.series(topic_id, col_index);
+if (!series_or) { /* handle invalid topic/column/type */ }
+
+const PJ::SeriesReader series = *series_or;
+auto bounds = series.bounds();
+auto latest = series.sampleAtOrBeforeTime(now_ns);
+
+series.samples(PJ::Range<PJ::Timestamp>{.min = t0, .max = t1})
+    .forEach([](const PJ::SeriesSample& sample) {
+      double value = sample.value;
+      PJ::Timestamp ts = sample.timestamp;
+    });
+```
+
+Series APIs are the default for plotting and other field-level consumers.
+Row-level APIs below intentionally expose physical rows and nulls.
+
 ### Range Query
 
 ```cpp

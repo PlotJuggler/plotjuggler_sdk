@@ -6,6 +6,7 @@ Two libraries with a strict dependency direction:
 
 - **pj_base** (`pj_base/`): Vocabulary types and SDK headers with zero external dependencies. Defines:
   - `Timestamp` (`int64_t`, nanoseconds since Unix epoch)
+  - `Range<T>` inclusive min/max pairs
   - Identity types: `DatasetId`, `TopicId`, `FieldId`, `SchemaId`, `TimeDomainId` (all `uint32_t`), `ChunkId` (`uint64_t`), `NodeId` (`uint32_t`)
   - `PrimitiveType` enum (12 variants: kFloat32..kUint64, kBool, kString)
   - `NumericType`, `NumericValue` (variant of all numeric scalars)
@@ -71,7 +72,7 @@ Tracks per-column `ColumnStats` incrementally (min, max, null_count, is_constant
 
 ### Reader Layer
 
-**`DataReader`** — Read-only facade over committed `DataEngine` storage. Provides `listDatasets()`, `listTopics()`, `getTypeTree()`, `getMetadata()`, `rangeQuery()`, and `latestAt()`.
+**`DataReader`** — Read-only facade over committed `DataEngine` storage. Provides `listDatasets()`, `listTopics()`, `getTypeTree()`, `getMetadata()`, `rangeQuery()`, `latestAt()`, and `series(topic_id, column_index)`.
 
 ### Query Layer
 
@@ -82,6 +83,15 @@ Tracks per-column `ColumnStats` incrementally (min, max, null_count, is_constant
 **`latestAt(chunks, t)`** — Binary search for the most recent row at or before timestamp `t`. Returns `optional<SampleRow>`.
 
 Both are free functions operating on `const std::deque<TopicChunk>&`.
+
+**`SeriesReader`** — Views one numeric/bool topic column as a virtual vector of `(timestamp, value)` samples. It is bound to a topic and column when created through `DataReader::series()`. Null physical rows and chunks where the column does not exist are skipped by definition. Provides:
+- `size()` / `empty()` — sample count, not physical row count
+- `sampleAt(index)` — lookup by virtual series index
+- `sampleAtOrBeforeTime(t)` / `sampleAtOrAfterTime(t)` — lookup by timestamp over value-bearing samples
+- `samples(Range<Timestamp>)` — cursor over samples in an inclusive time range
+- `bounds()` / `bounds(Range<Timestamp>)` — valid time and value ranges for the series
+
+**`SeriesCursor`** — Iterates value-bearing samples in `[time.min, time.max]` across chunks. It returns `SeriesSample` values with timestamp, double value, chunk pointer, and physical row index for low-level consumers that need provenance.
 
 ### Encoding Layer
 
@@ -166,7 +176,15 @@ The host translates C ABI calls (ensureTopic, ensureField, appendRecord) into `D
 3. For each sub-batch: `appendTimestamps()`, `appendColumn<T>()` per column, `finishBulkAppend()` (computes stats), `autoSeal()` if full
 4. Flush + commit same as row-at-a-time
 
-### Query
+### Series Query
+
+1. `DataReader::series(topic_id, column_index)` validates the topic, column bounds, and numeric/bool value type
+2. The returned `SeriesReader` treats the column as a field-level time series
+3. Null physical rows are skipped; every `SeriesSample` has a value
+4. Time lookups return valid series samples and virtual series indices
+5. `bounds()` returns min/max over value-bearing samples only
+
+### Row Query
 
 1. `DataReader::rangeQuery(QueryRange{topic_id, t_min, t_max})` -> `RangeCursor`
 2. Cursor binary-searches the chunk deque for start position
@@ -198,7 +216,7 @@ Effectively single-threaded. `DataWriter` accumulates in-memory. `DataEngine::co
 
 ## 7. Testing
 
-14 test executables covering all layers:
+15 core test executables covering all layers:
 
 | Test | Coverage |
 |---|---|
@@ -209,6 +227,7 @@ Effectively single-threaded. `DataWriter` accumulates in-memory. `DataEngine::co
 | `chunk_test` | `TopicChunkBuilder` row/bulk paths, seal, read-back |
 | `topic_storage_test` | Commit ordering, eviction, metadata |
 | `query_test` | `RangeCursor`, `latestAt`, edge cases |
+| `series_reader_test` | `SeriesReader`, `SeriesCursor`, series sample bounds/lookups |
 | `engine_integration_test` | Full `DataEngine` + `DataWriter` + `DataReader` round-trip |
 | `derived_engine_test` | SISO/MIMO transforms, topological order, incremental + batch recompute |
 | `array_expansion_test` | `expandArray`, clamping, cross-builder expansion |

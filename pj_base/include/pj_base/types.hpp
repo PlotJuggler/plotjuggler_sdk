@@ -1,9 +1,56 @@
 #pragma once
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <type_traits>
+#include <utility>
 #include <variant>
 
 namespace PJ {
+
+/// Inclusive min/max pair for scalar ranges.
+template <typename T>
+struct Range {
+  T min = std::numeric_limits<T>::lowest();
+  T max = std::numeric_limits<T>::max();
+
+  /// Normalize this range in place so min <= max.
+  constexpr void normalize() noexcept {
+    if (max < min) {
+      std::swap(min, max);
+    }
+  }
+
+  /// Return a normalized copy of this range.
+  [[nodiscard]] constexpr Range normalized() const noexcept {
+    Range copy = *this;
+    copy.normalize();
+    return copy;
+  }
+
+  /// Clamp a value to this inclusive range.
+  [[nodiscard]] constexpr T clamp(const T& value) const {
+    return std::clamp(value, min, max);
+  }
+
+  /// Return true if a value is inside this inclusive range.
+  [[nodiscard]] constexpr bool contains(const T& value) const noexcept {
+    if constexpr (std::is_floating_point_v<T>) {
+      if (value != value) {
+        return false;
+      }
+    }
+    return !(value < min) && !(max < value);
+  }
+
+  /// Return true if either side is bounded away from the default full range.
+  [[nodiscard]] constexpr bool hasLimits() const noexcept {
+    return min != std::numeric_limits<T>::lowest() || max != std::numeric_limits<T>::max();
+  }
+
+  [[nodiscard]] constexpr bool operator==(const Range&) const = default;
+};
 
 /// Stable identifier for a dataset.
 using DatasetId = uint32_t;

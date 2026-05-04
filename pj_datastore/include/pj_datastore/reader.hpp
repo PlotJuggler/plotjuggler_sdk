@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <optional>
 #include <vector>
 
@@ -37,6 +38,10 @@ class DataReader {
 
   /// Return latest sample at or before query time; nullopt payload if no row exists.
   [[nodiscard]] PJ::Expected<std::optional<SampleRow>> latestAt(const QueryPoint& point) const;
+
+  /// Create a series view over one numeric/bool topic column. The returned
+  /// reader exposes only value-bearing samples; null rows are skipped.
+  [[nodiscard]] PJ::Expected<SeriesReader> series(PJ::TopicId topic_id, std::size_t column_index) const;
 
  private:
   const DataEngine& engine_;

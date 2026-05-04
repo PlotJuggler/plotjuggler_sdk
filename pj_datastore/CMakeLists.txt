@@ -52,6 +52,7 @@ if(PJ_BUILD_TESTS)
     tests/chunk_test.cpp
     tests/topic_storage_test.cpp
     tests/query_test.cpp
+    tests/series_reader_test.cpp
     tests/engine_integration_test.cpp
     tests/derived_engine_test.cpp
     tests/array_expansion_test.cpp

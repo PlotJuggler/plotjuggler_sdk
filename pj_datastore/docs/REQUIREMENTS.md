@@ -73,9 +73,11 @@ Requirements:
 
 ### 4.6 Query
 
+- Series queries: view one numeric/bool topic column as a time series of value-bearing samples
+- Series sample count, bounds, and timestamp lookups always skip null physical rows
 - Range queries: iterate all rows in a time window for a topic
 - Latest-at queries: find the most recent row at or before a given timestamp
-- Per-row and per-chunk-range iteration for flexibility vs performance
+- Per-row and per-chunk-range iteration for physical-row consumers that need explicit null handling
 - Read methods for each type: double, int64, uint64, bool, string, with explicit null checking
 
 ### 4.7 Derived Series
