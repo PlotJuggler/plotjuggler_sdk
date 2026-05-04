@@ -9,8 +9,6 @@ PlotJuggler Core — C++20 foundation libraries that will host the full PlotJugg
 - **pj_base** — vocabulary types, plugin SDK headers (zero external deps)
 - **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
 - **pj_plugins** — C-ABI plugin protocol, host-side loaders, dialog SDK (Qt 6.8.3 optional); four plugin families: DataSource, MessageParser, Dialog, Toolbox
-- **pj_media** — 2D/video visualization on top of `ObjectStore` (QRhi rendering, Qt 6.8+)
-- **pj_marketplace** — extension discovery, download, install (GitHub-hosted registry)
 
 ### Planned modules (PlotJuggler 4.x application — see `PJ4_PLAN.md` and `docs/APP_IMPLEMENTATION_PLAN.md`)
 
@@ -27,15 +25,10 @@ The three widget families (plot / 2D / 3D) are **independent by design** — eac
 
 - `pj_datastore` → `pj_base`
 - `pj_plugins` → `pj_base`
-- `pj_media` → `pj_datastore`, `pj_base`
 - `pj_scripting` → `pj_base`, `pj_datastore` (uses `ISISOTransform` / `IMIMOTransform`)
-- `pj_app_core` → `pj_datastore`, `pj_plugins`, `pj_scripting`, `pj_media`
+- `pj_app_core` → `pj_datastore`, `pj_plugins`, `pj_scripting`, `pj_media` (app-repo module)
 - `pj_plot_widgets`, `pj_media_widgets_qt`, `pj_3d_widgets` → `pj_app_core` + Qt (never each other)
-- `pj_app` → all the above + `pj_marketplace`
-
-### Deprecated
-
-- **pj_proto_app** — throwaway prototype; being replaced by the planned app modules above. Do not evolve it as the final app.
+- `pj_app` → all the above + `pj_marketplace` (app-repo module)
 
 ## Key Documentation
 
@@ -67,24 +60,6 @@ The three widget families (plot / 2D / 3D) are **independent by design** — eac
 | `message-parser-guide.md` | SDK tutorial: parse(), schema binding, dialog integration for parsers |
 | `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
 | `toolbox-guide.md` | SDK tutorial: read+write access, catalog, notifyDataChanged |
-
-**Media** (`pj_media/docs/`):
-
-| Document | Content |
-|----------|---------|
-| `REQUIREMENTS.md` | Goals for 2D/video visualization, data types, retention |
-| `ARCHITECTURE.md` | Decoder pipeline, MediaSource abstraction, QRhi rendering, file vs streaming video |
-| `TECHNICAL_NOTES.md` | FFmpeg integration details, HW acceleration, B-frame handling, scrub optimizations |
-| `datatypes_2D.md` | Self-contained image/video/annotation/scene types |
-| `dataset_format_comparison.md` | How pj_media compares to Rerun and Foxglove |
-
-**Marketplace** (`pj_marketplace/documentation/`):
-
-| Document | Content |
-|----------|---------|
-| `REQUIREMENTS.md` | Goals, discovery model, install flow, packaging format |
-| `ARCHITECTURE.md` | Client/registry model, registry JSON, ZIP packaging, integration point |
-| `plotjuggler-marketplace-spec-v1.0.0-en.md` | Versioned protocol spec |
 
 ## Build & Test
 

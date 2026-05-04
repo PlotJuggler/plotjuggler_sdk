@@ -216,9 +216,7 @@ pj_plugins/
         dialog_library.hpp          ← host-side loader
         dialog_handle.hpp           ← RAII handle (owned + borrowed)
     src/
-      dialog_engine.cpp             ← Qt rendering + reactive loop
       dialog_library.cpp
-      widget_binding.cpp            ← apply WidgetData to Qt widgets
   include/pj_plugins/host/
     data_source_library.hpp         ← host-side loader
     data_source_handle.hpp          ← RAII handle
@@ -312,7 +310,7 @@ DataSource with an embedded dialog).
 
 ### 5.1 Host-side diagnostic propagation
 
-Host code that loads plugins (e.g. `pj_proto_app::PluginRegistry`) accepts an
+Host code that loads plugins accepts an
 optional `PJ::DiagnosticSink` (`pj_base/include/pj_base/diagnostic_sink.hpp`)
 in its constructor. The sink is a `std::function<void(const PJ::Diagnostic&)>`
 the host invokes for every plugin-load lifecycle event — failed `dlopen`,
@@ -349,19 +347,18 @@ authors implement with the SDK helper `PJ::borrowDialog(dialog_member_)`).
 ## 7. Dialog Engine
 
 The dialog engine (`dialog_engine.cpp`) is the Qt-side runtime that renders
-dialog plugins. It operates in two modes:
+dialog plugins. The core repository provides the Qt-free C ABI, C++ SDK,
+host-side loader, and `DialogHandle` lifecycle wrapper. A consuming GUI
+application supplies the concrete renderer/reactive loop for its UI toolkit.
 
-- **Qt mode** — loads the `.ui` XML via `QUiLoader`, creates real Qt widgets,
-  wires signals, and runs the reactive loop.
-- **Headless mode** — skips Qt rendering, useful for testing dialog logic
-  without a display server.
+The PJ4 application provides the Qt implementation as `pj_dialog_engine_qt`.
 
 ### Reactive loop
 
 ```
 1. Read widget_data() from plugin → JSON
 2. Parse JSON into WidgetDataView
-3. Apply WidgetDataView to Qt widgets (widget_binding.cpp)
+3. Apply WidgetDataView to host widgets
 4. Wait for user interaction or tick timer
 5. On widget signal → build event JSON → call on_widget_event()
 6. If returns true → goto 1 (re-read widget_data)
@@ -373,12 +370,11 @@ dialog plugins. It operates in two modes:
 
 ### Widget binding
 
-`widget_binding.cpp` handles the bidirectional bridge:
+The concrete host binding handles the bidirectional bridge:
 
-- **`applyWidgetData()`** — pushes `WidgetDataView` values into Qt widgets
-  (signal-blocked to prevent feedback loops).
-- **`connectWidgetSignals()`** — wires Qt signals to `WidgetEventBuilder`
-  output, which produces event JSON for the plugin's `on_widget_event()`.
+- push `WidgetDataView` values into host widgets without feedback loops
+- wire host widget signals to `WidgetEventBuilder` output, which produces
+  event JSON for the plugin's `on_widget_event()`
 
 ### `requestAccept()`
 
@@ -484,7 +480,6 @@ out_array, err)`:
 | `source_dialog_integration_test.cpp` | DataSource dialog + config envelope |
 | `message_parser_library_test.cpp` | Parser library loading |
 | `toolbox_plugin_test.cpp` | Toolbox loading, host binding, read+write flow |
-| `dialog_engine_test.cpp` | Reactive loop, widget data apply, event dispatch |
 | `dialog_handle_test.cpp` | Owned and borrowed handle lifecycle |
 | `dialog_library_test.cpp` | Dialog library loading |
 | `dialog_plugin_typed_test.cpp` | Typed event dispatch |

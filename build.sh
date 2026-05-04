@@ -31,13 +31,13 @@ if command -v ccache &>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
-# Local Qt install (from install_qt6.sh) — enables pj_proto_app build
+# Local Qt install (from install_qt6.sh) — enables the Qt dialog engine
 # ---------------------------------------------------------------------------
 
 QT_LOCAL_DIR="${SCRIPT_DIR}/.qt/6.8.3/gcc_64"
 CMAKE_QT_ARGS=()
 if [[ -d "$QT_LOCAL_DIR" ]]; then
-  CMAKE_QT_ARGS+=("-DCMAKE_PREFIX_PATH=${QT_LOCAL_DIR}" "-DPJ_BUILD_DIALOG_ENGINE_QT=ON")
+  CMAKE_QT_ARGS+=("-DCMAKE_PREFIX_PATH=${QT_LOCAL_DIR}")
   echo "--- Using local Qt at ${QT_LOCAL_DIR} ---"
 fi
 

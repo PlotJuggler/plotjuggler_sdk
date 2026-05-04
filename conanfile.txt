@@ -6,15 +6,6 @@ benchmark/1.9.4
 arrow/23.0.1
 nanoarrow/0.7.0
 nlohmann_json/3.12.0
-mcap/2.1.1
-cppzmq/4.11.0
-protobuf/6.33.5
-jsoncons/1.5.0
-zstd/1.5.5
-date/3.0.4
-libarchive/3.7.4
-libjpeg-turbo/3.1.0
-libpng/1.6.47
 
 [options]
 arrow/*:parquet=True
@@ -22,7 +13,6 @@ arrow/*:with_snappy=True
 nanoarrow/*:with_ipc=True
 boost/*:without_test=True
 boost/*:without_cobalt=True
-libarchive/*:shared=False
 
 [generators]
 CMakeDeps

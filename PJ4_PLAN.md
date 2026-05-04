@@ -8,10 +8,10 @@ This section captures the architectural decisions that supersede portions of thi
 - **`pj_scripting` is its own module.** Language-agnostic engine (Lua today via sol2; Python pluggable later) decoupled from both the GUI and `pj_app_core`'s services layer. Depends only on `pj_base` + `pj_datastore`. Custom Lua transforms reach `DerivedEngine` through a thin `transform_adapter`. Reactive scripts live in a Toolbox plugin that links `pj_scripting` directly.
 - **`pj_app_core` Qt boundary is relaxed.** Previously "no Qt"; now **Qt is allowed (QObject, QTimer, QSettings, signals), no QWidget/QDialog**. Services remain headlessly testable via `QCoreApplication`. This trades a small amount of purity for much cheaper timer/settings/reactive plumbing.
 - **Plot widgets are lifted wholesale from PJ3**, not rebuilt on Qt Charts. `PlotWidgetBase`, `PlotWidget`, `PlotDocker`, `TabbedPlotWidget`, zoomers, axis-time, drag-drop, per-curve display transform UI all move into `pj_plot_widgets/`; their data reads are rebound to `pj_datastore` via a `DatastoreCurveAdapter`. No `IPlotBackend` abstraction.
-- **Monorepo for now.** All new app modules (`pj_scripting`, `pj_app_core`, `pj_plot_widgets`, `pj_media_widgets_qt`, `pj_3d_widgets`, `pj_app`) become siblings inside this repository. The long-term intent is still a separate `plotjuggler_app` repo with `plotjuggler_core` as a submodule; module boundaries are designed so that split is a mechanical move later.
+- **Monorepo for now.** App-owned modules (`pj_media`, `pj_marketplace`, `pj_dialog_host`, `pj_scripting`, `pj_app_core`, `pj_plot_widgets`, `pj_media_widgets_qt`, `pj_3d_widgets`, `pj_app`) live as siblings inside the PJ4 application repository. The long-term intent is still a separate `plotjuggler_app` repo with `plotjuggler_core` as a submodule; module boundaries are designed so that split is a mechanical move later.
 - **v1 target is parity-plus with PJ3.** File + streaming sources, 11 built-in transforms, undo/redo, derived-series editor (incl. Lua via `pj_scripting`), reactive scripts (via Toolbox + `onTimeChanged`), multi-tab workspace, marketplace install UI, all toolboxes.
 - **Plugin families and marketplace are assumed done** and out of scope for this plan. Toolbox SDK gaps (embedded charts, drag-drop, code editor, `onTimeChanged`, ScatterXY outputs) are being addressed in parallel and are assumed solved.
-- **`pj_proto_app` is deprecated.** It was a throwaway prototype. Reusable ideas may be referenced; code is not evolved into the final app.
+- **The old prototype app is removed.** It was a throwaway prototype; current PJ4 modules are the implementation baseline.
 - **Three-widget time model.** Global tracker owned by `PlaybackEngine` in `pj_app_core`. Plots redraw a vertical marker line (cheap); 2D/3D widgets snap to the frame at tracker time (via `MediaSource::setTimestamp` / equivalent).
 
 Where the sections below refer to `pj_plotting` or `pj_app_shell_qt`, read them as `pj_plot_widgets` + `pj_media_widgets_qt` + `pj_3d_widgets` and `pj_app` respectively.
@@ -33,7 +33,7 @@ The main design objective is a strict separation between:
 - application orchestration
 - GUI widgets and rendering
 
-The current `pj_proto_app` is a useful proof of concept, but it is not a sufficient foundation for the final 4.x app architecture. Reusable pieces may be extracted, but the final app should be organized around dedicated modules instead of growing the proto window into the final application.
+The removed prototype app was a useful proof of concept, but it was not a sufficient foundation for the final 4.x app architecture. The final app is organized around dedicated modules instead of growing the prototype window into the final application.
 
 ## 2. Product Target
 
@@ -105,7 +105,6 @@ The current repository already provides substantial infrastructure:
   - `pj_media_qt` QRhi widget with BT.709 YUV→RGB shader
 - `pj_marketplace`
   - extension installation and management UI/services (assumed done)
-- `pj_proto_app` — **deprecated** throwaway prototype; do not evolve as the final app
 
 ### 3.2 What is still missing
 

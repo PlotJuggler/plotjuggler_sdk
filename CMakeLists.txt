@@ -22,14 +22,6 @@ option(
   "Build parquet_import example (requires full Arrow C++ and Parquet)"
   ON
 )
-# Auto-detect Qt6: enable dialog engine if Qt6 is findable
-find_package(Qt6 QUIET COMPONENTS Widgets)
-if(Qt6_FOUND)
-  option(PJ_BUILD_DIALOG_ENGINE_QT "Build Qt dialog engine (requires Qt6)" ON)
-else()
-  option(PJ_BUILD_DIALOG_ENGINE_QT "Build Qt dialog engine (requires Qt6)" OFF)
-endif()
-
 option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires nanoarrow)" ON)
 option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
@@ -165,19 +157,8 @@ endif()
 add_subdirectory(pj_base)
 if(PJ_BUILD_DATASTORE)
   add_subdirectory(pj_datastore)
-  add_subdirectory(pj_media/pj_media_core)
-  add_subdirectory(pj_media/pj_media_qt)
-  add_subdirectory(pj_media/demos)
 endif()
 add_subdirectory(pj_plugins)
-
-if(PJ_BUILD_DIALOG_ENGINE_QT)
-  add_subdirectory(pj_marketplace)
-  find_package(Qt6 COMPONENTS Charts QUIET)
-  if(Qt6Charts_FOUND)
-    add_subdirectory(pj_proto_app)
-  endif()
-endif()
 
 if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
   set(PJ_HAS_PORTED_PLUGINS TRUE)

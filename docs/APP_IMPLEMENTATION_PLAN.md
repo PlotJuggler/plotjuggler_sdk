@@ -2,7 +2,7 @@
 
 ## Context
 
-PlotJuggler 3.x (PJ3) shipped as a monolithic Qt app where a ~3900 LOC `MainWindow` owned storage, plugins, playback, layout, transforms, and persistence. The rot was in the coupling, not the algorithms. The `plotjuggler_core` repository replaces the storage/plugin foundation with a cleanly modularized C++20 stack: `pj_base` (SDK types), `pj_datastore` (columnar engine + ObjectStore + DerivedEngine), `pj_plugins` (C-ABI plugin protocol, 4 families), `pj_media` (2D/video backed by ObjectStore), and `pj_marketplace` (assumed done).
+PlotJuggler 3.x (PJ3) shipped as a monolithic Qt app where a ~3900 LOC `MainWindow` owned storage, plugins, playback, layout, transforms, and persistence. The rot was in the coupling, not the algorithms. The `plotjuggler_core` repository provides the storage/plugin foundation with a cleanly modularized C++20 stack: `pj_base` (SDK types), `pj_datastore` (columnar engine + ObjectStore + DerivedEngine), and `pj_plugins` (C-ABI plugin protocol, 4 families). The PJ4 application repository owns `pj_media` (2D/video backed by ObjectStore) and `pj_marketplace`.
 
 This plan covers the **application layer** on top of that foundation. Goals:
 
@@ -25,7 +25,7 @@ The companion strategic document is `PJ4_PLAN.md` ("why"). This plan is the tact
 | Plot code reuse | **Lift wholesale** from PJ3 | Biggest LOC savings; preserves years of UX polish |
 | Scripting | **`pj_scripting`** as independent module, Lua today / Python later | Decoupled from GUI and app_core's services layer |
 | v1 scope | **Parity-plus** | File + streaming sources, 11 transforms, undo, derived series, Lua editor, reactive scripts, marketplace UI, multi-tab |
-| Repo layout | **Monorepo under `plotjuggler_core/`** for now | Keep boundaries clean so a later split into a separate `plotjuggler_app` repo is mechanical |
+| Repo layout | **PJ4 application repo with `plotjuggler_core/` as a submodule** | Keep boundaries clean so a later split into a separate `plotjuggler_app` repo is mechanical |
 | Time model | Global tracker; 2D/3D snap to frame, plots redraw marker line | Same as PJ3 |
 | Layout format | **JSON** with explicit schema version + stable topic paths | Replaces PJ3's brittle XML widget-tree serialization |
 | Undo | **Snapshot-based** (save workspace model, restore on undo) | Simpler than command pattern; matches PJ4_PLAN.md |
@@ -34,15 +34,14 @@ The companion strategic document is `PJ4_PLAN.md` ("why"). This plan is the tact
 ## Module Graph
 
 ```
-plotjuggler_core/  (this repo)
-├── pj_base/                  existing — SDK vocabulary, Expected<T>
-├── pj_datastore/             existing — columnar + ObjectStore + DerivedEngine
-├── pj_plugins/               existing — C-ABI plugin protocol, 4 families
+PJ4/
+├── plotjuggler_core/         submodule — SDK vocabulary, datastore, plugin protocol
 ├── pj_media/                 existing — 2D/video core + pj_media_qt
 ├── pj_marketplace/           existing — assumed done
+├── pj_dialog_host/           existing — Qt host for plugin dialogs
 │
 ├── pj_scripting/             NEW — language-agnostic scripting
-│   └── depends on: pj_base, pj_datastore
+│   └── depends on: plotjuggler_core/pj_base, plotjuggler_core/pj_datastore
 │
 ├── pj_app_core/              NEW — services; Qt allowed, no widgets
 │   └── depends on: pj_base, pj_datastore, pj_plugins, pj_scripting, pj_media
@@ -454,7 +453,6 @@ Phases are sized for incremental verification. Each ends with build + tests + cl
 - Wire into top-level CMake
 - Update `conanfile.txt` with new deps (Qwt, sol2, QCodeEditor/QScintilla for later)
 - Minimal `pj_app/main.cpp` that launches empty main window
-- Tag `pj_proto_app` as deprecated in CMake
 - **Verification**: top-level build succeeds, existing tests green, new empty targets build
 
 ### Phase 1 — Scripting + Core Services (~3 weeks)
@@ -563,7 +561,7 @@ Total estimate: ~16 weeks (4 months) single-developer, assuming plugins and mark
 | ObjectStore (media blobs) | `pj_datastore/include/pj_datastore/object_store.hpp` |
 | Plugin host bridges | `pj_datastore/include/pj_datastore/plugin_data_host.hpp` |
 | Plugin loaders (DataSource, Parser, Toolbox) | `pj_plugins/include/pj_plugins/host/*.hpp` |
-| Dialog engine (Qt) | `pj_plugins/dialog_protocol/include/pj_plugins/host_qt/dialog_engine.hpp` |
+| Dialog engine (Qt) | PJ4 app module `pj_dialog_host/include/pj_plugins/host_qt/dialog_engine.hpp` |
 | Media `MediaSource` abstraction | `pj_media/pj_media_core/include/pj_media/media_source.hpp` |
 | Media Qt widget | `pj_media/pj_media_qt/include/pj_media/media_viewer_widget.hpp` |
 | Marketplace UI | `pj_marketplace/include/pj_marketplace/marketplace_window.hpp` |
