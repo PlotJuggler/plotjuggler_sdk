@@ -42,7 +42,7 @@ struct PluginDescriptor {
   std::string version;
   std::string description;
   std::string category;
-  std::string encoding;                      ///< for message parsers
+  std::vector<std::string> encoding;         ///< for message parsers (one or more)
   std::vector<std::string> file_extensions;  ///< for data sources
   std::vector<std::string> capabilities;     ///< optional capability tags
 };

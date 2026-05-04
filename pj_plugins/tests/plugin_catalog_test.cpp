@@ -70,7 +70,7 @@ TEST_F(PluginCatalogTest, InspectMessageParserRequiresEncoding) {
   ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
   EXPECT_EQ(descriptor->id, "mock-json-parser");
   EXPECT_EQ(descriptor->family, PluginFamily::kMessageParser);
-  EXPECT_EQ(descriptor->encoding, "json");
+  EXPECT_EQ(descriptor->encoding, std::vector<std::string>{"json"});
 }
 
 TEST_F(PluginCatalogTest, InspectToolboxDsoUsesEmbeddedManifest) {

@@ -111,4 +111,4 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
 
 PJ_MESSAGE_PARSER_PLUGIN(
     MockSchemaParser,
-    R"({"id":"mock-schema-parser","name":"Mock Schema Parser","version":"1.0.0","encoding":"csv_pair"})")
+    R"({"id":"mock-schema-parser","name":"Mock Schema Parser","version":"1.0.0","encoding":["csv_pair"]})")

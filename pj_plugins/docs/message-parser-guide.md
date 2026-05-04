@@ -23,7 +23,7 @@ the host, which routes them to the appropriate parser based on encoding name.
 1. Subclass `PJ::MessageParserPluginBase`
 2. Override `parse()` (required) and optionally `bindSchema()`, `saveConfig()`,
    `loadConfig()`
-3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"...","encoding":"..."})")`
+3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"...","encoding":["..."]})")`
 4. Build as a shared library linking `pj_base`
 
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
@@ -79,7 +79,7 @@ manifest string literal (see Manifest Schema below):
 
 ```cpp
 PJ_MESSAGE_PARSER_PLUGIN(MyJsonParser,
-    R"({"id":"json-parser","name":"JSON Parser","version":"1.0.0","encoding":"json"})")
+    R"({"id":"json-parser","name":"JSON Parser","version":"1.0.0","encoding":["json"]})")
 ```
 
 This generates the `extern "C"` entry point that the host resolves via dlsym.
@@ -326,7 +326,7 @@ it without instantiating the plugin.
 | `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
-| `encoding` | string | yes | Encoding this parser handles, e.g. `"json"`, `"protobuf"`, `"ros1msg"`. The host uses this to match binding requests to parsers. |
+| `encoding` | array of strings | yes | Encodings this parser handles, e.g. `["json"]`, `["protobuf"]`, `["ros1msg", "ros2msg", "cdr"]`. The host uses this list to match binding requests to parsers; one parser may register more than one encoding. |
 
 Example:
 ```json
@@ -334,7 +334,7 @@ Example:
   "id": "protobuf-parser",
   "name": "Protobuf Parser",
   "version": "1.0.0",
-  "encoding": "protobuf"
+  "encoding": ["protobuf"]
 }
 ```
 

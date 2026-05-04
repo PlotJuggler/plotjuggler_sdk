@@ -246,19 +246,14 @@ Expected<PluginDescriptor> decodeManifest(
   d.file_extensions = *file_extensions;
   d.capabilities = *capabilities;
 
-  if (family == PluginFamily::kMessageParser) {
-    auto encoding = requiredString("encoding");
-    if (!encoding) {
-      return unexpected(encoding.error());
-    }
-    d.encoding = *encoding;
-  } else {
-    auto encoding = optionalString("encoding");
-    if (!encoding) {
-      return unexpected(encoding.error());
-    }
-    d.encoding = *encoding;
+  auto encoding = readStringArray(j, "encoding");
+  if (!encoding) {
+    return unexpected(encoding.error());
   }
+  if (family == PluginFamily::kMessageParser && encoding->empty()) {
+    return unexpected(std::string("plugin embedded manifest missing required encoding array"));
+  }
+  d.encoding = std::move(*encoding);
 
   return d;
 }
