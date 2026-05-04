@@ -15,12 +15,110 @@ jobs:
   build:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write   # push/pull the Conan cache OCI artifact on ghcr.io
     steps:
       - uses: actions/checkout@v4
 
       - uses: conan-io/setup-conan@v1
         with:
-          cache_packages: true
+          # We back the cache via ghcr.io/oras instead of actions/cache (which
+          # has a 10 GB per-repo soft cap and 7-day eviction). ghcr.io public
+          # repos: unlimited storage and bandwidth; tags survive forever.
+          cache_packages: false
+
+      - name: Setup oras (OCI Registry As Storage)
+        # Primary install path. continue-on-error so a 5xx on the github.com
+        # release CDN doesn't kill CI — we have a fallback below, and worst
+        # case we degrade to "no cache this run" (build still completes).
+        id: setup_oras
+        uses: oras-project/setup-oras@v1
+        continue-on-error: true
+
+      - name: Setup oras (manual download fallback)
+        # Only fires if setup-oras failed. Re-download from the same release
+        # URL but with longer exponential backoff (5 retries) — covers brief
+        # 5xx blips that exceed the action's built-in retry budget.
+        id: setup_oras_fallback
+        if: steps.setup_oras.outcome == 'failure'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="1.3.0"
+          url="https://github.com/oras-project/oras/releases/download/v${version}/oras_${version}_linux_amd64.tar.gz"
+          tarball="${RUNNER_TEMP}/oras.tar.gz"
+          install_dir="${RUNNER_TEMP}/oras-bin"
+          mkdir -p "${install_dir}"
+
+          attempts=0
+          until curl -fsSL "${url}" -o "${tarball}"; do
+            attempts=$((attempts + 1))
+            if [ "${attempts}" -ge 5 ]; then
+              echo "Download failed after ${attempts} attempts" >&2
+              exit 1
+            fi
+            delay=$((5 * (2 ** attempts)))
+            echo "Download attempt ${attempts} failed; retrying in ${delay}s..."
+            sleep "${delay}"
+          done
+          tar -xzf "${tarball}" -C "${install_dir}"
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/oras" version
+
+      - name: Compute Conan cache tag
+        id: conan_cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Hash every conanfile.txt under the tree (top-level today,
+          # pj_ported_plugins/ in the near future) so the key invalidates
+          # whenever any of them changes.
+          hash=$(find . -name conanfile.txt -not -path './build/*' -not -path './.git/*' \
+                  -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          # Build-type suffix leaves room for a future debug-asan variant
+          # without colliding on the same tag.
+          tag="ghcr.io/${owner}/plotjuggler-core-conan-cache:linux-gcc-relwithdebinfo-${hash}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "Cache tag: ${tag}"
+
+      - name: Login to ghcr.io
+        # Required for both pull (private packages) and push. GITHUB_TOKEN is
+        # auto-provisioned and scoped to this repo's packages. Skip if neither
+        # oras install path succeeded — graceful degradation to no-cache build.
+        if: github.repository_owner == 'PlotJuggler' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${GHCR_TOKEN}" | oras login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Restore Conan cache from ghcr.io
+        if: github.repository_owner == 'PlotJuggler' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
+        shell: bash
+        run: |
+          set +e
+          tag="${{ steps.conan_cache.outputs.tag }}"
+          pull_dir="${RUNNER_TEMP}/conan-cache-pull"
+          mkdir -p "${pull_dir}"
+          (
+            cd "${pull_dir}"
+            oras pull "${tag}" 2>&1
+          )
+          pulled=$?
+          tarball="${pull_dir}/conan-cache.tar.zst"
+          if [ "${pulled}" -eq 0 ] && [ -f "${tarball}" ]; then
+            echo "Cache HIT: extracting ${tarball}"
+            mkdir -p "${HOME}/.conan2"
+            tar --zstd -xf "${tarball}" -C "${HOME}"
+            echo "CONAN_CACHE_HIT=1" >> "${GITHUB_ENV}"
+          else
+            echo "Cache MISS for ${tag} (cold start or first build of this conanfile)"
+          fi
+          # Always exit 0 — a missing tag is not a CI failure.
+          exit 0
 
       - name: Install Qt 6.8.3
         uses: jurplel/install-qt-action@v4
@@ -30,9 +128,11 @@ jobs:
           cache: 'true'
 
       - name: Install system packages
-        run: sudo apt-get update && sudo apt-get install -y xvfb ccache
+        run: sudo apt-get update && sudo apt-get install -y xvfb ccache zstd
 
       - name: Configure ccache
+        # Compiler-output cache for our own C++ — complementary to the Conan
+        # cache (which holds prebuilt third-party packages, not our objects).
         uses: actions/cache@v4
         with:
           path: ~/.cache/ccache
@@ -49,6 +149,33 @@ jobs:
 
       - name: Build
         run: ./build.sh
+
+      - name: Save Conan cache to ghcr.io
+        # Only push from the canonical repo on real pushes (forks lack write
+        # access to ghcr.io packages). Skip on cache HIT — the tag content is
+        # already up to date, no point re-uploading the same bytes. Skip if
+        # neither oras install path succeeded (graceful degradation).
+        if: github.event_name == 'push' && github.repository == 'PlotJuggler/plotjuggler_core' && env.CONAN_CACHE_HIT != '1' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.conan_cache.outputs.tag }}"
+          tarball="${RUNNER_TEMP}/conan-cache.tar.zst"
+
+          # Trim build trees before packing so the uploaded artifact only
+          # contains the package binaries consumers actually need.
+          conan cache clean "*" --build --source --temp
+
+          echo "Packing ~/.conan2 -> ${tarball}"
+          tar --zstd -cf "${tarball}" -C "${HOME}" .conan2
+
+          size_mb=$(du -m "${tarball}" | cut -f1)
+          echo "Compressed cache size: ${size_mb} MB"
+
+          (
+            cd "${RUNNER_TEMP}"
+            oras push "${tag}" "conan-cache.tar.zst:application/vnd.oci.image.layer.v1.tar+zstd"
+          )
 
       - name: ccache stats
         if: always()
