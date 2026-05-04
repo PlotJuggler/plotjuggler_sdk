@@ -159,24 +159,24 @@ Add a placeholder widget named `pj_parser_slot` in your `.ui`:
 
 ### Host Configuration
 
-Configure `DialogEngine` with a parser dialog provider:
+Configure the host dialog runtime with a parser dialog provider:
 
 ```cpp
-DialogEngineConfig config;
+HostDialogRuntimeConfig config;
 config.parser_dialog_provider = [&](const std::string& encoding) -> const PJ_dialog_vtable_t* {
   return registry.queryParserDialog(encoding);
 };
 config.initial_parser_config = saved_parser_config;  // Optional
 
-DialogEngine engine(dialog_handle, config);
+auto result = runHostDialog(dialog_handle, config);
 ```
 
 ### Behavior
 
-1. When the user selects an encoding in `comboBoxProtocol`, the engine looks up the parser's dialog vtable
+1. When the user selects an encoding in `comboBoxProtocol`, the host dialog runtime looks up the parser's dialog vtable
 2. If found, the parser's UI is loaded and injected into `pj_parser_slot`
 3. The parser dialog's events and `widget_data()` are handled independently
-4. On accept, both configs are saved: `engine.savedConfig()` + `engine.parserConfig()`
+4. On accept, both configs are returned to the host: the source config and the parser config
 
 
 ---

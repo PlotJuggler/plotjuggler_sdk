@@ -543,7 +543,7 @@ it without instantiating the plugin.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
+| `id` | string | yes | Stable plugin identifier used by the host catalog. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
@@ -803,7 +803,7 @@ PJ_DIALOG_PLUGIN(MyDialog)
 4. lib.resolveDialogVtable()  →  dialog vtable from same .so
 5. source.getDialog()  →  typed PJ_borrowed_dialog_t {ctx, vtable}
 6. DialogHandle::borrowed(dialog_vt, dialog_ctx)  →  non-owning handle
-7. DialogEngine(borrowed_handle).showDialog()
+7. Host dialog runtime shows the borrowed handle
    → dialog modifies source's internal state directly
 8. source.start()  ←  already has the config
 ```

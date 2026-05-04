@@ -7,26 +7,11 @@ C++20 foundation libraries for [PlotJuggler](https://github.com/facontidavide/Pl
 
 ## Modules
 
-### Existing (substrate for the application)
-
 | Module | Description | Dependencies |
 |--------|-------------|--------------|
 | **pj_base** | Vocabulary types: `Timestamp`, `DatasetId`, `TopicId`, type trees, `Expected<T>`, `Span<T>` | None |
 | **pj_datastore** | Columnar in-memory storage engine + `ObjectStore` (for media blobs) + `DerivedEngine`; typed schemas, chunk-based encoding, range/latest-at queries, derived transform DAG, Arrow IPC import | pj_base, fmt, tsl::robin_map, nanoarrow |
-| **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox families) with host-side C++ API and optional Qt 6.8.3 dialog engine | nlohmann/json, Qt 6.8.3 (optional) |
-
-### Planned (PlotJuggler 4.x application — see `PJ4_PLAN.md`)
-
-| Module | Description |
-|--------|-------------|
-| **pj_scripting** | Language-agnostic scripting engine (Lua today, Python pluggable) |
-| **pj_app_core** | Headless business services (sessions, playback, workspace, transforms, toolboxes, undo). Qt allowed, no QWidget |
-| **pj_plot_widgets** | Qwt-based plot widgets, lifted wholesale from PlotJuggler 3.x |
-| **pj_media_widgets_qt** | 2D viewer widgets wrapping pj_media/pj_media_qt |
-| **pj_3d_widgets** | 3D widgets for robotics (TF2, URDF/mesh, pointcloud, markers, image+pinhole, occupancy grid) via custom QRhi + GLM + assimp. Implementation post-v1 |
-| **pj_app** | Main-window shell, Qt Advanced Docking, menus |
-
-The three widget families (plot / 2D / 3D) are independent by design; each owns its own rendering and input world. Cross-widget coordination flows through `pj_app_core` services.
+| **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox families), C++ SDK base classes, plugin discovery, host-side loaders, and config helpers | pj_base, nlohmann/json |
 
 ## Getting Started
 
@@ -53,26 +38,14 @@ cd plotjuggler_core
 ./run_clang_tidy.sh     # clang-tidy via clangd-22
 ```
 
-### Qt dialog engine (optional)
-
-The Qt dialog engine is auto-detected at configure time. Install Qt 6.8.3 first:
-
-```bash
-./install_qt6.sh
-export CMAKE_PREFIX_PATH=$(pwd)/.qt/6.8.3/gcc_64
-./build.sh
-```
-
 ## Project Layout
 
 ```
 pj_base/                   Vocabulary types (zero deps)
 pj_datastore/              Columnar engine + ObjectStore + DerivedEngine
-pj_plugins/                C-ABI plugin protocol + dialog engine
-docs/                      Project-wide docs (PJ4_PLAN.md, design guides)
+pj_plugins/                C-ABI plugin protocol, SDK, host loaders
+docs/                      Project-wide design guides
 ```
-
-The PlotJuggler 4.x application modules live in the consuming PJ4 application repository; see `PJ4_PLAN.md`.
 
 ## License
 

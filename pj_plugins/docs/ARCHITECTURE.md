@@ -238,7 +238,7 @@ pj_datastore/
 ```
 
 **Dependency direction:** Plugins depend only on `pj_base`. The host links
-`pj_plugins` (which depends on `pj_base` and optionally Qt). `pj_datastore`
+`pj_plugins` (which depends on `pj_base`). `pj_datastore`
 provides the concrete data-host implementations that bridge plugin writes to
 the columnar storage engine.
 
@@ -319,12 +319,10 @@ hot-reload detection, etc. Each event carries a level
 (`kInfo`/`kWarning`/`kError`), a `source` string, an optional plugin id, a
 message, and a timestamp.
 
-Embedding apps wire one sink into both their host loaders and
-`pj_marketplace::ExtensionManager` so the GUI shows one chronological
-diagnostic stream covering both module families. Pure-C++ host loaders
-remain Qt-free; `PJ::QtDiagnosticBridge` in `pj_marketplace` provides the
-thin Qt adapter that marshals each event onto the Qt event loop via
-`Qt::QueuedConnection` and emits a Qt signal the GUI can connect to.
+Embedding apps wire one sink into their host loaders and any application-level
+extension services so the GUI can show one chronological diagnostic stream.
+Pure-C++ host loaders remain toolkit-free; GUI hosts provide any event-loop
+adapter needed to marshal diagnostics onto their UI thread.
 
 A default-constructed sink discards events at zero cost, so loaders that
 take no sink behave as before.
@@ -344,14 +342,11 @@ A borrowed handle does NOT call `create()` or `destroy()` — it wraps a
 pre-existing context pointer obtained via `getDialog()` (which plugin
 authors implement with the SDK helper `PJ::borrowDialog(dialog_member_)`).
 
-## 7. Dialog Engine
+## 7. Dialog Host Runtime
 
-The dialog engine (`dialog_engine.cpp`) is the Qt-side runtime that renders
-dialog plugins. The core repository provides the Qt-free C ABI, C++ SDK,
+The core repository provides the toolkit-neutral dialog C ABI, C++ SDK,
 host-side loader, and `DialogHandle` lifecycle wrapper. A consuming GUI
 application supplies the concrete renderer/reactive loop for its UI toolkit.
-
-The PJ4 application provides the Qt implementation as `pj_dialog_engine_qt`.
 
 ### Reactive loop
 

@@ -231,7 +231,7 @@ it without instantiating the plugin.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
+| `id` | string | yes | Stable plugin identifier used by the host catalog. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |

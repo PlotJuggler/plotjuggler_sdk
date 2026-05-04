@@ -250,14 +250,14 @@ The host resolves the dialog via `MessageParserLibrary::resolveDialogVtable()`.
 Unlike a DataSource dialog (which is a member of the source, accessed via a
 borrowed handle through `getDialog()`), a **parser dialog is an independent
 owned instance**. The host creates it via `dialog_vt->create()`, runs it
-through `DialogEngine`, and feeds the resulting config JSON to parser instances
-via `load_config()`. The dialog and parser classes share a JSON config schema
-but are otherwise decoupled.
+through its dialog runtime, and feeds the resulting config JSON to parser
+instances via `load_config()`. The dialog and parser classes share a JSON
+config schema but are otherwise decoupled.
 
 This works because parser instances are created per-topic by the host during
 `ensureParserBinding()`, while the dialog should be presented once per parser
-*library*. There is no `get_dialog_context` on the parser vtable — and none is
-needed.
+*library*. There is no parser-owned borrowed-dialog slot on the parser vtable,
+and none is needed.
 
 ```
      Parser .so
@@ -323,7 +323,7 @@ it without instantiating the plugin.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
+| `id` | string | yes | Stable plugin identifier used by the host catalog. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `encoding` | string | yes | Encoding this parser handles, e.g. `"json"`, `"protobuf"`, `"ros1msg"`. The host uses this to match binding requests to parsers. |

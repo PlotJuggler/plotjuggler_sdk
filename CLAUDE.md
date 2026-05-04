@@ -2,33 +2,18 @@
 
 ## Project Overview
 
-PlotJuggler Core — C++20 foundation libraries that will host the full PlotJuggler 4.x application.
+PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin SDKs, and host-side plugin loading.
 
-### Existing modules (substrate for the application)
+### Modules
 
-- **pj_base** — vocabulary types, plugin SDK headers (zero external deps)
+- **pj_base** — vocabulary types, plugin ABI headers, plugin SDK headers (zero external deps)
 - **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
-- **pj_plugins** — C-ABI plugin protocol, host-side loaders, dialog SDK (Qt 6.8.3 optional); four plugin families: DataSource, MessageParser, Dialog, Toolbox
-
-### Planned modules (PlotJuggler 4.x application — see `PJ4_PLAN.md` and `docs/APP_IMPLEMENTATION_PLAN.md`)
-
-- **pj_scripting** — language-agnostic scripting engine (Lua today via sol2; Python pluggable). Decoupled from the GUI; depends only on pj_base + pj_datastore.
-- **pj_app_core** — headless business services (SessionManager, PlaybackEngine, WorkspaceManager, TransformRegistry, ToolboxManager, UndoManager, etc.). **Qt allowed (QObject/QTimer/QSettings/signals), no QWidget/QDialog.**
-- **pj_plot_widgets** — Qwt-based plot widgets, lifted wholesale from PlotJuggler 3.x.
-- **pj_media_widgets_qt** — 2D viewer widgets wrapping pj_media / pj_media_qt.
-- **pj_3d_widgets** — 3D widgets for robotics data (TF2, URDF/mesh, pointcloud, markers, image+pinhole, occupancy grid) via custom QRhi scene + GLM + assimp. Architecture locked in PJ4_PLAN §5.5 and APP_IMPLEMENTATION_PLAN §2.4; full implementation scheduled post-app-v1.
-- **pj_app** — main-window shell, Qt Advanced Docking, menus, wiring.
-
-The three widget families (plot / 2D / 3D) are **independent by design** — each owns its own rendering and input world. Cross-widget coordination flows through `pj_app_core` services (global tracker, catalog, workspace).
+- **pj_plugins** — C-ABI plugin protocol, C++ SDK base classes, plugin discovery, host-side loaders, config envelope helpers, and dialog protocol primitives; four plugin families: DataSource, MessageParser, Dialog, Toolbox
 
 ### Dependency graph
 
 - `pj_datastore` → `pj_base`
 - `pj_plugins` → `pj_base`
-- `pj_scripting` → `pj_base`, `pj_datastore` (uses `ISISOTransform` / `IMIMOTransform`)
-- `pj_app_core` → `pj_datastore`, `pj_plugins`, `pj_scripting`, `pj_media` (app-repo module)
-- `pj_plot_widgets`, `pj_media_widgets_qt`, `pj_3d_widgets` → `pj_app_core` + Qt (never each other)
-- `pj_app` → all the above + `pj_marketplace` (app-repo module)
 
 ## Key Documentation
 
@@ -37,8 +22,6 @@ The three widget families (plot / 2D / 3D) are **independent by design** — eac
 | Document | Content |
 |----------|---------|
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
-| `PJ4_PLAN.md` | Strategic plan for the PlotJuggler 4.x application architecture |
-| `docs/APP_IMPLEMENTATION_PLAN.md` | Tactical implementation plan for the 4.x application layer |
 | `docs/toolbox-porting-gap-analysis.md` | SDK gaps identified when porting PJ3 toolboxes (being addressed) |
 
 **Datastore** (`pj_datastore/docs/`):
@@ -55,7 +38,7 @@ The three widget families (plot / 2D / 3D) are **independent by design** — eac
 | Document | Content |
 |----------|---------|
 | `REQUIREMENTS.md` | Plugin families (DataSource, MessageParser, Dialog, Toolbox), interaction model, capability system, config contract |
-| `ARCHITECTURE.md` | C ABI protocols, SDK base classes, host loaders, RAII handles, dialog engine, config envelope |
+| `ARCHITECTURE.md` | C ABI protocols, SDK base classes, host loaders, RAII handles, dialog protocol, config envelope |
 | `data-source-guide.md` | SDK tutorial: FileSourceBase, StreamSourceBase, delegated ingest, dialog integration |
 | `message-parser-guide.md` | SDK tutorial: parse(), schema binding, dialog integration for parsers |
 | `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
@@ -69,7 +52,7 @@ The three widget families (plot / 2D / 3D) are **independent by design** — eac
 ./test.sh             # runs tests in all discovered build dirs
 ```
 
-Dependencies: Conan (`conanfile.txt`). Qt 6.8.3 optional (`./install_qt6.sh`).
+Dependencies: Conan (`conanfile.txt`).
 
 ## Pre-commit Validation
 

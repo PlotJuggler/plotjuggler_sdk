@@ -215,7 +215,7 @@ The source never sees `parser_binding`; the host manages it.
 
 ## 10. Non-Goals / Deferred
 
-- Plugin marketplace, discovery, or installation automation.
+- Extension installation automation and host-specific catalog policy.
 - Hot-reload or cross-process plugins.
 - Exact ABI versioning scheme beyond protocol_version + struct_size.
 - `StatePublisher` or native `Transform` plugin ABI.

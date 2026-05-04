@@ -73,12 +73,12 @@ Three toolbox plugins exist in `plotjuggler/plotjuggler_plugins/`:
 
 | Aspect | PJ 3.x | New SDK |
 |--------|--------|---------|
-| Plugin owns its UI | Yes — full `QWidget` with arbitrary children | No — `.ui` file + `DialogEngine` |
+| Plugin owns its UI | Yes — full `QWidget` with arbitrary children | No — `.ui` file + host-rendered dialog runtime |
 | Data access | Direct reference to `PlotDataMapRef` | Via handles: `catalogSnapshot`, `readSeries`, `appendRecord` |
 | Communication | Qt signals/slots | C ABI vtables + JSON config |
-| Qt dependency | Required | Optional (`pj_base` has no Qt) |
+| Qt dependency | Required | None in core/plugin SDK; GUI hosts supply their toolkit runtime |
 | Embedded chart preview | Integrated (`PlotWidgetBase`) | Not available in the SDK |
-| Drag-and-drop | Via `eventFilter` in the plugin | Not supported by `DialogEngine` |
+| Drag-and-drop | Via `eventFilter` in the plugin | Not supported by the dialog protocol |
 | Output type | `PlotData` (time series) **or** `PlotDataXY` (scatter) | Time-indexed series only |
 | Transform registry | Yes — re-applied on layout reload | No — outputs are static data |
 | Reactive execution | `ReactiveLuaFunction` re-runs on every slider tick | `onTick()` exists but cannot write to datastore or access current timestamp |

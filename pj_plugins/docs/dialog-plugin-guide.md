@@ -114,7 +114,7 @@ const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 ```
 
 > **Important:** The `QDialogButtonBox` must be named `"buttonBox"` (camelCase) and
-> must have the `standardButtons` property set in the XML. The dialog engine
+> must have the `standardButtons` property set in the XML. The host dialog runtime
 > searches for `findChild<QDialogButtonBox*>("buttonBox")` to wire the
 > accept/reject signals. Without `standardButtons`, no OK/Cancel buttons appear.
 
@@ -234,7 +234,7 @@ the same required keys apply.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
+| `id` | string | yes | Stable plugin identifier used by the host catalog. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the dialog. |
@@ -421,7 +421,7 @@ std::string widget_data() override {
 ```
 
 `requestAccept()` sets a `__request_accept` flag in the widget data JSON. After
-applying widget state, the dialog engine checks this flag and calls
+applying widget state, the host dialog runtime checks this flag and calls
 `dialog->accept()` if set. This is a one-shot — the flag is consumed on the
 next `widget_data()` call.
 
@@ -574,7 +574,7 @@ PJ_DIALOG_PLUGIN(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
 ```
 
 The host resolves both vtables, creates a borrowed `DialogHandle` from the
-source's dialog context, and drives the dialog through `DialogEngine`. After
+source's dialog context, and drives the dialog through its dialog runtime. After
 the dialog completes, the source reads its dialog member's state directly.
 
 See `pj_plugins/docs/data-source-guide.md` for the full DataSource-side
