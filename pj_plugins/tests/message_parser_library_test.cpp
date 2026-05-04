@@ -29,7 +29,7 @@ TEST(MessageParserLibraryTest, ManifestRoundTrip) {
   auto handle = library->createHandle();
   EXPECT_TRUE(handle.valid());
   EXPECT_NE(handle.manifest().find("Mock JSON Parser"), std::string::npos);
-  EXPECT_NE(handle.manifest().find("\"encoding\":\"json\""), std::string::npos);
+  EXPECT_NE(handle.manifest().find("\"encoding\":[\"json\"]"), std::string::npos);
 }
 
 TEST(MessageParserLibraryTest, BindAndParse) {
