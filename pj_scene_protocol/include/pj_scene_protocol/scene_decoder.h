@@ -10,14 +10,14 @@
 
 namespace PJ {
 
-/// Decodes canonical wire-format bytes (foxglove.ImageAnnotations Protobuf —
-/// the schema documented in `pj_media/docs/datatypes_2D.md §8` and serialized
-/// by `pj_scene_protocol::serializeImageAnnotation`) into a `SceneFrame` of
-/// vector primitives. Stateless — one instance per scene/annotation layer.
+/// Decodes canonical wire-format bytes (foxglove.ImageAnnotations Protobuf,
+/// serialized by `pj_scene_protocol::serializeImageAnnotation`) into a
+/// `SceneFrame` of vector primitives. Stateless — one instance per
+/// scene/annotation layer. See `docs/ARCHITECTURE.md` for the wire format spec.
 ///
 /// There is exactly ONE decoder kind. Per-source-format conversion (e.g. CDR
 /// `vision_msgs/msg/Detection2DArray` → canonical bytes) lives loader-side and
-/// is invisible to pj_media.
+/// is invisible to consumers of this module.
 class ISceneDecoder {
  public:
   virtual ~ISceneDecoder() = default;
