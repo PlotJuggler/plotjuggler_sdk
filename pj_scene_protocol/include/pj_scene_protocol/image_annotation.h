@@ -8,8 +8,8 @@
 
 namespace PJ {
 
-/// Vertex topology for vector annotations. Mirrors the canonical primitive set
-/// from `pj_media/docs/datatypes_2D.md` §8.
+/// Vertex topology for vector annotations. See `docs/ARCHITECTURE.md`
+/// for the full type catalog and wire format spec.
 enum class AnnotationTopology : uint8_t {
   kPoints,     ///< Each point is independent.
   kLineList,   ///< Consecutive pairs form segments (0-1, 2-3, ...).
