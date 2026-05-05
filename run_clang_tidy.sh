@@ -17,7 +17,7 @@ fi
 
 if [[ "${1:-}" == "--help" ]]; then
   echo "Usage: $(basename "$0") [build_path]"
-  echo "Run clang-tidy on all C++ sources in pj_base, pj_datastore, and pj_plugins."
+  echo "Run clang-tidy on all C++ sources in pj_base, pj_datastore, pj_plugins, and pj_scene_protocol."
   echo
   echo "Arguments:"
   echo "  build_path   Path to build directory containing compile_commands.json (default: build)"
@@ -36,6 +36,7 @@ source_dirs=(
   "$ws_dir/pj_base"
   "$ws_dir/pj_datastore"
   "$ws_dir/pj_plugins"
+  "$ws_dir/pj_scene_protocol"
 )
 
 echo "-----------------------------------------------------------"

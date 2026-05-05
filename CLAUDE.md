@@ -9,11 +9,13 @@ PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin 
 - **pj_base** — vocabulary types, plugin ABI headers, plugin SDK headers (zero external deps)
 - **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
 - **pj_plugins** — C-ABI plugin protocol, C++ SDK base classes, plugin discovery, host-side loaders, config envelope helpers, and dialog protocol primitives; four plugin families: DataSource, MessageParser, Dialog, Toolbox
+- **pj_scene_protocol** — canonical schema + Foxglove `ImageAnnotations` Protobuf codec (writer + reader); SDK boundary for plugin authors producing or consuming 2D markers / scene primitives. `pj_base`-only deps.
 
 ### Dependency graph
 
 - `pj_datastore` → `pj_base`
 - `pj_plugins` → `pj_base`
+- `pj_scene_protocol` → `pj_base`
 
 ## Key Documentation
 
@@ -44,6 +46,13 @@ PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin 
 | `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
 | `toolbox-guide.md` | SDK tutorial: read+write access, catalog, notifyDataChanged |
 
+**Scene protocol** (`pj_scene_protocol/docs/`):
+
+| Document | Content |
+|----------|---------|
+| `ARCHITECTURE.md` | Wire format spec (`foxglove.ImageAnnotations` Protobuf), type catalog, encoding rules, design rationale (single canonical decoder, loader-side conversion) |
+| `USER_GUIDE.md` | Producer recipe (loader writing markers) and consumer recipe (sink/viewer decoding), common pitfalls, pointer to PJ4 reference adapters |
+
 ## Build & Test
 
 ```bash
@@ -64,7 +73,7 @@ Before committing, always run:
 
 ## Instructions Glossary
 
-- **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `pj_base/`, `pj_datastore/docs/`, `pj_plugins/docs/`, and any other location.
+- **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `pj_base/`, `pj_datastore/docs/`, `pj_plugins/docs/`, `pj_scene_protocol/docs/`, and any other location.
 
 - **"Update the documentation"** means: based on what you learned during this session, correct any documentation that is outdated or inaccurate, and clarify any ambiguity that caused confusion or errors. If a doc says one thing but the code does another, fix the doc to match reality. If missing information led to a bug, add it.
 
