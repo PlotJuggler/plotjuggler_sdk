@@ -48,6 +48,21 @@ TEST(ObjectStoreTest, SameNameDifferentDatasetOk) {
   EXPECT_NE(id1.id, id2_or->id);
 }
 
+TEST(ObjectStoreTest, FindTopicReturnsRegisteredId) {
+  ObjectStore store;
+  auto id = registerTestTopic(store, "cam/image");
+  auto found = store.findTopic(1, "cam/image");
+  ASSERT_TRUE(found.has_value());
+  EXPECT_EQ(found->id, id.id);
+}
+
+TEST(ObjectStoreTest, FindTopicMissingReturnsNullopt) {
+  ObjectStore store;
+  registerTestTopic(store, "cam/image");
+  EXPECT_FALSE(store.findTopic(1, "other/topic").has_value());
+  EXPECT_FALSE(store.findTopic(99, "cam/image").has_value());
+}
+
 TEST(ObjectStoreTest, ListTopics) {
   ObjectStore store;
   auto id1 = registerTestTopic(store, "topic_a");

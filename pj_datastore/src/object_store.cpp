@@ -21,6 +21,17 @@ Expected<ObjectTopicId> ObjectStore::registerTopic(const ObjectTopicDescriptor& 
   return id;
 }
 
+std::optional<ObjectTopicId> ObjectStore::findTopic(
+    DatasetId dataset_id, std::string_view topic_name) const {
+  std::shared_lock lock(store_mutex_);
+  for (const auto& [tid, series] : topics_) {
+    if (series->descriptor.dataset_id == dataset_id && series->descriptor.topic_name == topic_name) {
+      return tid;
+    }
+  }
+  return std::nullopt;
+}
+
 const ObjectTopicDescriptor& ObjectStore::descriptor(ObjectTopicId id) const {
   std::shared_lock lock(store_mutex_);
   const auto* s = findSeries(id);

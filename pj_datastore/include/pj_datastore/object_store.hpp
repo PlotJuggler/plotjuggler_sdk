@@ -9,6 +9,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -90,6 +91,11 @@ class ObjectStore {
   // --- Registration ---
 
   Expected<ObjectTopicId> registerTopic(const ObjectTopicDescriptor& descriptor);
+
+  // Resolve a topic id by (dataset_id, topic_name) without registering. Returns
+  // nullopt if no topic with that key exists. Used by hosts that need to bind a
+  // parser-side write surface to a topic the source already registered.
+  std::optional<ObjectTopicId> findTopic(DatasetId dataset_id, std::string_view topic_name) const;
 
   const ObjectTopicDescriptor& descriptor(ObjectTopicId id) const;
 
