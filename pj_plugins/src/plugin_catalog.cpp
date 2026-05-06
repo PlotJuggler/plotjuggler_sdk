@@ -112,7 +112,7 @@ Expected<ManifestCandidate> tryDialog(void* handle) {
   if (vt->create == nullptr || vt->destroy == nullptr || vt->get_manifest == nullptr) {
     return unexpected("Dialog vtable missing required lifecycle slots");
   }
-  if (PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt, manifest_json)) {
+  if (PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt, manifest_json) && vt->manifest_json != nullptr) {
     return ManifestCandidate{PluginFamily::kDialog, vt->manifest_json};
   }
 

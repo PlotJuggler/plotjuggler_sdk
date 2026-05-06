@@ -199,6 +199,11 @@ target_compile_features(static_manifest_dialog_plugin PRIVATE cxx_std_20)
 target_compile_options(static_manifest_dialog_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(static_manifest_dialog_plugin PRIVATE pj_dialog_protocol)
 
+add_library(legacy_macro_dialog_plugin SHARED tests/legacy_macro_dialog_plugin.cpp)
+target_compile_features(legacy_macro_dialog_plugin PRIVATE cxx_std_20)
+target_compile_options(legacy_macro_dialog_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(legacy_macro_dialog_plugin PRIVATE pj_dialog_protocol)
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -297,6 +302,7 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MOCK_TOOLBOX_PLUGIN_PATH="$<TARGET_FILE:mock_toolbox_plugin>"
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
   PJ_STATIC_MANIFEST_DIALOG_PLUGIN_PATH="$<TARGET_FILE:static_manifest_dialog_plugin>"
+  PJ_LEGACY_MACRO_DIALOG_PLUGIN_PATH="$<TARGET_FILE:legacy_macro_dialog_plugin>"
   PJ_MISSING_ID_PLUGIN_PATH="$<TARGET_FILE:missing_id_data_source_plugin>"
   PJ_INVALID_OPTIONAL_PLUGIN_PATH="$<TARGET_FILE:invalid_optional_manifest_data_source_plugin>"
   PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
@@ -308,7 +314,7 @@ target_link_libraries(plugin_catalog_test PRIVATE
 add_dependencies(plugin_catalog_test mock_data_source_plugin mock_json_parser_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
-                 static_manifest_dialog_plugin)
+                 static_manifest_dialog_plugin legacy_macro_dialog_plugin)
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS

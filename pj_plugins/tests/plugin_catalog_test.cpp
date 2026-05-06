@@ -98,6 +98,14 @@ TEST_F(PluginCatalogTest, InspectDialogDsoUsesStaticManifestWithoutCreate) {
   EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
 }
 
+TEST_F(PluginCatalogTest, InspectDialogDsoFallsBackWhenStaticManifestSlotIsNull) {
+  auto descriptor = inspectPluginDso(PJ_LEGACY_MACRO_DIALOG_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "legacy-macro-dialog");
+  EXPECT_EQ(descriptor->name, "Legacy Macro Dialog");
+  EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
+}
+
 TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {
   auto descriptor = inspectPluginDso(PJ_MISSING_ID_PLUGIN_PATH);
   ASSERT_FALSE(descriptor.has_value());
