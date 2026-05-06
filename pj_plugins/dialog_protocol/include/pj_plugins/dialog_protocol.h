@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #include "pj_base/plugin_data_api.h"
 
@@ -13,6 +14,15 @@ extern "C" {
 #endif
 
 #define PJ_DIALOG_PROTOCOL_VERSION 4
+
+/*
+ * Minimum vtable size for v4.0 compatibility, pinned at v4.0 release.
+ * Loaders reject plugins whose `struct_size < PJ_DIALOG_MIN_VTABLE_SIZE`.
+ * New slots may be appended at the tail without increasing this floor;
+ * host reads of appended slots must be gated with PJ_HAS_TAIL_SLOT.
+ */
+#define PJ_DIALOG_MIN_VTABLE_SIZE \
+  (offsetof(PJ_dialog_vtable_t, load_config) + sizeof(bool (*)(void*, PJ_string_view_t, PJ_error_t*)))
 
 /* Export macro for plugin shared libraries */
 #if defined(_WIN32)
@@ -65,7 +75,14 @@ typedef struct PJ_dialog_vtable_t {
   /* [main-thread] Configuration round-trip. */
   bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
   bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [metadata] Optional static JSON manifest for metadata-only catalog
+   * discovery. When present, the host reads this instead of instantiating
+   * the dialog during scans. */
+  const char* manifest_json;
 } PJ_dialog_vtable_t;
+/* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
+ * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_DIALOG_MIN_VTABLE_SIZE. */
 
 /*
  * Every dialog plugin exports this symbol.

@@ -103,7 +103,7 @@ Return `okStatus()` on success, or `unexpected("reason")` on failure.
 PJ::Status MyJsonParser::parse(PJ::Timestamp timestamp_ns,
                                 PJ::Span<const uint8_t> payload) {
   if (!writeHostBound()) {
-    return PJ::unexpected(std::string("write host not bound"));
+    return PJ::unexpected("write host not bound");
   }
 
   // Decode payload bytes into field values.
@@ -322,7 +322,8 @@ and none is needed.
 │    loadConfig(json) applies it   │
 │                                  │
 │  PJ_MESSAGE_PARSER_PLUGIN(...)   │  → exports parser vtable
-│  PJ_DIALOG_PLUGIN(ProtoDialog)   │  → exports dialog vtable
+│  PJ_DIALOG_PLUGIN(ProtoDialog,   │  → exports dialog vtable
+│                   kManifestJson) │
 └──────────────────────────────────┘
 ```
 

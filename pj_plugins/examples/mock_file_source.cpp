@@ -23,7 +23,7 @@ class MockFileSource : public PJ::FileSourceBase {
 
   PJ::Status importData() override {
     if (!runtimeHost().progressStart("Importing", 3, true)) {
-      return PJ::unexpected(std::string("progress unavailable"));
+      return PJ::unexpected("progress unavailable");
     }
 
     auto topic = writeHost().ensureTopic("mock/file_data");
@@ -33,7 +33,7 @@ class MockFileSource : public PJ::FileSourceBase {
 
     for (uint64_t i = 1; i <= 3; ++i) {
       if (runtimeHost().isStopRequested()) {
-        return PJ::unexpected(std::string("import cancelled"));
+        return PJ::unexpected("import cancelled");
       }
 
       auto status = writeHost().appendRecord(
@@ -44,7 +44,7 @@ class MockFileSource : public PJ::FileSourceBase {
       }
 
       if (!runtimeHost().progressUpdate(i)) {
-        return PJ::unexpected(std::string("import cancelled via progress"));
+        return PJ::unexpected("import cancelled via progress");
       }
     }
 

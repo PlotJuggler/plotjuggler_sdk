@@ -41,7 +41,7 @@ renders the widgets, and relays events to the plugin over the C vtable.
 4. Implement `widget_data()` to push state to the UI.
 5. Override the typed event handlers you need (`onTextChanged`,
    `onIndexChanged`, `onToggled`, etc.) — return `true` when state changes.
-6. Export with `PJ_DIALOG_PLUGIN(YourClass)`.
+6. Export with `PJ_DIALOG_PLUGIN(YourClass, kManifestJson)`.
 7. Build as a shared library linking `pj_dialog_sdk`.
 
 A complete example lives at
@@ -88,15 +88,17 @@ Subclass `DialogPluginTyped` and override `manifest()`, `ui_content()`,
 #include <pj_plugins/sdk/dialog_plugin_typed.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
 
+constexpr const char* kManifestJson = R"({
+  "id": "my-dialog",
+  "name": "My Dialog",
+  "version": "1.0.0",
+  "description": "Example dialog plugin"
+})";
+
 class MyDialog : public PJ::DialogPluginTyped {
  public:
   std::string manifest() const override {
-    return R"({
-      "id": "my-dialog",
-      "name": "My Dialog",
-      "version": "1.0.0",
-      "description": "Example dialog plugin"
-    })";
+    return kManifestJson;
   }
 
   std::string ui_content() const override {
@@ -259,11 +261,14 @@ All handlers default to returning `false`. Override only the ones you need.
 At file scope, after the class definition:
 
 ```cpp
-PJ_DIALOG_PLUGIN(MyDialog)
+PJ_DIALOG_PLUGIN(MyDialog, kManifestJson)
 ```
 
 This generates the `extern "C"` entry point (`PJ_get_dialog_vtable`) that the
-host resolves via dlsym/GetProcAddress.
+host resolves via dlsym/GetProcAddress. Passing the manifest literal lets the
+catalog read metadata without instantiating the dialog. The legacy
+`PJ_DIALOG_PLUGIN(MyDialog)` form remains supported for existing source, but
+catalog discovery must instantiate those dialogs to call `manifest()`.
 
 ### 6. Build
 
@@ -276,9 +281,12 @@ No Qt dependency is needed in the plugin — only the host links Qt.
 
 ## Manifest Schema
 
-`manifest()` returns a JSON string. Unlike the other plugin families, the
-dialog manifest is built at runtime (not a string literal in the vtable), but
-the same required keys apply.
+`manifest()` returns the same JSON string supplied to `PJ_DIALOG_PLUGIN`.
+New dialogs should pass a static manifest literal to the macro so catalog
+discovery can inspect metadata without constructing the dialog. Legacy dialogs
+that use `PJ_DIALOG_PLUGIN(MyDialog)` without a manifest still load, but the
+catalog must instantiate them to call `manifest()`. The same required keys
+apply in both forms.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
@@ -615,8 +623,8 @@ class MySource : public PJ::StreamSourceBase {
 };
 
 PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
-                            // so PJ::borrowDialog picks up the right vtable.
+PJ_DIALOG_PLUGIN(MyDialog, kManifestJson)  // also specialises PJ::dialogVtableFor<MyDialog>()
+                                          // so PJ::borrowDialog picks up the right vtable.
 ```
 
 The host resolves both vtables, creates a borrowed `DialogHandle` from the

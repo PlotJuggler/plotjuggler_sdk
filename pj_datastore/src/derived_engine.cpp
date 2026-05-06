@@ -339,7 +339,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addSisoTransform(
         fmt::format("add_siso_transform: SISO requires single-column input, got {} columns", num_cols));
   }
   if (!leaf_primitive) {
-    return PJ::unexpected(std::string("add_siso_transform: could not determine leaf primitive type"));
+    return PJ::unexpected("add_siso_transform: could not determine leaf primitive type");
   }
   StorageKind in_kind = storageKindOf(*leaf_primitive);
 
@@ -414,13 +414,13 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
     std::vector<PJ::TopicId> input_topic_ids, std::vector<std::string> output_topic_names,
     PJ::DatasetId output_dataset_id, std::unique_ptr<IMIMOTransform> op) {
   if (input_topic_ids.empty()) {
-    return PJ::unexpected(std::string("add_mimo_transform: requires at least one input topic"));
+    return PJ::unexpected("add_mimo_transform: requires at least one input topic");
   }
   if (output_topic_names.empty()) {
-    return PJ::unexpected(std::string("add_mimo_transform: requires at least one output topic name"));
+    return PJ::unexpected("add_mimo_transform: requires at least one output topic name");
   }
   if (!op) {
-    return PJ::unexpected(std::string("add_mimo_transform: null transform op"));
+    return PJ::unexpected("add_mimo_transform: null transform op");
   }
 
   // 1. Validate all inputs and determine their StorageKinds.

@@ -7,9 +7,11 @@
  * @brief Plugin discovery from each DSO's embedded manifest.
  *
  * Plugin DSOs export a family-specific vtable whose `manifest_json` field is
- * the source of truth for local plugin metadata. The scanner walks plugin files,
- * inspects those exports, parses the embedded manifest, and reports both valid
- * descriptors and diagnostics for candidates that could not be used.
+ * the source of truth for local plugin metadata. Dialogs compiled against the
+ * original v4.0 protocol may lack that tail slot; the scanner falls back to
+ * their legacy `create()` + `get_manifest()` path. The scanner walks plugin
+ * files, inspects those exports, parses the embedded manifest, and reports both
+ * valid descriptors and diagnostics for candidates that could not be used.
  */
 
 #include <cstdint>

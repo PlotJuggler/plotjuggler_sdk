@@ -29,16 +29,16 @@ struct ConfigEnvelope {
   static Expected<Unpacked> unpack(std::string_view envelope_json) {
     auto j = nlohmann::json::parse(envelope_json, nullptr, false);
     if (j.is_discarded()) {
-      return unexpected(std::string("invalid envelope JSON"));
+      return unexpected("invalid envelope JSON");
     }
     if (!j.contains("version") || !j["version"].is_number_integer()) {
-      return unexpected(std::string("missing or invalid envelope version"));
+      return unexpected("missing or invalid envelope version");
     }
     if (j["version"].get<int>() != 1) {
-      return unexpected(std::string("unsupported envelope version"));
+      return unexpected("unsupported envelope version");
     }
     if (!j.contains("source_config") || !j["source_config"].is_string()) {
-      return unexpected(std::string("missing source_config"));
+      return unexpected("missing source_config");
     }
 
     Unpacked result;

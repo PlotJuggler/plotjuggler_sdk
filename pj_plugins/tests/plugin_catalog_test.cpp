@@ -90,6 +90,14 @@ TEST_F(PluginCatalogTest, InspectDialogDsoUsesEmbeddedManifest) {
   EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
 }
 
+TEST_F(PluginCatalogTest, InspectDialogDsoUsesStaticManifestWithoutCreate) {
+  auto descriptor = inspectPluginDso(PJ_STATIC_MANIFEST_DIALOG_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "static-manifest-dialog");
+  EXPECT_EQ(descriptor->name, "Static Manifest Dialog");
+  EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
+}
+
 TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {
   auto descriptor = inspectPluginDso(PJ_MISSING_ID_PLUGIN_PATH);
   ASSERT_FALSE(descriptor.has_value());

@@ -45,12 +45,13 @@ class ServiceRegistryBuilder {
   ///         null fat-pointer field.
   [[nodiscard]] ::PJ::Expected<void, std::string> tryRegisterService(
       std::string_view name, uint32_t protocol_version, PJ_service_t service) {
+    const std::string service_name(name);
     if (service.ctx == nullptr || service.vtable == nullptr) {
-      return ::PJ::unexpected(std::string("registerService: null ctx or vtable for '") + std::string(name) + "'");
+      return ::PJ::unexpected("registerService: null ctx or vtable for '" + service_name + "'");
     }
-    std::string key(name);
+    std::string key(service_name);
     if (entries_.find(key) != entries_.end()) {
-      return ::PJ::unexpected(std::string("registerService: duplicate name '") + std::string(name) + "'");
+      return ::PJ::unexpected("registerService: duplicate name '" + service_name + "'");
     }
     entries_[std::move(key)] = Entry{protocol_version, service};
     return {};

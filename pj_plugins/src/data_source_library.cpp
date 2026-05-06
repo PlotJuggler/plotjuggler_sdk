@@ -53,15 +53,15 @@ Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
 
   const PJ_data_source_vtable_t* vtable = entry();
   if (vtable == nullptr) {
-    return unexpected(std::string("PJ_get_data_source_vtable returned null"));
+    return unexpected("PJ_get_data_source_vtable returned null");
   }
   if (vtable->protocol_version != PJ_DATA_SOURCE_PROTOCOL_VERSION) {
-    return unexpected(std::string("DataSource protocol version mismatch"));
+    return unexpected("DataSource protocol version mismatch");
   }
   // Use MIN_VTABLE_SIZE (pinned at v4.0), NOT sizeof() which grows per host
   // release and would falsely reject plugins compiled against older headers.
   if (vtable->struct_size < PJ_DATA_SOURCE_MIN_VTABLE_SIZE) {
-    return unexpected(std::string("DataSource vtable smaller than v4.0 baseline"));
+    return unexpected("DataSource vtable smaller than v4.0 baseline");
   }
   if (auto status = detail::validateRequiredSlots(vtable); !status) {
     return unexpected(status.error());
@@ -78,13 +78,13 @@ Expected<const PJ_dialog_vtable_t*> DataSourceLibrary::resolveDialogVtable() con
   auto fn = reinterpret_cast<PJ_get_dialog_vtable_fn>(*sym);
   const PJ_dialog_vtable_t* vt = fn();
   if (vt == nullptr) {
-    return unexpected(std::string("PJ_get_dialog_vtable returned null"));
+    return unexpected("PJ_get_dialog_vtable returned null");
   }
   if (vt->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
-    return unexpected(std::string("Dialog protocol version mismatch"));
+    return unexpected("Dialog protocol version mismatch");
   }
-  if (vt->struct_size < sizeof(PJ_dialog_vtable_t)) {
-    return unexpected(std::string("Dialog vtable is smaller than expected"));
+  if (vt->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
+    return unexpected("Dialog vtable smaller than v4.0 baseline");
   }
   return vt;
 }

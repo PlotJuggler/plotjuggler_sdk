@@ -296,7 +296,7 @@ PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColum
   }
 
   if (mappings.empty()) {
-    return PJ::unexpected(std::string("No supported columns found in Arrow schema"));
+    return PJ::unexpected("No supported columns found in Arrow schema");
   }
 
   auto type_tree = PJ::makeStruct("arrow_row", std::move(children));
@@ -313,7 +313,7 @@ PJ::Status ingestBatchesFromStream(
   nanoarrow::UniqueArrayView array_view;
   int rc = ArrowArrayViewInitFromSchema(array_view.get(), const_cast<ArrowSchema*>(schema), nullptr);
   if (rc != NANOARROW_OK) {
-    return PJ::unexpected(std::string("Failed to initialize ArrowArrayView from schema"));
+    return PJ::unexpected("Failed to initialize ArrowArrayView from schema");
   }
 
   nanoarrow::UniqueArray batch;
@@ -322,7 +322,7 @@ PJ::Status ingestBatchesFromStream(
     rc = stream->get_next(stream, batch.get());
     if (rc != NANOARROW_OK) {
       const char* err = stream->get_last_error != nullptr ? stream->get_last_error(stream) : nullptr;
-      return PJ::unexpected(std::string("Failed to read next batch: ") + (err != nullptr ? err : "unknown"));
+      return PJ::unexpected(fmt::format("Failed to read next batch: {}", err != nullptr ? err : "unknown"));
     }
     if (batch->release == nullptr) {
       break;  // end of stream
@@ -335,7 +335,7 @@ PJ::Status ingestBatchesFromStream(
 
     rc = ArrowArrayViewSetArray(array_view.get(), batch.get(), nullptr);
     if (rc != NANOARROW_OK) {
-      return PJ::unexpected(std::string("Failed to set array on ArrowArrayView"));
+      return PJ::unexpected("Failed to set array on ArrowArrayView");
     }
 
     std::vector<Timestamp> timestamps;
@@ -388,13 +388,13 @@ PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColum
   nanoarrow::UniqueArrayStream stream;
   int rc = ArrowIpcArrayStreamReaderInit(stream.get(), &input, nullptr);
   if (rc != NANOARROW_OK) {
-    return PJ::unexpected(std::string("Failed to initialize IPC stream reader"));
+    return PJ::unexpected("Failed to initialize IPC stream reader");
   }
 
   nanoarrow::UniqueSchema schema;
   rc = stream->get_schema(stream.get(), schema.get());
   if (rc != NANOARROW_OK) {
-    return PJ::unexpected(std::string("Failed to read schema from IPC stream"));
+    return PJ::unexpected("Failed to read schema from IPC stream");
   }
 
   return mappingsFromSchema(schema.get());
@@ -407,14 +407,14 @@ PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColum
 PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColumnMapping>>> schemaFromArrowStream(
     ArrowArrayStream* stream) {
   if (stream == nullptr || stream->get_schema == nullptr) {
-    return PJ::unexpected(std::string("null ArrowArrayStream or missing get_schema"));
+    return PJ::unexpected("null ArrowArrayStream or missing get_schema");
   }
 
   nanoarrow::UniqueSchema schema;
   const int rc = stream->get_schema(stream, schema.get());
   if (rc != NANOARROW_OK) {
     const char* err = stream->get_last_error != nullptr ? stream->get_last_error(stream) : nullptr;
-    return PJ::unexpected(std::string("Failed to read schema from ArrowArrayStream: ") + (err != nullptr ? err : ""));
+    return PJ::unexpected(fmt::format("Failed to read schema from ArrowArrayStream: {}", err != nullptr ? err : ""));
   }
 
   return mappingsFromSchema(schema.get());
@@ -433,13 +433,13 @@ PJ::Status importIpcStream(
   nanoarrow::UniqueArrayStream stream;
   int rc = ArrowIpcArrayStreamReaderInit(stream.get(), &input, nullptr);
   if (rc != NANOARROW_OK) {
-    return PJ::unexpected(std::string("Failed to initialize IPC stream reader"));
+    return PJ::unexpected("Failed to initialize IPC stream reader");
   }
 
   nanoarrow::UniqueSchema schema;
   rc = stream->get_schema(stream.get(), schema.get());
   if (rc != NANOARROW_OK) {
-    return PJ::unexpected(std::string("Failed to read schema from IPC stream"));
+    return PJ::unexpected("Failed to read schema from IPC stream");
   }
 
   return ingestBatchesFromStream(writer, topic_id, stream.get(), schema.get(), mappings, timestamp_column);
@@ -453,14 +453,14 @@ PJ::Status importArrowStream(
     DataWriter& writer, TopicId topic_id, ArrowArrayStream* stream, const std::vector<ArrowColumnMapping>& mappings,
     int timestamp_column) {
   if (stream == nullptr || stream->get_schema == nullptr || stream->get_next == nullptr) {
-    return PJ::unexpected(std::string("null ArrowArrayStream or missing callbacks"));
+    return PJ::unexpected("null ArrowArrayStream or missing callbacks");
   }
 
   nanoarrow::UniqueSchema schema;
   int rc = stream->get_schema(stream, schema.get());
   if (rc != NANOARROW_OK) {
     const char* err = stream->get_last_error != nullptr ? stream->get_last_error(stream) : nullptr;
-    return PJ::unexpected(std::string("Failed to read schema from ArrowArrayStream: ") + (err != nullptr ? err : ""));
+    return PJ::unexpected(fmt::format("Failed to read schema from ArrowArrayStream: {}", err != nullptr ? err : ""));
   }
 
   return ingestBatchesFromStream(writer, topic_id, stream, schema.get(), mappings, timestamp_column);

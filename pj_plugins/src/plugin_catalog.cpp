@@ -3,6 +3,8 @@
 
 #include "pj_plugins/host/plugin_catalog.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <filesystem>
 #include <memory>
@@ -59,13 +61,13 @@ Expected<ManifestCandidate> probeDirectVtable(
   }
   const Vtable* vt = reinterpret_cast<EntryFn>(*sym)();
   if (vt == nullptr) {
-    return unexpected(std::string(symbol) + " returned null");
+    return unexpected(fmt::format("{} returned null", symbol));
   }
   if (vt->protocol_version != expected_protocol) {
-    return unexpected(std::string(family_name) + " protocol version mismatch");
+    return unexpected(fmt::format("{} protocol version mismatch", family_name));
   }
   if (vt->struct_size < min_vtable_size) {
-    return unexpected(std::string(family_name) + " vtable smaller than v4.0 baseline");
+    return unexpected(fmt::format("{} vtable smaller than v4.0 baseline", family_name));
   }
   if (auto status = detail::validateRequiredSlots(vt); !status) {
     return unexpected(status.error());
@@ -99,21 +101,24 @@ Expected<ManifestCandidate> tryDialog(void* handle) {
   auto entry = reinterpret_cast<PJ_get_dialog_vtable_fn>(*sym);
   const PJ_dialog_vtable_t* vt = entry();
   if (vt == nullptr) {
-    return unexpected(std::string("PJ_get_dialog_vtable returned null"));
+    return unexpected("PJ_get_dialog_vtable returned null");
   }
   if (vt->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
-    return unexpected(std::string("Dialog protocol version mismatch"));
+    return unexpected("Dialog protocol version mismatch");
   }
-  if (vt->struct_size < sizeof(PJ_dialog_vtable_t)) {
-    return unexpected(std::string("Dialog vtable smaller than v4.0 baseline"));
+  if (vt->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
+    return unexpected("Dialog vtable smaller than v4.0 baseline");
   }
   if (vt->create == nullptr || vt->destroy == nullptr || vt->get_manifest == nullptr) {
-    return unexpected(std::string("Dialog vtable missing required lifecycle slots"));
+    return unexpected("Dialog vtable missing required lifecycle slots");
+  }
+  if (PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt, manifest_json)) {
+    return ManifestCandidate{PluginFamily::kDialog, vt->manifest_json};
   }
 
   void* ctx = vt->create();
   if (ctx == nullptr) {
-    return unexpected(std::string("PJ_dialog_vtable_t::create returned null"));
+    return unexpected("PJ_dialog_vtable_t::create returned null");
   }
   const char* manifest = vt->get_manifest(ctx);
   std::string manifest_json = manifest == nullptr ? "" : manifest;
@@ -127,25 +132,25 @@ Expected<ManifestCandidate> findEmbeddedManifest(void* handle) {
   if (auto candidate = tryDataSource(handle)) {
     return *candidate;
   } else {
-    errors.push_back("data_source: " + candidate.error());
+    errors.push_back(fmt::format("data_source: {}", candidate.error()));
   }
 
   if (auto candidate = tryMessageParser(handle)) {
     return *candidate;
   } else {
-    errors.push_back("message_parser: " + candidate.error());
+    errors.push_back(fmt::format("message_parser: {}", candidate.error()));
   }
 
   if (auto candidate = tryToolbox(handle)) {
     return *candidate;
   } else {
-    errors.push_back("toolbox: " + candidate.error());
+    errors.push_back(fmt::format("toolbox: {}", candidate.error()));
   }
 
   if (auto candidate = tryDialog(handle)) {
     return *candidate;
   } else {
-    errors.push_back("dialog: " + candidate.error());
+    errors.push_back(fmt::format("dialog: {}", candidate.error()));
   }
 
   std::ostringstream out;
@@ -163,11 +168,11 @@ Expected<std::vector<std::string>> readStringArray(const nlohmann::json& j, std:
     return values;
   }
   if (!it->is_array()) {
-    return unexpected(std::string("plugin embedded manifest key must be an array of strings: ") + std::string(key));
+    return unexpected(fmt::format("plugin embedded manifest key must be an array of strings: {}", key));
   }
   for (const auto& value : *it) {
     if (!value.is_string()) {
-      return unexpected(std::string("plugin embedded manifest key contains a non-string value: ") + std::string(key));
+      return unexpected(fmt::format("plugin embedded manifest key contains a non-string value: {}", key));
     }
     values.push_back(value.get<std::string>());
   }
@@ -177,24 +182,24 @@ Expected<std::vector<std::string>> readStringArray(const nlohmann::json& j, std:
 Expected<PluginDescriptor> decodeManifest(
     const std::filesystem::path& dso_path, PluginFamily family, std::string_view manifest_json) {
   if (manifest_json.empty()) {
-    return unexpected(std::string("plugin embedded manifest is empty"));
+    return unexpected("plugin embedded manifest is empty");
   }
 
   nlohmann::json j;
   try {
     j = nlohmann::json::parse(manifest_json);
   } catch (const nlohmann::json::exception& e) {
-    return unexpected(std::string("plugin embedded manifest is invalid JSON: ") + e.what());
+    return unexpected(fmt::format("plugin embedded manifest is invalid JSON: {}", e.what()));
   }
 
   if (!j.is_object()) {
-    return unexpected(std::string("plugin embedded manifest must be a JSON object"));
+    return unexpected("plugin embedded manifest must be a JSON object");
   }
 
   auto requiredString = [&](std::string_view key) -> Expected<std::string> {
     const auto it = j.find(std::string(key));
     if (it == j.end() || !it->is_string() || it->get<std::string>().empty()) {
-      return unexpected(std::string("plugin embedded manifest missing required string key: ") + std::string(key));
+      return unexpected(fmt::format("plugin embedded manifest missing required string key: {}", key));
     }
     return it->get<std::string>();
   };
@@ -204,7 +209,7 @@ Expected<PluginDescriptor> decodeManifest(
       return std::string{};
     }
     if (!it->is_string()) {
-      return unexpected(std::string("plugin embedded manifest key must be a string: ") + std::string(key));
+      return unexpected(fmt::format("plugin embedded manifest key must be a string: {}", key));
     }
     return it->get<std::string>();
   };
@@ -258,7 +263,7 @@ Expected<PluginDescriptor> decodeManifest(
     return unexpected(encoding.error());
   }
   if (family == PluginFamily::kMessageParser && encoding->empty()) {
-    return unexpected(std::string("plugin embedded manifest missing required encoding array"));
+    return unexpected("plugin embedded manifest missing required encoding array");
   }
   d.encoding = std::move(*encoding);
 
@@ -285,9 +290,9 @@ std::string_view toString(PluginFamily family) noexcept {
 
 Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
-    return unexpected(std::string("not a platform plugin DSO: ") + dso_path.string());
+    return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
   }
-  auto withPath = [&](const std::string& error) { return dso_path.string() + ": " + error; };
+  auto withPath = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
 
   auto handle = detail::loadLibraryHandle(dso_path.string());
   if (!handle) {
@@ -314,10 +319,10 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
 Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory) {
   std::error_code ec;
   if (!std::filesystem::exists(directory, ec)) {
-    return unexpected(std::string("plugin directory not found: ") + directory.string());
+    return unexpected(fmt::format("plugin directory not found: {}", directory.string()));
   }
   if (!std::filesystem::is_directory(directory, ec)) {
-    return unexpected(std::string("plugin path is not a directory: ") + directory.string());
+    return unexpected(fmt::format("plugin path is not a directory: {}", directory.string()));
   }
 
   PluginScanResult result;
@@ -326,7 +331,7 @@ Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory
   // scan and silently hide every later extension from the marketplace.
   std::filesystem::recursive_directory_iterator it(directory, ec);
   if (ec) {
-    result.diagnostics.push_back({directory, "directory iteration failed: " + ec.message()});
+    result.diagnostics.push_back({directory, fmt::format("directory iteration failed: {}", ec.message())});
     return result;
   }
   const std::filesystem::recursive_directory_iterator end;
@@ -342,13 +347,13 @@ Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory
         result.diagnostics.push_back({entry.path(), descriptor.error()});
       }
     } else if (entry_ec) {
-      result.diagnostics.push_back({entry.path(), "stat failed: " + entry_ec.message()});
+      result.diagnostics.push_back({entry.path(), fmt::format("stat failed: {}", entry_ec.message())});
     }
 
     std::error_code inc_ec;
     it.increment(inc_ec);
     if (inc_ec) {
-      result.diagnostics.push_back({entry.path(), "directory iteration failed: " + inc_ec.message()});
+      result.diagnostics.push_back({entry.path(), fmt::format("directory iteration failed: {}", inc_ec.message())});
       // Skip the unreadable subtree but continue with the rest of the scan.
       it.pop();
     }

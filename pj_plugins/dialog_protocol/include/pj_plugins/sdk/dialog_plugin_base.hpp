@@ -51,13 +51,13 @@ class DialogPluginBase {
   }
 
   template <typename CreateFn>
-  static const PJ_dialog_vtable_t* vtableWithCreate(CreateFn create_fn) {
+  static const PJ_dialog_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest_json = nullptr) {
     static const PJ_dialog_vtable_t vt = {
         PJ_DIALOG_PROTOCOL_VERSION, sizeof(PJ_dialog_vtable_t), create_fn,
         trampoline_destroy,         trampoline_get_manifest,    trampoline_get_ui_content,
         trampoline_get_widget_data, trampoline_on_widget_event, trampoline_on_tick,
         trampoline_on_accepted,     trampoline_on_rejected,     trampoline_save_config,
-        trampoline_load_config,
+        trampoline_load_config,     manifest_json,
     };
     return &vt;
   }
@@ -245,6 +245,10 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 /// another family (DataSource, MessageParser, Toolbox). The shared
 /// `pj_plugin_abi_version` export uses weak linkage, so duplicate definitions
 /// across family macros in the same DSO collapse into one COMDAT entry.
+/// Prefer `PJ_DIALOG_PLUGIN(ClassName, manifest_json_literal)` for new
+/// plugins so catalog scans can read metadata without instantiating the
+/// dialog. The one-argument form is kept for source compatibility and leaves
+/// the optional static manifest tail slot null.
 ///
 /// Emits three things:
 ///   1. The boot-level `pj_plugin_abi_version` symbol the host loader checks
@@ -254,16 +258,22 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 ///      other plugin code (notably a host's `getDialog()` override) obtain
 ///      the vtable pointer type-safely via `PJ::borrowDialog(member)` —
 ///      no `extern "C"` forward declaration required in the plugin source.
-#define PJ_DIALOG_PLUGIN(ClassName)                                                                       \
+#define PJ_DIALOG_PLUGIN_SELECT(_1, _2, NAME, ...) NAME
+#define PJ_DIALOG_PLUGIN(...)                                                                             \
+  PJ_DIALOG_PLUGIN_SELECT(__VA_ARGS__, PJ_DIALOG_PLUGIN_WITH_MANIFEST, PJ_DIALOG_PLUGIN_LEGACY)(__VA_ARGS__)
+#define PJ_DIALOG_PLUGIN_LEGACY(ClassName) PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, nullptr)
+#define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson)                                            \
   PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_DIALOG_EXPORT)                                                          \
   extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept {                 \
-    static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate([]() noexcept -> void* { \
-      try {                                                                                               \
-        return new ClassName();                                                                           \
-      } catch (...) {                                                                                     \
-        return nullptr;                                                                                   \
-      }                                                                                                   \
-    });                                                                                                   \
+    static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate(                         \
+        []() noexcept -> void* {                                                                          \
+          try {                                                                                           \
+            return new ClassName();                                                                       \
+          } catch (...) {                                                                                 \
+            return nullptr;                                                                               \
+          }                                                                                               \
+        },                                                                                                \
+        ManifestJson);                                                                                    \
     return vt;                                                                                            \
   }                                                                                                       \
   namespace PJ {                                                                                          \

@@ -41,7 +41,7 @@ editor, custom data transforms.
    acquiring services), `saveConfig()`, `loadConfig()`, `getDialog()`
 3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. If you ship an embedded dialog, also declare it as a
-   `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog)`
+   `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog, kManifestJson)`
 5. Build as a shared library linking `pj_base` (+ `pj_dialog_sdk` if
    you have a dialog)
 

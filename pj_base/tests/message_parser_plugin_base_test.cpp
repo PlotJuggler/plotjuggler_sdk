@@ -38,7 +38,7 @@ class MockParser : public PJ::MessageParserPluginBase {
 
   PJ::Status parse(PJ::Timestamp timestamp_ns, PJ::Span<const uint8_t> payload) override {
     if (!writeHostBound()) {
-      return PJ::unexpected(std::string("write host not bound"));
+      return PJ::unexpected("write host not bound");
     }
     // Parse payload as a text-encoded double
     std::string text(reinterpret_cast<const char*>(payload.data()), payload.size());

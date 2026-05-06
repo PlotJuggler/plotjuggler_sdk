@@ -9,6 +9,13 @@
 
 namespace {
 
+constexpr const char* kDialogManifestJson = R"({
+  "id": "mock-streamer-dialog",
+  "name": "Mock Streamer",
+  "version": "1.0.0",
+  "description": "A mock streaming data source with dialog"
+})";
+
 constexpr const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MockStreamerDialog</class>
@@ -138,11 +145,7 @@ class MockStreamerDialog : public PJ::DialogPluginTyped {
   // --- Dialog protocol implementation ---
 
   std::string manifest() const override {
-    return R"({
-      "name": "Mock Streamer",
-      "version": "1.0.0",
-      "description": "A mock streaming data source with dialog"
-    })";
+    return kDialogManifestJson;
   }
 
   std::string ui_content() const override {
@@ -363,7 +366,7 @@ class MockStreamerSource : public PJ::StreamSourceBase {
   }
 
   PJ::Status loadConfig(std::string_view json) override {
-    return dialog_.loadConfig(json) ? PJ::okStatus() : PJ::unexpected(std::string("bad config"));
+    return dialog_.loadConfig(json) ? PJ::okStatus() : PJ::unexpected("bad config");
   }
 
  private:
@@ -376,4 +379,4 @@ PJ_DATA_SOURCE_PLUGIN(
     MockStreamerSource, R"({"id":"mock-streamer-source","name":"Mock Streamer Source","version":"1.0.0",)"
                         R"("description":"Combined DataSource+Dialog mock for integration testing"})")
 
-PJ_DIALOG_PLUGIN(MockStreamerDialog)
+PJ_DIALOG_PLUGIN(MockStreamerDialog, kDialogManifestJson)

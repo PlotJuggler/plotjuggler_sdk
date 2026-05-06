@@ -53,7 +53,8 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   int flags = RTLD_NOW | RTLD_LOCAL;
   void* handle = dlopen(std::string(path).c_str(), flags);
   if (handle == nullptr) {
-    return unexpected(std::string(dlerror()));
+    const char* error = dlerror();
+    return unexpected(error == nullptr ? "" : error);
   }
   return handle;
 #endif
@@ -62,12 +63,13 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
 /// Resolve a named symbol from a loaded library handle.
 inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
   if (handle == nullptr) {
-    return unexpected(std::string("library not loaded"));
+    return unexpected("library not loaded");
   }
 #if defined(_WIN32)
   auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle), symbol_name);
   if (symbol == nullptr) {
-    return unexpected(std::string(symbol_name) + " not found");
+    std::string name(symbol_name);
+    return unexpected(name + " not found");
   }
   return reinterpret_cast<void*>(symbol);
 #else
@@ -75,7 +77,7 @@ inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
   void* symbol = dlsym(handle, symbol_name);
   const char* err = dlerror();
   if (err != nullptr) {
-    return unexpected(std::string(err));
+    return unexpected(err);
   }
   return symbol;
 #endif
@@ -87,14 +89,13 @@ inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
 inline Expected<void> checkPluginAbiVersion(void* handle) {
   auto sym = resolveSymbol(handle, "pj_plugin_abi_version");
   if (!sym) {
-    return unexpected(std::string("plugin missing pj_plugin_abi_version symbol: ") + sym.error());
+    return unexpected("plugin missing pj_plugin_abi_version symbol: " + sym.error());
   }
   const auto* plugin_abi = static_cast<const uint32_t*>(*sym);
   if (plugin_abi == nullptr || *plugin_abi != PJ_ABI_VERSION) {
     const std::string actual = plugin_abi == nullptr ? "null" : std::to_string(*plugin_abi);
     return unexpected(
-        std::string("plugin pj_plugin_abi_version mismatch (expected ") + std::to_string(PJ_ABI_VERSION) + ", got " +
-        actual + ")");
+        "plugin pj_plugin_abi_version mismatch (expected " + std::to_string(PJ_ABI_VERSION) + ", got " + actual + ")");
   }
   return {};
 }

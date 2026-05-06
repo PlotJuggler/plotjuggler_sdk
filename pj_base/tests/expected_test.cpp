@@ -19,7 +19,7 @@ TEST(ExpectedTest, HoldsValue) {
 }
 
 TEST(ExpectedTest, HoldsError) {
-  Expected<int, std::string> result = unexpected(std::string("boom"));
+  Expected<int, std::string> result = unexpected("boom");
 
   ASSERT_FALSE(result.has_value());
   EXPECT_FALSE(static_cast<bool>(result));
@@ -35,7 +35,7 @@ TEST(ExpectedTest, MutableAccessToValue) {
 }
 
 TEST(ExpectedTest, MutableAccessToError) {
-  Expected<int, std::string> result = unexpected(std::string("err"));
+  Expected<int, std::string> result = unexpected("err");
 
   ASSERT_FALSE(result.has_value());
   result.error().append("or");
@@ -47,7 +47,7 @@ TEST(ExpectedTest, AllowsValueAndErrorToUseSameType) {
   ASSERT_TRUE(value_result.has_value());
   EXPECT_EQ(value_result.value(), "value");
 
-  Expected<std::string> error_result = unexpected(std::string("error"));
+  Expected<std::string> error_result = unexpected("error");
   ASSERT_FALSE(error_result.has_value());
   EXPECT_EQ(error_result.error(), "error");
 }

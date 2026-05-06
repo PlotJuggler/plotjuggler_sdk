@@ -52,13 +52,13 @@ Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
 
   const PJ_toolbox_vtable_t* vtable = entry();
   if (vtable == nullptr) {
-    return unexpected(std::string("PJ_get_toolbox_vtable returned null"));
+    return unexpected("PJ_get_toolbox_vtable returned null");
   }
   if (vtable->protocol_version != PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION) {
-    return unexpected(std::string("Toolbox protocol version mismatch"));
+    return unexpected("Toolbox protocol version mismatch");
   }
   if (vtable->struct_size < PJ_TOOLBOX_MIN_VTABLE_SIZE) {
-    return unexpected(std::string("Toolbox vtable smaller than v4.0 baseline"));
+    return unexpected("Toolbox vtable smaller than v4.0 baseline");
   }
   if (auto status = detail::validateRequiredSlots(vtable); !status) {
     return unexpected(status.error());
@@ -75,13 +75,13 @@ Expected<const PJ_dialog_vtable_t*> ToolboxLibrary::resolveDialogVtable() const 
   auto fn = reinterpret_cast<PJ_get_dialog_vtable_fn>(*sym);
   const PJ_dialog_vtable_t* vt = fn();
   if (vt == nullptr) {
-    return unexpected(std::string("PJ_get_dialog_vtable returned null"));
+    return unexpected("PJ_get_dialog_vtable returned null");
   }
   if (vt->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
-    return unexpected(std::string("Dialog protocol version mismatch"));
+    return unexpected("Dialog protocol version mismatch");
   }
-  if (vt->struct_size < sizeof(PJ_dialog_vtable_t)) {
-    return unexpected(std::string("Dialog vtable is smaller than expected"));
+  if (vt->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
+    return unexpected("Dialog vtable smaller than v4.0 baseline");
   }
   return vt;
 }

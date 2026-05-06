@@ -7,6 +7,13 @@
 
 namespace {
 
+constexpr const char* kManifestJson = R"({
+  "id": "mock-dialog",
+  "name": "Mock Dialog",
+  "version": "1.0.0",
+  "description": "A minimal dialog plugin for testing"
+})";
+
 constexpr const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MockDialog</class>
@@ -60,12 +67,7 @@ class MockDialog : public PJ::DialogPluginTyped {
 
  public:
   std::string manifest() const override {
-    return R"({
-      "id": "mock-dialog",
-      "name": "Mock Dialog",
-      "version": "1.0.0",
-      "description": "A minimal dialog plugin for testing"
-    })";
+    return kManifestJson;
   }
 
   std::string ui_content() const override {
@@ -138,4 +140,4 @@ class MockDialog : public PJ::DialogPluginTyped {
   bool verbose_ = false;
 };
 
-PJ_DIALOG_PLUGIN(MockDialog)
+PJ_DIALOG_PLUGIN(MockDialog, kManifestJson)

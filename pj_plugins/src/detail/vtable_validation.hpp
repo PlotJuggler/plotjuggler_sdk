@@ -3,6 +3,7 @@
 #include <initializer_list>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
@@ -19,7 +20,10 @@ struct RequiredSlot {
 inline Status validateRequiredSlots(std::string_view family, std::initializer_list<RequiredSlot> slots) {
   for (const auto& slot : slots) {
     if (!slot.present) {
-      return unexpected(std::string(family) + " vtable missing required slot: " + std::string(slot.name));
+      std::string message(family);
+      message += " vtable missing required slot: ";
+      message += slot.name;
+      return unexpected(std::move(message));
     }
   }
   return okStatus();

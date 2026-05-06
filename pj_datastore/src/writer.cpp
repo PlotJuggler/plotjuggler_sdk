@@ -217,7 +217,7 @@ Expected<TopicId> DataWriter::registerTopic(DatasetId dataset_id, TopicDescripto
 Expected<TopicWriteHandle> DataWriter::bindTopicWriter(TopicId topic_id) {
   const auto* storage = impl_->engine.getTopicStorage(topic_id);
   if (storage == nullptr) {
-    return PJ::unexpected("Topic " + std::to_string(topic_id) + " not found");
+    return PJ::unexpected(fmt::format("Topic {} not found", topic_id));
   }
 
   // Ensure column descriptors are cached
@@ -245,7 +245,7 @@ Expected<FieldId> DataWriter::resolveField(TopicId topic_id, std::string_view fi
 
   auto col_it = impl_->topic_columns.find(topic_id);
   if (col_it == impl_->topic_columns.end()) {
-    return PJ::unexpected("Topic " + std::to_string(topic_id) + " not found");
+    return PJ::unexpected(fmt::format("Topic {} not found", topic_id));
   }
 
   for (const auto& col : col_it->second) {
@@ -253,7 +253,7 @@ Expected<FieldId> DataWriter::resolveField(TopicId topic_id, std::string_view fi
       return col.field_id;
     }
   }
-  return PJ::unexpected("Field '" + std::string(field_path) + "' not found in topic " + std::to_string(topic_id));
+  return PJ::unexpected(fmt::format("Field '{}' not found in topic {}", field_path, topic_id));
 }
 
 // ---------------------------------------------------------------------------

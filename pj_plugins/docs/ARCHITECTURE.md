@@ -122,7 +122,8 @@ previously-circulated pre-v4 design included):
   (reserved for a future `"pj.thread_check.v1"` service).
 - **Embedded-manifest plugin discovery.** Each DSO exports a
   family-specific protocol vtable with embedded metadata (`manifest_json`
-  for data sources, parsers, and toolboxes; `get_manifest()` for dialogs).
+  for data sources, parsers, toolboxes, and newly built dialogs; legacy v4.0
+  dialogs fall back to `create()` + `get_manifest()` during inspection).
   Host-side `PJ::scanPluginDsos(dir)` (in
   `pj_plugins/host/plugin_catalog.hpp`) walks platform plugin libraries,
   loads each candidate, validates the ABI and protocol vtable, and parses
@@ -161,7 +162,8 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   `protocol_version, struct_size, create, destroy, manifest_json`; subsequent
   slots are family-specific. For example, DataSource and Toolbox have
   `capabilities`, while MessageParser has `bind_schema`. Dialogs expose a
-  GUI-oriented protocol with `get_manifest()`/`get_ui_content()` instead.
+  GUI-oriented protocol with `get_manifest()`/`get_ui_content()` and an
+  optional static `manifest_json` tail slot for metadata-only discovery.
 
 Service traits (`pj_base/sdk/service_traits.hpp`,
 `sdk/toolbox_plugin_base.hpp`) map canonical names to their ABI type and
@@ -279,11 +281,11 @@ at load time. Mismatches produce a clear error.
 | DataSource (stream) | `StreamSourceBase` | `onStart()`, `onPoll()`, `onStop()`, `extraCapabilities()` | same macro |
 | MessageParser | `MessageParserPluginBase` | `parse()` | `PJ_MESSAGE_PARSER_PLUGIN(Class, manifest)` |
 | Toolbox | `ToolboxPluginBase` | `capabilities()` | `PJ_TOOLBOX_PLUGIN(Class, manifest)` |
-| Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class)` (works standalone or co-resident with another family) |
+| Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class, manifest)` (or legacy `PJ_DIALOG_PLUGIN(Class)`; works standalone or co-resident with another family) |
 
 All SDK base classes:
 - Generate the C vtable via `vtableWithCreate()` at static init.
-- Validate compile-time manifest JSON string literals (required keys) via `PJ_ASSERT`; dialog manifests are runtime strings and are validated by the host catalog when inspected.
+- Validate compile-time manifest JSON string literals (required keys) via `PJ_ASSERT`; dialog manifests supplied through the static macro path are parsed by the host catalog without instantiation, while legacy dialog manifests are validated through the fallback runtime path.
 - Catch all C++ exceptions in trampolines, populate `PJ_error_t` out-params
   when available, and return `false`/`null` across the ABI boundary.
 

@@ -18,13 +18,14 @@ Expected<void*> loadLibraryHandle(std::string_view path) {
 #if defined(_WIN32)
   HMODULE module = LoadLibraryA(std::string(path).c_str());
   if (module == nullptr) {
-    return unexpected(std::string("LoadLibraryA failed"));
+    return unexpected("LoadLibraryA failed");
   }
   return reinterpret_cast<void*>(module);
 #else
   void* handle = dlopen(std::string(path).c_str(), RTLD_NOW | RTLD_LOCAL);
   if (handle == nullptr) {
-    return unexpected(std::string(dlerror()));
+    const char* error = dlerror();
+    return unexpected(error == nullptr ? "" : error);
   }
   return handle;
 #endif
@@ -49,7 +50,7 @@ Expected<PJ_get_dialog_vtable_fn> loadEntryPoint(void* handle) {
 #if defined(_WIN32)
   auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle), "PJ_get_dialog_vtable");
   if (symbol == nullptr) {
-    return unexpected(std::string("PJ_get_dialog_vtable not found"));
+    return unexpected("PJ_get_dialog_vtable not found");
   }
   return reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
 #else
@@ -57,7 +58,7 @@ Expected<PJ_get_dialog_vtable_fn> loadEntryPoint(void* handle) {
   void* symbol = dlsym(handle, "PJ_get_dialog_vtable");
   const char* err = dlerror();
   if (err != nullptr) {
-    return unexpected(std::string(err));
+    return unexpected(err);
   }
   return reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
 #endif
@@ -102,13 +103,13 @@ Expected<DialogLibrary> DialogLibrary::load(std::string_view path) {
 
   const PJ_dialog_vtable_t* vtable = (*entry)();
   if (vtable == nullptr) {
-    return unexpected(std::string("PJ_get_dialog_vtable returned null"));
+    return unexpected("PJ_get_dialog_vtable returned null");
   }
   if (vtable->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
-    return unexpected(std::string("Dialog protocol version mismatch"));
+    return unexpected("Dialog protocol version mismatch");
   }
-  if (vtable->struct_size < sizeof(PJ_dialog_vtable_t)) {
-    return unexpected(std::string("Dialog vtable is smaller than expected"));
+  if (vtable->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
+    return unexpected("Dialog vtable smaller than v4.0 baseline");
   }
 
   return DialogLibrary(std::move(handle), vtable, std::string(path));

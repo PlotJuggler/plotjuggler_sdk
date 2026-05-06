@@ -37,11 +37,11 @@ class MockDataSource : public PJ::DataSourcePluginBase {
   PJ::Status start() override {
     if (!writeHostBound()) {
       state_ = PJ::DataSourceState::kFailed;
-      return PJ::unexpected(std::string("write host not bound"));
+      return PJ::unexpected("write host not bound");
     }
     if (!runtimeHostBound()) {
       state_ = PJ::DataSourceState::kFailed;
-      return PJ::unexpected(std::string("runtime host not bound"));
+      return PJ::unexpected("runtime host not bound");
     }
 
     state_ = PJ::DataSourceState::kStarting;
@@ -55,7 +55,7 @@ class MockDataSource : public PJ::DataSourcePluginBase {
             runtimeHost().progressFinish();
             state_ = PJ::DataSourceState::kFailed;
             runtimeHost().notifyState(state_);
-            return PJ::unexpected(std::string("progress canceled"));
+            return PJ::unexpected("progress canceled");
           }
         }
         runtimeHost().progressFinish();
@@ -114,7 +114,7 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
   PJ::Status pause() override {
     if (state_ != PJ::DataSourceState::kRunning) {
-      return PJ::unexpected(std::string("pause requires running state"));
+      return PJ::unexpected("pause requires running state");
     }
     state_ = PJ::DataSourceState::kPaused;
     runtimeHost().notifyState(state_);
@@ -123,7 +123,7 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
   PJ::Status resume() override {
     if (state_ != PJ::DataSourceState::kPaused) {
-      return PJ::unexpected(std::string("resume requires paused state"));
+      return PJ::unexpected("resume requires paused state");
     }
     state_ = PJ::DataSourceState::kRunning;
     runtimeHost().notifyState(state_);

@@ -46,14 +46,14 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
     }
 
     if (field_names_.size() != 2) {
-      return PJ::unexpected(std::string("schema must define exactly 2 fields"));
+      return PJ::unexpected("schema must define exactly 2 fields");
     }
     return PJ::okStatus();
   }
 
   PJ::Status parse(PJ::Timestamp timestamp_ns, PJ::Span<const uint8_t> payload) override {
     if (!writeHostBound()) {
-      return PJ::unexpected(std::string("write host not bound"));
+      return PJ::unexpected("write host not bound");
     }
 
     // Lazily bind fields on first parse.
@@ -68,7 +68,7 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
     std::string text(reinterpret_cast<const char*>(payload.data()), payload.size());
     auto comma = text.find(',');
     if (comma == std::string::npos) {
-      return PJ::unexpected(std::string("expected comma-separated pair"));
+      return PJ::unexpected("expected comma-separated pair");
     }
 
     double a = std::strtod(text.c_str(), nullptr);

@@ -392,7 +392,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
   std::string config_;
   std::string encoding_ = "json";
   PJ::Expected<PJ::sdk::ParserBindingHandle> binding_ =
-      PJ::unexpected(std::string("unset"));
+      PJ::unexpected("unset");
 
   std::atomic<bool> running_{false};
   std::thread recv_thread_;
@@ -779,7 +779,8 @@ with no JSON serialization needed at runtime.
 │    getDialog() → borrowDialog(...)   │
 │                                      │
 │  PJ_DATA_SOURCE_PLUGIN(MySource)     │  → exports DataSource vtable
-│  PJ_DIALOG_PLUGIN(MyDialog)          │  → exports Dialog vtable
+│  PJ_DIALOG_PLUGIN(MyDialog,          │  → exports Dialog vtable
+│                   kManifestJson)     │
 └──────────────────────────────────────┘
 ```
 
@@ -830,7 +831,7 @@ class MySource : public PJ::StreamSourceBase {
   std::string saveConfig() const override { return dialog_.saveConfig(); }
   PJ::Status loadConfig(std::string_view json) override {
     return dialog_.loadConfig(json) ? PJ::okStatus()
-                                    : PJ::unexpected(std::string("bad config"));
+                                    : PJ::unexpected("bad config");
   }
 
  private:
@@ -842,7 +843,7 @@ class MySource : public PJ::StreamSourceBase {
 
 ```cpp
 PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN(MyDialog)
+PJ_DIALOG_PLUGIN(MyDialog, kManifestJson)
 ```
 
 ### Host-side flow
