@@ -18,6 +18,13 @@ target_link_libraries(pj_plugin_sdk INTERFACE pj_base)
 find_package(fmt REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
+add_library(pj_plugin_loader_detail STATIC
+  src/detail/vtable_validation.cpp
+)
+target_compile_features(pj_plugin_loader_detail PUBLIC cxx_std_20)
+target_compile_options(pj_plugin_loader_detail PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(pj_plugin_loader_detail PUBLIC pj_base)
+
 add_library(pj_plugin_catalog STATIC
   src/plugin_catalog.cpp
 )
@@ -28,6 +35,7 @@ target_link_libraries(pj_plugin_catalog
   PUBLIC
     pj_base
   PRIVATE
+    pj_plugin_loader_detail
     pj_dialog_protocol
     fmt::fmt
     ${CMAKE_DL_LIBS}
@@ -50,6 +58,7 @@ target_link_libraries(pj_data_source_host
     pj_dialog_protocol
     pj_plugin_catalog
   PRIVATE
+    pj_plugin_loader_detail
     ${CMAKE_DL_LIBS}
 )
 
@@ -119,6 +128,7 @@ target_link_libraries(pj_message_parser_host
     pj_base
     pj_dialog_protocol
   PRIVATE
+    pj_plugin_loader_detail
     ${CMAKE_DL_LIBS}
 )
 
@@ -159,6 +169,7 @@ target_link_libraries(pj_toolbox_host
     pj_base
     pj_dialog_protocol
   PRIVATE
+    pj_plugin_loader_detail
     ${CMAKE_DL_LIBS}
 )
 
