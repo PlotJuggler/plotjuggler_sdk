@@ -16,6 +16,9 @@
 #ifndef PJ_MOCK_JSON_PARSER_PLUGIN_PATH
 #error "PJ_MOCK_JSON_PARSER_PLUGIN_PATH must be defined"
 #endif
+#ifndef PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
+#endif
 
 namespace {
 
@@ -24,6 +27,12 @@ TEST(MessageParserLibraryTest, LoadMockPlugin) {
   ASSERT_TRUE(library) << library.error();
   EXPECT_TRUE(library->valid());
   EXPECT_EQ(library->vtable()->protocol_version, PJ_MESSAGE_PARSER_PROTOCOL_VERSION);
+}
+
+TEST(MessageParserLibraryTest, RejectsMissingRequiredVtableSlot) {
+  auto library = PJ::MessageParserLibrary::load(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(library);
+  EXPECT_NE(library.error().find("MessageParser vtable missing required slot: parse"), std::string::npos);
 }
 
 TEST(MessageParserLibraryTest, ManifestRoundTrip) {

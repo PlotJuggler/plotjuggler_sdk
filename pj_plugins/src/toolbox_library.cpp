@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "detail/library_loader.hpp"
+#include "detail/vtable_validation.hpp"
 
 namespace PJ {
 
@@ -58,6 +59,9 @@ Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
   }
   if (vtable->struct_size < PJ_TOOLBOX_MIN_VTABLE_SIZE) {
     return unexpected(std::string("Toolbox vtable smaller than v4.0 baseline"));
+  }
+  if (auto status = detail::validateRequiredSlots(vtable); !status) {
+    return unexpected(status.error());
   }
 
   return ToolboxLibrary(std::move(handle), vtable, std::string(path));

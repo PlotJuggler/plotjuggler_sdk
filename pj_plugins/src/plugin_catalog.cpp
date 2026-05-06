@@ -13,6 +13,7 @@
 #include <system_error>
 
 #include "detail/library_loader.hpp"
+#include "detail/vtable_validation.hpp"
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/toolbox_protocol.h"
@@ -65,6 +66,9 @@ Expected<ManifestCandidate> probeDirectVtable(
   }
   if (vt->struct_size < min_vtable_size) {
     return unexpected(std::string(family_name) + " vtable smaller than v4.0 baseline");
+  }
+  if (auto status = detail::validateRequiredSlots(vt); !status) {
+    return unexpected(status.error());
   }
   return ManifestCandidate{family, vt->manifest_json == nullptr ? "" : vt->manifest_json};
 }

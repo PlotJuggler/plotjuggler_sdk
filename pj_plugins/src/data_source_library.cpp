@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "detail/library_loader.hpp"
+#include "detail/vtable_validation.hpp"
 
 namespace PJ {
 
@@ -61,6 +62,9 @@ Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
   // release and would falsely reject plugins compiled against older headers.
   if (vtable->struct_size < PJ_DATA_SOURCE_MIN_VTABLE_SIZE) {
     return unexpected(std::string("DataSource vtable smaller than v4.0 baseline"));
+  }
+  if (auto status = detail::validateRequiredSlots(vtable); !status) {
+    return unexpected(status.error());
   }
 
   return DataSourceLibrary(std::move(handle), vtable, std::string(path));

@@ -107,6 +107,17 @@ TEST_F(PluginCatalogTest, InvalidOptionalManifestFieldIsReportedAsDiagnostic) {
   EXPECT_NE(result->diagnostics[0].message.find("invalid_optional"), std::string::npos);
 }
 
+TEST_F(PluginCatalogTest, MissingRequiredVtableSlotIsReportedAsDiagnostic) {
+  copyPlugin(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH, pluginFileName("missing_required_slots"));
+
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_TRUE(result->plugins.empty());
+  ASSERT_EQ(result->diagnostics.size(), 1U);
+  EXPECT_NE(result->diagnostics[0].message.find("missing required slot"), std::string::npos);
+  EXPECT_NE(result->diagnostics[0].message.find("missing_required_slots"), std::string::npos);
+}
+
 TEST_F(PluginCatalogTest, ScanContinuesAfterBrokenDso) {
   copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, pluginFileName("valid"));
   std::ofstream(dir_ / pluginFileName("broken")) << "not a shared library";

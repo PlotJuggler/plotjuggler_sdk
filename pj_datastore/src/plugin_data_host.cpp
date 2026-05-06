@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <exception>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -960,183 +961,227 @@ void propagateError(PJ_error_t* out_error, const char* msg) {
   sdk::fillError(out_error, 1, "datastore", msg != nullptr ? std::string_view(msg) : std::string_view{});
 }
 
-bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic, PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-  if (!impl->core.ensureTopic(impl->source, toStringView(topic_name), out_topic)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
+template <typename Fn>
+bool guardHostCallback(PJ_error_t* out_error, Fn&& fn) noexcept {
+  try {
+    return fn();
+  } catch (const std::exception& e) {
+    propagateError(out_error, e.what());
+  } catch (...) {
+    propagateError(out_error, "unknown datastore host exception");
   }
-  return true;
+  return false;
+}
+
+bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic, PJ_error_t* out_error) noexcept {
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+    if (!impl->core.ensureTopic(impl->source, toStringView(topic_name), out_topic)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool sourceEnsureField(
     void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-  if (!impl->core.ensureField(topic, toStringView(field_name), type, out_field)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+    if (!impl->core.ensureField(topic, toStringView(field_name), type, out_field)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool sourceAppendRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-  if (!impl->core.appendRecord(topic, timestamp, fields, field_count)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+    if (!impl->core.appendRecord(topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool sourceAppendBoundRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-  if (!impl->core.appendBoundRecord(topic, timestamp, fields, field_count)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+    if (!impl->core.appendBoundRecord(topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool sourceAppendArrowStream(
     void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-  if (!impl->core.appendArrowStream(topic, stream, timestamp_column)) {
-    // Failure: plugin retains ownership of the stream; we do NOT release.
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  // Success: host now owns the stream — release it.
-  if (stream != nullptr && stream->release != nullptr) {
-    stream->release(stream);
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
+    if (!impl->core.appendArrowStream(topic, stream, timestamp_column)) {
+      // Failure: plugin retains ownership of the stream; we do NOT release.
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    // Success: host now owns the stream — release it.
+    if (stream != nullptr && stream->release != nullptr) {
+      stream->release(stream);
+    }
+    return true;
+  });
 }
 
 bool parserEnsureField(
     void* ctx, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  if (!impl->core.ensureField(impl->topic, toStringView(field_name), type, out_field)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
+    if (!impl->core.ensureField(impl->topic, toStringView(field_name), type, out_field)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool parserAppendRecord(
     void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  if (!impl->core.appendRecord(impl->topic, timestamp, fields, field_count)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
+    if (!impl->core.appendRecord(impl->topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool parserAppendBoundRecord(
     void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  if (!impl->core.appendBoundRecord(impl->topic, timestamp, fields, field_count)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
+    if (!impl->core.appendBoundRecord(impl->topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool toolboxCreateDataSource(
     void* ctx, PJ_string_view_t name, DataSourceHandle* out_source, PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.write.createDataSource(toStringView(name), out_source)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.write.createDataSource(toStringView(name), out_source)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool toolboxEnsureTopic(
     void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, TopicHandle* out_topic,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.write.ensureTopic(source, toStringView(topic_name), out_topic)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.write.ensureTopic(source, toStringView(topic_name), out_topic)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool toolboxEnsureField(
     void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.write.ensureField(topic, toStringView(field_name), type, out_field)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.write.ensureField(topic, toStringView(field_name), type, out_field)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool toolboxAppendRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.write.appendRecord(topic, timestamp, fields, field_count)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.write.appendRecord(topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool toolboxAppendBoundRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.write.appendBoundRecord(topic, timestamp, fields, field_count)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.write.appendBoundRecord(topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool toolboxAppendArrowStream(
     void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.write.appendArrowStream(topic, stream, timestamp_column)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  if (stream != nullptr && stream->release != nullptr) {
-    stream->release(stream);
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.write.appendArrowStream(topic, stream, timestamp_column)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    if (stream != nullptr && stream->release != nullptr) {
+      stream->release(stream);
+    }
+    return true;
+  });
 }
 
 bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.acquireCatalogSnapshot(out_snapshot)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.acquireCatalogSnapshot(out_snapshot)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 bool toolboxReadSeriesArrow(
     void* ctx, FieldHandle field, struct ArrowSchema* out_schema, struct ArrowArray* out_array,
     PJ_error_t* out_error) noexcept {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.readSeriesArrow(field, out_schema, out_array)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+    if (!impl->core.readSeriesArrow(field, out_schema, out_array)) {
+      propagateError(out_error, impl->core.write.lastError());
+      return false;
+    }
+    return true;
+  });
 }
 
 /// RAII holder for the plugin-owned `fetch_ctx` passed to push_lazy. Stores

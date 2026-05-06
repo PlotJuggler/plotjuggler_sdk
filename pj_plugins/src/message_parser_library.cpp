@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "detail/library_loader.hpp"
+#include "detail/vtable_validation.hpp"
 
 namespace PJ {
 
@@ -59,6 +60,9 @@ Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path)
   }
   if (vtable->struct_size < PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE) {
     return unexpected(std::string("MessageParser vtable smaller than v4.0 baseline"));
+  }
+  if (auto status = detail::validateRequiredSlots(vtable); !status) {
+    return unexpected(status.error());
   }
 
   return MessageParserLibrary(std::move(handle), vtable, std::string(path));

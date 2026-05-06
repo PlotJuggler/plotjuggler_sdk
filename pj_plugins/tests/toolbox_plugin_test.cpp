@@ -16,6 +16,9 @@
 #ifndef PJ_MOCK_TOOLBOX_PLUGIN_PATH
 #error "PJ_MOCK_TOOLBOX_PLUGIN_PATH must be defined"
 #endif
+#ifndef PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
+#endif
 
 namespace {
 
@@ -104,6 +107,12 @@ TEST(ToolboxPluginTest, LoadsSharedLibraryAndValidatesVtable) {
   ASSERT_TRUE(library) << library.error();
   EXPECT_TRUE(library->valid());
   EXPECT_EQ(library->vtable()->protocol_version, static_cast<uint32_t>(PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION));
+}
+
+TEST(ToolboxPluginTest, RejectsMissingRequiredVtableSlot) {
+  auto library = PJ::ToolboxLibrary::load(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(library);
+  EXPECT_NE(library.error().find("Toolbox vtable missing required slot: on_data_changed"), std::string::npos);
 }
 
 TEST(ToolboxPluginTest, BindHostsAndConfigRoundTrip) {

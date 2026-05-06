@@ -17,6 +17,9 @@
 #ifndef PJ_MOCK_DATA_SOURCE_PLUGIN_PATH
 #error "PJ_MOCK_DATA_SOURCE_PLUGIN_PATH must be defined"
 #endif
+#ifndef PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
+#endif
 
 namespace {
 
@@ -148,6 +151,12 @@ TEST(DataSourceLibraryTest, LoadsSharedPluginAndDrivesInstance) {
   EXPECT_EQ(handle.currentState(), PJ::DataSourceState::kRunning);
   handle.stop();
   EXPECT_EQ(handle.currentState(), PJ::DataSourceState::kStopped);
+}
+
+TEST(DataSourceLibraryTest, RejectsMissingRequiredVtableSlot) {
+  auto library = PJ::DataSourceLibrary::load(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(library);
+  EXPECT_NE(library.error().find("DataSource vtable missing required slot: start"), std::string::npos);
 }
 
 TEST(DataSourceLibraryTest, BindFailsWithEmptyRegistry) {

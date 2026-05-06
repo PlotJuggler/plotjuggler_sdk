@@ -95,6 +95,11 @@ target_compile_features(invalid_optional_manifest_data_source_plugin PRIVATE cxx
 target_compile_options(invalid_optional_manifest_data_source_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(invalid_optional_manifest_data_source_plugin PRIVATE pj_base)
 
+add_library(missing_required_slots_plugin SHARED tests/missing_required_slots_plugin.cpp)
+target_compile_features(missing_required_slots_plugin PRIVATE cxx_std_20)
+target_compile_options(missing_required_slots_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(missing_required_slots_plugin PRIVATE pj_base)
+
 endif() # PJ_BUILD_TESTS
 
 # ---------------------------------------------------------------------------
@@ -172,6 +177,8 @@ target_link_libraries(pj_plugin_runtime_catalog
     pj_toolbox_host
     pj_plugin_catalog
     pj_base
+  PRIVATE
+    nlohmann_json::nlohmann_json
 )
 
 if(PJ_BUILD_TESTS)
@@ -192,6 +199,7 @@ target_link_libraries(mock_toolbox_plugin PRIVATE pj_base)
 add_executable(data_source_library_test tests/data_source_library_test.cpp)
 target_compile_definitions(data_source_library_test PRIVATE
   PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
+  PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
 )
 target_compile_options(data_source_library_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(data_source_library_test PRIVATE
@@ -226,6 +234,7 @@ add_test(NAME file_source_integration_test COMMAND file_source_integration_test)
 add_executable(message_parser_library_test tests/message_parser_library_test.cpp)
 target_compile_definitions(message_parser_library_test PRIVATE
   PJ_MOCK_JSON_PARSER_PLUGIN_PATH="$<TARGET_FILE:mock_json_parser_plugin>"
+  PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
 )
 target_compile_options(message_parser_library_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(message_parser_library_test PRIVATE
@@ -263,6 +272,7 @@ add_test(NAME object_ingest_policy_test COMMAND object_ingest_policy_test)
 add_executable(toolbox_plugin_test tests/toolbox_plugin_test.cpp)
 target_compile_definitions(toolbox_plugin_test PRIVATE
   PJ_MOCK_TOOLBOX_PLUGIN_PATH="$<TARGET_FILE:mock_toolbox_plugin>"
+  PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
 )
 target_compile_options(toolbox_plugin_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(toolbox_plugin_test PRIVATE
@@ -281,6 +291,7 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
   PJ_MISSING_ID_PLUGIN_PATH="$<TARGET_FILE:missing_id_data_source_plugin>"
   PJ_INVALID_OPTIONAL_PLUGIN_PATH="$<TARGET_FILE:invalid_optional_manifest_data_source_plugin>"
+  PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
 )
 target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(plugin_catalog_test PRIVATE
@@ -288,7 +299,7 @@ target_link_libraries(plugin_catalog_test PRIVATE
 )
 add_dependencies(plugin_catalog_test mock_data_source_plugin mock_json_parser_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
-                 invalid_optional_manifest_data_source_plugin)
+                 invalid_optional_manifest_data_source_plugin missing_required_slots_plugin)
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS
