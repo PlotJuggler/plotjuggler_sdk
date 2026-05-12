@@ -45,16 +45,14 @@ struct SchemaHandler {
   /// Scalar route: returns owned column data — no anchor needed because the
   /// returned vector and any string_views inside it are materialized by the
   /// parser, independent of the caller's payload buffer.
-  std::function<Expected<std::vector<NamedFieldValue>>(Timestamp, Span<const uint8_t>)>
-      parse_scalars;
+  std::function<Expected<std::vector<NamedFieldValue>>(Timestamp, Span<const uint8_t>)> parse_scalars;
 
   /// Canonical-object route: takes a PayloadView so the parser can return a
   /// CanonicalObject whose internal Span(s) reference the same underlying
   /// buffer (zero-copy). The parser propagates `payload.anchor` into the
   /// returned object so its bytes outlive this call. When the caller passes
   /// an empty anchor, the parser must materialize whatever it wants to retain.
-  std::function<Expected<CanonicalObject>(Timestamp, PayloadView)>
-      parse_object;
+  std::function<Expected<CanonicalObject>(Timestamp, PayloadView)> parse_object;
 };
 
 }  // namespace sdk
@@ -157,9 +155,7 @@ class MessageParserPluginBase {
     if (fields->empty()) {
       return okStatus();
     }
-    return writeHost().appendRecord(
-        timestamp_ns,
-        Span<const sdk::NamedFieldValue>(fields->data(), fields->size()));
+    return writeHost().appendRecord(timestamp_ns, Span<const sdk::NamedFieldValue>(fields->data(), fields->size()));
   }
 
   // ---------------------------------------------------------------------------
@@ -213,8 +209,7 @@ class MessageParserPluginBase {
   /// populate the table via registerSchemaHandler() rather than overriding;
   /// the C ABI trampolines invoke this directly on MessageParserPluginBase*.
   /// Returns kNone when no handler is registered for this type name.
-  sdk::SchemaClassification classifySchema(
-      std::string_view type_name, Span<const uint8_t> schema) const {
+  sdk::SchemaClassification classifySchema(std::string_view type_name, Span<const uint8_t> schema) const {
     (void)schema;
     if (const auto* h = findSchemaHandler(type_name)) {
       return {h->object_kind};
@@ -226,8 +221,7 @@ class MessageParserPluginBase {
   /// Returns unexpected if no handler is registered, or if the registered
   /// handler did not provide a parse_scalars callable. Non-virtual — see
   /// classifySchema above for the rationale.
-  Expected<std::vector<sdk::NamedFieldValue>> parseScalars(
-      Timestamp timestamp_ns, Span<const uint8_t> payload) {
+  Expected<std::vector<sdk::NamedFieldValue>> parseScalars(Timestamp timestamp_ns, Span<const uint8_t> payload) {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
       return unexpected(std::string("parser does not register schema: ") + bound_type_name_);
@@ -247,8 +241,7 @@ class MessageParserPluginBase {
   /// materialize anything it wants to outlive this call. In-process callers
   /// that already own the payload buffer should pass a non-empty anchor so
   /// the parser can return a zero-copy CanonicalObject.
-  Expected<sdk::CanonicalObject> parseObject(
-      Timestamp timestamp_ns, sdk::PayloadView payload) {
+  Expected<sdk::CanonicalObject> parseObject(Timestamp timestamp_ns, sdk::PayloadView payload) {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
       return unexpected(std::string("parser does not register schema: ") + bound_type_name_);
@@ -356,14 +349,14 @@ class MessageParserPluginBase {
       void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) noexcept;
   static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
   static bool trampoline_classify_schema(
-      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema,
-      PJ_schema_classification_t* out_classification, PJ_error_t* out_error) noexcept;
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
+      PJ_error_t* out_error) noexcept;
   static bool trampoline_parse_scalars(
-      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload,
-      PJ_named_field_value_buffer_t* out_fields, PJ_error_t* out_error) noexcept;
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_named_field_value_buffer_t* out_fields,
+      PJ_error_t* out_error) noexcept;
   static bool trampoline_parse_object(
-      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload,
-      PJ_canonical_object_blob_t* out_blob, PJ_error_t* out_error) noexcept;
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_canonical_object_blob_t* out_blob,
+      PJ_error_t* out_error) noexcept;
 };
 
 }  // namespace PJ

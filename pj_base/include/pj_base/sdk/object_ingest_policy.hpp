@@ -93,9 +93,7 @@ class ObjectIngestPolicyResolver {
   /// Precedence: topic > source > kind > default. The first match wins —
   /// no merging or composition between levels.
   [[nodiscard]] ObjectIngestPolicy resolve(
-      std::string_view source_id,
-      std::string_view topic_name,
-      CanonicalObjectKind object_kind) const {
+      std::string_view source_id, std::string_view topic_name, CanonicalObjectKind object_kind) const {
     if (auto it = by_topic_.find(std::string(topic_name)); it != by_topic_.end()) {
       return it->second;
     }

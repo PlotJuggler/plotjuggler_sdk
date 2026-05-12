@@ -210,9 +210,9 @@ struct PointField {
   };
 
   std::string name;
-  uint32_t offset = 0;     ///< Byte offset of this field within a single point.
+  uint32_t offset = 0;  ///< Byte offset of this field within a single point.
   Datatype datatype = Datatype::kUnknown;
-  uint32_t count = 1;      ///< Number of elements of `datatype` (typically 1).
+  uint32_t count = 1;  ///< Number of elements of `datatype` (typically 1).
 };
 
 /// Bytes per element for a given PointField datatype. Returns 0 for kUnknown.
@@ -242,8 +242,8 @@ struct PointField {
 struct PointCloud {
   uint32_t width = 0;
   uint32_t height = 1;
-  uint32_t point_step = 0;     ///< Bytes per point.
-  uint32_t row_step = 0;       ///< Bytes per row (= point_step * width when no padding).
+  uint32_t point_step = 0;  ///< Bytes per point.
+  uint32_t row_step = 0;    ///< Bytes per row (= point_step * width when no padding).
   bool is_bigendian = false;
   bool is_dense = true;
   std::vector<PointField> fields;

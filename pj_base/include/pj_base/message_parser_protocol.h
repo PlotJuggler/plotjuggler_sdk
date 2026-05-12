@@ -129,8 +129,9 @@ typedef struct PJ_message_parser_vtable_t {
    *
    * Pure-functional contract: no host side-effects.
    */
-  bool (*classify_schema)(void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema,
-                          PJ_schema_classification_t* out_classification, PJ_error_t* out_error) PJ_NOEXCEPT;
+  bool (*classify_schema)(
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
    * [stream-thread] Pure-functional alternative to parse(): returns the
@@ -141,8 +142,9 @@ typedef struct PJ_message_parser_vtable_t {
    * The plugin owns @p out_fields.fields buffer; @p out_fields.release is
    * called by the host when done. release MAY be NULL.
    */
-  bool (*parse_scalars)(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload,
-                        PJ_named_field_value_buffer_t* out_fields, PJ_error_t* out_error) PJ_NOEXCEPT;
+  bool (*parse_scalars)(
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_named_field_value_buffer_t* out_fields,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
    * [stream-thread] Pure-functional production of a canonical object from
@@ -154,8 +156,9 @@ typedef struct PJ_message_parser_vtable_t {
    * caller (DataSource / app) decides whether to push the blob eagerly,
    * capture it inside a lazy lambda, or hand it directly to a consumer.
    */
-  bool (*parse_object)(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload,
-                       PJ_canonical_object_blob_t* out_blob, PJ_error_t* out_error) PJ_NOEXCEPT;
+  bool (*parse_object)(
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_canonical_object_blob_t* out_blob,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_message_parser_vtable_t;
 /* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
  * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE. */

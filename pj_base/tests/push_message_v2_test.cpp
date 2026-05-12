@@ -11,16 +11,16 @@
 //      the SDK template falls back to push_raw_message — both for vector
 //      and for PayloadView closures.
 
-#include "pj_base/data_source_protocol.h"
-#include "pj_base/sdk/canonical_object.hpp"
-#include "pj_base/sdk/data_source_host_views.hpp"
-
 #include <gtest/gtest.h>
 
 #include <cstddef>
 #include <cstring>
 #include <memory>
 #include <vector>
+
+#include "pj_base/data_source_protocol.h"
+#include "pj_base/sdk/canonical_object.hpp"
+#include "pj_base/sdk/data_source_host_views.hpp"
 
 namespace {
 
@@ -56,21 +56,25 @@ class MockHost {
     return PJ::DataSourceRuntimeHostView(host_);
   }
 
-  CapturedPush& captured() { return captured_; }
-  std::vector<uint8_t>& receivedRawBytes() { return raw_bytes_; }
+  CapturedPush& captured() {
+    return captured_;
+  }
+  std::vector<uint8_t>& receivedRawBytes() {
+    return raw_bytes_;
+  }
 
  private:
   static bool pushRawMessageThunk(
-      void* ctx, PJ_parser_binding_handle_t /*handle*/, int64_t /*ts*/,
-      PJ_bytes_view_t payload, PJ_error_t* /*err*/) noexcept {
+      void* ctx, PJ_parser_binding_handle_t /*handle*/, int64_t /*ts*/, PJ_bytes_view_t payload,
+      PJ_error_t* /*err*/) noexcept {
     auto* self = static_cast<MockHost*>(ctx);
     self->raw_bytes_.assign(payload.data, payload.data + payload.size);
     return true;
   }
 
   static bool pushMessageV2Thunk(
-      void* ctx, PJ_parser_binding_handle_t handle, int64_t ts,
-      PJ_payload_fetcher_t fetcher, PJ_error_t* /*err*/) noexcept {
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t ts, PJ_payload_fetcher_t fetcher,
+      PJ_error_t* /*err*/) noexcept {
     auto* self = static_cast<MockHost*>(ctx);
     self->captured_.handle = handle;
     self->captured_.timestamp_ns = ts;
@@ -105,9 +109,7 @@ TEST(PushMessageV2Test, VectorClosureFlowsThroughSlot) {
   MockHost host;
   std::vector<uint8_t> expected{1, 2, 3, 4, 5};
 
-  auto status = host.view().pushMessage(
-      PJ::ParserBindingHandle{42}, 1000,
-      [bytes = expected]() { return bytes; });
+  auto status = host.view().pushMessage(PJ::ParserBindingHandle{42}, 1000, [bytes = expected]() { return bytes; });
 
   ASSERT_TRUE(status);
   ASSERT_TRUE(host.captured().received);
@@ -122,11 +124,9 @@ TEST(PushMessageV2Test, PayloadViewClosureFlowsThroughSlot) {
   std::vector<uint8_t> expected{10, 20, 30};
   auto owned = std::make_shared<std::vector<uint8_t>>(expected);
 
-  auto status = host.view().pushMessage(
-      PJ::ParserBindingHandle{7}, 2000,
-      [owned]() -> PJ::sdk::PayloadView {
-        return {PJ::Span<const uint8_t>(owned->data(), owned->size()), owned};
-      });
+  auto status = host.view().pushMessage(PJ::ParserBindingHandle{7}, 2000, [owned]() -> PJ::sdk::PayloadView {
+    return {PJ::Span<const uint8_t>(owned->data(), owned->size()), owned};
+  });
 
   ASSERT_TRUE(status);
   invokeFetcherAndExpect(host.captured().fetcher, expected);
@@ -137,9 +137,7 @@ TEST(PushMessageV2Test, FetchIsIdempotent) {
   MockHost host;
   std::vector<uint8_t> expected{0x42, 0x43};
 
-  ASSERT_TRUE(host.view().pushMessage(
-      PJ::ParserBindingHandle{1}, 0,
-      [bytes = expected]() { return bytes; }));
+  ASSERT_TRUE(host.view().pushMessage(PJ::ParserBindingHandle{1}, 0, [bytes = expected]() { return bytes; }));
 
   // Multiple invocations must yield the same bytes each time.
   for (int i = 0; i < 3; ++i) {
@@ -153,21 +151,17 @@ TEST(PushMessageV2Test, FetcherCtxReleasedAfterHostCalls) {
   auto canary = std::make_shared<int>(42);
   std::weak_ptr<int> witness = canary;
 
-  ASSERT_TRUE(host.view().pushMessage(
-      PJ::ParserBindingHandle{1}, 0,
-      [canary]() { return std::vector<uint8_t>{}; }));
+  ASSERT_TRUE(host.view().pushMessage(PJ::ParserBindingHandle{1}, 0, [canary]() { return std::vector<uint8_t>{}; }));
 
   // Drop our local reference; the heap-held closure copy keeps the canary
   // alive while the fetcher is owned by the host.
   canary.reset();
-  EXPECT_FALSE(witness.expired())
-      << "closure should still keep the canary alive (held in heap fetcher ctx)";
+  EXPECT_FALSE(witness.expired()) << "closure should still keep the canary alive (held in heap fetcher ctx)";
 
   // Host releases the fetcher → closure destroyed → captured shared_ptr
   // destroyed → canary's last reference drops.
   host.captured().fetcher.release(host.captured().fetcher.ctx);
-  EXPECT_TRUE(witness.expired())
-      << "after release, the captured shared_ptr should have been the last reference";
+  EXPECT_TRUE(witness.expired()) << "after release, the captured shared_ptr should have been the last reference";
 }
 
 TEST(PushMessageV2Test, PayloadAnchorPropagates) {
@@ -175,11 +169,9 @@ TEST(PushMessageV2Test, PayloadAnchorPropagates) {
   auto owned = std::make_shared<std::vector<uint8_t>>(std::vector<uint8_t>{0x99, 0x9A});
   std::weak_ptr<std::vector<uint8_t>> witness = owned;
 
-  ASSERT_TRUE(host.view().pushMessage(
-      PJ::ParserBindingHandle{1}, 0,
-      [owned]() -> PJ::sdk::PayloadView {
-        return {PJ::Span<const uint8_t>(owned->data(), owned->size()), owned};
-      }));
+  ASSERT_TRUE(host.view().pushMessage(PJ::ParserBindingHandle{1}, 0, [owned]() -> PJ::sdk::PayloadView {
+    return {PJ::Span<const uint8_t>(owned->data(), owned->size()), owned};
+  }));
 
   // The closure holds the owned vector via its shared_ptr capture.
   // After releasing our local owned, the closure's copy keeps it alive.
@@ -191,15 +183,13 @@ TEST(PushMessageV2Test, PayloadAnchorPropagates) {
   // buffer survives even past the closure's release.
   PJ_payload_t payload{};
   PJ_error_t err{};
-  ASSERT_TRUE(host.captured().fetcher.fetch(
-      host.captured().fetcher.ctx, &payload, &err));
+  ASSERT_TRUE(host.captured().fetcher.fetch(host.captured().fetcher.ctx, &payload, &err));
   EXPECT_EQ(payload.size, 2U);
 
   // Releasing the fetcher (closure dies) does NOT kill the buffer because
   // the active payload anchor still holds a reference.
   host.captured().fetcher.release(host.captured().fetcher.ctx);
-  EXPECT_FALSE(witness.expired())
-      << "active payload anchor should still keep the buffer alive";
+  EXPECT_FALSE(witness.expired()) << "active payload anchor should still keep the buffer alive";
 
   // Releasing the payload anchor drops the last reference.
   if (payload.anchor.release) {
@@ -215,9 +205,7 @@ TEST(PushMessageV2Test, ReturnsErrorWhenSlotMissing) {
   host.disablePushMessageV2();
 
   std::vector<uint8_t> expected{0xA, 0xB, 0xC};
-  auto status = host.view().pushMessage(
-      PJ::ParserBindingHandle{1}, 100,
-      [bytes = expected]() { return bytes; });
+  auto status = host.view().pushMessage(PJ::ParserBindingHandle{1}, 100, [bytes = expected]() { return bytes; });
   EXPECT_FALSE(status);  // explicit failure — no silent fallback to push_raw_message
   EXPECT_FALSE(host.captured().received);
   EXPECT_TRUE(host.receivedRawBytes().empty());

@@ -327,8 +327,8 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * `fetcher.release` so the plugin's ctx leaks no resources.
    */
   bool (*push_message_v2)(
-      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns,
-      PJ_payload_fetcher_t fetcher, PJ_error_t* out_error) PJ_NOEXCEPT;
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_payload_fetcher_t fetcher,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

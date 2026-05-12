@@ -109,8 +109,7 @@ class MessageParserHandle {
   /// the plugin doesn't expose classify_schema (older protocol header)
   /// returns kNone, matching the host contract documented in
   /// message_parser_protocol.h.
-  [[nodiscard]] sdk::CanonicalObjectKind classifySchema(
-      std::string_view type_name, Span<const uint8_t> schema) const {
+  [[nodiscard]] sdk::CanonicalObjectKind classifySchema(std::string_view type_name, Span<const uint8_t> schema) const {
     if (!PJ_HAS_TAIL_SLOT(PJ_message_parser_vtable_t, vt_, classify_schema)) {
       return sdk::CanonicalObjectKind::kNone;
     }

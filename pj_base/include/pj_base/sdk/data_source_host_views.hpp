@@ -248,8 +248,7 @@ class DataSourceRuntimeHostView {
   /// the slot returns an explicit error here rather than silently
   /// degrading to a kEager push_raw_message.
   template <typename Fetcher>
-  [[nodiscard]] Status pushMessage(
-      ParserBindingHandle handle, Timestamp host_timestamp_ns, Fetcher&& fetcher) const {
+  [[nodiscard]] Status pushMessage(ParserBindingHandle handle, Timestamp host_timestamp_ns, Fetcher&& fetcher) const {
     if (!valid()) {
       return unexpected(std::string("runtime host is not bound"));
     }
@@ -275,9 +274,7 @@ class DataSourceRuntimeHostView {
               out->data = pv.bytes.data();
               out->size = pv.bytes.size();
               out->anchor.ctx = held;
-              out->anchor.release = +[](void* h) noexcept {
-                delete static_cast<sdk::BufferAnchor*>(h);
-              };
+              out->anchor.release = +[](void* h) noexcept { delete static_cast<sdk::BufferAnchor*>(h); };
             } else {
               // Closure returns std::vector<uint8_t>: heap-hold the vector;
               // it owns its bytes.
@@ -285,9 +282,7 @@ class DataSourceRuntimeHostView {
               out->data = held->data();
               out->size = held->size();
               out->anchor.ctx = held;
-              out->anchor.release = +[](void* h) noexcept {
-                delete static_cast<std::vector<uint8_t>*>(h);
-              };
+              out->anchor.release = +[](void* h) noexcept { delete static_cast<std::vector<uint8_t>*>(h); };
             }
             return true;
           } catch (const std::exception& e) {

@@ -33,7 +33,9 @@ namespace detail {
 // -----------------------------------------------------------------------------
 
 inline void appendBytes(std::vector<uint8_t>& out, const void* src, size_t n) {
-  if (n == 0) return;
+  if (n == 0) {
+    return;
+  }
   const auto* p = static_cast<const uint8_t*>(src);
   out.insert(out.end(), p, p + n);
 }
@@ -186,20 +188,34 @@ inline std::vector<uint8_t> serializeCanonicalObject(const CanonicalObject& obj)
 // per object, same as before the iter-3 SDK change.
 inline Expected<Image> readImageBody(BlobReader& r, Timestamp ts) {
   auto width = r.readPod<uint32_t>();
-  if (!width) return unexpected(width.error());
+  if (!width) {
+    return unexpected(width.error());
+  }
   auto height = r.readPod<uint32_t>();
-  if (!height) return unexpected(height.error());
+  if (!height) {
+    return unexpected(height.error());
+  }
   auto pixel_format_raw = r.readPod<uint16_t>();
-  if (!pixel_format_raw) return unexpected(pixel_format_raw.error());
+  if (!pixel_format_raw) {
+    return unexpected(pixel_format_raw.error());
+  }
   auto is_be = r.readPod<uint8_t>();
-  if (!is_be) return unexpected(is_be.error());
-  /*reserved*/ if (auto rsv = r.readPod<uint8_t>(); !rsv) return unexpected(rsv.error());
+  if (!is_be) {
+    return unexpected(is_be.error());
+  }
+  /*reserved*/ if (auto rsv = r.readPod<uint8_t>(); !rsv) { return unexpected(rsv.error()); }
   auto row_step = r.readPod<uint32_t>();
-  if (!row_step) return unexpected(row_step.error());
+  if (!row_step) {
+    return unexpected(row_step.error());
+  }
   auto pixels_size = r.readPod<uint32_t>();
-  if (!pixels_size) return unexpected(pixels_size.error());
+  if (!pixels_size) {
+    return unexpected(pixels_size.error());
+  }
   auto pixels = r.readBytes(*pixels_size);
-  if (!pixels) return unexpected(pixels.error());
+  if (!pixels) {
+    return unexpected(pixels.error());
+  }
 
   auto owned = std::make_shared<std::vector<uint8_t>>(std::move(*pixels));
   Span<const uint8_t> view(owned->data(), owned->size());
@@ -217,20 +233,34 @@ inline Expected<Image> readImageBody(BlobReader& r, Timestamp ts) {
 
 inline Expected<CompressedImage> readCompressedImageBody(BlobReader& r, Timestamp ts) {
   auto format_raw = r.readPod<uint8_t>();
-  if (!format_raw) return unexpected(format_raw.error());
+  if (!format_raw) {
+    return unexpected(format_raw.error());
+  }
   auto has_min = r.readPod<uint8_t>();
-  if (!has_min) return unexpected(has_min.error());
+  if (!has_min) {
+    return unexpected(has_min.error());
+  }
   auto has_max = r.readPod<uint8_t>();
-  if (!has_max) return unexpected(has_max.error());
-  /*reserved*/ if (auto rsv = r.readPod<uint8_t>(); !rsv) return unexpected(rsv.error());
+  if (!has_max) {
+    return unexpected(has_max.error());
+  }
+  /*reserved*/ if (auto rsv = r.readPod<uint8_t>(); !rsv) { return unexpected(rsv.error()); }
   auto depth_min = r.readPod<float>();
-  if (!depth_min) return unexpected(depth_min.error());
+  if (!depth_min) {
+    return unexpected(depth_min.error());
+  }
   auto depth_max = r.readPod<float>();
-  if (!depth_max) return unexpected(depth_max.error());
+  if (!depth_max) {
+    return unexpected(depth_max.error());
+  }
   auto bytes_size = r.readPod<uint32_t>();
-  if (!bytes_size) return unexpected(bytes_size.error());
+  if (!bytes_size) {
+    return unexpected(bytes_size.error());
+  }
   auto bytes = r.readBytes(*bytes_size);
-  if (!bytes) return unexpected(bytes.error());
+  if (!bytes) {
+    return unexpected(bytes.error());
+  }
 
   auto owned = std::make_shared<std::vector<uint8_t>>(std::move(*bytes));
   CompressedImage ci{};
@@ -238,55 +268,90 @@ inline Expected<CompressedImage> readCompressedImageBody(BlobReader& r, Timestam
   ci.bytes = Span<const uint8_t>(owned->data(), owned->size());
   ci.anchor = owned;
   ci.timestamp_ns = ts;
-  if (*has_min != 0) ci.extras.compressed_depth_min = *depth_min;
-  if (*has_max != 0) ci.extras.compressed_depth_max = *depth_max;
+  if (*has_min != 0) {
+    ci.extras.compressed_depth_min = *depth_min;
+  }
+  if (*has_max != 0) {
+    ci.extras.compressed_depth_max = *depth_max;
+  }
   return ci;
 }
 
 inline Expected<PointCloud> readPointCloudBody(BlobReader& r, Timestamp ts) {
   auto width = r.readPod<uint32_t>();
-  if (!width) return unexpected(width.error());
+  if (!width) {
+    return unexpected(width.error());
+  }
   auto height = r.readPod<uint32_t>();
-  if (!height) return unexpected(height.error());
+  if (!height) {
+    return unexpected(height.error());
+  }
   auto point_step = r.readPod<uint32_t>();
-  if (!point_step) return unexpected(point_step.error());
+  if (!point_step) {
+    return unexpected(point_step.error());
+  }
   auto row_step = r.readPod<uint32_t>();
-  if (!row_step) return unexpected(row_step.error());
+  if (!row_step) {
+    return unexpected(row_step.error());
+  }
   auto is_be = r.readPod<uint8_t>();
-  if (!is_be) return unexpected(is_be.error());
+  if (!is_be) {
+    return unexpected(is_be.error());
+  }
   auto is_dense = r.readPod<uint8_t>();
-  if (!is_dense) return unexpected(is_dense.error());
+  if (!is_dense) {
+    return unexpected(is_dense.error());
+  }
   auto fields_count = r.readPod<uint16_t>();
-  if (!fields_count) return unexpected(fields_count.error());
+  if (!fields_count) {
+    return unexpected(fields_count.error());
+  }
 
   std::vector<PointField> fields;
   fields.reserve(*fields_count);
   for (uint16_t i = 0; i < *fields_count; ++i) {
     auto name_size = r.readPod<uint32_t>();
-    if (!name_size) return unexpected(name_size.error());
+    if (!name_size) {
+      return unexpected(name_size.error());
+    }
     auto name = r.readString(*name_size);
-    if (!name) return unexpected(name.error());
+    if (!name) {
+      return unexpected(name.error());
+    }
     auto offset = r.readPod<uint32_t>();
-    if (!offset) return unexpected(offset.error());
+    if (!offset) {
+      return unexpected(offset.error());
+    }
     auto datatype_raw = r.readPod<uint8_t>();
-    if (!datatype_raw) return unexpected(datatype_raw.error());
+    if (!datatype_raw) {
+      return unexpected(datatype_raw.error());
+    }
     /*reserved×3*/ for (int j = 0; j < 3; ++j) {
-      if (auto rsv = r.readPod<uint8_t>(); !rsv) return unexpected(rsv.error());
+      if (auto rsv = r.readPod<uint8_t>(); !rsv) {
+        return unexpected(rsv.error());
+      }
     }
     auto count = r.readPod<uint32_t>();
-    if (!count) return unexpected(count.error());
-    fields.push_back(PointField{
-        .name = std::move(*name),
-        .offset = *offset,
-        .datatype = static_cast<PointField::Datatype>(*datatype_raw),
-        .count = *count,
-    });
+    if (!count) {
+      return unexpected(count.error());
+    }
+    fields.push_back(
+        PointField{
+            .name = std::move(*name),
+            .offset = *offset,
+            .datatype = static_cast<PointField::Datatype>(*datatype_raw),
+            .count = *count,
+        });
   }
 
   auto data_size = r.readPod<uint32_t>();
-  if (!data_size) return unexpected(data_size.error());
+  if (!data_size) {
+    return unexpected(data_size.error());
+  }
   auto data = r.readBytes(*data_size);
-  if (!data) return unexpected(data.error());
+  if (!data) {
+    return unexpected(data.error());
+  }
 
   auto owned = std::make_shared<std::vector<uint8_t>>(std::move(*data));
   Span<const uint8_t> view(owned->data(), owned->size());
@@ -313,25 +378,35 @@ inline Expected<CanonicalObject> deserializeCanonicalObject(const uint8_t* data,
   BlobReader r(data, size);
 
   auto kind_raw = r.readPod<uint16_t>();
-  if (!kind_raw) return unexpected(kind_raw.error());
-  /*reserved*/ if (auto rsv = r.readPod<uint16_t>(); !rsv) return unexpected(rsv.error());
+  if (!kind_raw) {
+    return unexpected(kind_raw.error());
+  }
+  /*reserved*/ if (auto rsv = r.readPod<uint16_t>(); !rsv) { return unexpected(rsv.error()); }
   auto ts = r.readPod<int64_t>();
-  if (!ts) return unexpected(ts.error());
+  if (!ts) {
+    return unexpected(ts.error());
+  }
 
   switch (static_cast<CanonicalObjectKind>(*kind_raw)) {
     case CanonicalObjectKind::kImage: {
       auto img = readImageBody(r, *ts);
-      if (!img) return unexpected(img.error());
+      if (!img) {
+        return unexpected(img.error());
+      }
       return CanonicalObject{std::move(*img)};
     }
     case CanonicalObjectKind::kCompressedImage: {
       auto ci = readCompressedImageBody(r, *ts);
-      if (!ci) return unexpected(ci.error());
+      if (!ci) {
+        return unexpected(ci.error());
+      }
       return CanonicalObject{std::move(*ci)};
     }
     case CanonicalObjectKind::kPointCloud: {
       auto pc = readPointCloudBody(r, *ts);
-      if (!pc) return unexpected(pc.error());
+      if (!pc) {
+        return unexpected(pc.error());
+      }
       return CanonicalObject{std::move(*pc)};
     }
     case CanonicalObjectKind::kNone:
