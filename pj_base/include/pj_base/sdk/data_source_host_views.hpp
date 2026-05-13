@@ -21,7 +21,7 @@
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
-#include "pj_base/sdk/object_ingest_policy.hpp"
+#include "pj_base/sdk/canonical_object.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 
 namespace PJ {
@@ -303,18 +303,6 @@ class DataSourceRuntimeHostView {
     return okStatus();
   }
 
-  /// Access (mutable) the resolver of ObjectIngestPolicy for this runtime.
-  /// The application configures it during setup; the host (when the
-  /// push_message_v2 dispatch lands) consults it per message.
-  ///
-  /// Implementation status (RFC):
-  ///   The resolver is a per-DataSourceRuntimeHostView local instance for
-  ///   now. In production it will be host-owned and shared across views;
-  ///   the SDK surface stays the same.
-  [[nodiscard]] sdk::ObjectIngestPolicyResolver& objectIngestPolicy() const {
-    return policy_resolver_;
-  }
-
   /**
    * Display a modal message box and wait for user response.
    * @return The button clicked, or kOk if the host does not support dialogs.
@@ -375,13 +363,6 @@ class DataSourceRuntimeHostView {
 
  private:
   PJ_data_source_runtime_host_t host_{};
-
-  // RFC-only: local-to-view policy resolver. Production wiring will move
-  // this to a host-side singleton accessed through the service registry;
-  // the public surface (objectIngestPolicy()) stays the same. mutable
-  // because configuring the policy is conceptually a side concern, not
-  // a mutation of the view.
-  mutable sdk::ObjectIngestPolicyResolver policy_resolver_{};
 };
 
 }  // namespace PJ
