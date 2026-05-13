@@ -7,9 +7,9 @@
 //   3. Multiple fetcher invocations are idempotent (same bytes each time).
 //   4. The heap-held closure context is destroyed exactly once when the
 //      host calls fetcher.release.
-//   5. When the host predates the slot (struct_size short OR field NULL),
-//      the SDK template falls back to push_raw_message — both for vector
-//      and for PayloadView closures.
+//   5. When the host does not expose push_message_v2 (struct_size short
+//      or field NULL), pushMessage returns an explicit error rather than
+//      degrading silently.
 
 #include <gtest/gtest.h>
 

@@ -6,7 +6,7 @@ using PJ::sdk::CanonicalObjectKind;
 using PJ::sdk::ObjectIngestPolicy;
 using PJ::sdk::ObjectIngestPolicyResolver;
 
-TEST(ObjectIngestPolicyResolverTest, DefaultPolicyIsLazyScalars) {
+TEST(ObjectIngestPolicyResolverTest, DefaultPolicyIsLazyObjectsEagerScalars) {
   ObjectIngestPolicyResolver r;
   EXPECT_EQ(
       r.resolve("any_source", "/any/topic", CanonicalObjectKind::kImage), ObjectIngestPolicy::kLazyObjectsEagerScalars);

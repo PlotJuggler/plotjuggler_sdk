@@ -159,7 +159,7 @@ class MessageParserPluginBase {
   }
 
   // ---------------------------------------------------------------------------
-  // Pure-functional API (added in protocol v5, ABI-appendable)
+  // Pure-functional API
   // ---------------------------------------------------------------------------
   //
   // Design principle: the parser does NOT decide push policy (eager vs lazy)
@@ -171,8 +171,9 @@ class MessageParserPluginBase {
   //
   // Plugins extend the parser by populating a per-schema handler table in
   // the constructor (registerSchemaHandler). The base class implements
-  // classifySchema / parseScalars / parseObject as final lookups into that
-  // table. Plugins do NOT override the three methods.
+  // classifySchema / parseScalars / parseObject as `final` lookups into that
+  // table, invoked by the host directly on a MessageParserPluginBase* pointer
+  // (no vtable indirection, no cross-ABI copy).
 
   /// Register a handler for one schema type name. Typically called once per
   /// supported schema in the plugin's constructor.
@@ -205,11 +206,16 @@ class MessageParserPluginBase {
     return &it->second;
   }
 
-  /// Lookup against the registered handler table. Non-virtual: plugins
-  /// populate the table via registerSchemaHandler() rather than overriding;
-  /// the C ABI trampolines invoke this directly on MessageParserPluginBase*.
+  /// Lookup against the registered handler table. Marked `final`: plugins
+  /// populate the table via registerSchemaHandler() rather than overriding.
+  /// The C ABI trampolines call this on MessageParserPluginBase*; a derived
+  /// override would never be invoked, so the compiler rejects it explicitly.
   /// Returns kNone when no handler is registered for this type name.
-  sdk::SchemaClassification classifySchema(std::string_view type_name, Span<const uint8_t> schema) const {
+  ///
+  /// `type_name` is passed as a parameter (rather than using bound_type_name_)
+  /// because classification may be queried for any schema this parser handles,
+  /// including before bindSchema has fixed the instance to one.
+  virtual sdk::SchemaClassification classifySchema(std::string_view type_name, Span<const uint8_t> schema) const final {
     (void)schema;
     if (const auto* h = findSchemaHandler(type_name)) {
       return {h->object_kind};
@@ -219,9 +225,10 @@ class MessageParserPluginBase {
 
   /// Invoke the registered scalar handler for the currently-bound schema.
   /// Returns unexpected if no handler is registered, or if the registered
-  /// handler did not provide a parse_scalars callable. Non-virtual — see
+  /// handler did not provide a parse_scalars callable. Marked `final` — see
   /// classifySchema above for the rationale.
-  Expected<std::vector<sdk::NamedFieldValue>> parseScalars(Timestamp timestamp_ns, Span<const uint8_t> payload) {
+  virtual Expected<std::vector<sdk::NamedFieldValue>> parseScalars(
+      Timestamp timestamp_ns, Span<const uint8_t> payload) final {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
       return unexpected(std::string("parser does not register schema: ") + bound_type_name_);
@@ -235,13 +242,13 @@ class MessageParserPluginBase {
   /// Invoke the registered object handler for the currently-bound schema.
   /// Returns unexpected if no handler is registered, or if the registered
   /// handler did not provide a parse_object callable (i.e. this schema
-  /// produces only scalars). Non-virtual — see classifySchema above.
+  /// produces only scalars). Marked `final` — see classifySchema above.
   ///
   /// `payload.anchor` may be empty; in that case the parser is expected to
   /// materialize anything it wants to outlive this call. In-process callers
   /// that already own the payload buffer should pass a non-empty anchor so
   /// the parser can return a zero-copy CanonicalObject.
-  Expected<sdk::CanonicalObject> parseObject(Timestamp timestamp_ns, sdk::PayloadView payload) {
+  virtual Expected<sdk::CanonicalObject> parseObject(Timestamp timestamp_ns, sdk::PayloadView payload) final {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
       return unexpected(std::string("parser does not register schema: ") + bound_type_name_);
