@@ -79,8 +79,8 @@ static_assert(offsetof(PJ_message_parser_vtable_t, struct_size) == 4, "v4 prefix
 static_assert(offsetof(PJ_message_parser_vtable_t, bind) == 32, "v4 bind slot pinned");
 static_assert(offsetof(PJ_message_parser_vtable_t, parse) == 64, "v4 parse slot pinned");
 static_assert(offsetof(PJ_message_parser_vtable_t, get_plugin_extension) == 72, "v4 last baseline slot pinned");
-// 80 baseline (v4.0) + 3 canonical-object tail slots × 8 bytes each = 104.
-static_assert(sizeof(PJ_message_parser_vtable_t) == 104, "MessageParser vtable size (update deliberately on append)");
+// 80 baseline (v4.0) + 1 tail slot × 8 bytes = 88.
+static_assert(sizeof(PJ_message_parser_vtable_t) == 88, "MessageParser vtable size (update deliberately on append)");
 static_assert(PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE == 80, "MIN vtable size is pinned at v4.0 — NEVER INCREASE");
 static_assert(PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE <= sizeof(PJ_message_parser_vtable_t), "MIN must never exceed current");
 

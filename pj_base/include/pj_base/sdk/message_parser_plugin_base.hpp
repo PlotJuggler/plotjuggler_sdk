@@ -278,10 +278,7 @@ class MessageParserPluginBase {
         trampoline_load_config,
         trampoline_parse,
         trampoline_get_plugin_extension,
-        // Tail slots: pure-functional API (canonical-object).
         trampoline_classify_schema,
-        trampoline_parse_scalars,
-        trampoline_parse_object,
     };
     return &vt;
   }
@@ -328,13 +325,6 @@ class MessageParserPluginBase {
   // Schema handler table populated by the plugin via registerSchemaHandler().
   std::unordered_map<std::string, sdk::SchemaHandler> handlers_;
 
-  // Buffers kept alive between parse_scalars / parse_object calls so the host
-  // can read the returned slices safely. release callbacks in the ABI structs
-  // are NULL — the plugin owns the buffers and overwrites them on each call.
-  std::vector<sdk::NamedFieldValue> scalars_owned_buf_;
-  std::vector<PJ_named_field_value_t> scalars_abi_buf_;
-  std::vector<uint8_t> object_blob_buf_;
-
   static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {
     sdk::fillError(out_error, code, domain, message);
   }
@@ -350,12 +340,6 @@ class MessageParserPluginBase {
   static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
   static bool trampoline_classify_schema(
       void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
-      PJ_error_t* out_error) noexcept;
-  static bool trampoline_parse_scalars(
-      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_named_field_value_buffer_t* out_fields,
-      PJ_error_t* out_error) noexcept;
-  static bool trampoline_parse_object(
-      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_canonical_object_blob_t* out_blob,
       PJ_error_t* out_error) noexcept;
 };
 

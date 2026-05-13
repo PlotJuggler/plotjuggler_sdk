@@ -134,9 +134,6 @@ typedef struct {
  * no longer needs the bytes referenced by the buffer. `ctx` MAY be NULL —
  * meaning the buffer was static / borrowed from an external lifetime — in
  * which case `release` is also expected to be NULL.
- *
- * Mirrors the pattern of PJ_canonical_object_blob_t but applies to raw
- * payload bytes, not to serialized canonical objects.
  */
 typedef struct PJ_payload_anchor_t {
   void* ctx;
