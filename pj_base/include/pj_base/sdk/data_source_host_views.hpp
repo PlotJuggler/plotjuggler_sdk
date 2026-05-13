@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
@@ -249,6 +250,12 @@ class DataSourceRuntimeHostView {
   /// degrading to a kEager push_raw_message.
   template <typename Fetcher>
   [[nodiscard]] Status pushMessage(ParserBindingHandle handle, Timestamp host_timestamp_ns, Fetcher&& fetcher) const {
+    using FetcherT = std::decay_t<Fetcher>;
+    using FetcherResult = std::decay_t<std::invoke_result_t<FetcherT&>>;
+    static_assert(
+        std::is_same_v<FetcherResult, sdk::PayloadView> || std::is_same_v<FetcherResult, std::vector<uint8_t>>,
+        "Fetcher must return sdk::PayloadView (zero-copy) or std::vector<uint8_t>");
+
     if (!valid()) {
       return unexpected(std::string("runtime host is not bound"));
     }
@@ -256,7 +263,6 @@ class DataSourceRuntimeHostView {
       return unexpected(std::string("runtime host does not expose push_message_v2"));
     }
 
-    using FetcherT = std::decay_t<Fetcher>;
     auto* ctx = new FetcherT(std::forward<Fetcher>(fetcher));
 
     PJ_payload_fetcher_t abi_fetcher{

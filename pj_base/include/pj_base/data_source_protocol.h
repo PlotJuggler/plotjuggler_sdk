@@ -152,7 +152,7 @@ typedef struct PJ_payload_anchor_t {
  */
 typedef struct PJ_payload_t {
   const uint8_t* data;
-  size_t size;
+  uint64_t size;
   PJ_payload_anchor_t anchor;
 } PJ_payload_t;
 
@@ -254,6 +254,12 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * @p handle must have been obtained from ensure_parser_binding.
    * @p host_timestamp_ns is nanoseconds since the Unix epoch
    * (1970-01-01T00:00:00Z). Returns false + error on failure.
+   *
+   * Eager-only push: the host parses immediately and the bytes are not
+   * retained for later replay. Plugins that need lazy materialization or
+   * ObjectIngestPolicy dispatch should use push_message_v2 instead. This
+   * slot remains for sources that fan-out raw bytes without an associated
+   * fetcher (streaming or eager-only consumers).
    */
   bool (*push_raw_message)(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_bytes_view_t payload,

@@ -254,9 +254,12 @@ struct PointCloud {
 // CanonicalObject — variant carried by parser->parseObject()
 // -----------------------------------------------------------------------------
 
-/// Sum type of all canonical objects a parser may produce. Closed for now;
-/// extending it (kMarkers, kOccupancyGrid, …) requires bumping
-/// PJ_MESSAGE_PARSER_PROTOCOL_VERSION (compatible append at the end).
+/// Sum type of all canonical objects a parser may produce. New alternatives
+/// (kMarkers, kOccupancyGrid, …) are appended at the tail and announced via
+/// CanonicalObjectKind. Plugins built against an older SDK keep producing
+/// the alternatives they know; hosts built against an older SDK that receive
+/// an unknown kind reject the message rather than crashing. Forward-compatible
+/// — no protocol bump required.
 using CanonicalObject = std::variant<Image, CompressedImage, PointCloud>;
 
 /// Helper: get the kind tag for a CanonicalObject without unpacking it.
