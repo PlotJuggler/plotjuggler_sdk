@@ -6,10 +6,18 @@
 #include <cstring>
 #include <vector>
 
-#include "pj_scene_protocol/image_annotation.h"
+#include "pj_scene_protocol/scene_frame.h"
 
 namespace PJ {
 namespace {
+
+using sdk::AnnotationTopology;
+using sdk::CircleAnnotation;
+using sdk::ColorRGBA;
+using sdk::ImageAnnotations;
+using sdk::Point2;
+using sdk::PointsAnnotation;
+using sdk::TextAnnotation;
 
 TEST(SceneDecoderTest, FactoryReturnsNullForUnknownSchema) {
   auto dec = makeSceneDecoder("nonsense/Schema");

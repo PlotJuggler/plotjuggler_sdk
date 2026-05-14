@@ -10,6 +10,14 @@
 namespace PJ {
 namespace {
 
+using sdk::AnnotationTopology;
+using sdk::CircleAnnotation;
+using sdk::ColorRGBA;
+using sdk::ImageAnnotations;
+using sdk::Point2;
+using sdk::PointsAnnotation;
+using sdk::TextAnnotation;
+
 // Minimal Protobuf wire-format reader for foxglove.ImageAnnotations. Decodes
 // PointsAnnotation, CircleAnnotation, and TextAnnotation in full. Round-trips
 // against the sibling writer at `src/image_annotation_codec.cpp` are covered
@@ -299,7 +307,7 @@ bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
   if (sub_end > r.end) {
     return false;
   }
-  // Defaults match pj_scene_protocol/image_annotation.h.
+  // Defaults match pj_scene_protocol/builtin/ImageAnnotations.h.
   out.color = {0, 255, 0, 255};
   out.fill_color = {0, 0, 0, 0};
   out.thickness = 2.0;
@@ -357,7 +365,7 @@ bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
 // Decode one foxglove.TextAnnotation sub-message:
 //   timestamp(1)=Time, position(2)=Point2, text(3)=string, font_size(4)=double,
 //   text_color(5)=Color, background_color(6)=Color  (background_color skipped — not
-//   present in pj_scene_protocol/image_annotation.h::TextAnnotation).
+//   present in pj_scene_protocol/builtin/ImageAnnotations.h::sdk::TextAnnotation).
 bool decodeTextAnnotation(Reader& r, size_t len, TextAnnotation& out) {
   const uint8_t* sub_end = r.p + len;
   if (sub_end > r.end) {
@@ -420,7 +428,7 @@ class ProtobufImageAnnotationsDecoder final : public ISceneDecoder {
     }
     Reader r{data, data + size};
 
-    ImageAnnotation ia;
+    sdk::ImageAnnotations ia;
     while (!r.eof()) {
       uint64_t tag = 0;
       if (!r.readVarint(tag)) {

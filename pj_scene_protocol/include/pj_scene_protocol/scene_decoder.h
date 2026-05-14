@@ -5,13 +5,13 @@
 #include <memory>
 
 #include "pj_base/expected.hpp"
-#include "pj_scene_protocol/image_annotation.h"
 #include "pj_scene_protocol/image_annotation_codec.h"  // for kSchemaImageAnnotations
+#include "pj_scene_protocol/scene_frame.h"
 
 namespace PJ {
 
 /// Decodes canonical wire-format bytes (foxglove.ImageAnnotations Protobuf,
-/// serialized by `pj_scene_protocol::serializeImageAnnotation`) into a
+/// serialized by `pj_scene_protocol::serializeImageAnnotations`) into a
 /// `SceneFrame` of vector primitives. Stateless — one instance per
 /// scene/annotation layer. See `docs/ARCHITECTURE.md` for the wire format spec.
 ///

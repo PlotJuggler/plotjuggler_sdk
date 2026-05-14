@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-#include "pj_scene_protocol/image_annotation.h"
+#include "pj_scene_protocol/builtin/ImageAnnotations.h"
 
 namespace PJ {
 
@@ -15,13 +15,13 @@ namespace PJ {
 /// interop with Foxglove Studio and other tools.
 inline constexpr std::string_view kSchemaImageAnnotations = "foxglove.ImageAnnotations";
 
-/// Serializes an ImageAnnotation to canonical foxglove.ImageAnnotations
+/// Serializes a sdk::ImageAnnotations to canonical foxglove.ImageAnnotations
 /// Protobuf bytes.
 ///
-/// `timestamp` and `image_topic` on the input are NOT serialized — the
+/// `timestamp_ns` and `image_topic` on the input are NOT serialized — the
 /// timestamp travels with ObjectStore's push, topic identity with the topic
 /// registration. Round-trip equality holds when the caller leaves both at
 /// default values.
-[[nodiscard]] std::vector<uint8_t> serializeImageAnnotation(const ImageAnnotation& ia);
+[[nodiscard]] std::vector<uint8_t> serializeImageAnnotations(const sdk::ImageAnnotations& ia);
 
 }  // namespace PJ

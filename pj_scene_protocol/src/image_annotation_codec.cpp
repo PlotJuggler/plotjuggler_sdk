@@ -7,6 +7,14 @@
 namespace PJ {
 namespace {
 
+using sdk::AnnotationTopology;
+using sdk::CircleAnnotation;
+using sdk::ColorRGBA;
+using sdk::ImageAnnotations;
+using sdk::Point2;
+using sdk::PointsAnnotation;
+using sdk::TextAnnotation;
+
 // Hand-rolled Protobuf wire emission. Mirror of the reader at
 // `src/scene_decoder_protobuf.cpp` (same module).
 //
@@ -177,7 +185,7 @@ std::vector<uint8_t> buildTextAnnotation(const TextAnnotation& ta) {
 // foxglove.ImageAnnotations { 1: repeated CircleAnnotation,
 //                             2: repeated PointsAnnotation,
 //                             3: repeated TextAnnotation }
-std::vector<uint8_t> serializeImageAnnotation(const ImageAnnotation& ia) {
+std::vector<uint8_t> serializeImageAnnotations(const sdk::ImageAnnotations& ia) {
   std::vector<uint8_t> out;
 
   for (const auto& c : ia.circles) {

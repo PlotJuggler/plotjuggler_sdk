@@ -5,7 +5,7 @@ How to produce or consume marker / scene data over PlotJuggler's canonical wire 
 The module exposes one schema header and one codec header:
 
 ```cpp
-#include "pj_scene_protocol/image_annotation.h"        // value types
+#include "pj_scene_protocol/scene_frame.h"        // value types
 #include "pj_scene_protocol/image_annotation_codec.h"  // writer + schema name
 #include "pj_scene_protocol/scene_decoder.h"           // reader (consumers only)
 ```
@@ -18,14 +18,14 @@ For the wire format reference, type catalog, and design rationale, see `ARCHITEC
 
 ## 1. Producer recipe (loader / data source)
 
-A loader fills an `ImageAnnotation` from its source format and serializes to canonical bytes before pushing into the host's data store.
+A loader fills an `sdk::ImageAnnotations` from its source format and serializes to canonical bytes before pushing into the host's data store.
 
 ```cpp
-#include "pj_scene_protocol/image_annotation.h"
+#include "pj_scene_protocol/scene_frame.h"
 #include "pj_scene_protocol/image_annotation_codec.h"
 
-PJ::ImageAnnotation buildAnnotation(const Detection& det) {
-  PJ::ImageAnnotation ia;
+PJ::sdk::ImageAnnotations buildAnnotation(const Detection& det) {
+  PJ::sdk::ImageAnnotations ia;
 
   // Bounding box as a 4-point line loop.
   PJ::PointsAnnotation rect;
@@ -50,7 +50,7 @@ PJ::ImageAnnotation buildAnnotation(const Detection& det) {
 }
 
 // In your loader's per-message callback:
-auto bytes = PJ::serializeImageAnnotation(buildAnnotation(detection));
+auto bytes = PJ::serializeImageAnnotations(buildAnnotation(detection));
 host.pushObject(topic_id, ts_ns, bytes.data(), bytes.size());
 ```
 
@@ -86,7 +86,7 @@ if (!result.has_value()) {
 }
 
 const PJ::SceneFrame& sf = *result;
-for (const PJ::ImageAnnotation& ia : sf.annotations) {
+for (const PJ::sdk::ImageAnnotations& ia : sf.annotations) {
   for (const auto& pa : ia.points)   { renderPoints(pa); }
   for (const auto& ca : ia.circles)  { renderCircle(ca); }
   for (const auto& ta : ia.texts)    { renderText(ta);   }
@@ -107,22 +107,22 @@ The decoder is stateless — keep one per layer for the layer's lifetime, or bui
 
 **`fill_color` only fires for `kLineLoop`.** Other topologies ignore `fill_color`. Setting an alpha-zero default fill is the convention for "no fill."
 
-**Non-serialized fields.** `ImageAnnotation::timestamp` and `::image_topic` are populated by the consumer pipeline (timestamp comes from the store push; topic identity from the topic id). The codec does not round-trip them — equality on a freshly decoded annotation will see those fields as zero / empty. This is intentional; see `ARCHITECTURE.md §Wire format / Encoding rules`.
+**Non-serialized fields.** `sdk::ImageAnnotations::timestamp` and `::image_topic` are populated by the consumer pipeline (timestamp comes from the store push; topic identity from the topic id). The codec does not round-trip them — equality on a freshly decoded annotation will see those fields as zero / empty. This is intentional; see `ARCHITECTURE.md §Wire format / Encoding rules`.
 
 **`CircleAnnotation::radius`, not diameter.** The C++ surface is radius. The wire carries diameter. Don't double the value yourself when constructing.
 
-**Empty annotations.** `serializeImageAnnotation()` on an `ImageAnnotation` with no primitives produces zero bytes. Pushing zero bytes is a valid "no overlays at this timestamp" signal; the decoder handles a non-empty buffer or returns an empty `SceneFrame`. Sending an empty buffer through `decode()` returns an error — guard the producer side or skip the push.
+**Empty annotations.** `serializeImageAnnotations()` on an `sdk::ImageAnnotations` with no primitives produces zero bytes. Pushing zero bytes is a valid "no overlays at this timestamp" signal; the decoder handles a non-empty buffer or returns an empty `SceneFrame`. Sending an empty buffer through `decode()` returns an error — guard the producer side or skip the push.
 
 ---
 
 ## 4. Translating from a custom message format
 
-Per-source-format conversion is intentionally outside this module. A loader that reads, say, ROS 2 `vision_msgs/msg/Detection2DArray` is responsible for translating into `ImageAnnotation` itself.
+Per-source-format conversion is intentionally outside this module. A loader that reads, say, ROS 2 `vision_msgs/msg/Detection2DArray` is responsible for translating into `sdk::ImageAnnotations` itself.
 
 For a working reference, see PJ4's `pj_media/demos/cdr_*_to_image_annotation.{h,cpp}`:
 
-- `cdr_detection2d_to_image_annotation` — `vision_msgs/msg/Detection2DArray` → `ImageAnnotation`. Maps the first hypothesis's `class_id` to a stable palette colour and emits a `"<class> <score>"` text label above each bbox.
-- `cdr_yolo_to_image_annotation` — `yolo_msgs/msg/DetectionArray` → `ImageAnnotation`. Same pattern, uses `class_name` for the label.
+- `cdr_detection2d_to_image_annotation` — `vision_msgs/msg/Detection2DArray` → `sdk::ImageAnnotations`. Maps the first hypothesis's `class_id` to a stable palette colour and emits a `"<class> <score>"` text label above each bbox.
+- `cdr_yolo_to_image_annotation` — `yolo_msgs/msg/DetectionArray` → `sdk::ImageAnnotations`. Same pattern, uses `class_name` for the label.
 - `marker_palette` — FNV-1a class-id → `ColorRGBA` palette and label-string formatter. Reuse-friendly.
 
-These adapters live in PJ4 because they consume PJ4-side fixtures (MCAP demo). The pattern transfers to any plugin: read your message, fill an `ImageAnnotation`, serialize with `serializeImageAnnotation()`.
+These adapters live in PJ4 because they consume PJ4-side fixtures (MCAP demo). The pattern transfers to any plugin: read your message, fill an `sdk::ImageAnnotations`, serialize with `serializeImageAnnotations()`.

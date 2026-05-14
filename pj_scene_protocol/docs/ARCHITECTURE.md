@@ -7,12 +7,12 @@
 Today the module covers 2D image annotations (points, lines, polygons, circles, text). It is named for forthcoming scope: 3D scene primitives (arrows, cubes, lines, meshes, text) are documented as the next addition, and the type system is laid out to accommodate them next to the 2D types without breaking existing wire bytes.
 
 **In scope:**
-- Schema (vocabulary types — `Point2`, `ColorRGBA`, `ImageAnnotation`, `SceneFrame`, …).
+- Schema (vocabulary types — `Point2`, `ColorRGBA`, `sdk::ImageAnnotations`, `SceneFrame`, …).
 - A canonical wire format (`foxglove.ImageAnnotations` Protobuf) and a hand-rolled writer + reader for it.
 - The schema-name string constant that producers stamp on stored topics.
 
 **Out of scope (deliberately):**
-- Per-source-format conversion. Translating from CDR `vision_msgs/Detection2DArray`, YOLO message types, CSV, RLDS, etc. into `ImageAnnotation` happens **loader-side**, never inside this module. PJ4's `pj_media/demos/cdr_*_to_image_annotation.{h,cpp}` are reference adapters.
+- Per-source-format conversion. Translating from CDR `vision_msgs/Detection2DArray`, YOLO message types, CSV, RLDS, etc. into `sdk::ImageAnnotations` happens **loader-side**, never inside this module. PJ4's `pj_media/demos/cdr_*_to_image_annotation.{h,cpp}` are reference adapters.
 - Storage / time-anchoring of scene frames (lives in PJ4's `pj_media/core/ScenePipelineSource` + `ObjectStore` from `pj_datastore`).
 - Rendering (lives in PJ4's `pj_media/qt/MediaViewerWidget`).
 
@@ -20,7 +20,7 @@ This split keeps `pj_scene_protocol` linkable by a streaming-source plugin or a 
 
 ## Type catalog
 
-All types are POD-shaped, default-constructible, and compare with `operator==`. They live in `pj_scene_protocol/image_annotation.h`.
+All types are POD-shaped, default-constructible, and compare with `operator==`. They live in `pj_scene_protocol/scene_frame.h`.
 
 | Type | Purpose |
 |---|---|
@@ -30,8 +30,8 @@ All types are POD-shaped, default-constructible, and compare with `operator==`. 
 | `PointsAnnotation` | Vertices + topology + uniform `color` + optional per-vertex `colors` + `fill_color` (for `kLineLoop`) + `thickness`. |
 | `CircleAnnotation` | `center` + `radius` (the wire format carries diameter; see below) + `thickness` + outline `color` + `fill_color`. |
 | `TextAnnotation` | Anchor `position`, `text`, `font_size`, `color`. |
-| `ImageAnnotation` | Bag of `points` + `circles` + `texts` for one image at one timestamp; refers to its base image via `image_topic`. |
-| `SceneFrame` | Top-level decoder output. Wraps `vector<ImageAnnotation>`; future expansion will add 3D primitives, grids, etc. as sibling fields. |
+| `sdk::ImageAnnotations` | Bag of `points` + `circles` + `texts` for one image at one timestamp; refers to its base image via `image_topic`. |
+| `SceneFrame` | Top-level decoder output. Wraps `vector<sdk::ImageAnnotations>`; future expansion will add 3D primitives, grids, etc. as sibling fields. |
 
 ## Wire format
 
@@ -73,7 +73,7 @@ The wire types used are `VARINT(0)`, `I64(1)`, and `LEN(2)`. `I32(5)` is unused 
 - **Color quantization is lossy.** `ColorRGBA` stores `uint8 [0, 255]`; the wire stores `double [0, 1]`. The writer divides by 255.0; the reader multiplies. A round-trip can drift up to 1 LSB on each channel. Tests assert with 1-LSB tolerance.
 - **`CircleAnnotation::radius` ↔ wire `diameter`.** The writer emits `radius * 2`; the reader halves on read. The C++ surface always exposes radius.
 - **Empty `colors` is preserved.** A `PointsAnnotation` with `colors.empty()` emits zero field-5 entries. Emitting a default `Color` for an empty vector would smuggle a phantom entry into the reader, breaking per-vertex coloring semantics. There is a regression test (`EmptyColorsVectorDoesNotInjectDefaultEntry`).
-- **`ImageAnnotation::timestamp` and `::image_topic` do not cross the wire.** Those fields belong to the surrounding transport (the timestamp arrives via `ObjectStore`'s push; the topic identity is the topic). They are populated on read by the consumer pipeline, not by the codec.
+- **`sdk::ImageAnnotations::timestamp` and `::image_topic` do not cross the wire.** Those fields belong to the surrounding transport (the timestamp arrives via `ObjectStore`'s push; the topic identity is the topic). They are populated on read by the consumer pipeline, not by the codec.
 - **`TextAnnotation::background_color` is intentionally absent from the C++ struct.** The wire format defines field 6, but the schema struct has no equivalent. The writer never emits it; the reader skips it.
 
 ## API surface
@@ -83,7 +83,7 @@ The wire types used are `VARINT(0)`, `I64(1)`, and `LEN(2)`. `I32(5)` is unused 
 inline constexpr std::string_view kSchemaImageAnnotations = "foxglove.ImageAnnotations";
 
 // Producer side.
-[[nodiscard]] std::vector<uint8_t> serializeImageAnnotation(const ImageAnnotation& ia);
+[[nodiscard]] std::vector<uint8_t> serializeImageAnnotations(const sdk::ImageAnnotations& ia);
 
 // Consumer side.
 class ISceneDecoder {
