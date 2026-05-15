@@ -1,17 +1,23 @@
 /**
  * @file BuiltinObject.h
- * @brief Sum type of all builtin objects a MessageParser may produce.
+ * @brief Type-erased holder for any builtin object a MessageParser may produce.
  *
- * New alternatives (kDepthImage, kMarkers, kOccupancyGrid, …) are appended
- * at the tail and announced via BuiltinObjectKind. Plugins built against
- * an older SDK keep producing the alternatives they know; hosts built
- * against an older SDK that receive an unknown kind reject the message
- * rather than crashing. Forward-compatible — no protocol bump required.
+ * BuiltinObject is `std::any`. A producer constructs it by passing a
+ * concrete builtin value (`sdk::Image`, `sdk::PointCloud`, `sdk::DepthImage`,
+ * `sdk::ImageAnnotations`, …); a consumer recovers the concrete type via
+ * `std::any_cast<T>(&obj)` and obtains the kind tag via `kindOf(obj)`.
+ *
+ * The type erasure is deliberate: choosing `std::any` over `std::variant`
+ * keeps the SDK forward-compatible. Plugins built against an older SDK can
+ * keep producing the alternatives they know without any TU referencing the
+ * (later-extended) full alternative list; hosts built against an older SDK
+ * that receive an unknown kind simply see `BuiltinObjectKind::kNone` from
+ * `kindOf` and reject the message. No protocol bump required when a new
+ * builtin kind is appended to BuiltinObjectKind and its header.
  */
 #pragma once
 
-#include <type_traits>
-#include <variant>
+#include <any>
 
 #include "pj_scene_protocol/builtin/BuiltinObjectKind.h"
 #include "pj_scene_protocol/builtin/DepthImage.h"
@@ -22,26 +28,29 @@
 namespace PJ {
 namespace sdk {
 
-using BuiltinObject = std::variant<Image, PointCloud, DepthImage, ImageAnnotations>;
+using BuiltinObject = std::any;
 
-/// Get the kind tag for a BuiltinObject without unpacking it.
+/// Get the kind tag for a BuiltinObject without copying it.
+/// Returns kNone for an empty BuiltinObject or one that wraps a type
+/// unknown to this SDK build.
 [[nodiscard]] inline BuiltinObjectKind kindOf(const BuiltinObject& obj) noexcept {
-  return std::visit(
-      [](const auto& concrete) -> BuiltinObjectKind {
-        using T = std::decay_t<decltype(concrete)>;
-        if constexpr (std::is_same_v<T, Image>) {
-          return BuiltinObjectKind::kImage;
-        } else if constexpr (std::is_same_v<T, PointCloud>) {
-          return BuiltinObjectKind::kPointCloud;
-        } else if constexpr (std::is_same_v<T, DepthImage>) {
-          return BuiltinObjectKind::kDepthImage;
-        } else if constexpr (std::is_same_v<T, ImageAnnotations>) {
-          return BuiltinObjectKind::kImageAnnotations;
-        } else {
-          return BuiltinObjectKind::kNone;
-        }
-      },
-      obj);
+  if (!obj.has_value()) {
+    return BuiltinObjectKind::kNone;
+  }
+  const auto& t = obj.type();
+  if (t == typeid(Image)) {
+    return BuiltinObjectKind::kImage;
+  }
+  if (t == typeid(PointCloud)) {
+    return BuiltinObjectKind::kPointCloud;
+  }
+  if (t == typeid(DepthImage)) {
+    return BuiltinObjectKind::kDepthImage;
+  }
+  if (t == typeid(ImageAnnotations)) {
+    return BuiltinObjectKind::kImageAnnotations;
+  }
+  return BuiltinObjectKind::kNone;
 }
 
 }  // namespace sdk
