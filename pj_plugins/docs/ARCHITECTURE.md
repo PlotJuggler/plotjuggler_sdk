@@ -483,3 +483,49 @@ out_array, err)`:
 | `widget_event_builder_test.cpp` | Event JSON generation |
 | `widget_event_test.cpp` | Event parsing |
 | `plugin_lifecycle_test.cpp` | Plugin create/destroy lifecycle |
+
+## Builtin-object pipeline (PR #86)
+
+The v4 DataSource runtime host adds a tail slot `push_message_v2`
+(offset 96 in `PJ_data_source_runtime_host_vtable_t`) that takes a
+deferred byte-fetch callable instead of bytes:
+
+```c
+typedef struct PJ_message_data_fetcher_t {
+  void* ctx;
+  bool  (*fetchMessageData)(void* ctx, PJ_payload_t* out, PJ_error_t* err) PJ_NOEXCEPT;
+  void  (*release)(void* ctx);
+} PJ_message_data_fetcher_t;
+
+bool (*push_message_v2)(
+    void* ctx, PJ_parser_binding_handle_t handle, int64_t timestamp_ns,
+    PJ_message_data_fetcher_t fetch_message_data,
+    PJ_error_t* out_error) PJ_NOEXCEPT;
+```
+
+The C++ SDK exposes this through
+`DataSourceRuntimeHostView::pushMessage(handle, ts, fetch_callable)`,
+which wraps any callable returning `PayloadView` (preferred, zero-copy)
+or `std::vector<uint8_t>` into the C ABI struct.
+
+The host orchestrates dispatch through an `ObjectIngestPolicyResolver`
+that cascades `topic > source > kind > default`:
+
+- `kEager`: invoke `fetchMessageData` now, run `parseScalars` +
+  `parseObject`, persist via `ObjectStore::pushOwned`.
+- `kLazyObjectsEagerScalars`: invoke once for scalars, keep the
+  callable behind `ObjectStore::pushLazy` for on-pull materialisation.
+- `kPureLazy`: skip the callable at ingest, register a lazy
+  ObjectStore entry only.
+
+Parsers participate via three optional virtual entry points on
+`MessageParserPluginBase` — `classifySchema`, `parseScalars`,
+`parseObject` — that map to the per-schema slots in the
+`SchemaHandler` table. The shape that crosses both ABI boundaries (C
+struct on the DataSource side, in-process variant on the parser side)
+is opaque-payload-by-default: `BuiltinObject` is `std::any`, so
+appending a new builtin kind does not change the public type and
+forward compatibility is automatic. Concrete builtins live under
+`pj_scene_protocol/builtin/` (`Image`, `DepthImage`, `PointCloud`,
+`ImageAnnotations`); see `pj_scene_protocol/docs/USER_GUIDE.md` for
+producer/consumer recipes.

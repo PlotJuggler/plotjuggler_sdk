@@ -837,3 +837,56 @@ See `pj_plugins/docs/dialog-plugin-guide.md` for the dialog protocol itself.
 - `pj_plugins/examples/mock_source_with_dialog.cpp` demonstrates the
   DataSource-owned dialog pattern: a combined `.so` with two vtables, shared
   state via member ownership, and dialog read-only accessors.
+
+## Builtin-object pipeline (PR #86) — `pushMessage` + FetchMessageData
+
+For sources that fan out raw bytes to a `MessageParser` (MCAP, foxglove
+bridge, future ROS-bag streamers), the runtime host exposes a v2 ingest
+slot that takes a deferred callable instead of bytes. The plugin builds
+a closure that knows how to materialise the payload, hands it to the
+host, and stays policy-agnostic:
+
+```cpp
+// One call per message — the host applies the active
+// ObjectIngestPolicy (kEager / kLazyObjectsEagerScalars / kPureLazy)
+// to decide whether to invoke the closure now, once for scalars,
+// or only on consumer pull.
+runtimeHost().pushMessage(
+    binding_handle, timestamp_ns,
+    [reader = reader_shared_ptr_,
+     offset = msg.offset]() -> PJ::sdk::PayloadView {
+      // Idempotent — may be called 0, 1, or N times.
+      return readMessageBytesAt(reader, offset);
+    });
+```
+
+The closure may return:
+
+- `PJ::sdk::PayloadView { bytes, anchor }` — preferred, zero-copy.
+  `bytes` is a `Span<const uint8_t>` over a buffer the plugin keeps
+  alive via `anchor` (`PJ::sdk::BufferAnchor` = `std::shared_ptr<const void>`).
+- `std::vector<uint8_t>` — convenience. The SDK template heap-allocates
+  the vector and treats it as its own anchor.
+
+The plugin is policy-agnostic:
+
+- It does **not** consult `ObjectIngestPolicy`.
+- It does **not** invoke the parser.
+- It does **not** push to the `ObjectStore`.
+
+The runtime host orchestrates all three behind the slot. C-ABI
+counterpart: `PJ_message_data_fetcher_t { ctx, fetchMessageData,
+release }` in `pj_base/data_source_protocol.h`. The C++ template wraps
+the closure into that struct; the host releases the context exactly
+once when the callable is no longer needed (after the single fetch in
+`kEager`, or when the `ObjectStore` entry is dropped in lazy modes).
+
+`fetchMessageData` MUST be thread-safe — the host may invoke it from
+the ingest thread (`kEager`) or from consumer threads (lazy pulls).
+Capture file readers / decompressed chunks by `shared_ptr` so the
+source survives every pending pull.
+
+Reference implementation: `pj_ported_plugins/data_load_mcap` — closure
+captures the open `mcap::McapReader` and the message offset, reads the
+bytes on demand. See `PLUGIN_DEVELOPMENT.md` in that repo for the
+catalog-side companion (`parser_ros`) and a top-down walkthrough.

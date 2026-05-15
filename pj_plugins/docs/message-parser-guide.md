@@ -464,3 +464,53 @@ dispatch code.
 - `pj_base/tests/message_parser_plugin_base_test.cpp` — comprehensive test
   fixture exercising the full SDK surface: vtable generation, bind/parse
   round-trip, schema binding, config persistence, and exception safety.
+
+## Builtin-object pipeline (PR #86)
+
+Beyond the scalar-column output that `parse()` and the
+`sdk::ParserWriteHostService` cover, the SDK adds a second, narrow
+output channel for media-like payloads: a *builtin object* (image,
+depth image, point cloud, image annotations) returned by name from the
+parser, decoded once, and visualised by widgets that never learn the
+wire format.
+
+Three optional virtual entry points on `MessageParserPluginBase`
+participate:
+
+```cpp
+// In your subclass — every override is optional. The base provides
+// safe `unexpected(...)` defaults so legacy parsers compile unchanged.
+PJ::Expected<PJ::sdk::SchemaClassification>
+classifySchema(std::string_view type_name,
+               PJ::Span<const uint8_t> schema) override;
+
+PJ::Expected<std::vector<PJ::sdk::NamedFieldValue>>
+parseScalars(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
+
+PJ::Expected<PJ::sdk::BuiltinObject>
+parseObject(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
+```
+
+- `classifySchema` is the *a-priori* declaration — given a type name +
+  schema bytes, announce which `BuiltinObjectKind` (`kImage`,
+  `kDepthImage`, `kPointCloud`, `kImageAnnotations`, `kNone`) this
+  schema produces. The host consults the answer **before** it ever sees
+  the payload, so it can pick the right `ObjectIngestPolicy` for the
+  topic.
+- `parseScalars` writes the small-metadata fields (`width`, `height`,
+  `frame_id`, …) that should land in the curve tree as scalar columns.
+- `parseObject` returns the actual builtin value, type-erased as
+  `PJ::sdk::BuiltinObject` (which is `std::any`). The host downcasts
+  with `std::any_cast<PJ::sdk::Image>(&obj)` to dispatch to the
+  matching viewer.
+
+Builtin types live under `pj_scene_protocol/builtin/`, one header per
+type. `sdk::Image` carries an open-ended `std::string encoding`
+(`"rgb8"`, `"bgr8"`, `"mono8"`, `"jpeg"`, `"png"`, `"compressedDepth"`,
+…) so raw and compressed images share a single type. New kinds are
+appended without changing the `BuiltinObject` type (its `std::any`
+nature is forward-compatible by construction).
+
+Reference implementation: `pj_ported_plugins/parser_ros` —
+`SchemaHandler` table driven by a static `catalog()`. See
+`PLUGIN_DEVELOPMENT.md` in that repo for a top-down walkthrough.
