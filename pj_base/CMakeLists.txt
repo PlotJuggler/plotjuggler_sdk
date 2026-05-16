@@ -6,7 +6,6 @@ find_package(magic_enum CONFIG REQUIRED)
 
 add_library(pj_base STATIC
   src/builtin/image_annotations_codec.cpp
-  src/builtin/image_annotations_decoder.cpp
   src/type_tree.cpp
 )
 target_include_directories(pj_base PUBLIC
