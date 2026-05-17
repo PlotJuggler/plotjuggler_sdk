@@ -180,7 +180,7 @@ endif()
 if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
-  set(PJ_PACKAGE_VERSION "1.0.0")
+  set(PJ_PACKAGE_VERSION "0.1.0")
   set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_core)
 
   install(EXPORT plotjuggler_coreTargets
