@@ -69,6 +69,8 @@ build_config() {
 
   conan install "$SCRIPT_DIR" --output-folder="$build_dir" --build=missing \
     -s build_type="$build_type" -s compiler.cppstd=20 \
+    -o "plotjuggler_core/*:with_tests=True" \
+    -o "plotjuggler_core/*:with_parquet_example=True" \
     "${conan_extra[@]+"${conan_extra[@]}"}"
 
   # Install dependencies from subdirectory conanfiles (e.g. pj_ported_plugins)

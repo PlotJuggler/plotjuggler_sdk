@@ -16,7 +16,7 @@ include(PjPluginManifest)
 option(PJ_ASSERT_THROWS "Use exceptions instead of assert() for PJ_ASSERT" OFF)
 option(PJ_ENABLE_SANITIZERS "Enable ASAN for Debug builds" OFF)
 option(PJ_ENABLE_TSAN "Enable ThreadSanitizer for Debug builds" OFF)
-option(PJ_INSTALL_SDK "Install PlotJugglerSDK package (DataSource + Dialog)" OFF)
+option(PJ_INSTALL_SDK "Install plotjuggler_core CMake package (base/datastore/plugin_sdk/plugin_host)" OFF)
 option(
   PJ_BUILD_PARQUET_IMPORT_EXAMPLE
   "Build parquet_import example (requires full Arrow C++ and Parquet)"
@@ -166,36 +166,45 @@ if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plu
 endif()
 
 # ---------------------------------------------------------------------------
-# PlotJugglerSDK package install
+# plotjuggler_core package install
+#
+# Exported CMake namespace: plotjuggler_core::
+# Components:
+#   base         — vocabulary types (always available)
+#   datastore    — columnar engine (optional, requires PJ_BUILD_DATASTORE)
+#   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
+#   plugin_host  — host-side loaders (data_source, message_parser, toolbox,
+#                  dialog, catalogs)
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
-  set(PJ_SDK_VERSION "1.0.0")
-  set(PJ_SDK_CMAKE_DIR lib/cmake/PlotJugglerSDK)
+  set(PJ_PACKAGE_VERSION "1.0.0")
+  set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_core)
 
-  install(EXPORT PlotJugglerSDKTargets
-    NAMESPACE PlotJugglerSDK::
-    DESTINATION ${PJ_SDK_CMAKE_DIR}
+  install(EXPORT plotjuggler_coreTargets
+    NAMESPACE plotjuggler_core::
+    DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 
   configure_package_config_file(
-    cmake/PlotJugglerSDKConfig.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfig.cmake"
-    INSTALL_DESTINATION ${PJ_SDK_CMAKE_DIR}
+    cmake/plotjuggler_coreConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfig.cmake"
+    INSTALL_DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 
   write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfigVersion.cmake"
-    VERSION ${PJ_SDK_VERSION}
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfigVersion.cmake"
+    VERSION ${PJ_PACKAGE_VERSION}
     COMPATIBILITY SameMajorVersion
   )
 
   install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfigVersion.cmake"
-    DESTINATION ${PJ_SDK_CMAKE_DIR}
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfigVersion.cmake"
+    cmake/PjPluginManifest.cmake
+    DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 endif()
 

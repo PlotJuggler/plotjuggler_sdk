@@ -24,12 +24,16 @@ target_include_directories(pj_dialog_sdk INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-set_target_properties(pj_dialog_sdk PROPERTIES EXPORT_NAME Dialog)
+set_target_properties(pj_dialog_sdk PROPERTIES EXPORT_NAME dialog_sdk)
 
 # Host-side C++ API (depends on protocol header + nlohmann/json)
 add_library(pj_dialog_host INTERFACE)
 target_link_libraries(pj_dialog_host INTERFACE pj_dialog_protocol nlohmann_json::nlohmann_json)
-target_include_directories(pj_dialog_host INTERFACE include)
+target_include_directories(pj_dialog_host INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+set_target_properties(pj_dialog_host PROPERTIES EXPORT_NAME dialog_host)
 
 # ---------------------------------------------------------------------------
 # pj_dialog_library — host-side dialog .so loader
@@ -38,9 +42,16 @@ target_include_directories(pj_dialog_host INTERFACE include)
 add_library(pj_dialog_library STATIC
   src/dialog_library.cpp
 )
-target_include_directories(pj_dialog_library PUBLIC include)
+target_include_directories(pj_dialog_library PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_dialog_library PUBLIC cxx_std_20)
 target_compile_options(pj_dialog_library PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_dialog_library PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME dialog_library
+)
 target_link_libraries(pj_dialog_library
   PUBLIC
     pj_dialog_host
@@ -124,11 +135,17 @@ endif() # PJ_BUILD_TESTS
 # --- Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt) ---
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_dialog_protocol pj_dialog_sdk EXPORT PlotJugglerSDKTargets)
-  install(FILES include/pj_plugins/dialog_protocol.h
-    DESTINATION include/pj_plugins
+  install(TARGETS
+      pj_dialog_protocol
+      pj_dialog_sdk
+      pj_dialog_host
+      pj_dialog_library
+    EXPORT plotjuggler_coreTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
-  install(DIRECTORY include/pj_plugins/sdk/
-    DESTINATION include/pj_plugins/sdk
-  )
+  # All dialog_protocol headers live under include/pj_plugins/ (dialog_protocol.h,
+  # sdk/, host/). Install the whole tree — it merges with pj_plugins/include/
+  # at the destination since each module writes into distinct files.
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()

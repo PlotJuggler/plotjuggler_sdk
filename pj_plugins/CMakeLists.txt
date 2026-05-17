@@ -1,15 +1,19 @@
 add_subdirectory(dialog_protocol)
 
 # ---------------------------------------------------------------------------
-# pj_plugin_sdk — INTERFACE library that exposes the C++ SDK headers
-# (MessageParserPluginBase, ObjectIngestPolicy, parser trampolines, ...)
-# and the dependencies they need. Plugins link this to get access to the SDK
-# without having to repeat the include paths.
+# pj_plugin_sdk — umbrella INTERFACE library that exposes the full plugin-author
+# SDK surface: C++ SDK headers (MessageParserPluginBase, ObjectIngestPolicy,
+# parser trampolines, ...) PLUS the dialog SDK (widget_data, widget_event) so
+# plugin authors can link one target and get everything they need.
 # ---------------------------------------------------------------------------
 
 add_library(pj_plugin_sdk INTERFACE)
-target_include_directories(pj_plugin_sdk INTERFACE include)
-target_link_libraries(pj_plugin_sdk INTERFACE pj_base)
+target_include_directories(pj_plugin_sdk INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(pj_plugin_sdk INTERFACE pj_base pj_dialog_sdk)
+set_target_properties(pj_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
 
 # ---------------------------------------------------------------------------
 # pj_plugin_catalog — host-side embedded-manifest discovery
@@ -20,9 +24,16 @@ find_package(nlohmann_json REQUIRED)
 add_library(pj_plugin_catalog STATIC
   src/plugin_catalog.cpp
 )
-target_include_directories(pj_plugin_catalog PUBLIC include)
+target_include_directories(pj_plugin_catalog PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_plugin_catalog PUBLIC cxx_std_20)
 target_compile_options(pj_plugin_catalog PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_plugin_catalog PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME plugin_catalog
+)
 target_link_libraries(pj_plugin_catalog
   PUBLIC
     pj_base
@@ -39,9 +50,16 @@ target_link_libraries(pj_plugin_catalog
 add_library(pj_data_source_host STATIC
   src/data_source_library.cpp
 )
-target_include_directories(pj_data_source_host PUBLIC include)
+target_include_directories(pj_data_source_host PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_data_source_host PUBLIC cxx_std_20)
 target_compile_options(pj_data_source_host PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_data_source_host PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME data_source_host
+)
 target_link_libraries(pj_data_source_host
   PUBLIC
     pj_base
@@ -104,9 +122,16 @@ endif() # PJ_BUILD_TESTS
 add_library(pj_message_parser_host STATIC
   src/message_parser_library.cpp
 )
-target_include_directories(pj_message_parser_host PUBLIC include)
+target_include_directories(pj_message_parser_host PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_message_parser_host PUBLIC cxx_std_20)
 target_compile_options(pj_message_parser_host PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_message_parser_host PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME message_parser_host
+)
 target_link_libraries(pj_message_parser_host
   PUBLIC
     pj_base
@@ -144,9 +169,16 @@ endif() # PJ_BUILD_TESTS
 add_library(pj_toolbox_host STATIC
   src/toolbox_library.cpp
 )
-target_include_directories(pj_toolbox_host PUBLIC include)
+target_include_directories(pj_toolbox_host PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_toolbox_host PUBLIC cxx_std_20)
 target_compile_options(pj_toolbox_host PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_toolbox_host PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME toolbox_host
+)
 target_link_libraries(pj_toolbox_host
   PUBLIC
     pj_base
@@ -162,9 +194,16 @@ target_link_libraries(pj_toolbox_host
 add_library(pj_plugin_runtime_catalog STATIC
   src/plugin_runtime_catalog.cpp
 )
-target_include_directories(pj_plugin_runtime_catalog PUBLIC include)
+target_include_directories(pj_plugin_runtime_catalog PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_plugin_runtime_catalog PUBLIC cxx_std_20)
 target_compile_options(pj_plugin_runtime_catalog PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_plugin_runtime_catalog PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME plugin_runtime_catalog
+)
 target_link_libraries(pj_plugin_runtime_catalog
   PUBLIC
     pj_data_source_host
@@ -173,6 +212,23 @@ target_link_libraries(pj_plugin_runtime_catalog
     pj_plugin_catalog
     pj_base
 )
+
+# ---------------------------------------------------------------------------
+# pj_plugin_host — umbrella INTERFACE that bundles every host-side loader.
+# Hosts (the PlotJuggler app, test rigs) link this single target to get
+# discovery + all four plugin-family loaders + the runtime catalog.
+# ---------------------------------------------------------------------------
+
+add_library(pj_plugin_host INTERFACE)
+target_link_libraries(pj_plugin_host INTERFACE
+  pj_plugin_runtime_catalog
+  pj_data_source_host
+  pj_message_parser_host
+  pj_toolbox_host
+  pj_dialog_library
+  pj_plugin_catalog
+)
+set_target_properties(pj_plugin_host PROPERTIES EXPORT_NAME plugin_host)
 
 if(PJ_BUILD_TESTS)
 
@@ -292,3 +348,23 @@ add_dependencies(plugin_catalog_test mock_data_source_plugin mock_json_parser_pl
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS
+
+# ---------------------------------------------------------------------------
+# Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt)
+# ---------------------------------------------------------------------------
+
+if(PJ_INSTALL_SDK)
+  install(TARGETS
+      pj_plugin_sdk
+      pj_plugin_catalog
+      pj_data_source_host
+      pj_message_parser_host
+      pj_toolbox_host
+      pj_plugin_runtime_catalog
+      pj_plugin_host
+    EXPORT plotjuggler_coreTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()

@@ -17,7 +17,7 @@ target_compile_options(pj_base PRIVATE
 )
 set_target_properties(pj_base PROPERTIES
   POSITION_INDEPENDENT_CODE ON
-  EXPORT_NAME DataSource
+  EXPORT_NAME base
 )
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_base PUBLIC PJ_ASSERT_THROWS)
@@ -28,11 +28,11 @@ endif()
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_base EXPORT PlotJugglerSDKTargets
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
+  install(TARGETS pj_base EXPORT plotjuggler_coreTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
-  install(DIRECTORY include/ DESTINATION include)
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,8 @@
 # Writes <build-dir>/<target>.pjmanifest.json next to the DSO and installs it
 # alongside the DSO.
 
+include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR — must be defined before install(FILES ...)
+
 function(pj_emit_plugin_manifest TARGET)
   set(_options)
   set(_oneValueArgs FAMILY MANIFEST_FILE ABI_MAJOR)

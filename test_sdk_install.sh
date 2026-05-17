@@ -11,7 +11,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== SDK Install Test ==="
+echo "=== plotjuggler_core install test ==="
 echo "Staging dir: ${STAGING_DIR}"
 echo ""
 
@@ -28,6 +28,9 @@ cmake -S "$SCRIPT_DIR" -B "$BUILD_DIR" \
   -DCMAKE_TOOLCHAIN_FILE="$BUILD_DIR/conan_toolchain.cmake" \
   -DCMAKE_BUILD_TYPE=Release \
   -DPJ_INSTALL_SDK=ON \
+  -DPJ_BUILD_TESTS=OFF \
+  -DPJ_BUILD_PORTED_PLUGINS=OFF \
+  -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF \
   -DCMAKE_INSTALL_PREFIX="$STAGING_DIR"
 
 cmake --build "$BUILD_DIR" -j "$(nproc)"
@@ -42,36 +45,79 @@ echo "--- Step 2: Install to staging ---"
 cmake --install "$BUILD_DIR"
 
 echo ""
-echo "Installed files:"
-find "$STAGING_DIR" -type f | sort
+echo "Installed CMake package files:"
+find "$STAGING_DIR" -path '*/cmake/plotjuggler_core*' | sort
+
+echo ""
+echo "Installed libraries:"
+find "$STAGING_DIR" -name 'libpj_*' | sort
 
 # ---------------------------------------------------------------------------
-# 3. Build the out-of-tree consumer against the installed SDK
+# 3. Build the out-of-tree consumer against the installed package
 # ---------------------------------------------------------------------------
 
 echo ""
 echo "--- Step 3: Configure + build sdk_consumer example ---"
 
 cmake -S "$SCRIPT_DIR/examples/sdk_consumer" -B "$CONSUMER_BUILD_DIR" \
-  -DCMAKE_PREFIX_PATH="$STAGING_DIR" \
+  -DCMAKE_PREFIX_PATH="$STAGING_DIR;$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=Release
 
 cmake --build "$CONSUMER_BUILD_DIR" -j "$(nproc)"
 
-echo ""
-echo "--- Step 4: Verify no host-internal headers leaked ---"
+# ---------------------------------------------------------------------------
+# 4. Verify each public component is independently findable
+# ---------------------------------------------------------------------------
 
+echo ""
+echo "--- Step 4: Smoke-test find_package COMPONENTS ---"
+
+for comp in base plugin_sdk plugin_host datastore; do
+  COMP_DIR="$(mktemp -d)"
+  cat > "$COMP_DIR/CMakeLists.txt" <<EOF
+cmake_minimum_required(VERSION 3.22)
+project(comp_smoke LANGUAGES CXX)
+find_package(plotjuggler_core REQUIRED COMPONENTS ${comp})
+if(NOT TARGET plotjuggler_core::${comp})
+  message(FATAL_ERROR "plotjuggler_core::${comp} target missing")
+endif()
+EOF
+  if cmake -S "$COMP_DIR" -B "$COMP_DIR/build" \
+       -DCMAKE_PREFIX_PATH="$STAGING_DIR;$BUILD_DIR" \
+       -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1; then
+    echo "  OK  plotjuggler_core::${comp}"
+  else
+    echo "  FAIL plotjuggler_core::${comp}"
+    cmake -S "$COMP_DIR" -B "$COMP_DIR/build" \
+       -DCMAKE_PREFIX_PATH="$STAGING_DIR;$BUILD_DIR" \
+       -DCMAKE_BUILD_TYPE=Release
+    rm -rf "$COMP_DIR"
+    exit 1
+  fi
+  rm -rf "$COMP_DIR"
+done
+
+# ---------------------------------------------------------------------------
+# 5. Verify no host-internal headers leaked
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "--- Step 5: Verify installed-header sanity ---"
+
+# Nothing source-tree-private should appear under include/. tests/ and
+# examples/ directories from the module source trees must NOT be exported.
+# (The pj_plugins/testing/ headers ARE intentionally public test helpers.)
 LEAKED=0
-for pattern in 'pj_datastore/'; do
-  if grep -r "$pattern" "$STAGING_DIR/include/" 2>/dev/null; then
-    echo "ERROR: Found leaked dependency: ${pattern}"
+for forbidden_dir in /tests/ /examples/ /src/; do
+  if find "$STAGING_DIR/include" -path "*${forbidden_dir}*" -type f 2>/dev/null | grep -q .; then
+    echo "ERROR: Found forbidden directory '${forbidden_dir}' in installed include/"
+    find "$STAGING_DIR/include" -path "*${forbidden_dir}*" -type f
     LEAKED=1
   fi
 done
 if [[ $LEAKED -ne 0 ]]; then
-  echo "FAIL: Installed headers reference host-internal dependencies."
   exit 1
 fi
 
 echo ""
-echo "=== SDK Install Test PASSED ==="
+echo "=== plotjuggler_core install test PASSED ==="

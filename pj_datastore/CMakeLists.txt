@@ -21,10 +21,17 @@ add_library(pj_datastore STATIC
   src/colormap_registry_host.cpp
   src/object_store.cpp
 )
-target_include_directories(pj_datastore PUBLIC include)
+target_include_directories(pj_datastore PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_datastore PUBLIC cxx_std_20)
 target_compile_options(pj_datastore PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
+)
+set_target_properties(pj_datastore PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME datastore
 )
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_datastore PUBLIC PJ_ASSERT_THROWS)
@@ -38,6 +45,18 @@ target_link_libraries(pj_datastore
     ${PJ_NANOARROW_TARGET}
     ${PJ_NANOARROW_IPC_TARGET}
 )
+
+# ---------------------------------------------------------------------------
+# Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt)
+# ---------------------------------------------------------------------------
+
+if(PJ_INSTALL_SDK)
+  install(TARGETS pj_datastore EXPORT plotjuggler_coreTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests

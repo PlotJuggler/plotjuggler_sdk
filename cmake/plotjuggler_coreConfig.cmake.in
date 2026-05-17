@@ -1,0 +1,44 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Default to plugin_sdk if no components requested — the most common
+# consumer (a plugin author) wants the plugin-author SDK surface.
+if(NOT plotjuggler_core_FIND_COMPONENTS)
+  set(plotjuggler_core_FIND_COMPONENTS plugin_sdk)
+endif()
+
+# Include the exported targets (defines plotjuggler_core::base, etc.).
+include("${CMAKE_CURRENT_LIST_DIR}/plotjuggler_coreTargets.cmake")
+
+# Per-component dependencies and validation.
+foreach(_comp ${plotjuggler_core_FIND_COMPONENTS})
+  if(_comp STREQUAL "base")
+    set(plotjuggler_core_base_FOUND TRUE)
+
+  elseif(_comp STREQUAL "datastore")
+    find_dependency(fmt)
+    find_dependency(tsl-robin-map)
+    find_dependency(nanoarrow)
+    set(plotjuggler_core_datastore_FOUND TRUE)
+
+  elseif(_comp STREQUAL "plugin_sdk")
+    find_dependency(nlohmann_json)
+    # Ship the cmake/PjPluginManifest.cmake helper so plugin authors can call
+    # pj_emit_plugin_manifest() without copying the helper into their tree.
+    include("${CMAKE_CURRENT_LIST_DIR}/PjPluginManifest.cmake")
+    set(plotjuggler_core_plugin_sdk_FOUND TRUE)
+
+  elseif(_comp STREQUAL "plugin_host")
+    find_dependency(nlohmann_json)
+    set(plotjuggler_core_plugin_host_FOUND TRUE)
+
+  else()
+    set(plotjuggler_core_${_comp}_FOUND FALSE)
+    if(plotjuggler_core_FIND_REQUIRED_${_comp})
+      message(FATAL_ERROR "plotjuggler_core: unknown component \"${_comp}\"")
+    endif()
+  endif()
+endforeach()
+
+check_required_components(plotjuggler_core)

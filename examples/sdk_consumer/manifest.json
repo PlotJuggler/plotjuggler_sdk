@@ -1,0 +1,6 @@
+{
+  "id": "minimal-data-source",
+  "name": "Minimal Data Source",
+  "version": "0.1.0",
+  "description": "Smoke-test plugin for the installed plotjuggler_core SDK."
+}
