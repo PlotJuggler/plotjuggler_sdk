@@ -1,0 +1,130 @@
+name: Release
+
+# Triggers on tag push (e.g. `git push origin v0.2.0`). Builds the Conan
+# package, uploads it to the project's Cloudsmith remote, and publishes a
+# GitHub Release with auto-generated notes.
+#
+# Secrets required (set in repo Settings → Secrets and variables → Actions):
+#   CLOUDSMITH_USER     — Cloudsmith username (e.g. "davide-faconti")
+#   CLOUDSMITH_API_KEY  — Cloudsmith API key with write access to the
+#                         plotjuggler/plotjuggler repository
+#
+# Manual trigger: workflow_dispatch lets you re-run for an existing tag if
+# the first attempt failed (e.g. flaky upload). Set `tag` input to e.g. v0.1.0.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to (re-)release (e.g. v0.1.0). Must already exist.'
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false  # never cancel an in-flight release
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # required to create the GitHub Release
+    steps:
+      - name: Resolve ref
+        id: ref
+        run: |
+          if [[ -n "${{ inputs.tag }}" ]]; then
+            echo "ref=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+          # Strip leading 'v' for the Conan version (v0.1.0 -> 0.1.0).
+          version="${GITHUB_REF_NAME#v}"
+          version="${version:-${{ inputs.tag }}}"
+          version="${version#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - uses: conan-io/setup-conan@v1
+
+      - name: Detect Conan profile
+        run: |
+          conan profile detect --force
+          conan profile show
+
+      - name: Verify recipe version matches tag
+        # Prevents the common footgun of tagging vX.Y.Z but forgetting to bump
+        # `version` in conanfile.py. Fails fast before we publish.
+        run: |
+          recipe_version=$(python3 -c "import re; print(re.search(r'^\s*version\s*=\s*\"([^\"]+)\"', open('conanfile.py').read(), re.M).group(1))")
+          if [[ "${recipe_version}" != "${{ steps.ref.outputs.version }}" ]]; then
+            echo "::error::conanfile.py version (${recipe_version}) does not match tag (${{ steps.ref.outputs.version }})"
+            exit 1
+          fi
+          echo "Version match: ${recipe_version}"
+
+      - name: Build Conan package
+        run: |
+          conan create . \
+            --build=missing \
+            -s build_type=Release \
+            -s compiler.cppstd=20
+
+      - name: Configure Cloudsmith remote
+        env:
+          CLOUDSMITH_USER: ${{ secrets.CLOUDSMITH_USER }}
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          if [[ -z "$CLOUDSMITH_USER" || -z "$CLOUDSMITH_API_KEY" ]]; then
+            echo "::error::CLOUDSMITH_USER / CLOUDSMITH_API_KEY secrets not configured"
+            exit 1
+          fi
+          # `add ... --force` makes the step idempotent across re-runs.
+          conan remote add plotjuggler-cloudsmith https://conan.cloudsmith.io/plotjuggler/plotjuggler --force
+          conan remote login plotjuggler-cloudsmith "$CLOUDSMITH_USER" -p "$CLOUDSMITH_API_KEY"
+
+      - name: Upload package to Cloudsmith
+        run: |
+          conan upload "plotjuggler_core/${{ steps.ref.outputs.version }}" \
+            -r plotjuggler-cloudsmith \
+            --confirm \
+            --check
+
+      - name: Create GitHub Release
+        # softprops/action-gh-release: handles auto-generated notes + idempotent
+        # re-runs (skips if a release for the tag already exists).
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ref.outputs.tag }}
+          name: plotjuggler_core ${{ steps.ref.outputs.tag }}
+          generate_release_notes: true
+          body: |
+            ## Install via Conan
+
+            ```bash
+            conan remote add plotjuggler https://conan.cloudsmith.io/plotjuggler/plotjuggler
+            ```
+
+            Add to your `conanfile.py` / `conanfile.txt`:
+
+            ```python
+            requires = ("plotjuggler_core/${{ steps.ref.outputs.version }}",)
+            ```
+
+            Link in CMake:
+
+            ```cmake
+            find_package(plotjuggler_core REQUIRED COMPONENTS plugin_sdk)
+            target_link_libraries(my_plugin PRIVATE plotjuggler_core::plugin_sdk)
+            ```
+
+            See [README.md](https://github.com/PlotJuggler/plotjuggler_core/blob/main/README.md)
+            for available components (`base`, `datastore`, `plugin_sdk`, `plugin_host`)
+            and consumer examples.
