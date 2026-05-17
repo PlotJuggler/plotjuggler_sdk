@@ -7,14 +7,13 @@ PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin 
 ### Modules
 
 - **pj_base** — foundational SDK/ABI types, canonical builtin object vocabulary, plugin ABI headers,
-  host-view helpers, ImageAnnotations codec, and shared utilities; public `magic_enum` dependency for enum/string helpers
+  host-view helpers, ImageAnnotations codec, and shared utilities
 - **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
 - **pj_plugins** — C++ plugin SDK base classes, plugin discovery, host-side loaders, config envelope
   helpers, and dialog protocol primitives; four plugin families: DataSource, MessageParser, Dialog, Toolbox
 
 ### Dependency graph
 
-- `pj_base` → `magic_enum`
 - `pj_datastore` → `pj_base`
 - `pj_plugins` → `pj_base`
 

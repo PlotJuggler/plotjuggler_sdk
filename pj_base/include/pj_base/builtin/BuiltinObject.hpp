@@ -23,7 +23,6 @@
 
 #include <any>
 #include <cstdint>
-#include <magic_enum/magic_enum.hpp>
 #include <optional>
 #include <string_view>
 
@@ -54,16 +53,47 @@ struct SchemaClassification {
   BuiltinObjectType object_type = BuiltinObjectType::kNone;
 };
 
-/// Canonical string for a type value. Uses magic_enum for reflection.
-/// e.g. name(kImage) == "kImage".
+/// Canonical string for a type value. e.g. name(kImage) == "kImage".
 [[nodiscard]] inline constexpr std::string_view name(BuiltinObjectType type) noexcept {
-  return magic_enum::enum_name(type);
+  switch (type) {
+    case BuiltinObjectType::kNone:
+      return "kNone";
+    case BuiltinObjectType::kImage:
+      return "kImage";
+    case BuiltinObjectType::kPointCloud:
+      return "kPointCloud";
+    case BuiltinObjectType::kDepthImage:
+      return "kDepthImage";
+    case BuiltinObjectType::kImageAnnotations:
+      return "kImageAnnotations";
+    case BuiltinObjectType::kFrameTransforms:
+      return "kFrameTransforms";
+  }
+  return "kNone";
 }
 
 /// Parse a type name into the enum. Accepts the same strings name()
 /// emits (e.g. "kImage"). Returns nullopt for unknown names.
 [[nodiscard]] inline constexpr std::optional<BuiltinObjectType> parseBuiltinObjectType(std::string_view s) noexcept {
-  return magic_enum::enum_cast<BuiltinObjectType>(s);
+  if (s == "kNone") {
+    return BuiltinObjectType::kNone;
+  }
+  if (s == "kImage") {
+    return BuiltinObjectType::kImage;
+  }
+  if (s == "kPointCloud") {
+    return BuiltinObjectType::kPointCloud;
+  }
+  if (s == "kDepthImage") {
+    return BuiltinObjectType::kDepthImage;
+  }
+  if (s == "kImageAnnotations") {
+    return BuiltinObjectType::kImageAnnotations;
+  }
+  if (s == "kFrameTransforms") {
+    return BuiltinObjectType::kFrameTransforms;
+  }
+  return std::nullopt;
 }
 
 using BuiltinObject = std::any;

@@ -6,7 +6,6 @@ benchmark/1.9.4
 arrow/23.0.1
 nanoarrow/0.7.0
 nlohmann_json/3.12.0
-magic_enum/0.9.7
 
 [options]
 arrow/*:parquet=True

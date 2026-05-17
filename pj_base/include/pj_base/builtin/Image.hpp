@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cstdint>
-#include <magic_enum/magic_enum.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,7 +24,7 @@ namespace sdk {
 ///
 /// `Image::encoding` is an open std::string; producers and consumers are not
 /// required to use the values listed here. This enum documents the encodings
-/// the SDK recognizes and provides magic_enum-backed round-trip helpers.
+/// the SDK recognizes and provides round-trip string conversion helpers.
 // NOLINTBEGIN(readability-identifier-naming)
 // Enumerator names are deliberately the canonical encoding strings, not the
 // project's kCamelCase constants.
@@ -46,17 +45,67 @@ enum class CommonImageEncoding : uint8_t {
 };
 // NOLINTEND(readability-identifier-naming)
 
-/// Canonical string for an encoding value. Same as
-/// magic_enum::enum_name(e), but kept as a one-liner for callers that
-/// don't want to know about magic_enum.
+/// Canonical string for an encoding value.
 [[nodiscard]] inline constexpr std::string_view name(CommonImageEncoding e) noexcept {
-  return magic_enum::enum_name(e);
+  switch (e) {
+    case CommonImageEncoding::rgb8:
+      return "rgb8";
+    case CommonImageEncoding::rgba8:
+      return "rgba8";
+    case CommonImageEncoding::bgr8:
+      return "bgr8";
+    case CommonImageEncoding::bgra8:
+      return "bgra8";
+    case CommonImageEncoding::mono8:
+      return "mono8";
+    case CommonImageEncoding::mono16:
+      return "mono16";
+    case CommonImageEncoding::jpeg:
+      return "jpeg";
+    case CommonImageEncoding::png:
+      return "png";
+    case CommonImageEncoding::qoi:
+      return "qoi";
+    case CommonImageEncoding::compressedDepth:
+      return "compressedDepth";
+  }
+  return "";
 }
 
 /// Parse an encoding string into the enum. Returns nullopt if the string is
 /// not one of the documented vocabulary entries.
 [[nodiscard]] inline constexpr std::optional<CommonImageEncoding> parseImageEncoding(std::string_view s) noexcept {
-  return magic_enum::enum_cast<CommonImageEncoding>(s);
+  if (s == "rgb8") {
+    return CommonImageEncoding::rgb8;
+  }
+  if (s == "rgba8") {
+    return CommonImageEncoding::rgba8;
+  }
+  if (s == "bgr8") {
+    return CommonImageEncoding::bgr8;
+  }
+  if (s == "bgra8") {
+    return CommonImageEncoding::bgra8;
+  }
+  if (s == "mono8") {
+    return CommonImageEncoding::mono8;
+  }
+  if (s == "mono16") {
+    return CommonImageEncoding::mono16;
+  }
+  if (s == "jpeg") {
+    return CommonImageEncoding::jpeg;
+  }
+  if (s == "png") {
+    return CommonImageEncoding::png;
+  }
+  if (s == "qoi") {
+    return CommonImageEncoding::qoi;
+  }
+  if (s == "compressedDepth") {
+    return CommonImageEncoding::compressedDepth;
+  }
+  return std::nullopt;
 }
 
 /// Image. The `encoding` string distinguishes raw pixel layouts from
