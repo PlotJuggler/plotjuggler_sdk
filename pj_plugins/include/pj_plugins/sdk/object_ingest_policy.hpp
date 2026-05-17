@@ -62,7 +62,6 @@ enum class ObjectIngestPolicy : uint8_t {
 /// Typical setup:
 ///
 ///   resolver.setDefault(kLazyObjectsEagerScalars);
-///   resolver.setForType(BuiltinObjectType::kImage, kPureLazy);
 ///   resolver.setForType(BuiltinObjectType::kPointCloud, kPureLazy);
 ///   // kImage stays at kLazyObjectsEagerScalars: width/height/encoding columns are useful
 ///
