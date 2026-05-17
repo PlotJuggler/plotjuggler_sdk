@@ -2,8 +2,6 @@
 # pj_base — SDK vocabulary types and ABI surface
 # ---------------------------------------------------------------------------
 
-find_package(magic_enum CONFIG REQUIRED)
-
 add_library(pj_base STATIC
   src/builtin/frame_transforms_codec.cpp
   src/builtin/image_annotations_codec.cpp
@@ -21,7 +19,6 @@ set_target_properties(pj_base PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   EXPORT_NAME DataSource
 )
-target_link_libraries(pj_base PUBLIC magic_enum::magic_enum)
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_base PUBLIC PJ_ASSERT_THROWS)
 endif()

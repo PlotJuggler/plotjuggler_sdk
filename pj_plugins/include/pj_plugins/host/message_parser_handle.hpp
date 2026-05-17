@@ -7,11 +7,11 @@
 
 #pragma once
 
-#include <pj_base/builtin/BuiltinObject.h>
 #include <pj_base/builtin_object_abi.h>
 #include <pj_base/message_parser_protocol.h>
 
 #include <cassert>
+#include <pj_base/builtin/BuiltinObject.hpp>
 #include <pj_base/expected.hpp>
 #include <pj_base/sdk/data_source_host_views.hpp>
 #include <pj_base/span.hpp>
