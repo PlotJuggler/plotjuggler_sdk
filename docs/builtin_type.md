@@ -24,6 +24,7 @@ The public headers live under:
 #include <pj_base/builtin/video_frame.hpp>
 #include <pj_base/builtin/asset_video.hpp>
 #include <pj_base/builtin/scene_entities.hpp>
+#include <pj_base/builtin/robot_description.hpp>
 #include <pj_base/builtin/image_annotations.hpp>
 #include <pj_base/builtin/frame_transforms.hpp>
 // Codecs — one per type, all share the canonical PJ.<Type> wire format under pj_base/proto/pj/.
@@ -83,7 +84,7 @@ Builtin objects fall into two serialization families:
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
 | Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
 format contract. One file per top-level message, each named after its message
@@ -118,6 +119,7 @@ annotations, frame transforms, or no builtin object.
 | `kVideoFrame` | `PJ::sdk::VideoFrame` | One frame of an inter-frame-coded video stream (h264/h265/vp9/av1). |
 | `kSceneEntities` | `PJ::sdk::SceneEntities` | Procedural 3D scene primitives (arrows, cubes, lines, text, …). |
 | `kAssetVideo` | `PJ::sdk::AssetVideo` | File-backed video reference plus typed playback metadata. |
+| `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -437,6 +439,41 @@ fields and `pj_base/proto/pj/SceneEntities.proto` for the wire contract.
 `pj_base/builtin/scene_entities_codec.hpp` serializes and deserializes
 this type using the canonical `PJ.SceneEntities` protobuf wire format.
 
+## RobotDescription
+
+`RobotDescription` carries a robot kinematic + visual model as the raw source-
+format text plus a `format` hint string. The SDK does not parse the document;
+downstream consumers (notably the 3D viewer) do the format-specific parsing
+and asset resolution.
+
+Use `RobotDescription` when the message represents a kinematic / visual model
+description: a ROS `/robot_description` topic with `std_msgs/String` payload
+containing URDF XML, an SDF world, an MJCF model, or any future textual robot-
+description format.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Timestamp the description was observed. |
+| `topic` | `std::string` | Source topic name (e.g. `/robot_description`). Empty if not topic-sourced. |
+| `format` | `std::string` | Format hint set by the producer after validation. Examples: `urdf`, `sdf`, `mjcf`. Open-ended like `Image::encoding`. |
+| `text` | `std::string` | Raw source text. Consumers parse according to `format`. |
+
+Design notes:
+
+- **No canonical codec.** The format space is open and growing; embedding a
+  format-specific codec in the SDK would multiply schemas without payoff.
+  Consumers parse the text directly with format-specific libraries (e.g.
+  TinyXML for URDF / SDF / COLLADA, mjcf parsers for MJCF).
+- **No embedded mesh bytes.** URDF/SDF reference meshes via `package://` URIs
+  or relative paths; mesh resolution is consumer-side (search paths, MCAP
+  attachments, sidecar directories). Embedding meshes in the SDK type would
+  force assumptions about that resolution and bloat ObjectStore for the
+  common case of a single robot referenced by thousands of TF samples.
+- **Producer responsibility.** A parser emitting `RobotDescription` should
+  validate the text matches `format` (e.g. for URDF, that the root element is
+  `<robot>`) before emission. Generic `std_msgs/String` payloads on unrelated
+  topics should not surface as RobotDescription.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -452,6 +489,8 @@ this type using the canonical `PJ.SceneEntities` protobuf wire format.
 | MP4 / MKV / AV1 dataset file | `AssetVideo` | Push once per topic with the file path and metadata; consumers seek into the file by tracker time. |
 | Detection or tracking message | `ImageAnnotations` | Convert boxes, points, circles, and labels into pixel-space primitives. |
 | ROS `tf2_msgs/TFMessage` | `FrameTransforms` | Convert transform batches into named parent/child frame relationships. |
+| ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
+| ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
 
 The builtin type is the boundary object. After conversion, consumers should not
 need to know which third-party schema produced it.

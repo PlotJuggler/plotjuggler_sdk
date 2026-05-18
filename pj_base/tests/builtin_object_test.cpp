@@ -18,6 +18,7 @@ using PJ::sdk::name;
 using PJ::sdk::OccupancyGrid;
 using PJ::sdk::parseBuiltinObjectType;
 using PJ::sdk::PointCloud;
+using PJ::sdk::RobotDescription;
 using PJ::sdk::SceneEntities;
 using PJ::sdk::typeOf;
 using PJ::sdk::VideoFrame;
@@ -35,6 +36,7 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{VideoFrame{}}), BuiltinObjectType::kVideoFrame);
   EXPECT_EQ(typeOf(BuiltinObject{SceneEntities{}}), BuiltinObjectType::kSceneEntities);
   EXPECT_EQ(typeOf(BuiltinObject{AssetVideo{}}), BuiltinObjectType::kAssetVideo);
+  EXPECT_EQ(typeOf(BuiltinObject{RobotDescription{}}), BuiltinObjectType::kRobotDescription);
 }
 
 TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
@@ -51,6 +53,7 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kVideoFrame,
            BuiltinObjectType::kSceneEntities,
            BuiltinObjectType::kAssetVideo,
+           BuiltinObjectType::kRobotDescription,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);
@@ -62,4 +65,31 @@ TEST(BuiltinObjectTest, ParseRejectsUnknownNames) {
   EXPECT_FALSE(parseBuiltinObjectType("FrameTransforms").has_value());  // missing leading 'k'
   EXPECT_FALSE(parseBuiltinObjectType("").has_value());
   EXPECT_FALSE(parseBuiltinObjectType("kBogus").has_value());
+}
+
+TEST(BuiltinObjectTest, ParsesRobotDescriptionTypeName) {
+  EXPECT_EQ(parseBuiltinObjectType("kRobotDescription"), BuiltinObjectType::kRobotDescription);
+  EXPECT_FALSE(parseBuiltinObjectType("RobotDescription").has_value());
+}
+
+TEST(BuiltinObjectTest, RobotDescriptionRoundtripPreservesFields) {
+  RobotDescription in{
+      .timestamp_ns = 1'500'000'000,
+      .topic = "/robot_description",
+      .format = "urdf",
+      .text = "<robot name=\"test\"><link name=\"base_link\"/></robot>",
+  };
+  BuiltinObject obj{in};
+  ASSERT_EQ(typeOf(obj), BuiltinObjectType::kRobotDescription);
+
+  const auto* out = std::any_cast<RobotDescription>(&obj);
+  ASSERT_NE(out, nullptr);
+  EXPECT_EQ(out->timestamp_ns, in.timestamp_ns);
+  EXPECT_EQ(out->topic, in.topic);
+  EXPECT_EQ(out->format, in.format);
+  EXPECT_EQ(out->text, in.text);
+  EXPECT_FALSE(out->empty());
+
+  RobotDescription empty;
+  EXPECT_TRUE(empty.empty());
 }

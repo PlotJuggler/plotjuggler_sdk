@@ -35,6 +35,7 @@
 #include "pj_base/builtin/mesh3d.hpp"
 #include "pj_base/builtin/occupancy_grid.hpp"
 #include "pj_base/builtin/point_cloud.hpp"
+#include "pj_base/builtin/robot_description.hpp"
 #include "pj_base/builtin/scene_entities.hpp"
 #include "pj_base/builtin/video_frame.hpp"
 
@@ -54,6 +55,7 @@ enum class BuiltinObjectType : uint16_t {
   kVideoFrame = 10,           ///< sdk::VideoFrame — single frame of h264/h265/vp9/av1 stream.
   kSceneEntities = 11,        ///< sdk::SceneEntities — procedural 3D scene primitives.
   kAssetVideo = 12,           ///< sdk::AssetVideo — file-backed video reference + playback metadata.
+  kRobotDescription = 13,     ///< sdk::RobotDescription — raw URDF/SDF/MJCF text + format hint.
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -90,6 +92,8 @@ struct SchemaClassification {
       return "kSceneEntities";
     case BuiltinObjectType::kAssetVideo:
       return "kAssetVideo";
+    case BuiltinObjectType::kRobotDescription:
+      return "kRobotDescription";
   }
   return "kNone";
 }
@@ -132,6 +136,9 @@ struct SchemaClassification {
   }
   if (s == "kAssetVideo") {
     return BuiltinObjectType::kAssetVideo;
+  }
+  if (s == "kRobotDescription") {
+    return BuiltinObjectType::kRobotDescription;
   }
   return std::nullopt;
 }
@@ -178,6 +185,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(AssetVideo)) {
     return BuiltinObjectType::kAssetVideo;
+  }
+  if (t == typeid(RobotDescription)) {
+    return BuiltinObjectType::kRobotDescription;
   }
   return BuiltinObjectType::kNone;
 }
