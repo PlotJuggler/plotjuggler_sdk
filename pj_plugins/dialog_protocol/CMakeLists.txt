@@ -16,6 +16,10 @@ find_package(nlohmann_json REQUIRED)
 
 add_library(pj_dialog_sdk INTERFACE)
 target_compile_features(pj_dialog_sdk INTERFACE cxx_std_17)
+# PJ_DIALOG_PLUGIN's variadic overload needs conformant __VA_ARGS__ expansion on MSVC.
+target_compile_options(pj_dialog_sdk INTERFACE
+  $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:preprocessor>
+)
 target_link_libraries(pj_dialog_sdk INTERFACE pj_dialog_protocol nlohmann_json::nlohmann_json)
 target_include_directories(pj_dialog_sdk INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
