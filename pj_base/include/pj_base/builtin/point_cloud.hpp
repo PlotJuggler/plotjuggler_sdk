@@ -1,5 +1,5 @@
 /**
- * @file PointCloud.h
+ * @file point_cloud.hpp
  * @brief Packed point cloud with per-channel field layout.
  */
 // Copyright 2026 Davide Faconti
@@ -71,6 +71,7 @@ struct PointCloud {
   uint32_t row_step = 0;    ///< Bytes per row (= point_step * width when no padding).
   bool is_bigendian = false;
   bool is_dense = true;
+  std::string frame_id;  ///< Source coordinate frame; required for 3D TF resolution.
   std::vector<PointField> fields;
   Span<const uint8_t> data;
   BufferAnchor anchor;

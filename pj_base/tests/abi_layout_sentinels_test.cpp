@@ -101,7 +101,19 @@ static_assert(PJ_TOOLBOX_MIN_VTABLE_SIZE <= sizeof(PJ_toolbox_vtable_t), "MIN mu
 // Public ABI types crossing the boundary for the v4 builtin-object pipeline.
 // Sizes and offsets are pinned; any change is a deliberate ABI revision.
 static_assert(sizeof(PJ_builtin_object_type_t) == 4, "enum layout pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_NONE == 0, "None type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_IMAGE == 1, "Image type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD == 3, "PointCloud type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_DEPTH_IMAGE == 4, "DepthImage type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_IMAGE_ANNOTATIONS == 5, "ImageAnnotations type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_FRAME_TRANSFORMS == 6, "FrameTransforms type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID == 7, "OccupancyGrid type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_COMPRESSED_POINTCLOUD == 8, "CompressedPointCloud type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_MESH3D == 9, "Mesh3D type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_VIDEO_FRAME == 10, "VideoFrame type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_SCENE_ENTITIES == 11, "SceneEntities type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_ASSET_VIDEO == 12, "AssetVideo type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_ROBOT_DESCRIPTION == 13, "RobotDescription type id pinned");
 static_assert(sizeof(PJ_schema_classification_t) == 4, "PJ_schema_classification_t layout pinned");
 static_assert(offsetof(PJ_schema_classification_t, object_type) == 0, "object_type at offset 0");
 static_assert(offsetof(PJ_schema_classification_t, reserved) == 2, "reserved at offset 2");

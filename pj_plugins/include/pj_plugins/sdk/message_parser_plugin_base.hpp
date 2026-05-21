@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "pj_base/builtin/BuiltinObject.hpp"
+#include "pj_base/builtin/builtin_object.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/plugin_abi_export.hpp"

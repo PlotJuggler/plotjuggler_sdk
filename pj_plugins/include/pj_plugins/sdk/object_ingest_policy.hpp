@@ -20,7 +20,7 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "pj_base/builtin/BuiltinObject.hpp"
+#include "pj_base/builtin/builtin_object.hpp"
 
 namespace PJ {
 namespace sdk {

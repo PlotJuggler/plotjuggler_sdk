@@ -1,0 +1,42 @@
+// PlotJuggler canonical asset video protobuf schema.
+// File-backed video reference + playback metadata.
+
+syntax = "proto3";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A reference to a file-backed video, plus typed metadata sufficient for consumers to size playback windows and route
+// to a decoder without opening the file. Producers (e.g. data_load_lerobot, data_load_mp4) push exactly one
+// AssetVideo per topic, with the entry's ObjectStore timestamp equal to `time_origin` (so timeRange() of the topic
+// naturally reflects the start instant).
+message AssetVideo {
+  // Wall-clock instant of the first frame. Consumers subtract this from the global tracker time to derive the
+  // file-relative seek position. Required: an absent time_origin is treated as "this asset is not aligned to wall
+  // clock" and the asset will not advance with the tracker.
+  google.protobuf.Timestamp time_origin = 1;
+
+  // Total playable duration of the video. Producers should set this when known (FFmpeg probe at registration is
+  // cheap). Consumers may fall back to probing the file if absent. Optional.
+  optional google.protobuf.Duration duration = 2;
+
+  // Path to the video file. Resolution is consumer-side: producers should emit either an absolute path or a path
+  // relative to a consumer-known root (the dataset directory in LeRobot's case). Required.
+  string file_path = 3;
+
+  // Codec / container hint as a MIME type — e.g. "video/mp4", "video/x-matroska", "video/av1". Open-ended like
+  // Image.encoding so new formats land without an SDK bump. Consumers route to the matching decoder backend. Empty
+  // string means "probe the file".
+  string media_type = 4;
+
+  // Pixel dimensions. Zero in either field means "unknown — probe the file". Producers should populate when known
+  // (LeRobot dataset manifests carry these explicitly).
+  uint32 width = 5;
+  uint32 height = 6;
+
+  // Nominal frame rate in frames per second. Zero or NaN means "unknown — probe the file". For variable-frame-rate
+  // video this is an advisory average; actual per-frame timestamps come from the decoder.
+  double frame_rate = 7;
+}

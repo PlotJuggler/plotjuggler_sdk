@@ -1,0 +1,43 @@
+// PlotJuggler canonical video frame protobuf schema.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A single frame of a compressed video stream. Unlike `Image`, a video frame may have inter-frame dependencies
+// (P-frames, B-frames), so consumers must maintain decoder state across frames within a stream.
+//
+// Each frame's `data` must contain enough bitstream to decode exactly one frame given prior stream state.
+// Format-specific packaging requirements:
+//
+//   "h264": Annex B byte stream. IDR (instantaneous decoder refresh) frames must carry SPS and PPS. B-frames are not
+//   supported (the encoder must be configured for low-latency / no-B-frame output).
+//
+//   "h265": Annex B byte stream. IRAP (intra random access point) frames must carry VPS, SPS, and PPS. B-frames are not
+//   supported.
+//
+//   "vp9": a single VP9 frame.
+//
+//   "av1": Low Overhead Bitstream Format (LOBF), a single temporal unit.
+//
+// On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor` that keeps the underlying
+// allocation alive (same byte-backed view pattern as Image, DepthImage, and PointCloud). The anchor is a C++ lifetime
+// concept with no wire-format equivalent.
+message VideoFrame {
+  // Timestamp of the frame
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Frame of reference for the camera. The video plane is centered on the optical axis: +x right, +y down, +z away from
+  // the camera (into the scene).
+  string frame_id = 2;
+
+  // Codec identifier, lowercase. Recognized values: "h264", "h265", "vp9", "av1".
+  string format = 3;
+
+  // Compressed bitstream containing exactly one frame given prior stream state.
+  bytes data = 4;
+}

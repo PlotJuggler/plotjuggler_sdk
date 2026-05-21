@@ -1,5 +1,5 @@
 /**
- * @file ImageAnnotations.h
+ * @file image_annotations.hpp
  * @brief Vector primitives (points, lines, circles, text) overlaid on a
  *        specific image at a specific timestamp.
  *

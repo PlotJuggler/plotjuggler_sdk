@@ -21,3 +21,10 @@ AlignAfterOpenBracket: AlwaysBreak
 AllowShortBlocksOnASingleLine: Empty
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
+
+---
+# Same column limit and indent as C++ for the protobuf schemas under pj_base/proto/.
+Language: Proto
+BasedOnStyle: Google
+ColumnLimit: 120
+IndentWidth: 2

@@ -14,12 +14,29 @@ image message schema can both become `PJ::sdk::Image`; a ROS
 The public headers live under:
 
 ```cpp
-#include <pj_base/builtin/BuiltinObject.hpp>
-#include <pj_base/builtin/Image.hpp>
-#include <pj_base/builtin/DepthImage.hpp>
-#include <pj_base/builtin/PointCloud.hpp>
-#include <pj_base/builtin/ImageAnnotations.hpp>
-#include <pj_base/builtin/FrameTransforms.hpp>
+#include <pj_base/builtin/builtin_object.hpp>
+#include <pj_base/builtin/image.hpp>
+#include <pj_base/builtin/depth_image.hpp>
+#include <pj_base/builtin/point_cloud.hpp>
+#include <pj_base/builtin/compressed_point_cloud.hpp>
+#include <pj_base/builtin/occupancy_grid.hpp>
+#include <pj_base/builtin/mesh3d.hpp>
+#include <pj_base/builtin/video_frame.hpp>
+#include <pj_base/builtin/asset_video.hpp>
+#include <pj_base/builtin/scene_entities.hpp>
+#include <pj_base/builtin/robot_description.hpp>
+#include <pj_base/builtin/image_annotations.hpp>
+#include <pj_base/builtin/frame_transforms.hpp>
+// Codecs — one per type, all share the canonical PJ.<Type> wire format under pj_base/proto/pj/.
+#include <pj_base/builtin/image_codec.hpp>
+#include <pj_base/builtin/depth_image_codec.hpp>
+#include <pj_base/builtin/point_cloud_codec.hpp>
+#include <pj_base/builtin/compressed_point_cloud_codec.hpp>
+#include <pj_base/builtin/occupancy_grid_codec.hpp>
+#include <pj_base/builtin/mesh3d_codec.hpp>
+#include <pj_base/builtin/video_frame_codec.hpp>
+#include <pj_base/builtin/asset_video_codec.hpp>
+#include <pj_base/builtin/scene_entities_codec.hpp>
 #include <pj_base/builtin/image_annotations_codec.hpp>
 #include <pj_base/builtin/frame_transforms_codec.hpp>
 ```
@@ -66,14 +83,16 @@ Builtin objects fall into two serialization families:
 
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
-| Byte-backed views | `Image`, `DepthImage`, `PointCloud` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`, `FrameTransforms`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. |
+| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
-format contract. `PJ.ImageAnnotations` describes the annotation codec payload.
-`PJ.FrameTransforms` describes the transform codec payload. Shared geometry
-primitives are grouped in `Geometry.proto`: `Point2`, `Point3`, `Vector2`,
-`Vector3`, and `Quaternion`.
+format contract. One file per top-level message, each named after its message
+(`Image.proto`, `SceneEntities.proto`, `FrameTransforms.proto`, …). Shared
+geometry primitives are grouped in `Geometry.proto`: `Point2`, `Point3`,
+`Vector2`, `Vector3`, `Quaternion`, and `Pose`. See
+[`pj_base/proto/pj/README.md`](../pj_base/proto/pj/README.md) for the family
+grouping (raster, point-cloud, scene, 2D annotation, …).
 
 The codecs do not expose generated Protobuf types in public SDK headers. The
 current implementation does not require generated Protobuf code or a Protobuf
@@ -94,6 +113,13 @@ annotations, frame transforms, or no builtin object.
 | `kDepthImage` | `PJ::sdk::DepthImage` | Depth pixels plus camera intrinsics. |
 | `kImageAnnotations` | `PJ::sdk::ImageAnnotations` | Pixel-space overlay primitives. |
 | `kFrameTransforms` | `PJ::sdk::FrameTransforms` | Named 3D frame relationships. |
+| `kOccupancyGrid` | `PJ::sdk::OccupancyGrid` | 2D metric occupancy grid (maps, costmaps) in world coordinates. |
+| `kCompressedPointCloud` | `PJ::sdk::CompressedPointCloud` | Point cloud delivered in a format-specific compressed binary (e.g. Draco). |
+| `kMesh3D` | `PJ::sdk::Mesh3D` | 3D mesh asset in its native binary format (GLTF/GLB/STL/PLY/OBJ/USD/DAE). |
+| `kVideoFrame` | `PJ::sdk::VideoFrame` | One frame of an inter-frame-coded video stream (h264/h265/vp9/av1). |
+| `kSceneEntities` | `PJ::sdk::SceneEntities` | Procedural 3D scene primitives (arrows, cubes, lines, text, …). |
+| `kAssetVideo` | `PJ::sdk::AssetVideo` | File-backed video reference plus typed playback metadata. |
+| `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -182,6 +208,7 @@ or any source that produces a packed point buffer.
 | `row_step` | `uint32_t` | Bytes per row. Usually `point_step * width` when tightly packed. |
 | `is_bigendian` | `bool` | Whether packed field values are big-endian. |
 | `is_dense` | `bool` | `false` when some points may be invalid, typically NaN-filled. |
+| `frame_id` | `std::string` | Source coordinate frame for the points; needed by 3D consumers to resolve TF to a fixed frame. |
 | `fields` | `std::vector<PointField>` | Channel layout for each point. |
 | `data` | `Span<const uint8_t>` | Packed point bytes. |
 | `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |
@@ -263,6 +290,191 @@ Each `FrameTransform` contains:
 `pj_base/builtin/frame_transforms_codec.hpp` serializes and deserializes this type
 using the canonical `PJ.FrameTransforms` protobuf wire format.
 
+## OccupancyGrid
+
+`OccupancyGrid` is a 2D metric occupancy grid placed in world coordinates. It
+covers ROS-style nav maps, costmaps, and any rasterized 2D probability /
+cost layer with a metric resolution and world placement.
+
+Use `OccupancyGrid` when the value is a regular 2D grid whose cells carry
+8-bit signed occupancy (`-1` unknown, `0..100` percent occupied). Frame
+graph navigation builtins use this rather than `Image` because the
+renderer cares about cell-to-world placement, not pixel layout.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Timestamp associated with the map. |
+| `frame_id` | `std::string` | Frame in which `origin` is expressed. |
+| `origin` | `Pose` | World pose of cell (0, 0). The grid lies in `origin`'s local xy-plane. |
+| `resolution` | `double` | Cell size in meters (square cells). |
+| `width` | `uint32_t` | Number of columns (cells along x). |
+| `height` | `uint32_t` | Number of rows (cells along y). |
+| `data` | `Span<const uint8_t>` | Row-major cell bytes; size must equal `width * height`. |
+| `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |
+
+`pj_base/builtin/occupancy_grid_codec.hpp` serializes and deserializes this
+type using the canonical `PJ.OccupancyGrid` protobuf wire format.
+
+## CompressedPointCloud
+
+`CompressedPointCloud` carries a point cloud delivered in a format-specific
+compressed binary (e.g. Draco). It is distinct from `PointCloud` because
+the wire layout is opaque to PlotJuggler — `data` plus `format` must be
+handed to the matching decoder library, which produces a decompressed
+point set on the host side. Same reasoning that separates `VideoFrame`
+from `Image`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Timestamp associated with the cloud. |
+| `frame_id` | `std::string` | Frame in which the cloud is expressed once decoded. |
+| `format` | `std::string` | Codec identifier, lowercase. Recognized values include `"draco"`. |
+| `data` | `Span<const uint8_t>` | Compressed payload bytes. |
+| `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |
+
+`pj_base/builtin/compressed_point_cloud_codec.hpp` serializes and deserializes
+this type using the canonical `PJ.CompressedPointCloud` wire format.
+
+## Mesh3D
+
+`Mesh3D` references a 3D mesh asset delivered in its native binary format.
+The renderer hands `data` + `format` (or the contents at `url`) to a
+mesh-loader library (Assimp, tinygltf, …); PlotJuggler does not parse the
+asset itself. Distinct from `SceneEntities`'s `TrianglePrimitive` because
+asset formats can carry richer scene content — materials, textures,
+skinning, animations — that is not expressible as raw triangle soup.
+
+Asset source: exactly one of `data` (with `anchor` keeping the bytes
+alive) or `url` should be populated. When `data` is used, `format` is
+required; when `url` is used, `format` may be inferred from the file
+extension.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Timestamp associated with the asset. |
+| `frame_id` | `std::string` | Frame in which `pose` is expressed. |
+| `id` | `std::string` | Republishing with the same id replaces the previous entry on the topic. |
+| `pose` | `Pose` | Placement of the asset's local origin in `frame_id`. |
+| `scale` | `Vector3` | Per-axis scale factor. Defaults to `(1, 1, 1)`. |
+| `format` | `std::string` | `"gltf"`, `"glb"`, `"stl"`, `"ply"`, `"obj"`, `"usd"`, `"dae"`. |
+| `data` | `Span<const uint8_t>` | Embedded asset bytes; non-empty implies `format` is required. |
+| `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |
+| `url` | `std::string` | External URL to the asset; used when `data` is empty. |
+| `color` | `ColorRGBA` | Applied when `override_color` is true. |
+| `override_color` | `bool` | When true, ignore embedded material color and tint with `color`. |
+
+`pj_base/builtin/mesh3d_codec.hpp` serializes and deserializes this type
+using the canonical `PJ.Mesh3D` protobuf wire format.
+
+## VideoFrame
+
+`VideoFrame` carries a single frame of a compressed video stream
+(h264/h265/vp9/av1) when per-frame `Image` payloads would be wasteful.
+Unlike `Image`, a video frame may have inter-frame dependencies
+(P-frames, B-frames, etc.); consumers must maintain decoder state across
+frames within a stream.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Frame presentation timestamp. |
+| `frame_id` | `std::string` | Camera frame. Optical axis: `+x` right, `+y` down, `+z` into scene. |
+| `format` | `std::string` | Codec identifier, lowercase. `"h264"`, `"h265"`, `"vp9"`, `"av1"`. |
+| `data` | `Span<const uint8_t>` | Bitstream bytes for this frame. |
+| `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |
+
+`pj_base/builtin/video_frame_codec.hpp` serializes and deserializes this
+type using the canonical `PJ.VideoFrame` protobuf wire format.
+
+## AssetVideo
+
+`AssetVideo` is the entry-point handle for video assets ingested by data
+loaders that point at an external media file — LeRobot datasets, MP4
+loaders, and similar. Producers push exactly one `AssetVideo` per topic;
+the ObjectStore timestamp of that entry equals `time_origin_ns` so
+timeline UIs naturally see the asset's start instant.
+
+Unlike `VideoFrame` (a single frame of a streamed payload), `AssetVideo`
+carries no pixel data — it references the file by path and surfaces
+decode-routing metadata (media type, dimensions, frame rate) without
+forcing the consumer to open the file just to size a playback window.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `time_origin_ns` | `std::optional<Timestamp>` | Wall-clock instant of the first frame. Absent means the asset is not aligned to wall clock. |
+| `duration_ns` | `std::optional<int64_t>` | Total playable duration. Absent means probe the file. |
+| `file_path` | `std::string` | Absolute path or path relative to a consumer-known root. |
+| `media_type` | `std::string` | MIME type hint. Empty means probe the file. |
+| `width` | `uint32_t` | Pixel width. `0` means unknown. |
+| `height` | `uint32_t` | Pixel height. `0` means unknown. |
+| `frame_rate` | `double` | Nominal FPS. `0` or NaN means unknown. |
+
+`pj_base/builtin/asset_video_codec.hpp` serializes and deserializes this
+type using the canonical `PJ.AssetVideo` protobuf wire format.
+
+## SceneEntities
+
+`SceneEntities` is the workhorse for marker-style 3D visualization — the
+equivalent of ROS's `visualization_msgs/MarkerArray`. A `SceneEntity`
+bundles heterogeneous primitives sharing a `frame_id` and timestamp;
+`SceneEntities` is the batch container shipped on a topic.
+
+Use `SceneEntities` when the value is procedural 3D scene content
+expressible as a small set of primitives: arrows, cubes, spheres,
+cylinders, line strips/loops/lists, triangles, text labels, or coordinate
+axes glyphs.
+
+| Field on `SceneEntity` | Type | Notes |
+|------------------------|------|-------|
+| `timestamp` | `Timestamp` | Stamp used together with `lifetime_ns` to control expiry. |
+| `frame_id` | `std::string` | Frame the entity's primitives are expressed in. |
+| `id` | `std::string` | Republishing with the same `(topic, id)` replaces the previous entity. |
+| `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp`. |
+| `frame_locked` | `bool` | When true, track `frame_id` as it moves; when false, stamp into the fixed frame at publish time. |
+| `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` | `std::vector<…Primitive>` | Heterogeneous primitive lists. |
+
+Each primitive carries its own `Pose`, geometry-specific size or shape
+fields, and color (or per-vertex colors, where applicable). See
+`pj_base/include/pj_base/builtin/scene_entities.hpp` for the per-primitive
+fields and `pj_base/proto/pj/SceneEntities.proto` for the wire contract.
+
+`pj_base/builtin/scene_entities_codec.hpp` serializes and deserializes
+this type using the canonical `PJ.SceneEntities` protobuf wire format.
+
+## RobotDescription
+
+`RobotDescription` carries a robot kinematic + visual model as the raw source-
+format text plus a `format` hint string. The SDK does not parse the document;
+downstream consumers (notably the 3D viewer) do the format-specific parsing
+and asset resolution.
+
+Use `RobotDescription` when the message represents a kinematic / visual model
+description: a ROS `/robot_description` topic with `std_msgs/String` payload
+containing URDF XML, an SDF world, an MJCF model, or any future textual robot-
+description format.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Timestamp the description was observed. |
+| `topic` | `std::string` | Source topic name (e.g. `/robot_description`). Empty if not topic-sourced. |
+| `format` | `std::string` | Format hint set by the producer after validation. Examples: `urdf`, `sdf`, `mjcf`. Open-ended like `Image::encoding`. |
+| `text` | `std::string` | Raw source text. Consumers parse according to `format`. |
+
+Design notes:
+
+- **No canonical codec.** The format space is open and growing; embedding a
+  format-specific codec in the SDK would multiply schemas without payoff.
+  Consumers parse the text directly with format-specific libraries (e.g.
+  TinyXML for URDF / SDF / COLLADA, mjcf parsers for MJCF).
+- **No embedded mesh bytes.** URDF/SDF reference meshes via `package://` URIs
+  or relative paths; mesh resolution is consumer-side (search paths, MCAP
+  attachments, sidecar directories). Embedding meshes in the SDK type would
+  force assumptions about that resolution and bloat ObjectStore for the
+  common case of a single robot referenced by thousands of TF samples.
+- **Producer responsibility.** A parser emitting `RobotDescription` should
+  validate the text matches `format` (e.g. for URDF, that the root element is
+  `<robot>`) before emission. Generic `std_msgs/String` payloads on unrelated
+  topics should not surface as RobotDescription.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -270,8 +482,16 @@ using the canonical `PJ.FrameTransforms` protobuf wire format.
 | ROS `sensor_msgs/Image` | `Image` or `DepthImage` | Choose `DepthImage` when the semantic value is metric depth; otherwise use `Image`. |
 | ROS `sensor_msgs/CompressedImage` | `Image` | Preserve compressed bytes and set `encoding` to the codec. |
 | ROS `sensor_msgs/PointCloud2` | `PointCloud` | Map point fields, strides, density, endianness, and packed bytes. |
+| Draco-compressed cloud | `CompressedPointCloud` | Forward the opaque blob plus `"draco"` format; decoding happens on the host. |
+| ROS `nav_msgs/OccupancyGrid` | `OccupancyGrid` | Map metadata (resolution, origin) into the struct; keep cell bytes zero-copy. |
+| URDF / `visualization_msgs/Marker` mesh resource | `Mesh3D` | Embed `data` (with `format`) or point at `url`; preserve `pose` and `scale`. |
+| ROS `nav_msgs/Path`, marker arrays | `SceneEntities` | Map polylines to `LinePrimitive`, arrows to `ArrowPrimitive`, etc. |
+| H.264/H.265/VP9/AV1 stream frame | `VideoFrame` | Forward one frame's bitstream bytes plus the codec identifier. |
+| MP4 / MKV / AV1 dataset file | `AssetVideo` | Push once per topic with the file path and metadata; consumers seek into the file by tracker time. |
 | Detection or tracking message | `ImageAnnotations` | Convert boxes, points, circles, and labels into pixel-space primitives. |
 | ROS `tf2_msgs/TFMessage` | `FrameTransforms` | Convert transform batches into named parent/child frame relationships. |
+| ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
+| ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
 
 The builtin type is the boundary object. After conversion, consumers should not
 need to know which third-party schema produced it.

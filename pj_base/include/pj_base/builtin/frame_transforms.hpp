@@ -1,5 +1,5 @@
 /**
- * @file FrameTransforms.h
+ * @file frame_transforms.hpp
  * @brief Time-stamped 3D transforms between named reference frames.
  *
  * FrameTransforms is a small owned builtin for TF-style frame relationships.
@@ -33,6 +33,15 @@ struct Quaternion {
   double z = 0.0;
   double w = 1.0;
   bool operator==(const Quaternion&) const = default;
+};
+
+/// Rigid transform in 3D space: position + orientation.
+/// Used by Mesh3D, OccupancyGrid, SceneEntities, and other types that
+/// place data in a frame of reference.
+struct Pose {
+  Vector3 position;
+  Quaternion orientation;
+  bool operator==(const Pose&) const = default;
 };
 
 /// Transform from `parent_frame_id` to `child_frame_id`.

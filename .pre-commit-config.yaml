@@ -17,6 +17,7 @@ repos:
       - id: check-xml
       - id: check-yaml
         exclude: .gitlab-ci.yml
+        args: ['--allow-multiple-documents']
       - id: debug-statements
       - id: end-of-file-fixer
         exclude_types: [svg]
@@ -30,5 +31,5 @@ repos:
     rev: v22.1.0
     hooks:
       - id: clang-format
-        types_or: [c++, c]
+        types_or: [c++, c, proto]
         args: ['-fallback-style=none', '-i']

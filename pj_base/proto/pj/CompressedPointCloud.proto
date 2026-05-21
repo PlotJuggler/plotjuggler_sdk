@@ -1,0 +1,33 @@
+// PlotJuggler canonical compressed point cloud protobuf schema.
+// Follows the opaque-asset pattern shared with VideoFrame and Mesh3D.
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A point cloud delivered in a compressed binary format. Unlike `PointCloud`, the wire layout is opaque to PlotJuggler
+// — the renderer hands `data` + `format` to the matching decoder library, which produces a decompressed point set on
+// the host side.
+//
+// This type is distinct from `PointCloud` because per-format decoders carry their own attribute table and layout
+// semantics (e.g. Draco encodes its own metadata). This is the same reasoning that separates `VideoFrame` from `Image`:
+// stream / asset decoding is a different code path from uncompressed handling.
+//
+// On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor` (same byte-backed view pattern as
+// Image, DepthImage, PointCloud, VideoFrame, and Mesh3D). The anchor is a C++ lifetime concept with no wire-format
+// equivalent.
+message CompressedPointCloud {
+  // Timestamp associated with the point cloud
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Frame of reference for the point cloud
+  string frame_id = 2;
+
+  // Format identifier, lowercase. Recognized values include "draco".
+  string format = 3;
+
+  // Compressed payload bytes
+  bytes data = 4;
+}

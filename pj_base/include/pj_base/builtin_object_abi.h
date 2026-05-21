@@ -7,14 +7,14 @@
  * produce for that schema. The parser returns a PJ_schema_classification_t
  * carrying a PJ_builtin_object_type_t.
  *
- * Canonical-object production (sdk::Image / sdk::DepthImage /
- * sdk::PointCloud / sdk::ImageAnnotations / sdk::FrameTransforms) and the
- * pure-functional scalar production (Expected<vector<NamedFieldValue>>) are C++ SDK contracts: plugins
- * inheriting from MessageParserPluginBase register handlers in
- * SchemaHandler, and the in-process host consumes them via
- * MessageParserPluginBase::parseObject() and parseScalars() called
- * directly on the C++ pointer. Pure-C plugins emit scalars via the
- * parse() slot (writing to writeHost).
+ * Canonical-object production (any concrete sdk::* type listed in
+ * BuiltinObjectType — see pj_base/builtin/builtin_object.hpp) and the
+ * pure-functional scalar production (Expected<vector<NamedFieldValue>>)
+ * are C++ SDK contracts: plugins inheriting from MessageParserPluginBase
+ * register handlers in SchemaHandler, and the in-process host consumes
+ * them via MessageParserPluginBase::parseObject() and parseScalars()
+ * called directly on the C++ pointer. Pure-C plugins emit scalars via
+ * the parse() slot (writing to writeHost).
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MIT
@@ -41,12 +41,21 @@ extern "C" {
 typedef enum PJ_builtin_object_type_t {
   PJ_BUILTIN_OBJECT_TYPE_NONE = 0,
   PJ_BUILTIN_OBJECT_TYPE_IMAGE = 1,
+  /* 2 reserved — never used historically. */
   PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD = 3,
   PJ_BUILTIN_OBJECT_TYPE_DEPTH_IMAGE = 4,
   PJ_BUILTIN_OBJECT_TYPE_IMAGE_ANNOTATIONS = 5,
   PJ_BUILTIN_OBJECT_TYPE_FRAME_TRANSFORMS = 6,
-  /* Reserve future types; appended at the tail. */
-  /* PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID  = 7, */
+  PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID = 7,
+  PJ_BUILTIN_OBJECT_TYPE_COMPRESSED_POINTCLOUD = 8,
+  PJ_BUILTIN_OBJECT_TYPE_MESH3D = 9,
+  PJ_BUILTIN_OBJECT_TYPE_VIDEO_FRAME = 10,
+  PJ_BUILTIN_OBJECT_TYPE_SCENE_ENTITIES = 11,
+  PJ_BUILTIN_OBJECT_TYPE_ASSET_VIDEO = 12,
+  PJ_BUILTIN_OBJECT_TYPE_ROBOT_DESCRIPTION = 13,
+  /* Reserve future types; appended at the tail. Numeric values are stable
+   * across releases — never renumber. Each new value here must match the
+   * matching kFoo entry in BuiltinObjectType (builtin_object.hpp). */
 } PJ_builtin_object_type_t;
 
 /**

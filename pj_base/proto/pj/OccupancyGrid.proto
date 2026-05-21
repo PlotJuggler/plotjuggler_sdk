@@ -1,0 +1,47 @@
+// PlotJuggler canonical occupancy grid protobuf schema.
+// Wire-level contract for the byte-backed `OccupancyGrid` builtin
+// (SDK struct lives in pj_base/include/pj_base/builtin/OccupancyGrid.hpp
+// once implemented).
+
+syntax = "proto3";
+
+import "pj/Geometry.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A 2D metric occupancy grid. The grid lies in the local xy-plane of `origin`, with cell (0, 0) at the origin's
+// translation.
+//
+// Cell values are signed 8-bit integers stored row-major in `data`:
+//   -1     = unknown / no data
+//   0..100 = probability of occupied, in percent
+//   Other values are reserved.
+//
+// The cell at row r and column c sits at world position `origin + (c * resolution, r * resolution, 0)` expressed in
+// `frame_id`. `data.size()` must equal `width * height`.
+//
+// On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor` (same byte-backed view pattern as
+// Image, DepthImage, and PointCloud). The anchor is a C++ lifetime concept with no wire-format equivalent.
+message OccupancyGrid {
+  // Timestamp of the grid
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Frame of reference for the grid placement
+  string frame_id = 2;
+
+  // Pose of cell (0, 0) in `frame_id`. The grid lies in the local xy-plane of this pose.
+  PJ.Pose origin = 3;
+
+  // Cell size in meters. Cells are square: the same spacing applies along both x and y.
+  double resolution = 4;
+
+  // Number of columns (cells along the local x axis)
+  uint32 width = 5;
+
+  // Number of rows (cells along the local y axis)
+  uint32 height = 6;
+
+  // Row-major signed 8-bit cell values. `data.size()` must equal `width * height`.
+  bytes data = 7;
+}

@@ -1,0 +1,243 @@
+// PlotJuggler canonical scene primitive and scene entity protobuf schemas.
+// Field layout adapted from Foxglove SDK schemas (MIT License, Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+import "pj/Color.proto";
+import "pj/Geometry.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// An arrow primitive in a 3D scene. The arrow's tail sits at pose.position; with identity orientation, the arrow
+// points along the local +x axis.
+message ArrowPrimitive {
+  // Position of the tail and orientation of the arrow. Identity orientation means the arrow points along +x.
+  PJ.Pose pose = 1;
+
+  // Length of the arrow shaft
+  double shaft_length = 2;
+
+  // Diameter of the arrow shaft
+  double shaft_diameter = 3;
+
+  // Length of the arrow head
+  double head_length = 4;
+
+  // Diameter of the arrow head
+  double head_diameter = 5;
+
+  // Color of the arrow
+  PJ.Color color = 6;
+}
+
+// A cuboid primitive in a 3D scene. Centered at pose.position with extents `size` along each local axis (non-uniform
+// `size` yields a rectangular prism).
+message CubePrimitive {
+  // Center pose of the cuboid
+  PJ.Pose pose = 1;
+
+  // Size of the cuboid along its local x, y, and z axes
+  PJ.Vector3 size = 2;
+
+  // Color of the cuboid
+  PJ.Color color = 3;
+}
+
+// A sphere or ellipsoid primitive in a 3D scene. Centered at pose.position; non-uniform `size` values yield an
+// ellipsoid.
+message SpherePrimitive {
+  // Center pose of the sphere or ellipsoid
+  PJ.Pose pose = 1;
+
+  // Diameter of the sphere along its local x, y, and z axes (ellipsoid when components differ)
+  PJ.Vector3 size = 2;
+
+  // Color of the sphere
+  PJ.Color color = 3;
+}
+
+// A cylinder, cone, or truncated cone primitive in a 3D scene. Flat faces lie perpendicular to the local z axis.
+// `bottom_scale` and `top_scale` (each in 0..1) shrink the corresponding face toward an apex:
+// 1.0/1.0 = cylinder, 1.0/0.0 = cone, 0.5/1.0 = truncated cone.
+message CylinderPrimitive {
+  // Center pose of the cylinder; flat faces are perpendicular to the local z axis
+  PJ.Pose pose = 1;
+
+  // Bounding box of the cylinder (diameter along x, diameter along y, height along z)
+  PJ.Vector3 size = 2;
+
+  // Ratio of the bottom face diameter to the bounding box diameter, in 0..1. A value of 0 collapses the bottom face
+  // to a point.
+  double bottom_scale = 3;
+
+  // Ratio of the top face diameter to the bounding box diameter, in 0..1. A value of 0 collapses the top face to a
+  // point.
+  double top_scale = 4;
+
+  // Color of the cylinder
+  PJ.Color color = 5;
+}
+
+// A polyline or line list primitive in a 3D scene. The drawing topology is selected by `type`.
+message LinePrimitive {
+  // Topology of the line drawing
+  enum Type {
+    // Unknown line type
+    UNKNOWN = 0;
+
+    // Connected line segments: 0-1, 1-2, ..., (n-1)-n
+    LINE_STRIP = 1;
+
+    // Closed polyline: 0-1, 1-2, ..., (n-1)-n, n-0
+    LINE_LOOP = 2;
+
+    // Individual line segments: 0-1, 2-3, 4-5, ...
+    LINE_LIST = 3;
+  }
+
+  // Topology of the line drawing
+  Type type = 1;
+
+  // Origin pose of the primitive; `points` are interpreted in this local frame
+  PJ.Pose pose = 2;
+
+  // Line thickness
+  double thickness = 3;
+
+  // When true, `thickness` is in screen-space pixels (invariant to camera distance). When false, thickness is in
+  // world units.
+  bool scale_invariant = 4;
+
+  // Vertices of the line primitive in the local frame defined by `pose`
+  repeated PJ.Point3 points = 5;
+
+  // Solid color, used when `colors` is empty
+  PJ.Color color = 6;
+
+  // Per-vertex colors. When non-empty, `colors.size()` must equal `points.size()` and overrides `color`.
+  repeated PJ.Color colors = 7;
+
+  // Optional vertex index buffer (GL-style). When empty, vertices are visited as 0..N-1 over `points`.
+  repeated fixed32 indices = 8;
+}
+
+// A triangle list primitive in a 3D scene. Vertices are consumed in triples: (0,1,2), (3,4,5), ...
+message TrianglePrimitive {
+  // Origin pose of the primitive; `points` are interpreted in this local frame
+  PJ.Pose pose = 1;
+
+  // Triangle vertices in the local frame defined by `pose`
+  repeated PJ.Point3 points = 2;
+
+  // Solid color, used when `colors` is empty
+  PJ.Color color = 3;
+
+  // Per-vertex colors. When non-empty, `colors.size()` must equal `points.size()` and overrides `color`.
+  repeated PJ.Color colors = 4;
+
+  // Optional vertex index buffer (GL-style). When empty, vertices are visited as 0..N-1 over `points`.
+  repeated fixed32 indices = 5;
+}
+
+// A text label primitive anchored at pose.position. With identity orientation, the text flows in the local +x
+// direction in the xy-plane.
+message TextPrimitive {
+  // Anchor pose of the text
+  PJ.Pose pose = 1;
+
+  // When true, the text always faces the camera and ignores pose.orientation
+  bool billboard = 2;
+
+  // Font size
+  double font_size = 3;
+
+  // When true, `font_size` is in screen-space pixels (invariant to camera distance). When false, font size is in
+  // world units.
+  bool scale_invariant = 4;
+
+  // Color of the text
+  PJ.Color color = 5;
+
+  // Text content
+  string text = 6;
+}
+
+// A coordinate-axes glyph in a 3D scene. Renders three arrows colored by convention: X = red, Y = green, Z = blue.
+// Commonly used to visualize TF frames, target poses, or any oriented reference.
+// (PlotJuggler addition; no Foxglove counterpart.)
+message AxesPrimitive {
+  // Pose at which to render the axes glyph
+  PJ.Pose pose = 1;
+
+  // Length of each axis arrow
+  double length = 2;
+
+  // Line thickness for the axis arrows
+  double thickness = 3;
+
+  // When true, `length` is in screen-space pixels (invariant to camera distance)
+  bool scale_invariant = 4;
+}
+
+// A visual element in a 3D scene. An entity is composed of one or more primitives, all of which share the same frame
+// of reference and timestamp. The entity itself has no top-level pose; each primitive carries its own pose.
+//
+// Identity: `(topic, id)` is the deduplication key. Republishing an entity with the same id on the same topic
+// replaces the previous one.
+//
+// Lifetime: a zero duration indicates the entity persists until replaced or deleted; otherwise the entity is removed
+// `lifetime` after `timestamp`.
+//
+// frame_locked: when true, the entity tracks `frame_id` as it moves over time. When false, the entity is stamped into
+// the fixed frame at publish time.
+message SceneEntity {
+  // Timestamp of the entity
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Frame of reference for all primitives in this entity
+  string frame_id = 2;
+
+  // Identifier for the entity. Republishing an entity with the same id on the same topic replaces the previous one.
+  string id = 3;
+
+  // Length of time (relative to `timestamp`) after which the entity should be removed automatically. A zero value
+  // means the entity persists until replaced or deleted.
+  google.protobuf.Duration lifetime = 4;
+
+  // When true, the entity tracks `frame_id` as it moves; when false, the entity is stamped into the fixed frame at
+  // publish time.
+  bool frame_locked = 5;
+
+  // Arrow primitives composing this entity
+  repeated PJ.ArrowPrimitive arrows = 6;
+
+  // Cube primitives composing this entity
+  repeated PJ.CubePrimitive cubes = 7;
+
+  // Sphere primitives composing this entity
+  repeated PJ.SpherePrimitive spheres = 8;
+
+  // Cylinder primitives composing this entity
+  repeated PJ.CylinderPrimitive cylinders = 9;
+
+  // Line primitives composing this entity
+  repeated PJ.LinePrimitive lines = 10;
+
+  // Triangle primitives composing this entity
+  repeated PJ.TrianglePrimitive triangles = 11;
+
+  // Text primitives composing this entity
+  repeated PJ.TextPrimitive texts = 12;
+
+  // Axes-glyph primitives composing this entity
+  repeated PJ.AxesPrimitive axes = 13;
+}
+
+// A batch of scene entities published together. Each payload is a self-contained snapshot; entity-deletion semantics
+// may be introduced later if streaming sources require them.
+message SceneEntities {
+  // Array of scene entities
+  repeated PJ.SceneEntity entities = 1;
+}

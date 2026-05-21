@@ -3,8 +3,17 @@
 # ---------------------------------------------------------------------------
 
 add_library(pj_base STATIC
+  src/builtin/asset_video_codec.cpp
+  src/builtin/compressed_point_cloud_codec.cpp
+  src/builtin/depth_image_codec.cpp
   src/builtin/frame_transforms_codec.cpp
   src/builtin/image_annotations_codec.cpp
+  src/builtin/image_codec.cpp
+  src/builtin/mesh3d_codec.cpp
+  src/builtin/occupancy_grid_codec.cpp
+  src/builtin/point_cloud_codec.cpp
+  src/builtin/scene_entities_codec.cpp
+  src/builtin/video_frame_codec.cpp
   src/type_tree.cpp
 )
 target_include_directories(pj_base PUBLIC
@@ -63,6 +72,15 @@ if(PJ_BUILD_TESTS)
     tests/image_annotations_decoder_test.cpp
     tests/media_metadata_test.cpp
     tests/push_message_v2_test.cpp
+    tests/image_codec_test.cpp
+    tests/depth_image_codec_test.cpp
+    tests/point_cloud_codec_test.cpp
+    tests/compressed_point_cloud_codec_test.cpp
+    tests/occupancy_grid_codec_test.cpp
+    tests/mesh3d_codec_test.cpp
+    tests/video_frame_codec_test.cpp
+    tests/scene_entities_codec_test.cpp
+    tests/asset_video_codec_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})

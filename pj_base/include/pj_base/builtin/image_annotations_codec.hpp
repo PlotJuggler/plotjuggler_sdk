@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "pj_base/builtin/ImageAnnotations.hpp"
+#include "pj_base/builtin/image_annotations.hpp"
 #include "pj_base/expected.hpp"
 
 namespace PJ {

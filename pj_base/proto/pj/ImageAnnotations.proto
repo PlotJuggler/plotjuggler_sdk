@@ -26,6 +26,7 @@ message ImageAnnotations {
   // Text annotations
   repeated PJ.TextAnnotation texts = 3;
 
-  // Additional user-provided metadata associated with the image annotations. Keys must be unique within this object. Per-annotation metadata takes precedence over these values.
+  // Additional user-provided metadata associated with the image annotations. Keys must be unique within this object.
+  // Per-annotation metadata takes precedence over these values.
   repeated PJ.KeyValuePair metadata = 4;
 }

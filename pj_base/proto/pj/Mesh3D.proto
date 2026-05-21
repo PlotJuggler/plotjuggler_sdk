@@ -1,0 +1,56 @@
+// PlotJuggler canonical 3D mesh asset protobuf schema.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+import "pj/Color.proto";
+import "pj/Geometry.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A 3D mesh asset delivered in its native binary format. The renderer hands `data` + `format` (or the contents at
+// `url`) to a mesh-loader library (Assimp, tinygltf, ...); PlotJuggler does not parse the asset itself.
+//
+// This type is distinct from the triangle primitive in SceneEntity because asset formats can carry richer scene content
+// (materials, textures, skinning, animations) that is not expressible as raw triangle soup.
+//
+// Asset source: exactly one of `data` or `url` should be populated. When `data` is used, `format` is required. When
+// `url` is used, `format` may be inferred from the file extension if absent.
+//
+// On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor` that keeps the underlying
+// allocation alive (same byte-backed view pattern as Image, DepthImage, and PointCloud). The anchor is a C++ lifetime
+// concept with no wire-format equivalent.
+message Mesh3D {
+  // Timestamp of the mesh asset
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Frame of reference in which the mesh is placed
+  string frame_id = 2;
+
+  // Identifier for the mesh asset. Republishing with the same id on the same topic replaces the previous one.
+  string id = 3;
+
+  // Placement of the mesh's origin in `frame_id`
+  PJ.Pose pose = 4;
+
+  // Per-axis scale factor applied to the mesh; (1, 1, 1) is the default when unset
+  PJ.Vector3 scale = 5;
+
+  // Asset format identifier, lowercase. Recognized values include "gltf", "glb", "stl", "ply", "obj", "usd", "dae".
+  string format = 6;
+
+  // Embedded asset bytes. When non-empty, `format` is required.
+  bytes data = 7;
+
+  // External URL referencing the asset (e.g. "file:///path/to/model.glb"). Used when `data` is empty.
+  string url = 8;
+
+  // Color tint applied to the mesh. Only takes effect when `override_color` is true; otherwise the asset's embedded
+  // materials are used.
+  PJ.Color color = 9;
+
+  // When true, the mesh is rendered using `color` instead of its embedded materials.
+  bool override_color = 10;
+}

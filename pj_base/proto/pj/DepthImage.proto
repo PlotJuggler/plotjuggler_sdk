@@ -1,0 +1,56 @@
+// PlotJuggler canonical depth image protobuf schema.
+// Wire-level contract for PJ::sdk::DepthImage in
+// pj_base/include/pj_base/builtin/DepthImage.hpp.
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// Depth image. The `encoding` string carries the depth representation (e.g. "16UC1" = millimeters as uint16, "32FC1" =
+// meters as float).
+//
+// Intrinsics: `K` is the 3x3 row-major intrinsic camera matrix, exactly 9 entries.
+//
+//   K = [ fx,  0, cx,
+//          0, fy, cy,
+//          0,  0,  1 ]
+//
+// Back-projection of pixel (u, v) with depth value z:
+//
+//   X = (u - cx) * z / fx
+//   Y = (v - cy) * z / fy
+//   Z = z
+//
+// Distortion: when `distortion_model` is non-empty, `D` carries the distortion coefficients for that model
+// ("plumb_bob": 5 coeffs k1, k2, p1, p2, k3; "equidistant": 4 coeffs k1, k2, k3, k4). An empty `distortion_model` means
+// the image is rectified and `D` is unused.
+//
+// On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor`. The anchor is a C++ lifetime
+// concept with no wire-format equivalent.
+message DepthImage {
+  // Timestamp associated with the depth frame
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Image width in pixels
+  uint32 width = 2;
+
+  // Image height in pixels
+  uint32 height = 3;
+
+  // Depth representation identifier (e.g. "16UC1" for uint16 millimeters, "32FC1" for float meters)
+  string encoding = 4;
+
+  // Depth pixel bytes
+  bytes data = 5;
+
+  // 3x3 row-major intrinsic camera matrix. Length must be 9.
+  repeated double K = 6;
+
+  // Distortion model identifier; empty when the image is rectified (`D` then unused)
+  string distortion_model = 7;
+
+  // Distortion coefficients for `distortion_model`. Length depends on the model.
+  repeated double D = 8;
+}

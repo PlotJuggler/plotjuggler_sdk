@@ -1,0 +1,57 @@
+// PlotJuggler canonical image protobuf schema.
+// Wire-level contract for PJ::sdk::Image in
+// pj_base/include/pj_base/builtin/Image.hpp.
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// Image. The `encoding` string distinguishes raw pixel layouts from compressed wire formats; the producer decides
+// which.
+//
+// Raw encodings: "rgb8", "rgba8", "bgr8", "bgra8", "mono8", "mono16". `data` is `row_step * height` bytes laid out per
+// the encoding. `row_step` may exceed `width * bytes_per_pixel(encoding)` when the wire format includes per-row
+// padding; consumers must honor it. `is_bigendian` is meaningful only for multi-byte raw encodings (e.g. mono16).
+//
+// Compressed encodings: "jpeg", "png", "qoi". `data` carries the compressed payload; consumers run the appropriate
+// codec to obtain decoded pixels. `row_step` and `is_bigendian` are unused.
+//
+// Compressed depth: "compressedDepth" (ROS-style). `data` carries a PNG payload that decodes to grayscale;
+// `compressed_depth_min` and `compressed_depth_max` carry the quantization range needed to map the grayscale back to
+// depth values.
+//
+// On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor` that keeps the underlying
+// allocation alive (zero-copy view into the source payload, or a freshly allocated vector when conversion was
+// unavoidable). The anchor is a C++ lifetime concept with no wire-format equivalent.
+message Image {
+  // Timestamp associated with the image
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Image width in pixels
+  uint32 width = 2;
+
+  // Image height in pixels
+  uint32 height = 3;
+
+  // Raw pixel layout or compressed-codec identifier (e.g. "rgb8", "mono16", "jpeg", "png", "qoi", "compressedDepth")
+  string encoding = 4;
+
+  // Bytes per row for raw encodings; 0 for compressed encodings.
+  uint32 row_step = 5;
+
+  // Big-endian byte order flag. Meaningful only for multi-byte raw encodings (e.g. mono16).
+  bool is_bigendian = 6;
+
+  // Raw pixel bytes (raw encodings) or compressed payload bytes (compressed encodings).
+  bytes data = 7;
+
+  // ROS compressedDepth quantization minimum; set together with `compressed_depth_max` when `encoding ==
+  // "compressedDepth"`.
+  optional float compressed_depth_min = 8;
+
+  // ROS compressedDepth quantization maximum; set together with `compressed_depth_min` when `encoding ==
+  // "compressedDepth"`.
+  optional float compressed_depth_max = 9;
+}

@@ -62,3 +62,12 @@ message Quaternion {
   // w value
   double w = 4;
 }
+
+// A pose in 3D space consisting of position (translation) and orientation (rotation)
+message Pose {
+  // Position of the pose's origin in the parent frame
+  PJ.Vector3 position = 1;
+
+  // Orientation of the pose relative to the parent frame's axes
+  PJ.Quaternion orientation = 2;
+}

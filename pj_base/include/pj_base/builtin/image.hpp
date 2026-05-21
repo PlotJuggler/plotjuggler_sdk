@@ -1,5 +1,5 @@
 /**
- * @file Image.h
+ * @file image.hpp
  * @brief Image built-in object: raw or compressed, identified by an
  *        encoding string.
  */

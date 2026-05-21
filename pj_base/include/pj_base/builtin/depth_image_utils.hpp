@@ -1,5 +1,5 @@
 /**
- * @file depth_image_utils.h
+ * @file depth_image_utils.hpp
  * @brief Free-function helpers that derive conventional matrices (R, P)
  *        from sdk::DepthImage's intrinsics.
  *
@@ -16,7 +16,7 @@
 
 #include <array>
 
-#include "pj_base/builtin/DepthImage.hpp"
+#include "pj_base/builtin/depth_image.hpp"
 
 namespace PJ {
 namespace sdk {
