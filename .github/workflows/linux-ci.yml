@@ -82,8 +82,11 @@ jobs:
           # Build-type suffix leaves room for a future debug-asan variant
           # without colliding on the same tag.
           tag="ghcr.io/${owner}/plotjuggler-core-conan-cache:linux-gcc-relwithdebinfo-${hash}"
+          main_tag="ghcr.io/${owner}/plotjuggler-core-conan-cache:linux-gcc-relwithdebinfo-main"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "main_tag=${main_tag}" >> "${GITHUB_OUTPUT}"
           echo "Cache tag: ${tag}"
+          echo "Main fallback cache tag: ${main_tag}"
 
       - name: Login to ghcr.io
         # Required for both pull (private packages) and push. GITHUB_TOKEN is
@@ -101,23 +104,33 @@ jobs:
         shell: bash
         run: |
           set +e
-          tag="${{ steps.conan_cache.outputs.tag }}"
+          exact_tag="${{ steps.conan_cache.outputs.tag }}"
+          main_tag="${{ steps.conan_cache.outputs.main_tag }}"
           pull_dir="${RUNNER_TEMP}/conan-cache-pull"
           mkdir -p "${pull_dir}"
-          (
-            cd "${pull_dir}"
-            oras pull "${tag}" 2>&1
-          )
-          pulled=$?
           tarball="${pull_dir}/conan-cache.tar.zst"
-          if [ "${pulled}" -eq 0 ] && [ -f "${tarball}" ]; then
-            echo "Cache HIT: extracting ${tarball}"
-            mkdir -p "${HOME}/.conan2"
-            tar --zstd -xf "${tarball}" -C "${HOME}"
-            echo "CONAN_CACHE_HIT=1" >> "${GITHUB_ENV}"
-          else
-            echo "Cache MISS for ${tag} (cold start or first build of this conanfile)"
-          fi
+
+          for tag in "${exact_tag}" "${main_tag}"; do
+            rm -f "${tarball}"
+            echo "Trying Conan cache: ${tag}"
+            (
+              cd "${pull_dir}"
+              oras pull "${tag}" 2>&1
+            )
+            pulled=$?
+            if [ "${pulled}" -eq 0 ] && [ -f "${tarball}" ]; then
+              echo "Cache HIT: extracting ${tarball}"
+              mkdir -p "${HOME}/.conan2"
+              tar --zstd -xf "${tarball}" -C "${HOME}"
+              echo "CONAN_CACHE_HIT=1" >> "${GITHUB_ENV}"
+              echo "CONAN_CACHE_HIT_TAG=${tag}" >> "${GITHUB_ENV}"
+              if [ "${tag}" = "${exact_tag}" ]; then
+                echo "CONAN_CACHE_EXACT_HIT=1" >> "${GITHUB_ENV}"
+              fi
+              exit 0
+            fi
+            echo "Cache MISS for ${tag}"
+          done
           # Always exit 0 — a missing tag is not a CI failure.
           exit 0
 
@@ -153,10 +166,10 @@ jobs:
 
       - name: Save Conan cache to ghcr.io
         # Only push from the canonical repo on real pushes (forks lack write
-        # access to ghcr.io packages). Skip on cache HIT — the tag content is
-        # already up to date, no point re-uploading the same bytes. Skip if
+        # access to ghcr.io packages). Skip on exact cache HIT — the tag content
+        # is already up to date, no point re-uploading the same bytes. Skip if
         # neither oras install path succeeded (graceful degradation).
-        if: github.event_name == 'push' && github.repository == 'PlotJuggler/plotjuggler_core' && env.CONAN_CACHE_HIT != '1' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
+        if: github.event_name == 'push' && github.repository == 'PlotJuggler/plotjuggler_core' && env.CONAN_CACHE_EXACT_HIT != '1' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
         shell: bash
         run: |
           set -euo pipefail
@@ -176,6 +189,9 @@ jobs:
           (
             cd "${RUNNER_TEMP}"
             oras push "${tag}" "conan-cache.tar.zst:application/vnd.oci.image.layer.v1.tar+zstd"
+            if [ "${GITHUB_REF_NAME}" = "main" ]; then
+              oras push "${{ steps.conan_cache.outputs.main_tag }}" "conan-cache.tar.zst:application/vnd.oci.image.layer.v1.tar+zstd"
+            fi
           )
 
       - name: ccache stats

@@ -77,8 +77,11 @@ jobs:
           $hash = (Get-FileHash conanfile.py -Algorithm SHA256).Hash.Substring(0, 16).ToLower()
           $owner = "${{ github.repository_owner }}".ToLower()
           $tag = "ghcr.io/$owner/plotjuggler-core-conan-cache:windows-msvc-$hash"
+          $mainTag = "ghcr.io/$owner/plotjuggler-core-conan-cache:windows-msvc-main"
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "main_tag=$mainTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Cache tag: $tag"
+          Write-Host "Main fallback cache tag: $mainTag"
 
       - name: Login to ghcr.io
         # Required for both pull (private packages) and push. GITHUB_TOKEN is
@@ -95,24 +98,35 @@ jobs:
         if: github.repository_owner == 'PlotJuggler' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
         shell: pwsh
         run: |
-          $tag = "${{ steps.conan_cache.outputs.tag }}"
+          $exactTag = "${{ steps.conan_cache.outputs.tag }}"
+          $mainTag = "${{ steps.conan_cache.outputs.main_tag }}"
           $pullDir = Join-Path $env:RUNNER_TEMP "conan-cache-pull"
           New-Item -ItemType Directory -Force -Path $pullDir | Out-Null
-          Push-Location $pullDir
-          try {
-            oras pull $tag 2>&1 | Out-Host
-            $pulled = $LASTEXITCODE
-          } finally {
-            Pop-Location
-          }
           $tarball = Join-Path $pullDir "conan-cache.tar.zst"
-          if ($pulled -eq 0 -and (Test-Path $tarball)) {
-            Write-Host "Cache HIT: extracting $tarball"
-            New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.conan2" | Out-Null
-            tar --zstd -xf $tarball -C $env:USERPROFILE
-            "CONAN_CACHE_HIT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-          } else {
-            Write-Host "Cache MISS for $tag (cold start or first build of this conanfile)"
+
+          foreach ($tag in @($exactTag, $mainTag)) {
+            Remove-Item $tarball -Force -ErrorAction SilentlyContinue
+            Write-Host "Trying Conan cache: $tag"
+            Push-Location $pullDir
+            try {
+              oras pull $tag 2>&1 | Out-Host
+              $pulled = $LASTEXITCODE
+            } finally {
+              Pop-Location
+            }
+            if ($pulled -eq 0 -and (Test-Path $tarball)) {
+              Write-Host "Cache HIT: extracting $tarball"
+              New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.conan2" | Out-Null
+              tar --zstd -xf $tarball -C $env:USERPROFILE
+              "CONAN_CACHE_HIT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+              "CONAN_CACHE_HIT_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append
+              if ($tag -eq $exactTag) {
+                "CONAN_CACHE_EXACT_HIT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+              }
+              $global:LASTEXITCODE = 0
+              exit 0
+            }
+            Write-Host "Cache MISS for $tag"
           }
           # Reset exit code so a missing tag doesn't fail the step
           $global:LASTEXITCODE = 0
@@ -128,10 +142,10 @@ jobs:
 
       - name: Save Conan cache to ghcr.io
         # Only push from the canonical repo on real pushes (forks lack write
-        # access to ghcr.io packages). Skip on cache HIT — the tag content is
-        # already up to date, no point re-uploading the same bytes. Skip if
+        # access to ghcr.io packages). Skip on exact cache HIT — the tag content
+        # is already up to date, no point re-uploading the same bytes. Skip if
         # neither oras install path succeeded (graceful degradation).
-        if: github.event_name == 'push' && github.repository == 'PlotJuggler/plotjuggler_core' && env.CONAN_CACHE_HIT != '1' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
+        if: github.event_name == 'push' && github.repository == 'PlotJuggler/plotjuggler_core' && env.CONAN_CACHE_EXACT_HIT != '1' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
         shell: pwsh
         run: |
           $tag = "${{ steps.conan_cache.outputs.tag }}"
@@ -150,6 +164,9 @@ jobs:
           Push-Location $env:RUNNER_TEMP
           try {
             oras push $tag "conan-cache.tar.zst:application/vnd.oci.image.layer.v1.tar+zstd"
+            if ($env:GITHUB_REF_NAME -eq "main") {
+              oras push "${{ steps.conan_cache.outputs.main_tag }}" "conan-cache.tar.zst:application/vnd.oci.image.layer.v1.tar+zstd"
+            }
           } finally {
             Pop-Location
           }
