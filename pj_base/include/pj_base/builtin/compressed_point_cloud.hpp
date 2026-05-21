@@ -1,5 +1,5 @@
 /**
- * @file CompressedPointCloud.h
+ * @file compressed_point_cloud.hpp
  * @brief Point cloud delivered in a compressed binary format (Draco, ...).
  */
 // Copyright 2026 Davide Faconti

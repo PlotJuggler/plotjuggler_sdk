@@ -1,5 +1,5 @@
 /**
- * @file Mesh3D.h
+ * @file mesh3d.hpp
  * @brief 3D mesh asset in its native binary format (GLTF/STL/PLY/OBJ/USD/DAE).
  */
 // Copyright 2026 Davide Faconti
@@ -11,8 +11,8 @@
 #include <string>
 
 #include "pj_base/buffer_anchor.hpp"
-#include "pj_base/builtin/FrameTransforms.hpp"   // for Pose, Vector3
-#include "pj_base/builtin/ImageAnnotations.hpp"  // for ColorRGBA
+#include "pj_base/builtin/frame_transforms.hpp"   // for Pose, Vector3
+#include "pj_base/builtin/image_annotations.hpp"  // for ColorRGBA
 #include "pj_base/span.hpp"
 #include "pj_base/types.hpp"
 

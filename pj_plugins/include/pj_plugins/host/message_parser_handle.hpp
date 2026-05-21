@@ -12,7 +12,7 @@
 
 #include <cassert>
 #include <memory>
-#include <pj_base/builtin/BuiltinObject.hpp>
+#include <pj_base/builtin/builtin_object.hpp>
 #include <pj_base/expected.hpp>
 #include <pj_base/sdk/data_source_host_views.hpp>
 #include <pj_base/span.hpp>

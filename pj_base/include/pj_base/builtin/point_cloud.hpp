@@ -1,5 +1,5 @@
 /**
- * @file PointCloud.h
+ * @file point_cloud.hpp
  * @brief Packed point cloud with per-channel field layout.
  */
 // Copyright 2026 Davide Faconti

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "pj_base/builtin/DepthImage.hpp"
+#include "pj_base/builtin/depth_image.hpp"
 #include "pj_base/expected.hpp"
 
 namespace PJ {

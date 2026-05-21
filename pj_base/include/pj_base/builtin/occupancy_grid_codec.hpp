@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "pj_base/builtin/OccupancyGrid.hpp"
+#include "pj_base/builtin/occupancy_grid.hpp"
 #include "pj_base/expected.hpp"
 
 namespace PJ {

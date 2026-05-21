@@ -14,12 +14,12 @@ image message schema can both become `PJ::sdk::Image`; a ROS
 The public headers live under:
 
 ```cpp
-#include <pj_base/builtin/BuiltinObject.hpp>
-#include <pj_base/builtin/Image.hpp>
-#include <pj_base/builtin/DepthImage.hpp>
-#include <pj_base/builtin/PointCloud.hpp>
-#include <pj_base/builtin/ImageAnnotations.hpp>
-#include <pj_base/builtin/FrameTransforms.hpp>
+#include <pj_base/builtin/builtin_object.hpp>
+#include <pj_base/builtin/image.hpp>
+#include <pj_base/builtin/depth_image.hpp>
+#include <pj_base/builtin/point_cloud.hpp>
+#include <pj_base/builtin/image_annotations.hpp>
+#include <pj_base/builtin/frame_transforms.hpp>
 #include <pj_base/builtin/image_annotations_codec.hpp>
 #include <pj_base/builtin/frame_transforms_codec.hpp>
 ```

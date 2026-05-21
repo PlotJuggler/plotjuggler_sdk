@@ -1,5 +1,5 @@
 /**
- * @file AssetVideo.h
+ * @file asset_video.hpp
  * @brief File-backed video reference + typed playback metadata.
  *
  * AssetVideo is the entry-point handle for video assets ingested by data

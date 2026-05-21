@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "pj_base/builtin/CompressedPointCloud.hpp"
+#include "pj_base/builtin/compressed_point_cloud.hpp"
 #include "pj_base/expected.hpp"
 
 namespace PJ {

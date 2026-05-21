@@ -1,5 +1,5 @@
 /**
- * @file SceneEntities.h
+ * @file scene_entities.hpp
  * @brief Procedural 3D scene primitives + SceneEntity container + batch.
  *
  * SceneEntities is the workhorse for marker-style 3D visualization (the
@@ -16,8 +16,8 @@
 #include <string>
 #include <vector>
 
-#include "pj_base/builtin/FrameTransforms.hpp"   // for Pose, Vector3
-#include "pj_base/builtin/ImageAnnotations.hpp"  // for ColorRGBA
+#include "pj_base/builtin/frame_transforms.hpp"   // for Pose, Vector3
+#include "pj_base/builtin/image_annotations.hpp"  // for ColorRGBA
 #include "pj_base/types.hpp"
 
 namespace PJ {

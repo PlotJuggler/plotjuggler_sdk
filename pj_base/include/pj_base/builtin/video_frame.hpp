@@ -1,5 +1,5 @@
 /**
- * @file VideoFrame.h
+ * @file video_frame.hpp
  * @brief Single frame of a compressed video stream (h264 / h265 / vp9 / av1).
  */
 // Copyright 2026 Davide Faconti

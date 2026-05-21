@@ -1,9 +1,9 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MIT
 
-#include <gtest/gtest.h>
+#include "pj_base/builtin/builtin_object.hpp"
 
-#include "pj_base/builtin/BuiltinObject.hpp"
+#include <gtest/gtest.h>
 
 using PJ::sdk::AssetVideo;
 using PJ::sdk::BuiltinObject;

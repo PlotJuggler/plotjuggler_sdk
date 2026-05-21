@@ -1,5 +1,5 @@
 /**
- * @file BuiltinObject.h
+ * @file builtin_object.hpp
  * @brief Type-erased holder for any builtin object a MessageParser may produce.
  *
  * BuiltinObject is `std::any`. A producer constructs it by passing a
@@ -26,17 +26,17 @@
 #include <optional>
 #include <string_view>
 
-#include "pj_base/builtin/AssetVideo.hpp"
-#include "pj_base/builtin/CompressedPointCloud.hpp"
-#include "pj_base/builtin/DepthImage.hpp"
-#include "pj_base/builtin/FrameTransforms.hpp"
-#include "pj_base/builtin/Image.hpp"
-#include "pj_base/builtin/ImageAnnotations.hpp"
-#include "pj_base/builtin/Mesh3D.hpp"
-#include "pj_base/builtin/OccupancyGrid.hpp"
-#include "pj_base/builtin/PointCloud.hpp"
-#include "pj_base/builtin/SceneEntities.hpp"
-#include "pj_base/builtin/VideoFrame.hpp"
+#include "pj_base/builtin/asset_video.hpp"
+#include "pj_base/builtin/compressed_point_cloud.hpp"
+#include "pj_base/builtin/depth_image.hpp"
+#include "pj_base/builtin/frame_transforms.hpp"
+#include "pj_base/builtin/image.hpp"
+#include "pj_base/builtin/image_annotations.hpp"
+#include "pj_base/builtin/mesh3d.hpp"
+#include "pj_base/builtin/occupancy_grid.hpp"
+#include "pj_base/builtin/point_cloud.hpp"
+#include "pj_base/builtin/scene_entities.hpp"
+#include "pj_base/builtin/video_frame.hpp"
 
 namespace PJ {
 namespace sdk {

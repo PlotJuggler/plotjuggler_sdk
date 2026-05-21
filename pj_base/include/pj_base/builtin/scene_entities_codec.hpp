@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "pj_base/builtin/SceneEntities.hpp"
+#include "pj_base/builtin/scene_entities.hpp"
 #include "pj_base/expected.hpp"
 
 namespace PJ {

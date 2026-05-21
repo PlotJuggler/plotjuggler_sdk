@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include "pj_base/builtin/Mesh3D.hpp"
+#include "pj_base/builtin/mesh3d.hpp"
 #include "pj_base/expected.hpp"
 
 namespace PJ {

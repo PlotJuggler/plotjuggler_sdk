@@ -1,5 +1,5 @@
 /**
- * @file DepthImage.h
+ * @file depth_image.hpp
  * @brief Depth image with camera intrinsics.
  */
 // Copyright 2026 Davide Faconti

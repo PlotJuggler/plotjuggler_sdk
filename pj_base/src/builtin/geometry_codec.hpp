@@ -14,9 +14,9 @@
 #include <cstdint>
 #include <limits>
 
-#include "pj_base/builtin/FrameTransforms.hpp"   // Vector3, Quaternion, Pose
-#include "pj_base/builtin/ImageAnnotations.hpp"  // ColorRGBA
-#include "pj_base/builtin/SceneEntities.hpp"     // Point3
+#include "pj_base/builtin/frame_transforms.hpp"   // Vector3, Quaternion, Pose
+#include "pj_base/builtin/image_annotations.hpp"  // ColorRGBA
+#include "pj_base/builtin/scene_entities.hpp"     // Point3
 #include "pj_base/types.hpp"
 #include "protobuf_wire.hpp"
 

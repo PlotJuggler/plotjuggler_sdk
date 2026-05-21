@@ -1,5 +1,5 @@
 /**
- * @file OccupancyGrid.h
+ * @file occupancy_grid.hpp
  * @brief 2D metric occupancy grid placed in world coordinates.
  */
 // Copyright 2026 Davide Faconti
@@ -11,7 +11,7 @@
 #include <string>
 
 #include "pj_base/buffer_anchor.hpp"
-#include "pj_base/builtin/FrameTransforms.hpp"  // for Pose
+#include "pj_base/builtin/frame_transforms.hpp"  // for Pose
 #include "pj_base/span.hpp"
 #include "pj_base/types.hpp"
 
