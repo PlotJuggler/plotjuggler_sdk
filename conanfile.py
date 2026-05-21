@@ -27,7 +27,7 @@ import os
 
 class PlotjugglerCoreConan(ConanFile):
     name = "plotjuggler_core"
-    version = "0.1.0"
+    version = "0.2.0"
     license = "MIT"
     url = "https://github.com/PlotJuggler/plotjuggler_core"
     description = "C++20 foundation libraries for PlotJuggler: storage engine, plugin SDK, plugin host loaders."
