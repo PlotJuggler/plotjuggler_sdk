@@ -6,9 +6,9 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <cstring>
-#include <string>
 #include <vector>
+
+#include "protobuf_wire_test_helpers.hpp"
 
 namespace PJ {
 namespace {
@@ -21,38 +21,7 @@ using sdk::Point2;
 using sdk::PointsAnnotation;
 using sdk::TextAnnotation;
 
-// -----------------------------------------------------------------------------
-// Hand-rolled Protobuf helpers. Used to build expected byte sequences for
-// golden-byte tests.
-// -----------------------------------------------------------------------------
-namespace pb {
-
-inline void appendVarint(std::vector<uint8_t>& out, uint64_t v) {
-  while (v >= 0x80u) {
-    out.push_back(static_cast<uint8_t>((v & 0x7Fu) | 0x80u));
-    v >>= 7;
-  }
-  out.push_back(static_cast<uint8_t>(v));
-}
-
-inline void appendTag(std::vector<uint8_t>& out, uint32_t field, uint32_t wire) {
-  appendVarint(out, (static_cast<uint64_t>(field) << 3) | wire);
-}
-
-inline void appendDouble(std::vector<uint8_t>& out, double v) {
-  uint64_t bits = 0;
-  std::memcpy(&bits, &v, 8);
-  for (int i = 0; i < 8; ++i) {
-    out.push_back(static_cast<uint8_t>((bits >> (8 * i)) & 0xFFu));
-  }
-}
-
-inline void appendLenDelim(std::vector<uint8_t>& out, const std::vector<uint8_t>& body) {
-  appendVarint(out, body.size());
-  out.insert(out.end(), body.begin(), body.end());
-}
-
-}  // namespace pb
+namespace pb = ::PJ::test_pb;
 
 // Decode the bytes produced by serializeImageAnnotations back into an
 // sdk::ImageAnnotations.

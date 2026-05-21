@@ -72,6 +72,15 @@ if(PJ_BUILD_TESTS)
     tests/image_annotations_decoder_test.cpp
     tests/media_metadata_test.cpp
     tests/push_message_v2_test.cpp
+    tests/image_codec_test.cpp
+    tests/depth_image_codec_test.cpp
+    tests/point_cloud_codec_test.cpp
+    tests/compressed_point_cloud_codec_test.cpp
+    tests/occupancy_grid_codec_test.cpp
+    tests/mesh3d_codec_test.cpp
+    tests/video_frame_codec_test.cpp
+    tests/scene_entities_codec_test.cpp
+    tests/asset_video_codec_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})
