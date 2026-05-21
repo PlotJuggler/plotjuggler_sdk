@@ -2,6 +2,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MIT
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -62,6 +63,29 @@ class Writer {
     uint64_t bits = 0;
     std::memcpy(&bits, &value, sizeof(value));
     fixed64(field, bits);
+  }
+
+  void floatField(uint32_t field, float value) {
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(value));
+    fixed32(field, bits);
+  }
+
+  /// Writes a packed array of double values (proto3 default packing for
+  /// `repeated double` fields). Omits the field entirely when empty.
+  template <typename Range>
+  void packedDouble(uint32_t field, const Range& values) {
+    const size_t count = static_cast<size_t>(values.size());
+    if (count == 0) {
+      return;
+    }
+    tag(field, WireType::kLengthDelimited);
+    appendVarint(count * 8);
+    for (double v : values) {
+      uint64_t bits = 0;
+      std::memcpy(&bits, &v, sizeof(v));
+      appendFixed64(bits);
+    }
   }
 
   void string(uint32_t field, std::string_view value) {
@@ -192,6 +216,15 @@ class Reader {
     return true;
   }
 
+  bool readFloat(float& out) {
+    uint32_t bits = 0;
+    if (!readFixed32(bits)) {
+      return false;
+    }
+    std::memcpy(&out, &bits, sizeof(out));
+    return true;
+  }
+
   bool readString(std::string& out) {
     const uint8_t* data = nullptr;
     size_t size = 0;
@@ -303,6 +336,51 @@ template <typename FieldHandler>
       return false;
     }
     out.push_back(v);
+  }
+  return true;
+}
+
+/// Reads a proto3-packed `repeated double` payload into `out`. Values are
+/// appended; the caller may pre-clear if needed. Returns false on
+/// truncation or non-multiple-of-8 length.
+[[nodiscard]] inline bool readPackedDouble(Reader& reader, std::vector<double>& out) {
+  const uint8_t* data = nullptr;
+  size_t size = 0;
+  if (!reader.readBytes(data, size)) {
+    return false;
+  }
+  if ((size % 8) != 0) {
+    return false;
+  }
+  Reader sub(data, size);
+  out.reserve(out.size() + size / 8);
+  while (!sub.eof()) {
+    double v = 0.0;
+    if (!sub.readDouble(v)) {
+      return false;
+    }
+    out.push_back(v);
+  }
+  return true;
+}
+
+/// Reads a proto3-packed `repeated double` payload into a fixed-size array.
+/// Fails if the wire length does not match exactly `N * 8` bytes.
+template <size_t N>
+[[nodiscard]] inline bool readPackedDoubleArray(Reader& reader, std::array<double, N>& out) {
+  const uint8_t* data = nullptr;
+  size_t size = 0;
+  if (!reader.readBytes(data, size)) {
+    return false;
+  }
+  if (size != N * 8) {
+    return false;
+  }
+  Reader sub(data, size);
+  for (size_t i = 0; i < N; ++i) {
+    if (!sub.readDouble(out[i])) {
+      return false;
+    }
   }
   return true;
 }
