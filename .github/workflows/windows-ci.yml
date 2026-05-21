@@ -124,6 +124,7 @@ jobs:
         run: >
           conan install . --output-folder=build --build=missing
           -s build_type=Release -s compiler.cppstd=20
+          -o "plotjuggler_core/*:with_tests=True"
 
       - name: Save Conan cache to ghcr.io
         # Only push from the canonical repo on real pushes (forks lack write
