@@ -72,6 +72,24 @@ TEST(BuiltinObjectTest, ParsesRobotDescriptionTypeName) {
   EXPECT_FALSE(parseBuiltinObjectType("RobotDescription").has_value());
 }
 
+TEST(BuiltinObjectTest, PointCloudCarriesFrameId) {
+  PointCloud in;
+  in.width = 100;
+  in.height = 1;
+  in.point_step = 16;
+  in.row_step = 1600;
+  in.frame_id = "velodyne";
+  in.timestamp_ns = 1'500'000'000;
+  BuiltinObject obj{in};
+  ASSERT_EQ(typeOf(obj), BuiltinObjectType::kPointCloud);
+
+  const auto* out = std::any_cast<PointCloud>(&obj);
+  ASSERT_NE(out, nullptr);
+  EXPECT_EQ(out->frame_id, "velodyne");
+  EXPECT_EQ(out->width, 100u);
+  EXPECT_EQ(out->timestamp_ns, 1'500'000'000);
+}
+
 TEST(BuiltinObjectTest, RobotDescriptionRoundtripPreservesFields) {
   RobotDescription in{
       .timestamp_ns = 1'500'000'000,

@@ -208,6 +208,7 @@ or any source that produces a packed point buffer.
 | `row_step` | `uint32_t` | Bytes per row. Usually `point_step * width` when tightly packed. |
 | `is_bigendian` | `bool` | Whether packed field values are big-endian. |
 | `is_dense` | `bool` | `false` when some points may be invalid, typically NaN-filled. |
+| `frame_id` | `std::string` | Source coordinate frame for the points; needed by 3D consumers to resolve TF to a fixed frame. |
 | `fields` | `std::vector<PointField>` | Channel layout for each point. |
 | `data` | `Span<const uint8_t>` | Packed point bytes. |
 | `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |

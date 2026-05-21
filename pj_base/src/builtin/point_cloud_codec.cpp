@@ -154,6 +154,7 @@ std::vector<uint8_t> serializePointCloud(const PointCloud& cloud) {
     writer.message(8, [&](Writer& nested) { writePointField(nested, field); });
   }
   writer.bytes(9, cloud.data.data(), cloud.data.size());
+  writer.string(10, cloud.frame_id);
 
   return out;
 }
@@ -240,6 +241,8 @@ Expected<sdk::PointCloud> deserializePointCloud(const uint8_t* data, size_t size
         return tag.type == WireType::kLengthDelimited && readPointFieldIntoVector(r, cloud.fields);
       case 9:
         return tag.type == WireType::kLengthDelimited && readBytesIntoCloud(r, cloud);
+      case 10:
+        return tag.type == WireType::kLengthDelimited && r.readString(cloud.frame_id);
       default:
         return false;
     }

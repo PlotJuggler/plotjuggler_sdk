@@ -86,4 +86,8 @@ message PointCloud {
 
   // Packed point bytes
   bytes data = 9;
+
+  // Source coordinate frame for the points (e.g. "velodyne", "base_link"). 3D consumers TF-transform from this frame to
+  // a fixed render frame. Empty when unset; 2D consumers ignore this field.
+  string frame_id = 10;
 }

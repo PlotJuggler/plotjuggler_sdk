@@ -35,6 +35,7 @@ TEST(PointCloudCodecTest, RoundTripXYZIntensity) {
   in.row_step = 48;    // 3 * point_step
   in.is_bigendian = false;
   in.is_dense = true;
+  in.frame_id = "velodyne";
   in.fields = {
       {.name = "x", .offset = 0, .datatype = PointField::Datatype::kFloat32, .count = 1},
       {.name = "y", .offset = 4, .datatype = PointField::Datatype::kFloat32, .count = 1},
@@ -53,6 +54,7 @@ TEST(PointCloudCodecTest, RoundTripXYZIntensity) {
   EXPECT_EQ(out->row_step, in.row_step);
   EXPECT_FALSE(out->is_bigendian);
   EXPECT_TRUE(out->is_dense);
+  EXPECT_EQ(out->frame_id, in.frame_id);
   ASSERT_EQ(out->fields.size(), 4u);
   for (size_t i = 0; i < in.fields.size(); ++i) {
     EXPECT_EQ(out->fields[i].name, in.fields[i].name);
@@ -62,6 +64,19 @@ TEST(PointCloudCodecTest, RoundTripXYZIntensity) {
   }
   ASSERT_EQ(out->data.size(), payload.size());
   EXPECT_EQ(std::memcmp(out->data.data(), payload.data(), payload.size()), 0);
+}
+
+TEST(PointCloudCodecTest, FrameIdAbsentRoundTrips) {
+  PointCloud in;
+  in.width = 1;
+  in.height = 1;
+  in.point_step = 12;
+  in.row_step = 12;
+
+  const auto bytes = serializePointCloud(in);
+  auto out = deserializePointCloud(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_TRUE(out->frame_id.empty());
 }
 
 }  // namespace
