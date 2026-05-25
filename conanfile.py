@@ -7,7 +7,7 @@ Exposes four CMake components under the `plotjuggler_core::` namespace:
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_core/0.1.0` and then:
+A consuming Conan recipe declares e.g. `plotjuggler_core/0.3.0` and then:
 
     find_package(plotjuggler_core REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_core::plugin_sdk)
@@ -27,7 +27,7 @@ import os
 
 class PlotjugglerCoreConan(ConanFile):
     name = "plotjuggler_core"
-    version = "0.2.1"
+    version = "0.3.0"
     license = "MIT"
     url = "https://github.com/PlotJuggler/plotjuggler_core"
     description = "C++20 foundation libraries for PlotJuggler: storage engine, plugin SDK, plugin host loaders."
