@@ -241,7 +241,8 @@ TEST(ArrowStreamRoundTripTest, ParserWriteHostAppendArrowStreamWritesBoundTopic)
 
   parser_write_host.flushPending();
 
-  DatastoreToolboxHost tb_host(engine);
+  ObjectStore object_store;
+  DatastoreToolboxHost tb_host(engine, object_store);
   auto tb_vtable = tb_host.raw();
 
   PJ_catalog_snapshot_t snapshot{};
