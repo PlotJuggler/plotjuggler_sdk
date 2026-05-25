@@ -425,6 +425,16 @@ All three share a common internal `WriteCore` that handles:
   used by the toolbox host's C++ implementation. **Not part of the v4
   plugin ABI** — at the boundary, `read_series_arrow` returns
   host-owned `ArrowSchema` + `ArrowArray` structs instead.
+- Object-topic writes — `register_object_topic` + `push_owned_object`
+  route canonical media (images, point clouds, annotations) into the
+  session `ObjectStore` rather than the columnar engine. They forward to
+  the same `ObjectStore::registerTopic` / `pushOwned` the DataSource and
+  Parser object-write hosts use, so the toolbox host now requires an
+  `ObjectStore&` at construction alongside the `DataEngine&`. These are
+  **tail slots** appended to `PJ_toolbox_host_vtable_t` under ABI v5 (no
+  version bump): existing slot offsets are unchanged, and `struct_size`
+  gating lets pre-object-write plugins and hosts interoperate — the SDK
+  `ToolboxHostView` returns an "older host" error when the slot is absent.
 
 ### Arrow C Data Interface ownership rules
 

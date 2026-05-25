@@ -196,6 +196,8 @@ data store.
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
 | `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
+| `registerObjectTopic(source, name, metadata_json)` | Register a media/object topic under a data source. `metadata_json` is opaque to the store and retained verbatim; viewers and parsers read it to pick a renderer. Returns an `ObjectTopicHandle`. |
+| `pushOwnedObject(topic, ts, payload)` | Eager-push serialized object bytes into the ObjectStore under an object topic; the host copies the bytes, so the plugin's buffer is free immediately after the call returns. |
 
 ### Runtime host — control plane
 
@@ -247,6 +249,46 @@ auto status = toolboxHost().appendArrowStream(
 // Success: stream is inert. Failure: destructor releases it. No manual
 // release() dance required.
 ```
+
+### Writing object payloads (images, point clouds, annotations)
+
+`readSeriesArrow` / `appendArrowStream` cover *scalar* columns. To emit
+**canonical media** — an image a toolbox renders, a point cloud, an annotation
+overlay — use the object-write surface, which routes to the host `ObjectStore`
+rather than the columnar engine:
+
+1. `registerObjectTopic(source, name, metadata_json)` declares a topic under a
+   data source you created. The `metadata_json` is opaque to the store; viewers
+   and parsers read it to choose a renderer (e.g. `{"object_type":"image"}` for
+   the MediaViewer). It returns an `ObjectTopicHandle`.
+2. `pushOwnedObject(topic, ts, payload)` pushes serialized bytes (e.g. a
+   `PJ.Image` produced via `serializeImage()` from `pj_base/builtin/image_codec.hpp`).
+   The push is **eager**: the host copies the bytes immediately, so your buffer
+   may be reused or freed the moment the call returns. There is no lazy/fetch
+   variant on the toolbox surface — a toolbox already holds the bytes by the
+   time it writes them.
+
+```cpp
+auto topic = toolboxHost().registerObjectTopic(
+    source, "mosaic/preview", R"({"object_type":"image"})");
+if (!topic) {
+  runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError, topic.error());
+  return;
+}
+
+std::vector<uint8_t> bytes = PJ::serializeImage(my_image);
+auto status = toolboxHost().pushOwnedObject(
+    *topic, timestamp_ns, PJ::Span<const uint8_t>(bytes.data(), bytes.size()));
+if (!status) {
+  runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError, status.error());
+}
+```
+
+> **Older-host compatibility:** these two methods are tail slots appended to the
+> toolbox host vtable. Against a host built before they existed, both return
+> `unexpected("…older host")` instead of crashing — the SDK gates each call on
+> the host's `struct_size`. Check the returned `Expected`/`Status` and degrade
+> gracefully if you must support pre-object-write hosts.
 
 ## Configuration Persistence
 
