@@ -1,6 +1,6 @@
 # Writing a DataSource Plugin
 
-> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). For the full
+> **Tracks the v5 plugin ABI** (`PJ_ABI_VERSION == 5`). For the full
 > evolution rules (tail-slot gating, MIN_VTABLE_SIZE, ABI-FROZEN vs
 > ABI-APPENDABLE structs, Arrow C Data Interface at the write boundary,
 > PJ_NOEXCEPT discipline) see `ARCHITECTURE.md`. This guide walks

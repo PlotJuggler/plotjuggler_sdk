@@ -1,10 +1,10 @@
 /**
  * @file abi_layout_sentinels_test.cpp
- * @brief Compile-time sentinels that pin the v4 plugin ABI layout.
+ * @brief Compile-time sentinels that pin the plugin C ABI layout.
  *
  * Every assertion here is a static_assert. A failure at compile time means
  * a struct defined in the ABI-visible headers has shifted in a way that
- * would silently break binary compatibility with existing v4 plugins.
+ * would silently break binary compatibility with existing plugins.
  *
  * Maintenance rule:
  *   - Sizes and alignments are allowed to GROW at the tail (new slots
@@ -16,7 +16,8 @@
  *     break.
  *   - MIN-size constants (PJ_*_MIN_VTABLE_SIZE) MUST NEVER INCREASE
  *     within a major version. They are pinned at v4.0 release and are
- *     the floor that forward compatibility relies on within the v4 series.
+ *     the floor that forward compatibility relies on within the current
+ *     major series.
  *
  * Pinning target: x86-64 System V (Linux/macOS on Intel/AMD). For other
  * ABIs (ARM64, MSVC), either confirm identical layout during initial
@@ -63,7 +64,7 @@ static_assert(sizeof(PJ_borrowed_dialog_t) == 16, "PJ_borrowed_dialog_t fat poin
 
 // --- DataSource vtable (ABI-APPENDABLE within v4) ----------------------------
 // Offsets of v4.0 slots: PINNED. sizeof and MIN_VTABLE_SIZE are allowed to
-// grow at the tail via future appends within the v4 series.
+// grow at the tail via future appends within the current major series.
 static_assert(offsetof(PJ_data_source_vtable_t, protocol_version) == 0, "v4 prefix pinned");
 static_assert(offsetof(PJ_data_source_vtable_t, struct_size) == 4, "v4 prefix pinned");
 static_assert(offsetof(PJ_data_source_vtable_t, bind) == 40, "v4 bind slot pinned");
@@ -174,7 +175,7 @@ static_assert(offsetof(PJ_toolbox_host_vtable_t, read_series_arrow) == 64, "tool
 static_assert(sizeof(PJ_toolbox_host_vtable_t) == 72, "Toolbox host size");
 
 // --- ABI version symbol ------------------------------------------------------
-static_assert(PJ_ABI_VERSION == 4, "v4 ABI version");
+static_assert(PJ_ABI_VERSION == 5, "v5 ABI version");
 
 // This translation unit has no runtime behavior; the above are all
 // compile-time assertions. Linking only confirms the TU compiled.

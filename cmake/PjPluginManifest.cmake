@@ -83,7 +83,7 @@ function(pj_emit_plugin_manifest TARGET)
 
   if(NOT ARG_ABI_MAJOR)
     # Matches PJ_ABI_VERSION in pj_base/plugin_data_api.h. Bump in lockstep.
-    set(ARG_ABI_MAJOR 4)
+    set(ARG_ABI_MAJOR 5)
   endif()
 
   # Track manifest edits so CMake reconfigures when the source changes.

@@ -9,12 +9,12 @@
  *
  * Canonical-object production (any concrete sdk::* type listed in
  * BuiltinObjectType — see pj_base/builtin/builtin_object.hpp) and the
- * pure-functional scalar production (Expected<vector<NamedFieldValue>>)
- * are C++ SDK contracts: plugins inheriting from MessageParserPluginBase
- * register handlers in SchemaHandler, and the in-process host consumes
- * them via MessageParserPluginBase::parseObject() and parseScalars()
- * called directly on the C++ pointer. Pure-C plugins emit scalars via
- * the parse() slot (writing to writeHost).
+ * pure-functional scalar production (Expected<ObjectRecord> /
+ * Expected<ScalarRecord>) are C++ SDK contracts: plugins inheriting from
+ * MessageParserPluginBase register handlers in SchemaHandler, and the
+ * in-process host consumes them via MessageParserPluginBase::parseObject()
+ * and parseScalars() called directly on the C++ pointer. Pure-C plugins
+ * emit scalars via the parse() slot (writing to writeHost).
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MIT

@@ -45,7 +45,12 @@ extern "C" {
  * (e.g. DataSource + Dialog in one .so) work without any extra ceremony.
  * Do not redefine it manually.
  *
- * v4 plugins advertise version 4. Data-plane changes from the pre-v4 design:
+ * v5 plugins advertise version 5. Relative to v4, this bump rejects
+ * pre-v5 parser DSOs because the C++ MessageParserPluginBase
+ * pure-functional contract changed parseScalars()/parseObject() return
+ * types to ScalarRecord/ObjectRecord.
+ *
+ * The C data-plane layout remains the v4 layout:
  *   - Arrow C Data Interface replaces Arrow IPC bytes at the boundary
  *     (append_arrow_stream + read_series_arrow).
  *   - append_arrow_ipc removed from all write hosts.
@@ -53,7 +58,7 @@ extern "C" {
  *   - Every vtable slot is PJ_NOEXCEPT.
  *   - Every slot carries a thread-class tag (// [main-thread], etc.).
  */
-#define PJ_ABI_VERSION 4
+#define PJ_ABI_VERSION 5
 
 /**
  * Convention for plugin-loaders:
@@ -90,13 +95,13 @@ typedef enum {
   PJ_PRIMITIVE_TYPE_UNSPECIFIED = 0xFF,
 } PJ_primitive_type_t;
 
-/* ABI-FROZEN: layout permanent; changes = v4 break. */
+/* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   const char* data;
   size_t size;
 } PJ_string_view_t;
 
-/* ABI-FROZEN: layout permanent; changes = v4 break. */
+/* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   const uint8_t* data;
   size_t size;
@@ -162,17 +167,17 @@ struct ArrowArrayStream {
 
 #endif /* ARROW_C_DATA_INTERFACE */
 
-/* ABI-FROZEN: layout permanent; changes = v4 break. */
+/* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   uint32_t id;
 } PJ_data_source_handle_t;
 
-/* ABI-FROZEN: layout permanent; changes = v4 break. */
+/* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   uint32_t id;
 } PJ_topic_handle_t;
 
-/* ABI-FROZEN: layout permanent; changes = v4 break. */
+/* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   PJ_topic_handle_t topic;
   uint32_t id;
@@ -506,7 +511,7 @@ typedef struct {
  * `pj.parser_object_write.v1` in addition to `pj.parser_write.v1`.
  * ========================================================================== */
 
-/* ABI-FROZEN: layout permanent; changes = v5 break. */
+/* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   uint32_t id; /* 0 == invalid handle */
 } PJ_object_topic_handle_t;

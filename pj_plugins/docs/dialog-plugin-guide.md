@@ -1,6 +1,6 @@
 # Writing a Dialog Plugin
 
-> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). Every dialog
+> **Tracks the v5 plugin ABI** (`PJ_ABI_VERSION == 5`). Every dialog
 > vtable slot is `PJ_NOEXCEPT` — the SDK trampolines in
 > `DialogPluginBase` catch exceptions automatically, but your overrides
 > must assume no exception ever crosses the ABI boundary. All dialog

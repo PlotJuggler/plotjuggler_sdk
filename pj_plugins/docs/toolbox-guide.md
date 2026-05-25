@@ -1,6 +1,6 @@
 # Writing a Toolbox Plugin
 
-> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). Toolbox plugins
+> **Tracks the v5 plugin ABI** (`PJ_ABI_VERSION == 5`). Toolbox plugins
 > read time series via the host's `read_series_arrow` slot, which
 > returns a caller-owned `ArrowSchema` + `ArrowArray` pair (no more
 > materialised `std::vector`). Wrap returns in

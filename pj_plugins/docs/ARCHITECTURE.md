@@ -1,9 +1,9 @@
 # Plugin System Architecture
 
-## 0a. ABI stability and evolution rules (v4)
+## 0a. ABI stability and evolution rules (v5)
 
 Seven rules the loader and every plugin author rely on. Breaking any of
-these is an ABI break and requires a v5 bump.
+these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
 
 1. **Boot-level ABI symbol.** Every plugin .so exports
    `pj_plugin_abi_version` as a `uint32_t` symbol independent of any
@@ -18,13 +18,13 @@ these is an ABI break and requires a v5 bump.
    duplicate definitions across translation units in one DSO, so a single
    .so can host multiple plugin families (e.g. DataSource + Dialog) with
    one `PJ_*_PLUGIN(...)` macro per family — no duplicate-symbol error.
-   Current value is `PJ_ABI_VERSION == 4`.
+   Current value is `PJ_ABI_VERSION == 5`.
 
 2. **Min-vtable-size floor, pinned at v4.0.** Each family header defines
    `PJ_<FAMILY>_MIN_VTABLE_SIZE` — the byte count of the vtable as
    shipped in v4.0. The loader accepts
    `struct_size >= MIN_VTABLE_SIZE`. This constant MUST NEVER GROW
-   within the v4 series. Growing it would reject plugins compiled
+   within a major series. Growing it would reject plugins compiled
    against older v4 headers (which correctly report a smaller size),
    silently breaking the forward-compatibility promise.
 
@@ -40,7 +40,7 @@ these is an ABI break and requires a v5 bump.
    - **ABI-FROZEN**: `PJ_error_t`, `PJ_string_view_t`, `PJ_bytes_view_t`,
      `PJ_borrowed_dialog_t`, `PJ_service_t`, `PJ_service_registry_t`,
      handle types, primitive-value unions. Layout permanent; any change
-     is a v4 break. `PJ_error_t` has `extended` + `extended_kind` slots
+     is an ABI break. `PJ_error_t` has `extended` + `extended_kind` slots
      reserved as its one growth path — do not add further top-level
      fields.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
@@ -101,10 +101,11 @@ for known ids or `nullptr`. Hosts call via `handle.getPluginExtension(id)`
 (tail-slot-gated). Use the experimental namespace for work-in-progress
 extensions; graduate to stable (`pj.<name>.v1`) once locked in.
 
-## 0. Protocol v4 (current)
+## 0. C protocol v4 (current under ABI v5)
 
-All four plugin families (DataSource, MessageParser, Toolbox, Dialog) track
-protocol v4. Key v4 distinguishing features (a superset of everything the
+All four plugin families (DataSource, MessageParser, Toolbox, Dialog) keep
+the v4 C protocol layouts under the v5 boot ABI. Key v4 distinguishing
+features (a superset of everything the
 previously-circulated pre-v4 design included):
 
 - **Arrow C Data Interface at the data boundary.** The write-host

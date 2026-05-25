@@ -1,6 +1,6 @@
 # Writing a MessageParser Plugin
 
-> **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). The parser
+> **Tracks the v5 plugin ABI** (`PJ_ABI_VERSION == 5`). The parser
 > write-host supports per-record writes and an optional Arrow stream
 > batch path for parser-shaped formats that naturally decode batches.
 > For ABI evolution rules, error semantics, and noexcept discipline see
@@ -534,21 +534,18 @@ depth image, point cloud, image annotations, frame transforms) returned by name
 from the parser, decoded once, and visualised by widgets that never learn the
 wire format.
 
-Three optional virtual entry points on `MessageParserPluginBase`
+The table-driven `SchemaHandler` routes on `MessageParserPluginBase`
 participate:
 
 ```cpp
-// In your subclass — every override is optional. The base provides
-// safe `unexpected(...)` defaults so legacy parsers compile unchanged.
-PJ::Expected<PJ::sdk::SchemaClassification>
-classifySchema(std::string_view type_name,
-               PJ::Span<const uint8_t> schema) override;
-
-PJ::Expected<std::vector<PJ::sdk::NamedFieldValue>>
-parseScalars(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
-
-PJ::Expected<PJ::sdk::BuiltinObject>
-parseObject(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
+PJ::sdk::SchemaHandler handler;
+handler.object_type = PJ::sdk::BuiltinObjectType::kImage;
+handler.parse_scalars =
+    [](PJ::Timestamp ts, PJ::Span<const uint8_t> payload)
+        -> PJ::Expected<PJ::sdk::ScalarRecord> { /* ... */ };
+handler.parse_object =
+    [](PJ::Timestamp ts, PJ::sdk::PayloadView payload)
+        -> PJ::Expected<PJ::sdk::ObjectRecord> { /* ... */ };
 ```
 
 - `classifySchema` is the *a-priori* declaration — given a type name +
@@ -557,12 +554,13 @@ parseObject(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
   `kNone`) this schema produces. The host consults the answer **before** it
   ever sees the payload, so it can pick the right `ObjectIngestPolicy` for the
   topic.
-- `parseScalars` writes the small-metadata fields (`width`, `height`,
-  `frame_id`, …) that should land in the curve tree as scalar columns.
-- `parseObject` returns the actual builtin value, type-erased as
-  `PJ::sdk::BuiltinObject` (which is `std::any`). The host downcasts
-  with `std::any_cast<PJ::sdk::Image>(&obj)` to dispatch to the
-  matching viewer.
+- `parse_scalars` returns a `ScalarRecord`: small-metadata fields
+  (`width`, `height`, `frame_id`, …) plus an optional parser-controlled
+  timestamp.
+- `parse_object` returns an `ObjectRecord`: the actual builtin value,
+  type-erased as `PJ::sdk::BuiltinObject` (which is `std::any`), plus an
+  optional parser-controlled timestamp. The host downcasts with
+  `std::any_cast<PJ::sdk::Image>(&obj)` to dispatch to the matching viewer.
 
 Builtin types live under `pj_base/builtin/`, one header per
 type. `sdk::Image` carries an open-ended `std::string encoding`

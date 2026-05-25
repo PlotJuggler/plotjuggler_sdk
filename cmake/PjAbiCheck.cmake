@@ -15,7 +15,7 @@
 #                          bumping PJ_ABI_VERSION for a major break).
 #
 # Baseline location: pj_base/abi/baseline.abi — the single source of
-# truth for what the v4 ABI looks like. The baseline is generated from
+# truth for what the current ABI looks like. The baseline is generated from
 # a canary plugin DSO (mock_data_source_plugin) whose symbol surface
 # exercises the full ABI header set via the SDK.
 #
