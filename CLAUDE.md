@@ -89,6 +89,24 @@ Before committing, always run:
 
 Code formatting and linting are enforced via pre-commit hooks (clang-format v17).
 
+## Release Versioning
+
+In **every PR**, proactively raise whether it warrants a new Conan release, and
+propose the version bump rather than waiting to be asked. Pre-1.0 versioning
+convention (`0.MINOR.PATCH`):
+
+- **MINOR** bump (`0.X.0`) — any API or ABI **break**: removing/reordering ABI
+  vtable slots, changing existing struct layouts or function signatures, or any
+  source-incompatible SDK change.
+- **PATCH** bump (`0.x.Y`) — **backward-compatible** changes: tail-appended ABI
+  slots (gated by `struct_size`), additive SDK helpers, bug fixes, docs.
+
+The version is declared in two places that **must stay in sync**: `version` in
+`conanfile.py` and `PJ_PACKAGE_VERSION` in the root `CMakeLists.txt` (also update
+the example tag in the `conanfile.py` docstring). Tagging and pushing the release
+is a separate, explicitly-authorized step — never tag or push a release without
+the user's go-ahead.
+
 ## Instructions Glossary
 
 - **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `docs/`, `pj_datastore/docs/`, `pj_plugins/docs/`, and any other location.
