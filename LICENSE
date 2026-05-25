@@ -1,21 +1,26 @@
-MIT License
+PlotJuggler Core is licensed per-module. Every source file carries an
+SPDX-License-Identifier header that is authoritative for that file.
+
+  Module          License        Full text
+  ------------    -----------    ---------------
+  pj_base         Apache-2.0     LICENSE-APACHE
+  pj_plugins      Apache-2.0     LICENSE-APACHE
+  examples        Apache-2.0     LICENSE-APACHE
+  pj_datastore    MPL-2.0        LICENSE-MPL
+
+Rationale:
+
+  - The plugin-facing surface (pj_base, pj_plugins) is Apache-2.0 so that
+    third parties may build proprietary plugins and applications on top of
+    the SDK without restriction. Apache-2.0 also grants an explicit patent
+    license to downstream users.
+
+  - The storage engine (pj_datastore) is MPL-2.0. MPL-2.0 is file-level
+    (weak) copyleft: modifications to the engine's own source files must be
+    published, but the engine may be combined with proprietary code and
+    linked into proprietary applications.
+
+Plugins load through a stable C ABI and never statically link pj_datastore,
+so the MPL-2.0 engine imposes no obligations on plugin authors.
 
 Copyright (c) 2026 Davide Faconti
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.

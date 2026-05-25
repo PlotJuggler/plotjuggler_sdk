@@ -1,6 +1,6 @@
 #pragma once
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Vocabulary types for cross-module diagnostic propagation.
 //

@@ -6,7 +6,7 @@
  * release-callback semantics with a simple instrumented struct.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
 

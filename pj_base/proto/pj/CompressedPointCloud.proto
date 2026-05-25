@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
 // PlotJuggler canonical compressed point cloud protobuf schema.
 // Follows the opaque-asset pattern shared with VideoFrame and Mesh3D.
 

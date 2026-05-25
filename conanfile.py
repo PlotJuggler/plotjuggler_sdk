@@ -28,7 +28,9 @@ import os
 class PlotjugglerCoreConan(ConanFile):
     name = "plotjuggler_core"
     version = "0.3.1"
-    license = "MIT"
+    # Apache-2.0 covers pj_base + pj_plugins (the plugin-facing SDK);
+    # MPL-2.0 covers pj_datastore (the storage engine). See LICENSE.
+    license = "Apache-2.0 AND MPL-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_core"
     description = "C++20 foundation libraries for PlotJuggler: storage engine, plugin SDK, plugin host loaders."
     topics = ("plotjuggler", "plugin-sdk", "telemetry", "data-visualization")
@@ -65,6 +67,8 @@ class PlotjugglerCoreConan(ConanFile):
     exports_sources = (
         "CMakeLists.txt",
         "LICENSE",
+        "LICENSE-APACHE",
+        "LICENSE-MPL",
         "cmake/*",
         "pj_base/*",
         "pj_datastore/*",
@@ -119,9 +123,11 @@ class PlotjugglerCoreConan(ConanFile):
     def package(self):
         cmake = CMake(self)
         cmake.install()
+        # Ships LICENSE (the per-module map) plus the full Apache-2.0 and
+        # MPL-2.0 texts (LICENSE-APACHE, LICENSE-MPL).
         copy(
             self,
-            "LICENSE",
+            "LICENSE*",
             src=self.source_folder,
             dst=os.path.join(self.package_folder, "licenses"),
         )

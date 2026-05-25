@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/toolbox_protocol.h"

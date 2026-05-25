@@ -34,7 +34,7 @@
  * @see pj_plugins/examples/mock_source_with_dialog.cpp for StreamSourceBase + Dialog.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

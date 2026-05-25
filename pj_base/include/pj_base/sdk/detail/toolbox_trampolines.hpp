@@ -5,7 +5,7 @@
  * Every trampoline is `noexcept` — the v4 vtable requires it.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

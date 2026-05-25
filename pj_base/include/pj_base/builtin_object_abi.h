@@ -17,7 +17,7 @@
  * emit scalars via the parse() slot (writing to writeHost).
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef PJ_BUILTIN_OBJECT_ABI_H
 #define PJ_BUILTIN_OBJECT_ABI_H

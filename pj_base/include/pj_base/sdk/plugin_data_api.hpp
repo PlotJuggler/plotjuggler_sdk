@@ -1,6 +1,6 @@
 #pragma once
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #include <cstring>
 #include <functional>
@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "pj_base/builtin/builtin_object.hpp"
-
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/arrow.hpp"

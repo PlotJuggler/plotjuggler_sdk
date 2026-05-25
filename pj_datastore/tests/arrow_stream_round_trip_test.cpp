@@ -11,7 +11,7 @@
  * a dlopen'd plugin — all ABI calls are made directly on the C vtable.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MPL-2.0
 
 #include <gtest/gtest.h>
 

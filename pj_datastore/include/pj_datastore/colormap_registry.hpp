@@ -1,6 +1,6 @@
 #pragma once
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MPL-2.0
 
 #include <string>
 #include <string_view>

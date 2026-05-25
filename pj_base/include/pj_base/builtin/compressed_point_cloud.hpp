@@ -3,7 +3,7 @@
  * @brief Point cloud delivered in a compressed binary format (Draco, ...).
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

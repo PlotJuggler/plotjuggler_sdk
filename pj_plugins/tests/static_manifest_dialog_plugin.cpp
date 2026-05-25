@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
 #include "pj_plugins/dialog_protocol.h"
 
 extern "C" PJ_DIALOG_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;

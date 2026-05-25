@@ -21,7 +21,7 @@
  * (bind_schema) -> (classify_schema) -> parse -> destroy.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef PJ_MESSAGE_PARSER_PROTOCOL_H
 #define PJ_MESSAGE_PARSER_PROTOCOL_H

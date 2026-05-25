@@ -3,7 +3,7 @@
  * @brief 3D mesh asset in its native binary format (GLTF/STL/PLY/OBJ/USD/DAE).
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

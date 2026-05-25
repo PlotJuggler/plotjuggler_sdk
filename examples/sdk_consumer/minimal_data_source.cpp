@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
 #include <pj_base/sdk/data_source_patterns.hpp>
 
 namespace {

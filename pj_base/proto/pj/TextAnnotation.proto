@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
 // PlotJuggler canonical image annotation protobuf schema.
 // Field layout adapted from Foxglove SDK schemas (MIT License,
 // Copyright (c) Foxglove Technologies Inc).

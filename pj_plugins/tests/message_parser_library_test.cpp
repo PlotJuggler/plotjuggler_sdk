@@ -1,5 +1,5 @@
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #include "pj_plugins/host/message_parser_library.hpp"
 

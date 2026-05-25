@@ -1,6 +1,6 @@
 #pragma once
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #include <pj_plugins/sdk/dialog_plugin_base.hpp>
 #include <pj_plugins/sdk/widget_event.hpp>
@@ -90,15 +90,16 @@ class DialogPluginTyped : public DialogPluginBase {
 
   /// SequencePicker: the date/time range filter changed. from_iso/to_iso are
   /// ISO-8601 datetime strings (empty = unbounded on that side).
-  virtual bool onDateRangeChanged(std::string_view /*widget_name*/, std::string_view /*from_iso*/,
-                                  std::string_view /*to_iso*/, bool /*every_day*/) {
+  virtual bool onDateRangeChanged(
+      std::string_view /*widget_name*/, std::string_view /*from_iso*/, std::string_view /*to_iso*/,
+      bool /*every_day*/) {
     return false;
   }
 
   /// MetadataQueryBar: a key/op/value selector combo was activated.
   /// role is "key" | "op" | "value".
-  virtual bool onQuerySelector(std::string_view /*widget_name*/, std::string_view /*role*/,
-                               std::string_view /*value*/) {
+  virtual bool onQuerySelector(
+      std::string_view /*widget_name*/, std::string_view /*role*/, std::string_view /*value*/) {
     return false;
   }
 

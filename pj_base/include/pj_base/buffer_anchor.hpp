@@ -9,7 +9,7 @@
  * and keeps the allocation alive while at least one anchor copy survives.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

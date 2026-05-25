@@ -1,6 +1,6 @@
 #pragma once
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #include <nlohmann/json.hpp>
 #include <string>
@@ -122,8 +122,8 @@ struct WidgetEventBuilder {
 
   /// SequencePicker: date/time range filter changed. from/to are ISO-8601
   /// datetime strings (empty = unbounded on that side).
-  [[nodiscard]] static std::string dateRangeChanged(std::string_view from_iso, std::string_view to_iso,
-                                                    bool every_day) {
+  [[nodiscard]] static std::string dateRangeChanged(
+      std::string_view from_iso, std::string_view to_iso, bool every_day) {
     nlohmann::json j;
     j["date_from_iso"] = from_iso;
     j["date_to_iso"] = to_iso;

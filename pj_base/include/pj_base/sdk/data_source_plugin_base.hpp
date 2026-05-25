@@ -24,7 +24,7 @@
  * See `pj_plugins/examples/mock_data_source.cpp` for a complete example.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

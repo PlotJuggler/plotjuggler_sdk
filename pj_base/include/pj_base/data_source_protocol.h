@@ -19,7 +19,7 @@
  * same function on the same context. Hosts copy if they need to retain.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef PJ_DATA_SOURCE_PROTOCOL_H
 #define PJ_DATA_SOURCE_PROTOCOL_H

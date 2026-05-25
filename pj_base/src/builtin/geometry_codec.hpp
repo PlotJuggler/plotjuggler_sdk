@@ -1,6 +1,6 @@
 #pragma once
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 //
 // Internal helpers shared across builtin-object codecs. Provides write /
 // decode functions for the geometric primitives reused by multiple types

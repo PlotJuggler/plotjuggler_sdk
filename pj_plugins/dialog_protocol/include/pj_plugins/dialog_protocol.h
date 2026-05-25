@@ -1,7 +1,7 @@
 #ifndef PJ_DIALOG_PROTOCOL_H
 #define PJ_DIALOG_PROTOCOL_H
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #include <stdbool.h>
 #include <stddef.h>

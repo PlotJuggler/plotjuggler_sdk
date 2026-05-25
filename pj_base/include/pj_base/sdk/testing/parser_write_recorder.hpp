@@ -23,7 +23,7 @@
  *   EXPECT_DOUBLE_EQ(recorder.rows()[0].fields[0].numeric, 23.5);
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

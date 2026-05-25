@@ -10,7 +10,7 @@
  * All trampolines are noexcept at the ABI boundary.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
@@ -164,8 +164,7 @@ class MessageParserPluginBase {
     // Use the parser-provided timestamp if set, otherwise fall back to the
     // host-provided one (the message receive time).
     const Timestamp ts = record->ts.value_or(timestamp_ns);
-    return writeHost().appendRecord(
-        ts, Span<const sdk::NamedFieldValue>(record->fields.data(), record->fields.size()));
+    return writeHost().appendRecord(ts, Span<const sdk::NamedFieldValue>(record->fields.data(), record->fields.size()));
   }
 
   // ---------------------------------------------------------------------------
@@ -237,8 +236,7 @@ class MessageParserPluginBase {
   /// Returns unexpected if no handler is registered, or if the registered
   /// handler did not provide a parse_scalars callable. Marked `final` — see
   /// classifySchema above for the rationale.
-  virtual Expected<sdk::ScalarRecord> parseScalars(
-      Timestamp timestamp_ns, Span<const uint8_t> payload) final {
+  virtual Expected<sdk::ScalarRecord> parseScalars(Timestamp timestamp_ns, Span<const uint8_t> payload) final {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
       return unexpected(std::string("parser does not register schema: ") + bound_type_name_);

@@ -26,7 +26,7 @@
  * nanoarrow themselves and use nanoarrow::UniqueSchema etc.
  */
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

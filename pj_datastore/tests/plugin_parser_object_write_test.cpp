@@ -1,5 +1,5 @@
 // Copyright 2026 Davide Faconti
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MPL-2.0
 
 // Phase 3 — verify that a parser can resolve both the scalar and
 // object write hosts from the service registry and write to each from
