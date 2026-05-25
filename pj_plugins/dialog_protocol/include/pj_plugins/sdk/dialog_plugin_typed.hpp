@@ -61,6 +61,13 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// QTableWidget: a horizontal-header section (column) was clicked. Plugins
+  /// that drive their own column sorting override this, re-order their row
+  /// model, and re-emit — index-based selection/visibility stays consistent.
+  virtual bool onHeaderClicked(std::string_view /*widget_name*/, int /*section*/) {
+    return false;
+  }
+
   virtual bool onCodeChanged(std::string_view /*widget_name*/, std::string_view /*code*/) {
     return false;
   }
@@ -76,6 +83,25 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// RangeSlider: a handle (or the whole span) moved.
+  virtual bool onRangeChanged(std::string_view /*widget_name*/, int /*lower*/, int /*upper*/) {
+    return false;
+  }
+
+  /// SequencePicker: the date/time range filter changed. from_iso/to_iso are
+  /// ISO-8601 datetime strings (empty = unbounded on that side).
+  virtual bool onDateRangeChanged(std::string_view /*widget_name*/, std::string_view /*from_iso*/,
+                                  std::string_view /*to_iso*/, bool /*every_day*/) {
+    return false;
+  }
+
+  /// MetadataQueryBar: a key/op/value selector combo was activated.
+  /// role is "key" | "op" | "value".
+  virtual bool onQuerySelector(std::string_view /*widget_name*/, std::string_view /*role*/,
+                               std::string_view /*value*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
@@ -83,6 +109,15 @@ class DialogPluginTyped : public DialogPluginBase {
 
     if (auto v = event.chartViewChanged()) {
       return onChartViewChanged(widget_name, v->x_min, v->x_max, v->y_min, v->y_max);
+    }
+    if (auto v = event.rangeChanged()) {
+      return onRangeChanged(widget_name, v->lower, v->upper);
+    }
+    if (auto v = event.dateRangeChanged()) {
+      return onDateRangeChanged(widget_name, v->from_iso, v->to_iso, v->every_day);
+    }
+    if (auto v = event.querySelector()) {
+      return onQuerySelector(widget_name, v->role, v->value);
     }
     if (auto v = event.itemsDropped()) {
       return onItemsDropped(widget_name, *v);
@@ -116,6 +151,9 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.itemDoubleClickedIndex()) {
       return onItemDoubleClicked(widget_name, *v);
+    }
+    if (auto v = event.headerSection()) {
+      return onHeaderClicked(widget_name, *v);
     }
     // value: try int first, then double
     if (auto v = event.valueInt()) {

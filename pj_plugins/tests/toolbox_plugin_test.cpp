@@ -82,6 +82,11 @@ PJ_toolbox_host_t makeToolboxHost(ToolboxState* state) {
       .append_arrow_stream = tbAppendArrowStream,
       .acquire_catalog_snapshot = tbCatalog,
       .read_series_arrow = tbReadSeriesArrow,
+      // Tail slots — left null because this mock host doesn't exercise the
+      // object-topic surface. ToolboxHostView::registerObjectTopic /
+      // pushOwnedObject return `unexpected("older host")` for null slots.
+      .register_object_topic = nullptr,
+      .push_owned_object = nullptr,
   };
   return PJ_toolbox_host_t{.ctx = state, .vtable = &vtable};
 }

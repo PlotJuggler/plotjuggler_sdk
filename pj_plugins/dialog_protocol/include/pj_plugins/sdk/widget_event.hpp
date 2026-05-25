@@ -96,6 +96,11 @@ class WidgetEvent {
     return getInt("item_double_clicked_index");
   }
 
+  /// QTableWidget: horizontal-header section clicked (returns column index)
+  std::optional<int> headerSection() const {
+    return getInt("header_section");
+  }
+
   /// Code editor: code changed
   std::optional<std::string> codeChanged() const {
     return getString("code_changed");
@@ -115,6 +120,55 @@ class WidgetEvent {
       }
     }
     return result;
+  }
+
+  /// SequencePicker: date/time range filter (ISO datetime strings, empty =
+  /// unbounded on that side).
+  struct DateRangeFilter {
+    std::string from_iso;
+    std::string to_iso;
+    bool every_day;
+  };
+
+  std::optional<DateRangeFilter> dateRangeChanged() const {
+    auto from = data_.find("date_from_iso");
+    auto to = data_.find("date_to_iso");
+    auto ed = data_.find("every_day");
+    if (from == data_.end() || !from->is_string() || to == data_.end() || !to->is_string() || ed == data_.end() ||
+        !ed->is_boolean()) {
+      return std::nullopt;
+    }
+    return DateRangeFilter{from->get<std::string>(), to->get<std::string>(), ed->get<bool>()};
+  }
+
+  /// MetadataQueryBar: a key/op/value selector combo was activated.
+  struct QuerySelector {
+    std::string role;  // "key" | "op" | "value"
+    std::string value;
+  };
+
+  std::optional<QuerySelector> querySelector() const {
+    auto role = data_.find("query_selector_role");
+    auto value = data_.find("query_selector_value");
+    if (role == data_.end() || !role->is_string() || value == data_.end() || !value->is_string()) {
+      return std::nullopt;
+    }
+    return QuerySelector{role->get<std::string>(), value->get<std::string>()};
+  }
+
+  /// RangeSlider: lower/upper handle positions (slider units).
+  struct RangeValues {
+    int lower;
+    int upper;
+  };
+
+  std::optional<RangeValues> rangeChanged() const {
+    auto lo = data_.find("range_lower");
+    auto hi = data_.find("range_upper");
+    if (lo == data_.end() || !lo->is_number_integer() || hi == data_.end() || !hi->is_number_integer()) {
+      return std::nullopt;
+    }
+    return RangeValues{lo->get<int>(), hi->get<int>()};
   }
 
   /// ChartPreviewWidget: visible range changed via zoom or pan.

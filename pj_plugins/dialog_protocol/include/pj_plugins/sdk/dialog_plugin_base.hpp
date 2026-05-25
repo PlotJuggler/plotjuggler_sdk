@@ -243,7 +243,16 @@ const PJ_dialog_vtable_t* dialogVtableFor() noexcept;
 ///   };
 template <class DialogT>
 PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
-  return PJ_borrowed_dialog_t{&dialog, dialogVtableFor<DialogT>()};
+  // static_cast to DialogPluginBase* before erasing to void* so the
+  // C-ABI ctx points to the DialogPluginBase subobject regardless of
+  // multiple inheritance order. Without this, plugins whose dialog
+  // class derives from another base first (e.g. QObject for Q_OBJECT
+  // support) would hand the wrong base-pointer to the trampolines,
+  // and `static_cast<DialogPluginBase*>(ctx)` inside them would read
+  // garbage members and dispatch through a corrupted vtable, producing
+  // a SIGSEGV deep inside the first `get_ui_content` / `widget_data`
+  // call.
+  return PJ_borrowed_dialog_t{static_cast<DialogPluginBase*>(&dialog), dialogVtableFor<DialogT>()};
 }
 
 }  // namespace PJ
@@ -277,7 +286,10 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
     static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate(           \
         []() noexcept -> void* {                                                            \
           try {                                                                             \
-            return new ClassName();                                                         \
+            /* static_cast to DialogPluginBase* before erasing to void* so      */          \
+            /* trampolines that re-cast back find the right subobject in        */          \
+            /* multiple-inheritance plugins (e.g. ClassName : QObject, Dialog). */          \
+            return static_cast<PJ::DialogPluginBase*>(new ClassName());                     \
           } catch (...) {                                                                   \
             return nullptr;                                                                 \
           }                                                                                 \

@@ -921,8 +921,17 @@ struct DatastoreParserWriteHostState {
 };
 
 struct DatastoreToolboxHostState {
-  explicit DatastoreToolboxHostState(DataEngine& engine) : core(engine) {}
+  DatastoreToolboxHostState(DataEngine& engine, ObjectStore& store) : core(engine), object_store(store) {}
   ToolboxCore core;
+  // Toolbox plugins share the session's object store; the host holds a
+  // reference so register_object_topic + push_owned_object can forward
+  // without going back through the engine.
+  ObjectStore& object_store;
+  std::string object_last_error;
+
+  void setObjectError(std::string msg) {
+    object_last_error = std::move(msg);
+  }
 };
 
 struct DatastoreSourceObjectWriteHostState {
@@ -1197,6 +1206,75 @@ bool toolboxReadSeriesArrow(
     }
     return true;
   });
+}
+
+bool toolboxRegisterObjectTopic(
+    void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
+    PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  if (out_handle == nullptr) {
+    propagateError(out_error, "out_handle must not be null");
+    return false;
+  }
+  // Validate the source handle against the engine — same check used by
+  // scalar ensureTopic so the toolbox can't register a topic against a
+  // dataset that doesn't exist.
+  if (impl->core.engine_.getDataset(source.id) == nullptr) {
+    impl->setObjectError(fmt::format("data source {} not found", source.id));
+    propagateError(out_error, impl->object_last_error.c_str());
+    return false;
+  }
+  try {
+    ObjectTopicDescriptor desc{};
+    desc.dataset_id = source.id;
+    desc.topic_name = std::string(toStringView(topic_name));
+    desc.metadata_json = std::string(toStringView(metadata_json));
+    auto result = impl->object_store.registerTopic(desc);
+    if (!result) {
+      impl->setObjectError(result.error());
+      propagateError(out_error, impl->object_last_error.c_str());
+      return false;
+    }
+    out_handle->id = result->id;
+    impl->object_last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setObjectError(e.what());
+    propagateError(out_error, impl->object_last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setObjectError("registerObjectTopic: unknown exception");
+    propagateError(out_error, impl->object_last_error.c_str());
+    return false;
+  }
+}
+
+bool toolboxPushOwnedObject(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, std::size_t size,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
+  try {
+    std::vector<uint8_t> bytes;
+    if (data != nullptr && size > 0) {
+      bytes.assign(data, data + size);
+    }
+    auto result = impl->object_store.pushOwned(ObjectTopicId{topic.id}, timestamp_ns, std::move(bytes));
+    if (!result) {
+      impl->setObjectError(result.error());
+      propagateError(out_error, impl->object_last_error.c_str());
+      return false;
+    }
+    impl->object_last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setObjectError(e.what());
+    propagateError(out_error, impl->object_last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setObjectError("pushOwnedObject: unknown exception");
+    propagateError(out_error, impl->object_last_error.c_str());
+    return false;
+  }
 }
 
 /// RAII holder for the plugin-owned `fetch_ctx` passed to push_lazy. Stores
@@ -1597,6 +1675,8 @@ const PJ_toolbox_host_vtable_t kToolboxVTable = {
     toolboxAppendArrowStream,
     toolboxAcquireCatalogSnapshot,
     toolboxReadSeriesArrow,
+    toolboxRegisterObjectTopic,
+    toolboxPushOwnedObject,
 };
 
 const PJ_object_write_host_vtable_t kSourceObjectWriteVTable = {
@@ -1647,8 +1727,8 @@ void DatastoreParserWriteHost::flushPending() {
   state_->core.flushPending();
 }
 
-DatastoreToolboxHost::DatastoreToolboxHost(DataEngine& engine)
-    : state_(std::make_unique<DatastoreToolboxHostState>(engine)) {}
+DatastoreToolboxHost::DatastoreToolboxHost(DataEngine& engine, ObjectStore& object_store)
+    : state_(std::make_unique<DatastoreToolboxHostState>(engine, object_store)) {}
 DatastoreToolboxHost::~DatastoreToolboxHost() = default;
 DatastoreToolboxHost::DatastoreToolboxHost(DatastoreToolboxHost&&) noexcept = default;
 DatastoreToolboxHost& DatastoreToolboxHost::operator=(DatastoreToolboxHost&&) noexcept = default;

@@ -13,6 +13,7 @@
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_datastore/object_store.hpp"
 #include "pj_datastore/plugin_data_host.hpp"
 #include "pj_datastore/writer.hpp"
 
@@ -23,7 +24,8 @@ using namespace PJ::sdk;
 
 struct Fixture {
   DataEngine engine;
-  DatastoreToolboxHost toolbox_impl{engine};
+  ObjectStore object_store;
+  DatastoreToolboxHost toolbox_impl{engine, object_store};
   ToolboxHostView toolbox{toolbox_impl.raw()};
 };
 

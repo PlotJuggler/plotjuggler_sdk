@@ -1178,12 +1178,63 @@ class ToolboxHostView {
     return MaterializedSeriesView(std::move(schema), std::move(array));
   }
 
+  /// Register an object topic for media payloads (images, point clouds,
+  /// annotations) under a previously created data source. `metadata_json`
+  /// is opaque to the store and retained verbatim; viewers and parsers
+  /// read it to pick a renderer.
+  ///
+  /// Returns `unexpected` if the host predates this ABI slot — older hosts
+  /// can be detected via the ABI's `PJ_HAS_TAIL_SLOT` macro; in this
+  /// view's terms, the function pointer will be null.
+  [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopic(
+      DataSourceHandle source, std::string_view name, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!hasTailSlot(offsetof(PJ_toolbox_host_vtable_t, register_object_topic), host_.vtable->register_object_topic)) {
+      return unexpected("toolbox host does not support object topics (older host)");
+    }
+    ObjectTopicHandle handle{};
+    PJ_error_t err{};
+    if (!host_.vtable->register_object_topic(
+            host_.ctx, source, toAbiString(name), toAbiString(metadata_json), &handle, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return handle;
+  }
+
+  /// Eager push of an object payload — host copies the bytes into its own
+  /// storage. Returns `unexpected` on older hosts that don't expose the
+  /// slot (see registerObjectTopic).
+  [[nodiscard]] Status pushOwnedObject(ObjectTopicHandle topic, Timestamp ts, Span<const uint8_t> payload) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!hasTailSlot(offsetof(PJ_toolbox_host_vtable_t, push_owned_object), host_.vtable->push_owned_object)) {
+      return unexpected("toolbox host does not support object payloads (older host)");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->push_owned_object(host_.ctx, topic, ts, payload.data(), payload.size(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
   [[nodiscard]] const PJ_toolbox_host_t& raw() const noexcept {
     return host_;
   }
 
  private:
   PJ_toolbox_host_t host_{};
+
+  /// Tail-slot guard mirroring PJ_HAS_TAIL_SLOT from the C ABI: the host's
+  /// struct_size must be large enough to cover the field, AND the slot
+  /// must be non-null. Templated on the function-pointer type so the
+  /// sizeof check stays accurate without naming the typedef.
+  template <class Fn>
+  [[nodiscard]] bool hasTailSlot(std::size_t field_offset, Fn fn) const noexcept {
+    return host_.vtable != nullptr && host_.vtable->struct_size >= field_offset + sizeof(Fn) && fn != nullptr;
+  }
 };
 
 // ---------------------------------------------------------------------------

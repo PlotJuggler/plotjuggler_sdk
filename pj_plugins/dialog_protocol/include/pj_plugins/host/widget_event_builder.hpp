@@ -97,6 +97,15 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// QTableWidget: a horizontal-header section was clicked (column index).
+  /// Lets a plugin own column sorting — it re-sorts its row model and re-emits
+  /// rows, keeping index-based selection/visibility consistent.
+  [[nodiscard]] static std::string headerClicked(int section) {
+    nlohmann::json j;
+    j["header_section"] = section;
+    return j.dump();
+  }
+
   /// Code editor: code changed
   [[nodiscard]] static std::string codeChanged(std::string_view code) {
     nlohmann::json j;
@@ -108,6 +117,34 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string itemsDropped(const std::vector<std::string>& labels) {
     nlohmann::json j;
     j["items_dropped"] = labels;
+    return j.dump();
+  }
+
+  /// SequencePicker: date/time range filter changed. from/to are ISO-8601
+  /// datetime strings (empty = unbounded on that side).
+  [[nodiscard]] static std::string dateRangeChanged(std::string_view from_iso, std::string_view to_iso,
+                                                    bool every_day) {
+    nlohmann::json j;
+    j["date_from_iso"] = from_iso;
+    j["date_to_iso"] = to_iso;
+    j["every_day"] = every_day;
+    return j.dump();
+  }
+
+  /// MetadataQueryBar: a key/op/value selector combo was activated.
+  /// role is "key" | "op" | "value".
+  [[nodiscard]] static std::string querySelector(std::string_view role, std::string_view value) {
+    nlohmann::json j;
+    j["query_selector_role"] = role;
+    j["query_selector_value"] = value;
+    return j.dump();
+  }
+
+  /// RangeSlider: lower/upper handle position changed (slider units).
+  [[nodiscard]] static std::string rangeChanged(int lower, int upper) {
+    nlohmann::json j;
+    j["range_lower"] = lower;
+    j["range_upper"] = upper;
     return j.dump();
   }
 

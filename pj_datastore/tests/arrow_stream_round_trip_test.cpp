@@ -26,6 +26,7 @@
 #include "pj_base/type_tree.hpp"
 #include "pj_base/types.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_datastore/object_store.hpp"
 #include "pj_datastore/plugin_data_host.hpp"
 
 namespace PJ {
@@ -152,7 +153,8 @@ TEST(ArrowStreamRoundTripTest, WriteViaAppendArrowStreamReadViaReadSeriesArrow) 
   write_host.flushPending();
 
   // Catalog snapshot — look up the field handle for "value".
-  DatastoreToolboxHost tb_host(engine);
+  ObjectStore object_store;
+  DatastoreToolboxHost tb_host(engine, object_store);
   auto tb_vtable = tb_host.raw();
 
   PJ_catalog_snapshot_t snapshot{};

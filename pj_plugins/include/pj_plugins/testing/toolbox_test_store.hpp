@@ -142,6 +142,11 @@ class ToolboxTestStore {
         .append_arrow_stream = &ToolboxTestStore::trampolineAppendArrowStream,
         .acquire_catalog_snapshot = &ToolboxTestStore::trampolineAcquireCatalogSnapshot,
         .read_series_arrow = &ToolboxTestStore::trampolineReadSeriesArrow,
+        // Tail-only object-topic slots — the in-memory test store doesn't
+        // back an ObjectStore. SDK-side tail-slot checks turn the missing
+        // slots into clear "older host" errors.
+        .register_object_topic = nullptr,
+        .push_owned_object = nullptr,
     };
     return PJ_toolbox_host_t{.ctx = this, .vtable = &vtable};
   }

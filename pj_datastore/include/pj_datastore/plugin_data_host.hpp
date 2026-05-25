@@ -117,7 +117,11 @@ class DatastoreParserObjectWriteHost {
 
 class DatastoreToolboxHost {
  public:
-  explicit DatastoreToolboxHost(DataEngine& engine);
+  /// Construct with both an engine (scalar/Arrow column writes) and an
+  /// object store (canonical media payloads — images, point clouds,
+  /// annotations). The two are independent storage backends; toolbox
+  /// plugins write into one or both via the same host fat pointer.
+  DatastoreToolboxHost(DataEngine& engine, ObjectStore& object_store);
   ~DatastoreToolboxHost();
 
   DatastoreToolboxHost(const DatastoreToolboxHost&) = delete;

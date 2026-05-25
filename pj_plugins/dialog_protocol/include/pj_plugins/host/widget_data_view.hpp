@@ -2,10 +2,14 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MIT
 
+#include <cstdint>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace PJ {
@@ -253,6 +257,87 @@ class WidgetDataView {
     return getString(name, "title");
   }
 
+  // --- RangeSlider ---
+  [[nodiscard]] std::optional<int> rangeSliderMin(std::string_view name) const {
+    return getInt(name, "range_min");
+  }
+  [[nodiscard]] std::optional<int> rangeSliderMax(std::string_view name) const {
+    return getInt(name, "range_max");
+  }
+  [[nodiscard]] std::optional<int> rangeSliderLower(std::string_view name) const {
+    return getInt(name, "range_lower");
+  }
+  [[nodiscard]] std::optional<int> rangeSliderUpper(std::string_view name) const {
+    return getInt(name, "range_upper");
+  }
+  /// Returns the [min_ns, max_ns] time window for duration labels, parsed from
+  /// the string-encoded nanosecond fields. nullopt if not set.
+  [[nodiscard]] std::optional<std::pair<std::int64_t, std::int64_t>> rangeSliderTimeSpan(std::string_view name) const {
+    auto mn = getString(name, "range_time_min_ns");
+    auto mx = getString(name, "range_time_max_ns");
+    if (!mn.has_value() || !mx.has_value()) {
+      return std::nullopt;
+    }
+    try {
+      return std::make_pair(static_cast<std::int64_t>(std::stoll(*mn)), static_cast<std::int64_t>(std::stoll(*mx)));
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+
+  // --- SequencePicker ---
+  [[nodiscard]] std::optional<std::string> datePickerEarliest(std::string_view name) const {
+    return getString(name, "picker_earliest");
+  }
+
+  // --- MetadataQueryBar ---
+  [[nodiscard]] std::optional<std::vector<std::string>> queryKeys(std::string_view name) const {
+    return getStringArray(name, "query_keys");
+  }
+  [[nodiscard]] std::optional<std::vector<std::string>> queryOperators(std::string_view name) const {
+    return getStringArray(name, "query_ops");
+  }
+  [[nodiscard]] std::optional<std::vector<std::string>> queryValues(std::string_view name) const {
+    return getStringArray(name, "query_values");
+  }
+  [[nodiscard]] std::optional<std::vector<std::string>> queryCompletions(std::string_view name) const {
+    return getStringArray(name, "query_completions");
+  }
+  /// Read the key→values schema for a self-contained MetadataQueryBar (the JSON
+  /// is a {key: [values]} object written by WidgetData::setQuerySchema).
+  [[nodiscard]] std::optional<std::map<std::string, std::vector<std::string>>> querySchema(
+      std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("query_schema");
+    if (it == w->end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    std::map<std::string, std::vector<std::string>> result;
+    for (const auto& [key, vals] : it->items()) {
+      if (!vals.is_array()) {
+        continue;
+      }
+      std::vector<std::string> values;
+      values.reserve(vals.size());
+      for (const auto& v : vals) {
+        if (v.is_string()) {
+          values.push_back(v.get<std::string>());
+        }
+      }
+      result.emplace(key, std::move(values));
+    }
+    return result;
+  }
+  [[nodiscard]] std::optional<std::string> queryFeedbackText(std::string_view name) const {
+    return getString(name, "query_feedback_text");
+  }
+  [[nodiscard]] std::optional<bool> queryFeedbackOk(std::string_view name) const {
+    return getBool(name, "query_feedback_ok");
+  }
+
   // --- QDialogButtonBox ---
   [[nodiscard]] std::optional<bool> okEnabled(std::string_view name) const {
     return getBool(name, "ok_enabled");
@@ -285,6 +370,19 @@ class WidgetDataView {
     return result;
   }
 
+  // --- QDateTimeEdit ---
+  [[nodiscard]] std::optional<std::string> dateTime(std::string_view name) const {
+    return getString(name, "datetime");
+  }
+  [[nodiscard]] std::optional<std::pair<std::string, std::string>> dateTimeRange(std::string_view name) const {
+    auto mn = getString(name, "datetime_min");
+    auto mx = getString(name, "datetime_max");
+    if (!mn.has_value() && !mx.has_value()) {
+      return std::nullopt;
+    }
+    return std::make_pair(mn.value_or(std::string()), mx.value_or(std::string()));
+  }
+
   // --- Generic (any widget) ---
   [[nodiscard]] std::optional<bool> enabled(std::string_view name) const {
     return getBool(name, "enabled");
@@ -310,6 +408,101 @@ class WidgetDataView {
       return std::nullopt;
     }
     return ui_it->get<std::string>();
+  }
+
+  /// Returns the close-reason string if WidgetData::requestClose was called, or
+  /// nullopt. Observed by PanelEngine; ignored by DialogEngine.
+  [[nodiscard]] std::optional<std::string> requestClose() const {
+    auto it = data_.find("__request_close");
+    if (it == data_.end() || !it->is_string()) {
+      return std::nullopt;
+    }
+    return it->get<std::string>();
+  }
+
+  // --- QTableWidget filtering / styling (Mosaico parity) ---
+
+  /// List of row indexes that should remain visible (rows not listed are
+  /// hidden). Returns nullopt when the field is missing OR JSON null
+  /// (clearVisibleRows): in both cases the host applies no visibility change
+  /// this update. To show every row, send the full index list explicitly.
+  /// NOTE: missing and null are intentionally indistinguishable here; a future
+  /// 3-state contract (unset / show-all / explicit-set) would need a sentinel.
+  [[nodiscard]] std::optional<std::vector<int>> visibleRows(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto it = w->find("visible_rows");
+    if (it == w->end() || it->is_null()) {
+      return std::nullopt;
+    }
+    if (!it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<int> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      if (item.is_number_integer()) {
+        result.push_back(item.get<int>());
+      }
+    }
+    return result;
+  }
+
+  /// row index → "#rrggbb" tint. Empty string clears the override.
+  [[nodiscard]] std::optional<std::vector<std::pair<int, std::string>>> rowColors(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto it = w->find("row_colors");
+    if (it == w->end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    std::vector<std::pair<int, std::string>> result;
+    for (auto kv = it->begin(); kv != it->end(); ++kv) {
+      try {
+        int row = std::stoi(kv.key());
+        if (kv.value().is_string()) {
+          result.emplace_back(row, kv.value().get<std::string>());
+        }
+      } catch (...) {
+        // skip malformed keys
+      }
+    }
+    return result;
+  }
+
+  /// (row, col, tooltip) tuples for cell-level tooltips.
+  [[nodiscard]] std::optional<std::vector<std::tuple<int, int, std::string>>> cellTooltips(
+      std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto it = w->find("cell_tooltips");
+    if (it == w->end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    std::vector<std::tuple<int, int, std::string>> result;
+    for (auto kv = it->begin(); kv != it->end(); ++kv) {
+      const std::string& key = kv.key();
+      auto comma = key.find(',');
+      if (comma == std::string::npos) {
+        continue;
+      }
+      try {
+        int row = std::stoi(key.substr(0, comma));
+        int col = std::stoi(key.substr(comma + 1));
+        if (kv.value().is_string()) {
+          result.emplace_back(row, col, kv.value().get<std::string>());
+        }
+      } catch (...) {
+        // skip malformed keys
+      }
+    }
+    return result;
   }
 
   // --- Enumeration ---

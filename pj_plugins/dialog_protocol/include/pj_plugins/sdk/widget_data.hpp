@@ -2,6 +2,8 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MIT
 
+#include <cstdint>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
@@ -112,6 +114,49 @@ class WidgetData {
     return *this;
   }
 
+  /// Hide rows whose indexes are NOT in the visible set (live filtering).
+  /// Empty visible set hides every row. To show every row, pass the full
+  /// index list (this is what the host acts on). clearVisibleRows() merely
+  /// unsets the field — the host reads that as nullopt and makes NO visibility
+  /// change, so it does not by itself re-show previously hidden rows.
+  WidgetData& setVisibleRows(std::string_view name, const std::vector<int>& visible) {
+    entry(name)["visible_rows"] = visible;
+    return *this;
+  }
+
+  /// Unset any prior setVisibleRows (serializes JSON null). The host view
+  /// surfaces this as nullopt (indistinguishable from "never set") and applies
+  /// no visibility change; to actively re-show all rows, setVisibleRows() with
+  /// the full index list instead.
+  WidgetData& clearVisibleRows(std::string_view name) {
+    auto& e = entry(name);
+    e["visible_rows"] = nlohmann::json::value_t::null;
+    return *this;
+  }
+
+  /// Tint a single row's background. `color_hex` follows "#rrggbb" or
+  /// the empty string to clear the override.
+  WidgetData& setRowColor(std::string_view name, int row, std::string_view color_hex) {
+    auto& e = entry(name);
+    auto& colors = e["row_colors"];
+    if (!colors.is_object()) {
+      colors = nlohmann::json::object();
+    }
+    colors[std::to_string(row)] = std::string(color_hex);
+    return *this;
+  }
+
+  /// Set the tooltip on a single cell.
+  WidgetData& setCellTooltip(std::string_view name, int row, int col, std::string_view tooltip) {
+    auto& e = entry(name);
+    auto& tt = e["cell_tooltips"];
+    if (!tt.is_object()) {
+      tt = nlohmann::json::object();
+    }
+    tt[std::to_string(row) + "," + std::to_string(col)] = std::string(tooltip);
+    return *this;
+  }
+
   // --- Chart (QFrame used as chart container) ---
 
   /// Set chart series data on a QFrame widget. The host will create or update
@@ -212,6 +257,96 @@ class WidgetData {
     return *this;
   }
 
+  // --- QDateTimeEdit ---
+  /// Set the displayed date+time as an ISO-8601 string (e.g. "2026-05-21T13:45:00").
+  /// Empty string clears any prior value (widget falls back to its default).
+  WidgetData& setDateTime(std::string_view name, std::string_view iso8601) {
+    entry(name)["datetime"] = std::string(iso8601);
+    return *this;
+  }
+
+  /// Set the allowed [min, max] datetime range for a QDateTimeEdit.
+  WidgetData& setDateTimeRange(std::string_view name, std::string_view min_iso, std::string_view max_iso) {
+    auto& e = entry(name);
+    e["datetime_min"] = std::string(min_iso);
+    e["datetime_max"] = std::string(max_iso);
+    return *this;
+  }
+
+  // --- RangeSlider (two-handle range slider) ---
+
+  /// Set the integer [min, max] bounds of a RangeSlider. Setting bounds resets
+  /// the handle values, so call setRangeSliderValues afterwards (or in the same
+  /// widget_data tick) to restore them.
+  WidgetData& setRangeSliderBounds(std::string_view name, int min, int max) {
+    auto& e = entry(name);
+    e["range_min"] = min;
+    e["range_max"] = max;
+    return *this;
+  }
+
+  /// Set the lower/upper handle positions of a RangeSlider (in slider units).
+  WidgetData& setRangeSliderValues(std::string_view name, int lower, int upper) {
+    auto& e = entry(name);
+    e["range_lower"] = lower;
+    e["range_upper"] = upper;
+    return *this;
+  }
+
+  /// Enable duration floating labels on a RangeSlider, mapping the slider's
+  /// [min, max] span onto the absolute time window [min_ns, max_ns]. Handle
+  /// labels show the offset from min_ns; the center label shows the selected
+  /// duration. Nanoseconds are carried as strings to avoid double precision
+  /// loss on epoch-scale values. Pass min_ns == max_ns == 0 to disable.
+  WidgetData& setRangeSliderTimeSpan(std::string_view name, std::int64_t min_ns, std::int64_t max_ns) {
+    auto& e = entry(name);
+    e["range_time_min_ns"] = std::to_string(min_ns);
+    e["range_time_max_ns"] = std::to_string(max_ns);
+    return *this;
+  }
+
+  // --- MetadataQueryBar (Lua filter + key/op/value selectors) ---
+
+  WidgetData& setQueryKeys(std::string_view name, const std::vector<std::string>& keys) {
+    entry(name)["query_keys"] = keys;
+    return *this;
+  }
+  WidgetData& setQueryOperators(std::string_view name, const std::vector<std::string>& ops) {
+    entry(name)["query_ops"] = ops;
+    return *this;
+  }
+  WidgetData& setQueryValues(std::string_view name, const std::vector<std::string>& values) {
+    entry(name)["query_values"] = values;
+    return *this;
+  }
+  WidgetData& setQueryCompletions(std::string_view name, const std::vector<std::string>& items) {
+    entry(name)["query_completions"] = items;
+    return *this;
+  }
+  /// Feed the full key→values schema to a self-contained MetadataQueryBar, which
+  /// owns its own context-aware key/op/value combos and completion. nlohmann
+  /// serializes the map as a JSON object {key: [values]}.
+  WidgetData& setQuerySchema(std::string_view name, const std::map<std::string, std::vector<std::string>>& schema) {
+    entry(name)["query_schema"] = schema;
+    return *this;
+  }
+  /// Validation feedback under the editor. Empty text hides it; ok ⇒ green.
+  WidgetData& setQueryFeedback(std::string_view name, std::string_view text, bool ok) {
+    auto& e = entry(name);
+    e["query_feedback_text"] = std::string(text);
+    e["query_feedback_ok"] = ok;
+    return *this;
+  }
+
+  // --- SequencePicker (date/time range picker) ---
+
+  /// Set the "from" field placeholder of a SequencePicker to the dataset's
+  /// earliest date (ISO-8601 date, e.g. "2016-04-29"). Empty resets the hint.
+  WidgetData& setDatePickerEarliest(std::string_view name, std::string_view iso_date) {
+    entry(name)["picker_earliest"] = std::string(iso_date);
+    return *this;
+  }
+
   // --- QDialogButtonBox ---
   /// Set OK button enabled state. The widget name defaults to "buttonBox"
   /// which is the required name for the DialogEngine to wire accept/reject.
@@ -264,6 +399,17 @@ class WidgetData {
   /// the main dialog resumes. The sub-dialog is read-only (no plugin events).
   WidgetData& requestSubDialog(std::string_view ui_xml) {
     data_["__request_sub_dialog"] = nlohmann::json{{"ui", ui_xml}};
+    return *this;
+  }
+
+  /// Request that the host close the panel hosting this plugin (PanelEngine).
+  /// `reason` is a free-form plugin-defined string (e.g. "import_complete",
+  /// "user_back", "error") forwarded to the host's onCloseRequested callback.
+  /// DialogEngine ignores this command — it has its own accept/reject flow
+  /// via requestAccept() and the buttonBox. PanelEngine observes it on every
+  /// tick and tears down the panel after the callback fires.
+  WidgetData& requestClose(std::string_view reason) {
+    data_["__request_close"] = std::string(reason);
     return *this;
   }
 

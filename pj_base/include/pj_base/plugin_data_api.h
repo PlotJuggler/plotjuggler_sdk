@@ -183,6 +183,15 @@ typedef struct {
   uint32_t id;
 } PJ_field_handle_t;
 
+/* ABI-FROZEN: layout permanent; changes = v5 break.
+ *
+ * Declared up here (rather than next to the object-store host vtables below)
+ * because PJ_toolbox_host_vtable_t now references it: toolbox plugins can
+ * register/push canonical media topics directly through the toolbox host. */
+typedef struct {
+  uint32_t id; /* 0 == invalid handle */
+} PJ_object_topic_handle_t;
+
 /* ==========================================================================
  * Protocol v4 core types
  *
@@ -489,6 +498,26 @@ typedef struct PJ_toolbox_host_vtable_t {
   bool (*read_series_arrow)(
       void* ctx, PJ_field_handle_t field, struct ArrowSchema* out_schema, struct ArrowArray* out_array,
       PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Register an object topic for media payloads (images, point
+   * clouds, annotations). The topic is namespaced under the data source
+   * previously created via create_data_source. `metadata_json` is opaque to
+   * the host — viewers and parsers read it to pick a renderer (e.g.
+   * {"object_type":"image"} for the MediaViewerWidget). Returns false (with
+   * out_error populated) if the source handle is unknown or a topic with
+   * this name already exists for the data source. */
+  bool (*register_object_topic)(
+      void* ctx, PJ_data_source_handle_t source, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
+      PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Eager push of an object payload — host copies the bytes
+   * into ObjectStore. Appropriate for both small messages and the
+   * one-shot media writes that toolbox plugins typically perform; lazy
+   * push is not offered on the toolbox surface (plugin holds the bytes
+   * already by the time it calls). */
+  bool (*push_owned_object)(
+      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, size_t size,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
@@ -511,10 +540,8 @@ typedef struct {
  * `pj.parser_object_write.v1` in addition to `pj.parser_write.v1`.
  * ========================================================================== */
 
-/* ABI-FROZEN: layout permanent; changes = ABI break. */
-typedef struct {
-  uint32_t id; /* 0 == invalid handle */
-} PJ_object_topic_handle_t;
+/* PJ_object_topic_handle_t is declared earlier (next to PJ_field_handle_t)
+ * because the toolbox host vtable references it as well. */
 
 /* Lazy-fetch callback type. Invoked by the host on-demand when a consumer
  * reads an entry stored via push_lazy. On success the plugin populates

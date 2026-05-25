@@ -252,9 +252,17 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 | `onFileSelected(name, path)` | QPushButton (file picker) | selected file path |
 | `onSelectionChanged(name, items)` | QListWidget | vector of selected item texts |
 | `onItemDoubleClicked(name, index)` | QListWidget | row index of double-clicked item |
+| `onHeaderClicked(name, section)` | QTableWidget | clicked column index (for plugin-owned sorting) |
 | `onTabChanged(name, index)` | QTabWidget | new tab index |
 
 All handlers default to returning `false`. Override only the ones you need.
+
+> **Column sorting.** The host does not enable `QTableWidget`'s built-in sort
+> (it would reorder items and desync the index-based `setVisibleRows` /
+> `setSelectedRows` model). Instead, header clicks arrive as
+> `onHeaderClicked(name, section)`; a plugin that wants sortable columns
+> re-orders its own row model (numeric for numeric columns) and re-emits the
+> rows. The host shows a sort indicator on the clicked column.
 
 ### 5. Export the plugin
 
@@ -349,7 +357,7 @@ work like polling a server for available topics.
 | QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
-| QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows` | `onSelectionChanged(name, items)` |
+| QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
 | QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage` | `onCodeChanged(name, code)` for code editors |
 | QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
