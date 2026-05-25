@@ -750,6 +750,50 @@ typedef struct {
   const PJ_colormap_registry_vtable_t* vtable;
 } PJ_colormap_registry_t;
 
+/**
+ * Settings store service (v4).
+ *
+ * Optional host-provided key/value persistence, modeled on Qt's QSettings but
+ * Qt-free. Plugins read/write small scalars (stored as strings) and string
+ * lists keyed by a string; the host owns the backing store (e.g. QSettings in
+ * the GUI app, a JSON file in a headless host) and namespaces keys per plugin.
+ * All calls are [main-thread]. A string / list returned through an out-param
+ * remains valid only until the next call on the same store.
+ */
+typedef struct PJ_settings_store_vtable_t {
+  uint32_t protocol_version;
+  uint32_t struct_size;
+
+  /* [main-thread] Read a string. *out_found reports whether the key exists; on
+   * found, *out_value is valid until the next call on this store. */
+  bool (*get_string)(
+      void* ctx, PJ_string_view_t key, PJ_string_view_t* out_value, bool* out_found, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Write a string (create or overwrite). */
+  bool (*set_string)(void* ctx, PJ_string_view_t key, PJ_string_view_t value, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Read a string list. On found, *out_items points to an array
+   * of *out_count entries, valid until the next call on this store. */
+  bool (*get_string_list)(
+      void* ctx, PJ_string_view_t key, const PJ_string_view_t** out_items, size_t* out_count, bool* out_found,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Write a string list (create or overwrite). */
+  bool (*set_string_list)(
+      void* ctx, PJ_string_view_t key, const PJ_string_view_t* items, size_t count, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Report whether a key exists, in *out_present. */
+  bool (*contains)(void* ctx, PJ_string_view_t key, bool* out_present, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Remove a key (no-op if absent). */
+  bool (*remove_key)(void* ctx, PJ_string_view_t key, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_settings_store_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_settings_store_vtable_t* vtable;
+} PJ_settings_store_t;
+
 #ifdef __cplusplus
 }
 #endif

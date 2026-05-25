@@ -140,10 +140,15 @@ service registry, error out-params, and typed borrowed-dialog patterns):
 
 - **Service registry as the sole binding mechanism.** Plugin vtables expose
   a single `bind(ctx, registry, err)` slot. The host registers all services
-  (write hosts, runtime hosts, colormap, etc.) under canonical
+  (write hosts, runtime hosts, colormap, settings, etc.) under canonical
   reverse-DNS-style names (e.g. `"pj.source_write.v1"`,
-  `"pj.runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`). Plugins
-  acquire only the services they use.
+  `"pj.runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`,
+  `"pj.settings.v1"`). Plugins acquire only the services they use.
+  `"pj.settings.v1"` (optional) is a QSettings-like key/value store any plugin
+  family can use for persistent state — the plugin sees a Qt-free
+  `sdk::SettingsView` (`setValue(key, v)` / `value(key).toInt()` …); the host
+  backs it (QSettings in the GUI app, JSON in a headless host) and namespaces
+  keys per plugin.
 - **Structured errors everywhere.** All fallible ABI calls take a
   `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
   slot is gone.

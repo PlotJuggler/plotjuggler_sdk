@@ -232,6 +232,16 @@ class WidgetData {
     return *this;
   }
 
+  /// Set a QPushButton icon by name, resolved by the host from its own themed
+  /// icon set (so plugins reuse the app's shared glyphs without shipping SVG
+  /// bytes, and get consistent tinting). Unknown ids fall back to no icon.
+  /// Prefer this over setButtonIcon for standard app glyphs; use setButtonIcon
+  /// for custom/one-off SVGs the host won't know about.
+  WidgetData& setButtonIconNamed(std::string_view name, std::string_view icon_id) {
+    entry(name)["button_icon_name"] = icon_id;
+    return *this;
+  }
+
   /// Assign a keyboard shortcut to a QPushButton (e.g. "Ctrl+A", "Ctrl+Shift+A").
   /// The host creates a QShortcut that triggers click() on the button.
   WidgetData& setShortcut(std::string_view name, std::string_view key_sequence) {

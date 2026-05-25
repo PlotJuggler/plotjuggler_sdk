@@ -53,7 +53,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | Method | Description |
 |--------|-------------|
 | `setButtonText(name, text)` | Set button label |
-| `setButtonIcon(name, svg_data)` | Set an inline SVG icon |
+| `setButtonIcon(name, svg_data)` | Set an inline SVG icon (custom/one-off) |
+| `setButtonIconNamed(name, icon_id)` | Set a button icon by id, resolved from the host's themed icon set (consistent tinting; unknown id → no icon) |
 | `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) |
 | `setFilePicker(name, text, filter, title)` | Turn into file picker |
 | `setFolderPicker(name, text, title)` | Turn into folder picker |

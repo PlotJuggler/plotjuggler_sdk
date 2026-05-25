@@ -60,6 +60,7 @@ if(PJ_BUILD_TESTS)
     tests/span_test.cpp
     tests/expected_test.cpp
     tests/plugin_data_api_test.cpp
+    tests/settings_store_host_test.cpp
     tests/data_source_protocol_test.cpp
     # TODO: data_source_plugin_base_test.cpp and
     # message_parser_plugin_base_test.cpp exercised old bind_write_host /

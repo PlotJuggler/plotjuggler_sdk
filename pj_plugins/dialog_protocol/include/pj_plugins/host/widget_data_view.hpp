@@ -222,6 +222,12 @@ class WidgetDataView {
     return getString(name, "button_icon_svg");
   }
 
+  /// Named icon id the host should resolve from its own themed icon set
+  /// (see WidgetData::setButtonIconNamed). Unknown ids: render no icon.
+  [[nodiscard]] std::optional<std::string> buttonIconName(std::string_view name) const {
+    return getString(name, "button_icon_name");
+  }
+
   [[nodiscard]] std::optional<std::string> shortcut(std::string_view name) const {
     return getString(name, "shortcut");
   }
