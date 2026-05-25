@@ -45,13 +45,12 @@ namespace sdk {
 struct SchemaHandler {
   BuiltinObjectType object_type = BuiltinObjectType::kNone;
 
-  /// Scalar route: returns one or more rows, each with an optional
+  /// Scalar route: returns one row of decoded fields with an optional
   /// parser-controlled timestamp. When ScalarRecord::ts is nullopt the
   /// host uses the message's own timestamp. Set it to extract a timestamp
   /// embedded inside the payload (e.g. a ROS Header stamp or a JSON
-  /// "timestamp" field). Returning multiple records from a single payload
-  /// is also supported — useful for batch messages such as JSON arrays.
-  std::function<Expected<std::vector<ScalarRecord>>(Timestamp, Span<const uint8_t>)> parse_scalars;
+  /// "timestamp" field).
+  std::function<Expected<ScalarRecord>(Timestamp, Span<const uint8_t>)> parse_scalars;
 
   /// Canonical-object route: returns an ObjectRecord with an optional
   /// parser-controlled timestamp. When ObjectRecord::ts is nullopt the host
@@ -155,22 +154,18 @@ class MessageParserPluginBase {
     if (!writeHostBound()) {
       return unexpected(std::string("write host not bound"));
     }
-    auto records = parseScalars(timestamp_ns, payload);
-    if (!records) {
-      return unexpected(std::move(records).error());
+    auto record = parseScalars(timestamp_ns, payload);
+    if (!record) {
+      return unexpected(std::move(record).error());
     }
-    for (const auto& rec : *records) {
-      // Use the parser-provided timestamp if set, otherwise fall back to
-      // the host-provided one (the message receive time).
-      const Timestamp ts = rec.ts.value_or(timestamp_ns);
-      if (!rec.fields.empty()) {
-        auto status = writeHost().appendRecord(ts, Span<const sdk::NamedFieldValue>(rec.fields.data(), rec.fields.size()));
-        if (!status) {
-          return status;
-        }
-      }
+    if (record->fields.empty()) {
+      return okStatus();
     }
-    return okStatus();
+    // Use the parser-provided timestamp if set, otherwise fall back to the
+    // host-provided one (the message receive time).
+    const Timestamp ts = record->ts.value_or(timestamp_ns);
+    return writeHost().appendRecord(
+        ts, Span<const sdk::NamedFieldValue>(record->fields.data(), record->fields.size()));
   }
 
   // ---------------------------------------------------------------------------
@@ -242,7 +237,7 @@ class MessageParserPluginBase {
   /// Returns unexpected if no handler is registered, or if the registered
   /// handler did not provide a parse_scalars callable. Marked `final` — see
   /// classifySchema above for the rationale.
-  virtual Expected<std::vector<sdk::ScalarRecord>> parseScalars(
+  virtual Expected<sdk::ScalarRecord> parseScalars(
       Timestamp timestamp_ns, Span<const uint8_t> payload) final {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
