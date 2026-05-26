@@ -67,8 +67,21 @@ if(PJ_BUILD_TESTS)
   find_package(GTest REQUIRED)
 endif()
 
+find_package(fmt REQUIRED)
+
+if(TARGET fmt::fmt-header-only)
+  set(PJ_FMT_TARGET fmt::fmt-header-only)
+elseif(TARGET fmt::fmt)
+  set(PJ_FMT_TARGET fmt::fmt)
+else()
+  message(FATAL_ERROR "fmt is required, but no fmt::fmt or fmt::fmt-header-only target was found.")
+endif()
+
+add_library(pj_internal_fmt INTERFACE)
+target_compile_definitions(pj_internal_fmt INTERFACE FMT_HEADER_ONLY=1)
+target_link_libraries(pj_internal_fmt INTERFACE ${PJ_FMT_TARGET})
+
 if(PJ_BUILD_DATASTORE)
-  find_package(fmt REQUIRED)
   find_package(tsl-robin-map REQUIRED)
   if(PJ_BUILD_TESTS)
     find_package(benchmark CONFIG REQUIRED)

@@ -1,4 +1,3 @@
-find_package(fmt REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
 add_library(pj_plugin_loader_detail STATIC
@@ -57,7 +56,7 @@ target_link_libraries(pj_plugin_catalog
   PRIVATE
     pj_plugin_loader_detail
     pj_dialog_protocol
-    fmt::fmt
+    $<BUILD_INTERFACE:pj_internal_fmt>
     ${CMAKE_DL_LIBS}
     nlohmann_json::nlohmann_json
 )
