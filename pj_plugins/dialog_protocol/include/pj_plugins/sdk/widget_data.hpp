@@ -329,10 +329,15 @@ class WidgetData {
 
   // --- DateRangePicker (date/time range picker) ---
 
-  /// Set the "from" field placeholder of a DateRangePicker to the dataset's
-  /// earliest date (ISO-8601 date, e.g. "2016-04-29"). Empty resets the hint.
-  WidgetData& setDatePickerEarliest(std::string_view name, std::string_view iso_date) {
-    entry(name)["picker_earliest"] = std::string(iso_date);
+  /// Set placeholder hints for a DateRangePicker's empty "from"/"to" fields to
+  /// the dataset's available span (ISO-8601 dates, e.g. "2016-04-29"). Like
+  /// Qt's QLineEdit::setPlaceholderText this is a soft hint, not a selectable-
+  /// range constraint; an empty string on either side clears that hint.
+  WidgetData& setDateRangePlaceholder(
+      std::string_view name, std::string_view earliest_iso, std::string_view latest_iso) {
+    auto& e = entry(name);
+    e["date_range_earliest"] = std::string(earliest_iso);
+    e["date_range_latest"] = std::string(latest_iso);
     return *this;
   }
 

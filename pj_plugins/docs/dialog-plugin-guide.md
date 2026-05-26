@@ -362,7 +362,7 @@ work like polling a server for available topics.
 | QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QDateTimeEdit | `setDateTime`, `setDateTimeRange` | (none — input only) |
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
-| DateRangePicker (date range) | `setDatePickerEarliest` | `onDateRangeChanged(name, from_iso, to_iso)` |
+| DateRangePicker (date range) | `setDateRangePlaceholder` | `onDateRangeChanged(name, from_iso, to_iso)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 

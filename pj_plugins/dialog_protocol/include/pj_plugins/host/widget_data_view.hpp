@@ -292,8 +292,11 @@ class WidgetDataView {
   }
 
   // --- DateRangePicker ---
-  [[nodiscard]] std::optional<std::string> datePickerEarliest(std::string_view name) const {
-    return getString(name, "picker_earliest");
+  [[nodiscard]] std::optional<std::string> dateRangeEarliest(std::string_view name) const {
+    return getString(name, "date_range_earliest");
+  }
+  [[nodiscard]] std::optional<std::string> dateRangeLatest(std::string_view name) const {
+    return getString(name, "date_range_latest");
   }
 
   // --- Field validity indicator (generic) ---
