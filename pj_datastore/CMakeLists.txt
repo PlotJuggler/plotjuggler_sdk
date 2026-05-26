@@ -42,7 +42,7 @@ target_link_libraries(pj_datastore
     pj_base
   PRIVATE
     tsl::robin_map
-    fmt::fmt
+    $<BUILD_INTERFACE:pj_internal_fmt>
     ${PJ_NANOARROW_TARGET}
     ${PJ_NANOARROW_IPC_TARGET}
 )

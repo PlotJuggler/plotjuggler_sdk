@@ -57,6 +57,9 @@ class PlotjugglerCoreConan(ConanFile):
         "arrow/*:with_snappy": True,
         # pj_datastore's Arrow IPC import path needs nanoarrow_ipc + flatcc.
         "nanoarrow/*:with_ipc": True,
+        # fmt is an implementation detail. Compile it header-only so the
+        # static archives do not export a downstream fmt link dependency.
+        "fmt/*:header_only": True,
         # Boost is pulled in transitively by arrow. without_cobalt avoids a
         # known upstream packaging error in recent boost recipes; without_test
         # trims unneeded modules.
@@ -84,9 +87,19 @@ class PlotjugglerCoreConan(ConanFile):
         # nlohmann_json appears in public headers (widget_data, plugin_catalog).
         self.requires("nlohmann_json/3.12.0", transitive_headers=True)
 
+        # fmt is private and header-only at build time; do not propagate it
+        # into consumers of this static-library package.
+        self.requires(
+            "fmt/12.1.0",
+            headers=True,
+            libs=False,
+            visible=False,
+            transitive_headers=False,
+            transitive_libs=False,
+        )
+
         if self.options.with_datastore:
-            # fmt + tsl-robin-map are private; nanoarrow is in public headers.
-            self.requires("fmt/12.1.0")
+            # tsl-robin-map is header-only; nanoarrow is in public headers.
             self.requires("tsl-robin-map/1.4.0", transitive_headers=True)
             self.requires("nanoarrow/0.7.0", transitive_headers=True)
 
@@ -161,7 +174,6 @@ class PlotjugglerCoreConan(ConanFile):
             ds.includedirs = ["include"]
             ds.requires = [
                 "base",
-                "fmt::fmt",
                 "tsl-robin-map::tsl-robin-map",
                 "nanoarrow::nanoarrow",
             ]

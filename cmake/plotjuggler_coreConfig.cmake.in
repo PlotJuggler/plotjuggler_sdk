@@ -17,7 +17,6 @@ foreach(_comp ${plotjuggler_core_FIND_COMPONENTS})
     set(plotjuggler_core_base_FOUND TRUE)
 
   elseif(_comp STREQUAL "datastore")
-    find_dependency(fmt)
     find_dependency(tsl-robin-map)
     find_dependency(nanoarrow)
     set(plotjuggler_core_datastore_FOUND TRUE)
