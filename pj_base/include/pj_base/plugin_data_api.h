@@ -726,7 +726,7 @@ typedef struct {
 } PJ_object_read_host_t;
 
 /**
- * Colormap registry service (v4).
+ * Colormap registry service ("pj.colormap.v1", protocol_version 1).
  *
  * Independent host-provided service for toolbox plugins that want to
  * publish named colormap callbacks.
@@ -751,7 +751,7 @@ typedef struct {
 } PJ_colormap_registry_t;
 
 /**
- * Settings store service (v4).
+ * Settings store service ("pj.settings.v1", protocol_version 1).
  *
  * Optional host-provided key/value persistence, modeled on Qt's QSettings but
  * Qt-free. Plugins read/write small scalars (stored as strings) and string

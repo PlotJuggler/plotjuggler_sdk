@@ -87,10 +87,20 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     return true;
   }
 
+  bool onDateRangeChanged(std::string_view widget_name, std::string_view from_iso, std::string_view to_iso) override {
+    last_handler = "date_range_changed";
+    last_widget = std::string(widget_name);
+    last_date_from = std::string(from_iso);
+    last_date_to = std::string(to_iso);
+    return true;
+  }
+
   // Recorded state
   std::string last_handler;
   std::string last_widget;
   std::string last_text;
+  std::string last_date_from;
+  std::string last_date_to;
   int last_int = -1;
   double last_double = -1.0;
   bool last_bool = false;
@@ -100,6 +110,8 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     last_handler.clear();
     last_widget.clear();
     last_text.clear();
+    last_date_from.clear();
+    last_date_to.clear();
     last_int = -1;
     last_double = -1.0;
     last_bool = false;
@@ -183,6 +195,14 @@ TEST_F(TypedDispatchTest, TabChanged) {
   EXPECT_TRUE(dispatch(plugin, "tabs", R"({"tab_index": 2})"));
   EXPECT_EQ(plugin.last_handler, "tab_changed");
   EXPECT_EQ(plugin.last_int, 2);
+}
+
+TEST_F(TypedDispatchTest, DateRangeChanged) {
+  EXPECT_TRUE(dispatch(plugin, "picker", R"({"date_from_iso": "2016-04-29T00:00:00", "date_to_iso": ""})"));
+  EXPECT_EQ(plugin.last_handler, "date_range_changed");
+  EXPECT_EQ(plugin.last_widget, "picker");
+  EXPECT_EQ(plugin.last_date_from, "2016-04-29T00:00:00");
+  EXPECT_EQ(plugin.last_date_to, "");
 }
 
 // --- Edge cases ---

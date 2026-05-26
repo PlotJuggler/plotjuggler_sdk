@@ -110,6 +110,31 @@ TEST(WidgetEventBuilderTest, TabChanged) {
   EXPECT_EQ(*ev.tabIndex(), 2);
 }
 
+TEST(WidgetEventBuilderTest, DateRangeChanged) {
+  std::string json = PJ::WidgetEventBuilder::dateRangeChanged("2016-04-29T00:00:00", "2016-05-01T12:00:00");
+  PJ::WidgetEvent ev(json);
+  auto range = ev.dateRangeChanged();
+  ASSERT_TRUE(range.has_value());
+  EXPECT_EQ(range->from_iso, "2016-04-29T00:00:00");
+  EXPECT_EQ(range->to_iso, "2016-05-01T12:00:00");
+}
+
+TEST(WidgetEventBuilderTest, DateRangeChangedUnboundedSides) {
+  // Empty strings mean that side of the range is unbounded.
+  std::string json = PJ::WidgetEventBuilder::dateRangeChanged("", "");
+  PJ::WidgetEvent ev(json);
+  auto range = ev.dateRangeChanged();
+  ASSERT_TRUE(range.has_value());
+  EXPECT_TRUE(range->from_iso.empty());
+  EXPECT_TRUE(range->to_iso.empty());
+}
+
+TEST(WidgetEventTest_DateRange, MissingFieldYieldsNullopt) {
+  // Only one side present -> not a valid date-range event.
+  PJ::WidgetEvent ev(R"({"date_from_iso": "2016-04-29T00:00:00"})");
+  EXPECT_FALSE(ev.dateRangeChanged().has_value());
+}
+
 // --- Verify JSON is parseable and contains only expected fields ---
 
 TEST(WidgetEventBuilderTest, ClickedHasNoExtraFields) {

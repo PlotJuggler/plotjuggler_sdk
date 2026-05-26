@@ -1350,7 +1350,11 @@ class SettingsValue {
 /// C++ wrapper around PJ_settings_store_t — an optional, QSettings-like
 /// key/value store the host may expose to plugins (service "pj.settings.v1").
 /// Empty-constructible; `valid()` tells whether the host bound a store.
-/// Scalars are stored as strings; read them back via `value(key).toInt()` etc.
+/// Scalars are stored as strings; reads return an Expected so a backend fault
+/// is visible rather than silently masked as a missing key:
+///   if (auto v = settings.value("count")) { int n = v->toInt(42); }
+/// An unbound store or an absent key is a successful Expected holding a null
+/// value/empty list/false — only a host backend fault yields `!has_value()`.
 /// All calls are main-thread, mirroring QSettings usage.
 class SettingsView {
  public:
@@ -1420,24 +1424,31 @@ class SettingsView {
 
   // --- reads ---
 
-  /// Read a scalar as a QVariant-like SettingsValue. Returns a null value
-  /// (isNull()) if the store is unbound or the key is absent.
-  [[nodiscard]] SettingsValue value(std::string_view key) const {
+  /// Read a scalar as a QVariant-like SettingsValue. A failed Expected means
+  /// the host backend faulted; success holds a null value (isNull()) when the
+  /// store is unbound (optional service) or the key is absent. So `!has_value()`
+  /// is exactly a real host error, not a missing key.
+  [[nodiscard]] Expected<SettingsValue> value(std::string_view key) const {
     if (!valid() || store_.vtable->get_string == nullptr) {
       return SettingsValue{};
     }
     PJ_string_view_t out{};
     bool found = false;
     PJ_error_t err{};
-    if (!store_.vtable->get_string(store_.ctx, toAbiString(key), &out, &found, &err) || !found) {
+    if (!store_.vtable->get_string(store_.ctx, toAbiString(key), &out, &found, &err)) {
+      return unexpected(errorToString(err));
+    }
+    if (!found) {
       return SettingsValue{};
     }
     // Copy out of the host's scratch buffer before it can be reused.
     return SettingsValue{std::string(toStringView(out))};
   }
 
-  /// Read a string list. Empty if the store is unbound or the key is absent.
-  [[nodiscard]] std::vector<std::string> valueStringList(std::string_view key) const {
+  /// Read a string list. A failed Expected means the host backend faulted;
+  /// success holds an empty vector when the store is unbound or the key is
+  /// absent.
+  [[nodiscard]] Expected<std::vector<std::string>> valueStringList(std::string_view key) const {
     std::vector<std::string> result;
     if (!valid() || store_.vtable->get_string_list == nullptr) {
       return result;
@@ -1446,7 +1457,10 @@ class SettingsView {
     std::size_t count = 0;
     bool found = false;
     PJ_error_t err{};
-    if (!store_.vtable->get_string_list(store_.ctx, toAbiString(key), &items, &count, &found, &err) || !found) {
+    if (!store_.vtable->get_string_list(store_.ctx, toAbiString(key), &items, &count, &found, &err)) {
+      return unexpected(errorToString(err));
+    }
+    if (!found) {
       return result;
     }
     result.reserve(count);
@@ -1456,14 +1470,16 @@ class SettingsView {
     return result;
   }
 
-  [[nodiscard]] bool contains(std::string_view key) const {
+  /// Report whether a key exists. A failed Expected means the host backend
+  /// faulted; success holds false when the store is unbound.
+  [[nodiscard]] Expected<bool> contains(std::string_view key) const {
     if (!valid() || store_.vtable->contains == nullptr) {
       return false;
     }
     bool present = false;
     PJ_error_t err{};
     if (!store_.vtable->contains(store_.ctx, toAbiString(key), &present, &err)) {
-      return false;
+      return unexpected(errorToString(err));
     }
     return present;
   }

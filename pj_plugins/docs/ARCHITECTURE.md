@@ -146,9 +146,11 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   `"pj.settings.v1"`). Plugins acquire only the services they use.
   `"pj.settings.v1"` (optional) is a QSettings-like key/value store any plugin
   family can use for persistent state — the plugin sees a Qt-free
-  `sdk::SettingsView` (`setValue(key, v)` / `value(key).toInt()` …); the host
-  backs it (QSettings in the GUI app, JSON in a headless host) and namespaces
-  keys per plugin.
+  `sdk::SettingsView` (`setValue(key, v)` returns a `Status`; reads return an
+  `Expected`, e.g. `if (auto v = settings.value(key)) v->toInt(42)`, so a host
+  backend fault surfaces instead of silently masquerading as a missing key); the
+  host backs it (QSettings in the GUI app, JSON in a headless host) and
+  namespaces keys per plugin.
 - **Structured errors everywhere.** All fallible ABI calls take a
   `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
   slot is gone.
