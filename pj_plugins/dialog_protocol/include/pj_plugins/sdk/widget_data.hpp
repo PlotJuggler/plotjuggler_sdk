@@ -232,6 +232,16 @@ class WidgetData {
     return *this;
   }
 
+  /// Set a QPushButton icon by name, resolved by the host from its own themed
+  /// icon set (so plugins reuse the app's shared glyphs without shipping SVG
+  /// bytes, and get consistent tinting). Unknown ids fall back to no icon.
+  /// Prefer this over setButtonIcon for standard app glyphs; use setButtonIcon
+  /// for custom/one-off SVGs the host won't know about.
+  WidgetData& setButtonIconNamed(std::string_view name, std::string_view icon_id) {
+    entry(name)["button_icon_name"] = icon_id;
+    return *this;
+  }
+
   /// Assign a keyboard shortcut to a QPushButton (e.g. "Ctrl+A", "Ctrl+Shift+A").
   /// The host creates a QShortcut that triggers click() on the button.
   WidgetData& setShortcut(std::string_view name, std::string_view key_sequence) {
@@ -305,45 +315,29 @@ class WidgetData {
     return *this;
   }
 
-  // --- MetadataQueryBar (Lua filter + key/op/value selectors) ---
+  // --- Field validity indicator (generic) ---
 
-  WidgetData& setQueryKeys(std::string_view name, const std::vector<std::string>& keys) {
-    entry(name)["query_keys"] = keys;
-    return *this;
-  }
-  WidgetData& setQueryOperators(std::string_view name, const std::vector<std::string>& ops) {
-    entry(name)["query_ops"] = ops;
-    return *this;
-  }
-  WidgetData& setQueryValues(std::string_view name, const std::vector<std::string>& values) {
-    entry(name)["query_values"] = values;
-    return *this;
-  }
-  WidgetData& setQueryCompletions(std::string_view name, const std::vector<std::string>& items) {
-    entry(name)["query_completions"] = items;
-    return *this;
-  }
-  /// Feed the full key→values schema to a self-contained MetadataQueryBar, which
-  /// owns its own context-aware key/op/value combos and completion. nlohmann
-  /// serializes the map as a JSON object {key: [values]}.
-  WidgetData& setQuerySchema(std::string_view name, const std::map<std::string, std::vector<std::string>>& schema) {
-    entry(name)["query_schema"] = schema;
-    return *this;
-  }
-  /// Validation feedback under the editor. Empty text hides it; ok ⇒ green.
-  WidgetData& setQueryFeedback(std::string_view name, std::string_view text, bool ok) {
+  /// Mark a field's value valid/invalid for a small inline indicator (e.g. a
+  /// tick next to a line edit). The plugin owns the validation rule; the host
+  /// only renders the result. The optional tooltip explains an invalid value.
+  WidgetData& setFieldValid(std::string_view name, bool ok, std::string_view tooltip = {}) {
     auto& e = entry(name);
-    e["query_feedback_text"] = std::string(text);
-    e["query_feedback_ok"] = ok;
+    e["valid"] = ok;
+    e["valid_tooltip"] = std::string(tooltip);
     return *this;
   }
 
-  // --- SequencePicker (date/time range picker) ---
+  // --- DateRangePicker (date/time range picker) ---
 
-  /// Set the "from" field placeholder of a SequencePicker to the dataset's
-  /// earliest date (ISO-8601 date, e.g. "2016-04-29"). Empty resets the hint.
-  WidgetData& setDatePickerEarliest(std::string_view name, std::string_view iso_date) {
-    entry(name)["picker_earliest"] = std::string(iso_date);
+  /// Set placeholder hints for a DateRangePicker's empty "from"/"to" fields to
+  /// the dataset's available span (ISO-8601 dates, e.g. "2016-04-29"). Like
+  /// Qt's QLineEdit::setPlaceholderText this is a soft hint, not a selectable-
+  /// range constraint; an empty string on either side clears that hint.
+  WidgetData& setDateRangePlaceholder(
+      std::string_view name, std::string_view earliest_iso, std::string_view latest_iso) {
+    auto& e = entry(name);
+    e["date_range_earliest"] = std::string(earliest_iso);
+    e["date_range_latest"] = std::string(latest_iso);
     return *this;
   }
 

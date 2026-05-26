@@ -145,6 +145,31 @@ TEST(WidgetDataTest, SetButtonText) {
   EXPECT_EQ(j["connect_btn"]["button_text"], "Disconnect");
 }
 
+TEST(WidgetDataTest, SetButtonIconNamed) {
+  WidgetData wd;
+  wd.setButtonIconNamed("play_btn", "media-play");
+  auto j = parse(wd);
+  EXPECT_EQ(j["play_btn"]["button_icon_name"], "media-play");
+}
+
+// --- Field validity indicator ---
+
+TEST(WidgetDataTest, SetFieldValid) {
+  WidgetData wd;
+  wd.setFieldValid("lua_editor", false, "syntax error on line 3");
+  auto j = parse(wd);
+  EXPECT_EQ(j["lua_editor"]["valid"], false);
+  EXPECT_EQ(j["lua_editor"]["valid_tooltip"], "syntax error on line 3");
+}
+
+TEST(WidgetDataTest, SetFieldValidDefaultTooltip) {
+  WidgetData wd;
+  wd.setFieldValid("lua_editor", true);
+  auto j = parse(wd);
+  EXPECT_EQ(j["lua_editor"]["valid"], true);
+  EXPECT_EQ(j["lua_editor"]["valid_tooltip"], "");
+}
+
 // --- File picker ---
 
 TEST(WidgetDataTest, SetFilePicker) {

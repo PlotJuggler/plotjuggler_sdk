@@ -2,6 +2,8 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <charconv>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <initializer_list>
@@ -1282,6 +1284,219 @@ class ColorMapRegistryView {
 
  private:
   PJ_colormap_registry_t registry_{};
+};
+
+// ---------------------------------------------------------------------------
+// SettingsView — typed C++ view over PJ_settings_store_t
+// ---------------------------------------------------------------------------
+
+/// A read result from SettingsView, modeled on Qt's QVariant: it holds the
+/// raw stored string (or nothing, if the key was absent) and converts on
+/// demand with a caller-supplied default. Scalars are stored as strings by
+/// SettingsView::setValue and parsed back here.
+class SettingsValue {
+ public:
+  SettingsValue() = default;
+  explicit SettingsValue(std::optional<std::string> raw) : raw_(std::move(raw)) {}
+
+  /// True when the key was absent (no value stored).
+  [[nodiscard]] bool isNull() const noexcept {
+    return !raw_.has_value();
+  }
+
+  [[nodiscard]] std::string toString(std::string_view def = {}) const {
+    return raw_.has_value() ? *raw_ : std::string(def);
+  }
+
+  [[nodiscard]] std::int64_t toInt(std::int64_t def = 0) const {
+    return parse<std::int64_t>(def);
+  }
+
+  [[nodiscard]] double toDouble(double def = 0.0) const {
+    return parse<double>(def);
+  }
+
+  /// "true"/"1"/"on" → true; "false"/"0"/"off" → false; otherwise @p def.
+  [[nodiscard]] bool toBool(bool def = false) const {
+    if (!raw_.has_value()) {
+      return def;
+    }
+    const std::string& s = *raw_;
+    if (s == "true" || s == "1" || s == "on") {
+      return true;
+    }
+    if (s == "false" || s == "0" || s == "off") {
+      return false;
+    }
+    return def;
+  }
+
+ private:
+  template <typename T>
+  [[nodiscard]] T parse(T def) const {
+    if (!raw_.has_value()) {
+      return def;
+    }
+    T out{};
+    const char* begin = raw_->data();
+    const char* end = begin + raw_->size();
+    auto [ptr, ec] = std::from_chars(begin, end, out);
+    return (ec == std::errc{} && ptr == end) ? out : def;
+  }
+
+  std::optional<std::string> raw_;
+};
+
+/// C++ wrapper around PJ_settings_store_t — an optional, QSettings-like
+/// key/value store the host may expose to plugins (service "pj.settings.v1").
+/// Empty-constructible; `valid()` tells whether the host bound a store.
+/// Scalars are stored as strings; reads return an Expected so a backend fault
+/// is visible rather than silently masked as a missing key:
+///   if (auto v = settings.value("count")) { int n = v->toInt(42); }
+/// An unbound store or an absent key is a successful Expected holding a null
+/// value/empty list/false — only a host backend fault yields `!has_value()`.
+/// All calls are main-thread, mirroring QSettings usage.
+class SettingsView {
+ public:
+  SettingsView() = default;
+  explicit SettingsView(PJ_settings_store_t store) : store_(store) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return store_.vtable != nullptr && store_.ctx != nullptr;
+  }
+
+  // --- writes (QSettings setValue style; scalars serialized to string) ---
+
+  [[nodiscard]] Status setValue(std::string_view key, std::string_view value) const {
+    if (!valid() || store_.vtable->set_string == nullptr) {
+      return unexpected("settings store is not bound");
+    }
+    PJ_error_t err{};
+    if (!store_.vtable->set_string(store_.ctx, toAbiString(key), toAbiString(value), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// const char* overload so a string literal binds to the string setter
+  /// rather than the bool one.
+  [[nodiscard]] Status setValue(std::string_view key, const char* value) const {
+    return setValue(key, std::string_view(value == nullptr ? "" : value));
+  }
+
+  [[nodiscard]] Status setValue(std::string_view key, std::int64_t value) const {
+    const std::string s = std::to_string(value);
+    return setValue(key, std::string_view(s));
+  }
+
+  [[nodiscard]] Status setValue(std::string_view key, int value) const {
+    return setValue(key, static_cast<std::int64_t>(value));
+  }
+
+  [[nodiscard]] Status setValue(std::string_view key, double value) const {
+    char buf[40];
+    auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), value);
+    if (ec != std::errc{}) {
+      return unexpected("settings: failed to format double value");
+    }
+    return setValue(key, std::string_view(buf, static_cast<std::size_t>(ptr - buf)));
+  }
+
+  [[nodiscard]] Status setValue(std::string_view key, bool value) const {
+    return setValue(key, std::string_view(value ? "true" : "false"));
+  }
+
+  [[nodiscard]] Status setValue(std::string_view key, const std::vector<std::string>& values) const {
+    if (!valid() || store_.vtable->set_string_list == nullptr) {
+      return unexpected("settings store is not bound");
+    }
+    std::vector<PJ_string_view_t> raw;
+    raw.reserve(values.size());
+    for (const auto& v : values) {
+      raw.push_back(toAbiString(v));
+    }
+    PJ_error_t err{};
+    if (!store_.vtable->set_string_list(store_.ctx, toAbiString(key), raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  // --- reads ---
+
+  /// Read a scalar as a QVariant-like SettingsValue. A failed Expected means
+  /// the host backend faulted; success holds a null value (isNull()) when the
+  /// store is unbound (optional service) or the key is absent. So `!has_value()`
+  /// is exactly a real host error, not a missing key.
+  [[nodiscard]] Expected<SettingsValue> value(std::string_view key) const {
+    if (!valid() || store_.vtable->get_string == nullptr) {
+      return SettingsValue{};
+    }
+    PJ_string_view_t out{};
+    bool found = false;
+    PJ_error_t err{};
+    if (!store_.vtable->get_string(store_.ctx, toAbiString(key), &out, &found, &err)) {
+      return unexpected(errorToString(err));
+    }
+    if (!found) {
+      return SettingsValue{};
+    }
+    // Copy out of the host's scratch buffer before it can be reused.
+    return SettingsValue{std::string(toStringView(out))};
+  }
+
+  /// Read a string list. A failed Expected means the host backend faulted;
+  /// success holds an empty vector when the store is unbound or the key is
+  /// absent.
+  [[nodiscard]] Expected<std::vector<std::string>> valueStringList(std::string_view key) const {
+    std::vector<std::string> result;
+    if (!valid() || store_.vtable->get_string_list == nullptr) {
+      return result;
+    }
+    const PJ_string_view_t* items = nullptr;
+    std::size_t count = 0;
+    bool found = false;
+    PJ_error_t err{};
+    if (!store_.vtable->get_string_list(store_.ctx, toAbiString(key), &items, &count, &found, &err)) {
+      return unexpected(errorToString(err));
+    }
+    if (!found) {
+      return result;
+    }
+    result.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      result.emplace_back(toStringView(items[i]));
+    }
+    return result;
+  }
+
+  /// Report whether a key exists. A failed Expected means the host backend
+  /// faulted; success holds false when the store is unbound.
+  [[nodiscard]] Expected<bool> contains(std::string_view key) const {
+    if (!valid() || store_.vtable->contains == nullptr) {
+      return false;
+    }
+    bool present = false;
+    PJ_error_t err{};
+    if (!store_.vtable->contains(store_.ctx, toAbiString(key), &present, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return present;
+  }
+
+  [[nodiscard]] Status remove(std::string_view key) const {
+    if (!valid() || store_.vtable->remove_key == nullptr) {
+      return unexpected("settings store is not bound");
+    }
+    PJ_error_t err{};
+    if (!store_.vtable->remove_key(store_.ctx, toAbiString(key), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+ private:
+  PJ_settings_store_t store_{};
 };
 
 }  // namespace PJ::sdk

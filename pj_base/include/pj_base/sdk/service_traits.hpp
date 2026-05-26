@@ -158,6 +158,18 @@ struct ColorMapRegistryService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Optional QSettings-like key/value persistence exposed to any plugin family.
+/// Host-backed (QSettings in the GUI app, JSON in a headless host); keys are
+/// namespaced per plugin by the host.
+struct SettingsStoreService {
+  static constexpr const char* kName = "pj.settings.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_settings_store_t;
+  using Vtable = PJ_settings_store_vtable_t;
+  using View = SettingsView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Runtime host exposed to DataSource plugins — progress, diagnostics,
 /// state notification, parser binding, modal message boxes.
 struct DataSourceRuntimeHostService {

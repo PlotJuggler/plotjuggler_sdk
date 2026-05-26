@@ -129,6 +129,23 @@ TEST(WidgetDataViewTest, ButtonText) {
   EXPECT_EQ(v.buttonText("btn"), "Connect");
 }
 
+TEST(WidgetDataViewTest, ButtonIconName) {
+  PJ::WidgetDataView v(R"({"play_btn": {"button_icon_name": "media-play"}})");
+  ASSERT_TRUE(v.buttonIconName("play_btn").has_value());
+  EXPECT_EQ(*v.buttonIconName("play_btn"), "media-play");
+  EXPECT_FALSE(v.buttonIconName("missing").has_value());
+}
+
+// --- Field validity indicator ---
+
+TEST(WidgetDataViewTest, FieldValid) {
+  PJ::WidgetDataView v(R"({"editor": {"valid": false, "valid_tooltip": "bad"}})");
+  ASSERT_TRUE(v.fieldValid("editor").has_value());
+  EXPECT_FALSE(*v.fieldValid("editor"));
+  ASSERT_TRUE(v.fieldValidTooltip("editor").has_value());
+  EXPECT_EQ(*v.fieldValidTooltip("editor"), "bad");
+}
+
 // --- File picker ---
 
 TEST(WidgetDataViewTest, FilePicker) {

@@ -362,13 +362,13 @@ work like polling a server for available topics.
 | QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QDateTimeEdit | `setDateTime`, `setDateTimeRange` | (none — input only) |
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
-| SequencePicker (date range) | `setDatePickerEarliest` | `onDateRangeChanged(name, from_iso, to_iso, every_day)` |
-| MetadataQueryBar | `setQueryKeys`, `setQueryOperators`, `setQueryValues`, `setQueryCompletions`, `setQuerySchema`, `setQueryFeedback` | `onQuerySelector(name, role, value)` |
+| DateRangePicker (date range) | `setDateRangePlaceholder` | `onDateRangeChanged(name, from_iso, to_iso)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
 All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
-and `setDropTarget(name, bool)`. Drop targets receive
+`setDropTarget(name, bool)`, and `setFieldValid(name, ok, tooltip)` (a generic
+inline valid/invalid indicator the plugin drives). Drop targets receive
 `onItemsDropped(name, items)`.
 
 `onHeaderClicked(name, section)` reports the clicked column index for plugins
@@ -378,18 +378,17 @@ to re-show all rows pass the full index list — clearing the field makes *no*
 change), `setRowColor` tints a row (`"#rrggbb"`, or `""` to clear), and
 `setCellTooltip` annotates a single cell.
 
-For `onQuerySelector`, `role` is one of `"key"`, `"op"`, or `"value"`. For
-`SequencePicker`, the `from_iso` / `to_iso` strings are ISO-8601 datetimes and
-are empty when that side of the range is unbounded.
+For `DateRangePicker`, the `from_iso` / `to_iso` strings are ISO-8601 datetimes
+and are empty when that side of the range is unbounded.
 
 > **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
 > widget binding system. Use `QPlainTextEdit` for plain text or code editing,
 > and `QTableWidget` for tabular data such as topic lists and preview tables.
 >
-> **Custom widgets:** `RangeSlider`, `SequencePicker`, and `MetadataQueryBar`
-> are PlotJuggler-provided widget classes, not stock Qt. Use them as *promoted*
-> widgets in your `.ui` (promote a placeholder `QWidget` to the class name); the
-> host binds them by object name exactly like the stock widgets above.
+> **Custom widgets:** `RangeSlider` and `DateRangePicker` are PlotJuggler-provided
+> widget classes, not stock Qt. Use them as *promoted* widgets in your `.ui`
+> (promote a placeholder `QWidget` to the class name); the host binds them by
+> object name exactly like the stock widgets above.
 
 ## Optional Features
 
