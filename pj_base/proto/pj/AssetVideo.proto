@@ -6,7 +6,6 @@
 
 syntax = "proto3";
 
-import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 package PJ;
@@ -20,10 +19,6 @@ message AssetVideo {
   // file-relative seek position. Required: an absent time_origin is treated as "this asset is not aligned to wall
   // clock" and the asset will not advance with the tracker.
   google.protobuf.Timestamp time_origin = 1;
-
-  // Total playable duration of the video. Producers should set this when known (FFmpeg probe at registration is
-  // cheap). Consumers may fall back to probing the file if absent. Optional.
-  optional google.protobuf.Duration duration = 2;
 
   // Path to the video file. Resolution is consumer-side: producers should emit either an absolute path or a path
   // relative to a consumer-known root (the dataset directory in LeRobot's case). Required.
@@ -42,4 +37,11 @@ message AssetVideo {
   // Nominal frame rate in frames per second. Zero or NaN means "unknown — probe the file". For variable-frame-rate
   // video this is an advisory average; actual per-frame timestamps come from the decoder.
   double frame_rate = 7;
+
+  // Optional playable window inside the file, expressed as in-file offsets in nanoseconds (zero = first frame of
+  // the file). When both are absent, the whole file is playable. When present, consumers must clamp seek requests
+  // to `[start_ns, end_ns]` and bound the timeline UI to that range. Used by producers that share a file across
+  // many clips (e.g. LeRobot v3.0, where one MP4 per camera holds many concatenated episodes).
+  optional int64 start_ns = 8;
+  optional int64 end_ns = 9;
 }

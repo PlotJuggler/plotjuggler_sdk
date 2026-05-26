@@ -401,12 +401,24 @@ forcing the consumer to open the file just to size a playback window.
 | Field | Type | Notes |
 |-------|------|-------|
 | `time_origin_ns` | `std::optional<Timestamp>` | Wall-clock instant of the first frame. Absent means the asset is not aligned to wall clock. |
-| `duration_ns` | `std::optional<int64_t>` | Total playable duration. Absent means probe the file. |
+| `start_ns` | `std::optional<int64_t>` | In-file offset (ns) where the playable window begins. Absent means "play from the start of the file". |
+| `end_ns` | `std::optional<int64_t>` | In-file offset (ns) where the playable window ends. Absent means "play to the end of the file". |
 | `file_path` | `std::string` | Absolute path or path relative to a consumer-known root. |
 | `media_type` | `std::string` | MIME type hint. Empty means probe the file. |
 | `width` | `uint32_t` | Pixel width. `0` means unknown. |
 | `height` | `uint32_t` | Pixel height. `0` means unknown. |
 | `frame_rate` | `double` | Nominal FPS. `0` or NaN means unknown. |
+
+When both `start_ns` and `end_ns` are absent the whole file is the playable
+window. When present, consumers must clamp seek requests to
+`[start_ns, end_ns]` and bound timeline UI to that range. This is how
+producers expose one clip out of a file that holds many concatenated
+clips — for example LeRobot v3.0, where a single MP4 per camera packs
+many episodes back-to-back and `[from_timestamp, to_timestamp]` in the
+episode metadata maps directly to `[start_ns, end_ns]`.
+
+The total file duration is *not* carried in the message — the decoder
+backend reports it.
 
 `pj_base/builtin/asset_video_codec.hpp` serializes and deserializes this
 type using the canonical `PJ.AssetVideo` protobuf wire format.

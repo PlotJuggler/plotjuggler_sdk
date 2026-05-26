@@ -34,8 +34,13 @@ namespace sdk {
 /// seek position. An absent value means the asset is not aligned to wall
 /// clock and should not advance with the tracker.
 ///
-/// `duration_ns` is the total playable duration when known; absent means
-/// consumers may probe the file.
+/// `start_ns` / `end_ns` describe an optional playable window inside the
+/// file, expressed as in-file offsets in nanoseconds (zero = first frame
+/// of the file). When both are absent the whole file is playable; when
+/// present, consumers must clamp seek requests to `[start_ns, end_ns]`
+/// and bound timeline UI to that range. Producers use this for assets
+/// that share a file with other clips (e.g. LeRobot v3.0, where a single
+/// MP4 holds many concatenated episodes per camera).
 ///
 /// `media_type` is a MIME-type hint ("video/mp4", "video/x-matroska",
 /// "video/av1"). Empty string means "probe the file".
@@ -48,7 +53,8 @@ namespace sdk {
 /// average; actual per-frame timestamps come from the decoder.
 struct AssetVideo {
   std::optional<Timestamp> time_origin_ns;  ///< Wall-clock instant of the first frame.
-  std::optional<int64_t> duration_ns;       ///< Total playable duration in nanoseconds.
+  std::optional<int64_t> start_ns;          ///< In-file offset where the playable window begins (ns).
+  std::optional<int64_t> end_ns;            ///< In-file offset where the playable window ends (ns).
   std::string file_path;                    ///< Absolute path or path relative to a consumer-known root.
   std::string media_type;                   ///< MIME type. Empty string means "probe the file".
   uint32_t width = 0;                       ///< Pixel width. 0 means unknown.
