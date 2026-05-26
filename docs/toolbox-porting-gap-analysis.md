@@ -277,14 +277,16 @@ The library tab has a green/red SVG circle indicator that validates Lua code in 
 
 This gives the user immediate feedback on library syntax errors before saving.
 
-**SDK equivalent needed:**
+**SDK equivalent (now available):**
 ```cpp
-WidgetData& setWidgetIndicator(std::string_view name,
-    IndicatorState state,  // OK, ERROR, WARNING
-    std::string_view tooltip);
+WidgetData& setFieldValid(std::string_view name, bool ok, std::string_view tooltip = {});
 ```
 
-This is different from `setEnabled` — it is a visual status indicator that does not affect interactivity.
+This is different from `setEnabled` — it is a visual status indicator that does not
+affect interactivity. The plugin owns the validation rule (e.g. attempting to construct a
+`ReactiveLuaFunction` with the current code) and pushes the boolean result; the host
+renders the indicator. The green/red case maps directly onto the boolean — there is no
+separate WARNING state.
 
 ### 6.3 · Reactive execution tied to time slider (CRITICAL — Lua)
 
@@ -450,9 +452,8 @@ WidgetData& setCodeLanguage(std::string_view name, std::string_view lang); // "l
 // DialogPluginTyped event handler:
 virtual bool onCodeChanged(std::string_view name, std::string_view code);
 
-// Validation indicator:
-WidgetData& setWidgetIndicator(std::string_view name,
-                               IndicatorState state, std::string_view tooltip);
+// Validation indicator (available):
+WidgetData& setFieldValid(std::string_view name, bool ok, std::string_view tooltip = {});
 ```
 
 ### 9.4 Time-synchronized reactive execution

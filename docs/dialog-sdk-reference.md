@@ -111,6 +111,7 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setEnabled(name, bool)` | Enable/disable widget |
 | `setVisible(name, bool)` | Show/hide widget |
 | `setDropTarget(name, bool)` | Accept dropped item labels and emit `onItemsDropped` |
+| `setFieldValid(name, ok, tooltip)` | Inline valid/invalid indicator the plugin drives (optional tooltip) |
 
 ### Dialog-level Commands
 

@@ -291,57 +291,17 @@ class WidgetDataView {
     }
   }
 
-  // --- SequencePicker ---
+  // --- DateRangePicker ---
   [[nodiscard]] std::optional<std::string> datePickerEarliest(std::string_view name) const {
     return getString(name, "picker_earliest");
   }
 
-  // --- MetadataQueryBar ---
-  [[nodiscard]] std::optional<std::vector<std::string>> queryKeys(std::string_view name) const {
-    return getStringArray(name, "query_keys");
+  // --- Field validity indicator (generic) ---
+  [[nodiscard]] std::optional<bool> fieldValid(std::string_view name) const {
+    return getBool(name, "valid");
   }
-  [[nodiscard]] std::optional<std::vector<std::string>> queryOperators(std::string_view name) const {
-    return getStringArray(name, "query_ops");
-  }
-  [[nodiscard]] std::optional<std::vector<std::string>> queryValues(std::string_view name) const {
-    return getStringArray(name, "query_values");
-  }
-  [[nodiscard]] std::optional<std::vector<std::string>> queryCompletions(std::string_view name) const {
-    return getStringArray(name, "query_completions");
-  }
-  /// Read the key→values schema for a self-contained MetadataQueryBar (the JSON
-  /// is a {key: [values]} object written by WidgetData::setQuerySchema).
-  [[nodiscard]] std::optional<std::map<std::string, std::vector<std::string>>> querySchema(
-      std::string_view name) const {
-    const nlohmann::json* w = widget(name);
-    if (!w) {
-      return std::nullopt;
-    }
-    auto it = w->find("query_schema");
-    if (it == w->end() || !it->is_object()) {
-      return std::nullopt;
-    }
-    std::map<std::string, std::vector<std::string>> result;
-    for (const auto& [key, vals] : it->items()) {
-      if (!vals.is_array()) {
-        continue;
-      }
-      std::vector<std::string> values;
-      values.reserve(vals.size());
-      for (const auto& v : vals) {
-        if (v.is_string()) {
-          values.push_back(v.get<std::string>());
-        }
-      }
-      result.emplace(key, std::move(values));
-    }
-    return result;
-  }
-  [[nodiscard]] std::optional<std::string> queryFeedbackText(std::string_view name) const {
-    return getString(name, "query_feedback_text");
-  }
-  [[nodiscard]] std::optional<bool> queryFeedbackOk(std::string_view name) const {
-    return getBool(name, "query_feedback_ok");
+  [[nodiscard]] std::optional<std::string> fieldValidTooltip(std::string_view name) const {
+    return getString(name, "valid_tooltip");
   }
 
   // --- QDialogButtonBox ---

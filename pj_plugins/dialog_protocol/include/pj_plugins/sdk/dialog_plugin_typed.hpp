@@ -88,18 +88,10 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
-  /// SequencePicker: the date/time range filter changed. from_iso/to_iso are
+  /// DateRangePicker: the date/time range filter changed. from_iso/to_iso are
   /// ISO-8601 datetime strings (empty = unbounded on that side).
   virtual bool onDateRangeChanged(
-      std::string_view /*widget_name*/, std::string_view /*from_iso*/, std::string_view /*to_iso*/,
-      bool /*every_day*/) {
-    return false;
-  }
-
-  /// MetadataQueryBar: a key/op/value selector combo was activated.
-  /// role is "key" | "op" | "value".
-  virtual bool onQuerySelector(
-      std::string_view /*widget_name*/, std::string_view /*role*/, std::string_view /*value*/) {
+      std::string_view /*widget_name*/, std::string_view /*from_iso*/, std::string_view /*to_iso*/) {
     return false;
   }
 
@@ -115,10 +107,7 @@ class DialogPluginTyped : public DialogPluginBase {
       return onRangeChanged(widget_name, v->lower, v->upper);
     }
     if (auto v = event.dateRangeChanged()) {
-      return onDateRangeChanged(widget_name, v->from_iso, v->to_iso, v->every_day);
-    }
-    if (auto v = event.querySelector()) {
-      return onQuerySelector(widget_name, v->role, v->value);
+      return onDateRangeChanged(widget_name, v->from_iso, v->to_iso);
     }
     if (auto v = event.itemsDropped()) {
       return onItemsDropped(widget_name, *v);

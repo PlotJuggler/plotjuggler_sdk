@@ -315,42 +315,21 @@ class WidgetData {
     return *this;
   }
 
-  // --- MetadataQueryBar (Lua filter + key/op/value selectors) ---
+  // --- Field validity indicator (generic) ---
 
-  WidgetData& setQueryKeys(std::string_view name, const std::vector<std::string>& keys) {
-    entry(name)["query_keys"] = keys;
-    return *this;
-  }
-  WidgetData& setQueryOperators(std::string_view name, const std::vector<std::string>& ops) {
-    entry(name)["query_ops"] = ops;
-    return *this;
-  }
-  WidgetData& setQueryValues(std::string_view name, const std::vector<std::string>& values) {
-    entry(name)["query_values"] = values;
-    return *this;
-  }
-  WidgetData& setQueryCompletions(std::string_view name, const std::vector<std::string>& items) {
-    entry(name)["query_completions"] = items;
-    return *this;
-  }
-  /// Feed the full key→values schema to a self-contained MetadataQueryBar, which
-  /// owns its own context-aware key/op/value combos and completion. nlohmann
-  /// serializes the map as a JSON object {key: [values]}.
-  WidgetData& setQuerySchema(std::string_view name, const std::map<std::string, std::vector<std::string>>& schema) {
-    entry(name)["query_schema"] = schema;
-    return *this;
-  }
-  /// Validation feedback under the editor. Empty text hides it; ok ⇒ green.
-  WidgetData& setQueryFeedback(std::string_view name, std::string_view text, bool ok) {
+  /// Mark a field's value valid/invalid for a small inline indicator (e.g. a
+  /// tick next to a line edit). The plugin owns the validation rule; the host
+  /// only renders the result. The optional tooltip explains an invalid value.
+  WidgetData& setFieldValid(std::string_view name, bool ok, std::string_view tooltip = {}) {
     auto& e = entry(name);
-    e["query_feedback_text"] = std::string(text);
-    e["query_feedback_ok"] = ok;
+    e["valid"] = ok;
+    e["valid_tooltip"] = std::string(tooltip);
     return *this;
   }
 
-  // --- SequencePicker (date/time range picker) ---
+  // --- DateRangePicker (date/time range picker) ---
 
-  /// Set the "from" field placeholder of a SequencePicker to the dataset's
+  /// Set the "from" field placeholder of a DateRangePicker to the dataset's
   /// earliest date (ISO-8601 date, e.g. "2016-04-29"). Empty resets the hint.
   WidgetData& setDatePickerEarliest(std::string_view name, std::string_view iso_date) {
     entry(name)["picker_earliest"] = std::string(iso_date);
