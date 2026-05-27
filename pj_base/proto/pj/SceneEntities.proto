@@ -239,32 +239,45 @@ message SceneEntity {
   // publish time.
   bool frame_locked = 5;
 
+  // Arbitrary user-provided key/value metadata. Keys should be unique.
+  repeated PJ.KeyValuePair metadata = 6;
+
   // Arrow primitives composing this entity
-  repeated PJ.ArrowPrimitive arrows = 6;
+  repeated PJ.ArrowPrimitive arrows = 7;
 
   // Cube primitives composing this entity
-  repeated PJ.CubePrimitive cubes = 7;
+  repeated PJ.CubePrimitive cubes = 8;
 
   // Sphere primitives composing this entity
-  repeated PJ.SpherePrimitive spheres = 8;
+  repeated PJ.SpherePrimitive spheres = 9;
 
   // Cylinder primitives composing this entity
-  repeated PJ.CylinderPrimitive cylinders = 9;
+  repeated PJ.CylinderPrimitive cylinders = 10;
 
   // Line primitives composing this entity
-  repeated PJ.LinePrimitive lines = 10;
+  repeated PJ.LinePrimitive lines = 11;
 
   // Triangle primitives composing this entity
-  repeated PJ.TrianglePrimitive triangles = 11;
+  repeated PJ.TrianglePrimitive triangles = 12;
 
   // Text primitives composing this entity
-  repeated PJ.TextPrimitive texts = 12;
-
-  // Axes-glyph primitives composing this entity
-  repeated PJ.AxesPrimitive axes = 13;
+  repeated PJ.TextPrimitive texts = 13;
 
   // Model (mesh asset) primitives composing this entity
   repeated PJ.ModelPrimitive models = 14;
+
+  // Axes-glyph primitives composing this entity. PlotJuggler extension with no Foxglove counterpart; placed after the
+  // Foxglove field range (1..14).
+  repeated PJ.AxesPrimitive axes = 15;
+}
+
+// Arbitrary key/value metadata attached to a SceneEntity (mirrors Foxglove's KeyValuePair).
+message KeyValuePair {
+  // Key. Should be unique within a SceneEntity.
+  string key = 1;
+
+  // Value.
+  string value = 2;
 }
 
 // A command to remove previously-published entities on a topic. `MATCHING_ID` removes the entity with the given `id`;
@@ -291,11 +304,11 @@ message SceneEntityDeletion {
 
 // A batch of scene entities published together. Each payload is a self-contained snapshot: `entities` are added or
 // replaced (keyed by `(topic, id)`) and `deletions` remove previously-published entities. Entities neither present nor
-// deleted persist until they expire by lifetime.
+// deleted persist until they expire by lifetime. Field order matches Foxglove's SceneUpdate (deletions, then entities).
 message SceneEntities {
-  // Scene entities to add or replace
-  repeated PJ.SceneEntity entities = 1;
-
   // Commands removing previously-published entities
-  repeated PJ.SceneEntityDeletion deletions = 2;
+  repeated PJ.SceneEntityDeletion deletions = 1;
+
+  // Scene entities to add or replace
+  repeated PJ.SceneEntity entities = 2;
 }

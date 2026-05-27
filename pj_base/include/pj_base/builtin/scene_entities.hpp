@@ -136,6 +136,14 @@ struct ModelPrimitive {
   bool operator==(const ModelPrimitive&) const = default;
 };
 
+/// Arbitrary key/value metadata attached to a SceneEntity (mirrors Foxglove's
+/// KeyValuePair). Keys should be unique within an entity.
+struct KeyValuePair {
+  std::string key;
+  std::string value;
+  bool operator==(const KeyValuePair&) const = default;
+};
+
 /// A visual element in a 3D scene composed of multiple primitives, all
 /// sharing the same frame of reference and timestamp.
 ///
@@ -154,6 +162,10 @@ struct SceneEntity {
   int64_t lifetime_ns = 0;  ///< 0 means persist until replaced.
   bool frame_locked = false;
 
+  std::vector<KeyValuePair> metadata;
+
+  // Primitive lists, in Foxglove SceneEntity field order. `axes` is a
+  // PlotJuggler extension with no Foxglove counterpart and sorts last.
   std::vector<ArrowPrimitive> arrows;
   std::vector<CubePrimitive> cubes;
   std::vector<SpherePrimitive> spheres;
@@ -161,8 +173,8 @@ struct SceneEntity {
   std::vector<LinePrimitive> lines;
   std::vector<TrianglePrimitive> triangles;
   std::vector<TextPrimitive> texts;
-  std::vector<AxesPrimitive> axes;
   std::vector<ModelPrimitive> models;
+  std::vector<AxesPrimitive> axes;
 
   bool operator==(const SceneEntity&) const = default;
 };

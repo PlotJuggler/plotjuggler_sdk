@@ -204,6 +204,7 @@ TEST(SceneEntitiesCodecTest, RoundTripModelPrimitive) {
   SceneEntity e;
   e.frame_id = "base_link";
   e.id = "robot_mesh";
+  e.metadata.push_back({.key = "source", .value = "urdf"});
   ModelPrimitive model;
   model.pose = makePose(1.0, 2.0, 3.0);
   model.scale = {.x = 2.0, .y = 2.0, .z = 2.0};
@@ -219,6 +220,9 @@ TEST(SceneEntitiesCodecTest, RoundTripModelPrimitive) {
   auto out = deserializeSceneEntities(bytes.data(), bytes.size());
   ASSERT_TRUE(out.has_value());
   ASSERT_EQ(out->entities.size(), 1u);
+  ASSERT_EQ(out->entities.front().metadata.size(), 1u);
+  EXPECT_EQ(out->entities.front().metadata.front().key, "source");
+  EXPECT_EQ(out->entities.front().metadata.front().value, "urdf");
   ASSERT_EQ(out->entities.front().models.size(), 1u);
   const auto& src = in.entities.front().models.front();
   const auto& dst = out->entities.front().models.front();
