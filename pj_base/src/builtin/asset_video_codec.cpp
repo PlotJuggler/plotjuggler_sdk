@@ -27,19 +27,22 @@ std::vector<uint8_t> serializeAssetVideo(const AssetVideo& asset) {
   std::vector<uint8_t> out;
   Writer writer(out);
 
-  // Both `time_origin` and `duration` use the seconds+nanos wire shape;
-  // omit the field entirely when the SDK optional is empty.
+  // `time_origin` uses the seconds+nanos wire shape; omit the field entirely
+  // when the SDK optional is empty.
   if (asset.time_origin_ns.has_value()) {
     writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, *asset.time_origin_ns); });
-  }
-  if (asset.duration_ns.has_value()) {
-    writer.message(2, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, *asset.duration_ns); });
   }
   writer.string(3, asset.file_path);
   writer.string(4, asset.media_type);
   writer.varint(5, asset.width);
   writer.varint(6, asset.height);
   writer.doubleField(7, asset.frame_rate);
+  if (asset.start_ns.has_value()) {
+    writer.varint(8, static_cast<uint64_t>(*asset.start_ns));
+  }
+  if (asset.end_ns.has_value()) {
+    writer.varint(9, static_cast<uint64_t>(*asset.end_ns));
+  }
 
   return out;
 }
@@ -63,17 +66,6 @@ Expected<sdk::AssetVideo> deserializeAssetVideo(const uint8_t* data, size_t size
           return false;
         }
         asset.time_origin_ns = t;
-        return true;
-      }
-      case 2: {
-        if (tag.type != WireType::kLengthDelimited) {
-          return false;
-        }
-        Timestamp d = 0;
-        if (!builtin_wire::readTimestampMessage(r, d)) {
-          return false;
-        }
-        asset.duration_ns = d;
         return true;
       }
       case 3:
@@ -104,6 +96,28 @@ Expected<sdk::AssetVideo> deserializeAssetVideo(const uint8_t* data, size_t size
       }
       case 7:
         return tag.type == WireType::kFixed64 && r.readDouble(asset.frame_rate);
+      case 8: {
+        if (tag.type != WireType::kVarint) {
+          return false;
+        }
+        uint64_t v = 0;
+        if (!r.readVarint(v)) {
+          return false;
+        }
+        asset.start_ns = static_cast<int64_t>(v);
+        return true;
+      }
+      case 9: {
+        if (tag.type != WireType::kVarint) {
+          return false;
+        }
+        uint64_t v = 0;
+        if (!r.readVarint(v)) {
+          return false;
+        }
+        asset.end_ns = static_cast<int64_t>(v);
+        return true;
+      }
       default:
         return false;
     }
