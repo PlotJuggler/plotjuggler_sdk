@@ -48,7 +48,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # only for remote/protected storage
         with:
-          path-to-document: 'https://github.com/PlotJuggler/plotjuggler_core/blob/development/CLA.md'
+          path-to-document: 'https://github.com/PlotJuggler/plotjuggler_core/blob/main/CLA.md'
           path-to-signatures: 'signatures/version1/cla.json'
           branch: 'cla-signatures'
           allowlist: facontidavide,bot*,*[bot]
