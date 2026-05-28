@@ -67,8 +67,7 @@ std::vector<ObjectTopicId> ObjectStore::listTopics(DatasetId dataset_id) const {
 
 // --- Write ---
 
-Expected<void, std::string> ObjectStore::pushOwned(
-    ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload) {
+Status ObjectStore::pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload) {
   std::shared_lock store_lock(store_mutex_);
   auto* series = findSeries(id);
   if (series == nullptr) {
@@ -94,8 +93,7 @@ Expected<void, std::string> ObjectStore::pushOwned(
   return {};
 }
 
-Expected<void, std::string> ObjectStore::pushLazy(
-    ObjectTopicId id, Timestamp timestamp, std::function<sdk::PayloadView()> fetch) {
+Status ObjectStore::pushLazy(ObjectTopicId id, Timestamp timestamp, LazyCallback fetch) {
   std::shared_lock store_lock(store_mutex_);
   auto* series = findSeries(id);
   if (series == nullptr) {
@@ -306,19 +304,15 @@ ResolvedObjectEntry ObjectStore::resolveEntry(const ObjectEntry& entry) {
   ResolvedObjectEntry resolved;
   resolved.timestamp = entry.timestamp;
 
-  if (const auto* owned = std::any_cast<std::shared_ptr<const std::vector<uint8_t>>>(&entry.payload)) {
-    resolved.data = *owned;
-  } else if (const auto* lazy = std::any_cast<std::function<sdk::PayloadView()>>(&entry.payload)) {
-    // Recover the shared_ptr<const vector<uint8_t>> from the PayloadView's
-    // type-erased anchor. Contract: callers of pushLazy must construct the
-    // PayloadView with an anchor that is exactly a
-    // shared_ptr<const std::vector<uint8_t>> — typically the same buffer the
-    // closure's Span points at. The static_pointer_cast reinterprets the
-    // shared_ptr<const void> back to that concrete type, sharing ownership
-    // without copying bytes. Producers that hold their bytes in any other
-    // container should use pushOwned instead.
+  if (const auto* owned = std::get_if<SharedBuffer>(&entry.payload)) {
+    if (*owned) {
+      resolved.anchor = sdk::BufferAnchor{*owned};
+      resolved.view = Span<const uint8_t>{(*owned)->data(), (*owned)->size()};
+    }
+  } else if (const auto* lazy = std::get_if<LazyCallback>(&entry.payload)) {
     auto pv = (*lazy)();
-    resolved.data = std::static_pointer_cast<const std::vector<uint8_t>>(pv.anchor);
+    resolved.anchor = std::move(pv.anchor);
+    resolved.view = pv.bytes;
   }
 
   return resolved;
@@ -330,7 +324,7 @@ void ObjectStore::evictFront(ObjectSeries& series) {
   }
 
   const auto& front = series.entries.front();
-  if (const auto* owned = std::any_cast<std::shared_ptr<const std::vector<uint8_t>>>(&front.payload)) {
+  if (const auto* owned = std::get_if<SharedBuffer>(&front.payload); owned != nullptr && *owned) {
     series.memory_bytes -= (*owned)->size();
   }
 

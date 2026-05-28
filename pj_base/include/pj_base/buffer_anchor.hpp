@@ -46,7 +46,7 @@ struct PayloadView {
 
   PayloadView(Span<const uint8_t> bytes_, BufferAnchor anchor_) : bytes(bytes_), anchor(std::move(anchor_)) {}
 
-  PayloadView(std::shared_ptr<std::vector<uint8_t>> buffer)
+  PayloadView(std::shared_ptr<const std::vector<uint8_t>> buffer)
       : bytes(buffer ? Span<const uint8_t>(buffer->data(), buffer->size()) : Span<const uint8_t>()),
         anchor(std::move(buffer)) {}
 };
@@ -54,9 +54,11 @@ struct PayloadView {
 /// Convenience helper for producers whose only payload is a plain
 /// std::vector<uint8_t>. Wraps it in a shared_ptr (which becomes both the
 /// owner of the bytes and the type-erased anchor), and returns a PayloadView
-/// whose Span points at that vector's contents. Satisfies the contract
-/// expected by ObjectStore::resolveEntry on the lazy branch: the anchor is a
-/// shared_ptr<const std::vector<uint8_t>> recoverable via static_pointer_cast.
+/// whose Span points at that vector's contents. Use this when the producer
+/// materializes bytes from a source that has no natural anchor (e.g. a
+/// C-ABI fetch returning a raw byte buffer); when an upstream allocation
+/// already exists (a chunk cache, an mmap region), construct the PayloadView
+/// directly with that anchor to avoid the helper's copy.
 inline PayloadView makePayloadView(std::vector<uint8_t> bytes) {
   auto shared = std::make_shared<const std::vector<uint8_t>>(std::move(bytes));
   return PayloadView{

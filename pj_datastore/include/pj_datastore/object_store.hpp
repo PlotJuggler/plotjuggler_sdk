@@ -2,7 +2,6 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MPL-2.0
 
-#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -14,10 +13,12 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "pj_base/buffer_anchor.hpp"
 #include "pj_base/expected.hpp"
+#include "pj_base/span.hpp"
 #include "pj_base/types.hpp"
 
 namespace PJ {
@@ -39,17 +40,30 @@ struct ObjectTopicDescriptor {
   std::string metadata_json;
 };
 
+/// Eager payload alternative: shared ownership of an owned byte buffer.
+/// memoryUsage() counts the buffer's size against the retention budget.
+using SharedBuffer = std::shared_ptr<const std::vector<uint8_t>>;
+
+/// Lazy payload alternative: idempotent, thread-safe callable returning a
+/// PayloadView (Span + BufferAnchor). The anchor may be any shared_ptr-backed
+/// storage (chunk cache, mmap, etc.); type erasure is preserved end-to-end
+/// through the store. Lazy entries are not counted against the retention
+/// budget — bytes are owned upstream, not by the store.
+using LazyCallback = std::function<sdk::PayloadView()>;
+
 struct ObjectEntry {
   Timestamp timestamp = 0;
-  // Holds either a shared_ptr<const std::vector<uint8_t>> (eager owned payload)
-  // or a std::function<sdk::PayloadView()> (lazy resolver). resolveEntry
-  // discriminates via std::any_cast.
-  std::any payload;
+  std::variant<SharedBuffer, LazyCallback> payload;
 };
 
+/// Result of resolving an ObjectEntry. Holds the type-erased BufferAnchor
+/// keeping the bytes alive and a Span over the producer-published range.
+/// For eager entries the anchor wraps the SharedBuffer's underlying vector;
+/// for lazy entries it is whatever the producer's PayloadView carries.
 struct ResolvedObjectEntry {
   Timestamp timestamp = 0;
-  std::shared_ptr<const std::vector<uint8_t>> data;
+  sdk::BufferAnchor anchor;
+  Span<const uint8_t> view;
 };
 
 struct RetentionBudget {
@@ -110,7 +124,7 @@ class ObjectStore {
 
   // --- Write ---
 
-  Expected<void, std::string> pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload);
+  Status pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload);
 
   // The fetch callable is invoked on every read. It returns a PayloadView
   // (Span + anchor). When the producer already holds the bytes in memory
@@ -119,7 +133,7 @@ class ObjectStore {
   // backed by it — no copy. For producers that materialize bytes from disk
   // or other sources, the closure allocates a fresh buffer and uses it as
   // the anchor.
-  Expected<void, std::string> pushLazy(ObjectTopicId id, Timestamp timestamp, std::function<sdk::PayloadView()> fetch);
+  Status pushLazy(ObjectTopicId id, Timestamp timestamp, LazyCallback fetch);
 
   // --- Read ---
 

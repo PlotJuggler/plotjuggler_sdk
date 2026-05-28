@@ -43,7 +43,7 @@ class ServiceRegistryBuilder {
   ///                          not take ownership of ctx/vtable.
   /// @return `Expected<void>`: ok on success, error string on duplicate or
   ///         null fat-pointer field.
-  [[nodiscard]] ::PJ::Expected<void, std::string> tryRegisterService(
+  [[nodiscard]] ::PJ::Status tryRegisterService(
       std::string_view name, uint32_t protocol_version, PJ_service_t service) {
     const std::string service_name(name);
     if (service.ctx == nullptr || service.vtable == nullptr) {

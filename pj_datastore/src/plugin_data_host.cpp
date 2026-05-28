@@ -1435,10 +1435,12 @@ void sourceObjectSetRetentionBudget(
 // Toolbox object read host trampolines
 // ---------------------------------------------------------------------------
 
-/// Box holding the shared_ptr that keeps ObjectStore bytes alive. One
-/// allocated per successful read_latest_at; freed by release_bytes.
+/// Box holding the type-erased anchor that keeps ObjectStore bytes alive,
+/// plus the Span over the producer-published range. One allocated per
+/// successful read_latest_at; freed by release_bytes.
 struct ObjectBytesBox {
-  std::shared_ptr<const std::vector<uint8_t>> bytes;
+  sdk::BufferAnchor anchor;
+  Span<const uint8_t> view;
 };
 
 PJ_object_topic_handle_t toolboxObjectLookupTopic(void* ctx, PJ_string_view_t topic_name) noexcept {
@@ -1508,12 +1510,12 @@ bool toolboxObjectReadLatestAt(
   *out_handle = nullptr;
   try {
     auto entry = impl->store.latestAt(ObjectTopicId{topic.id}, timestamp_ns);
-    if (!entry.has_value() || entry->data == nullptr) {
+    if (!entry.has_value() || entry->anchor == nullptr) {
       impl->setError("no entry at-or-before timestamp");
       propagateError(out_error, impl->last_error.c_str());
       return false;
     }
-    auto* box = new ObjectBytesBox{std::move(entry->data)};
+    auto* box = new ObjectBytesBox{std::move(entry->anchor), entry->view};
     *out_handle = reinterpret_cast<PJ_object_bytes_handle_t>(box);
     if (out_timestamp != nullptr) {
       *out_timestamp = entry->timestamp;
@@ -1542,14 +1544,14 @@ void toolboxObjectGetBytes(PJ_object_bytes_handle_t handle, const uint8_t** out_
     return;
   }
   auto* box = reinterpret_cast<ObjectBytesBox*>(handle);
-  if (!box->bytes) {
+  if (box->view.empty()) {
     return;
   }
   if (out_data != nullptr) {
-    *out_data = box->bytes->data();
+    *out_data = box->view.data();
   }
   if (out_size != nullptr) {
-    *out_size = box->bytes->size();
+    *out_size = box->view.size();
   }
 }
 
