@@ -8,6 +8,7 @@ syntax = "proto3";
 
 import "pj/Color.proto";
 import "pj/Geometry.proto";
+import "pj/KeyValuePair.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -184,6 +185,32 @@ message AxesPrimitive {
   bool scale_invariant = 4;
 }
 
+// A 3D model (mesh asset) primitive. The source is either `url` (a resolvable resource) or inline `data` tagged by
+// `media_type`. `color` tints the model only when `override_color` is true; otherwise the model's embedded materials
+// are used.
+message ModelPrimitive {
+  // Origin pose of the model
+  PJ.Pose pose = 1;
+
+  // Per-axis scale factor applied to the model
+  PJ.Vector3 scale = 2;
+
+  // Solid color; applied only when `override_color` is true
+  PJ.Color color = 3;
+
+  // When true, `color` replaces the model's own/embedded materials
+  bool override_color = 4;
+
+  // Resource URI of the model (empty when the model is provided inline via `data`)
+  string url = 5;
+
+  // MIME type of `data` when the model is provided inline (e.g. "model/gltf-binary")
+  string media_type = 6;
+
+  // Inline model bytes (empty when `url` is used)
+  bytes data = 7;
+}
+
 // A visual element in a 3D scene. An entity is composed of one or more primitives, all of which share the same frame
 // of reference and timestamp. The entity itself has no top-level pose; each primitive carries its own pose.
 //
@@ -213,34 +240,67 @@ message SceneEntity {
   // publish time.
   bool frame_locked = 5;
 
+  // Arbitrary user-provided key/value metadata. Keys should be unique.
+  repeated PJ.KeyValuePair metadata = 6;
+
   // Arrow primitives composing this entity
-  repeated PJ.ArrowPrimitive arrows = 6;
+  repeated PJ.ArrowPrimitive arrows = 7;
 
   // Cube primitives composing this entity
-  repeated PJ.CubePrimitive cubes = 7;
+  repeated PJ.CubePrimitive cubes = 8;
 
   // Sphere primitives composing this entity
-  repeated PJ.SpherePrimitive spheres = 8;
+  repeated PJ.SpherePrimitive spheres = 9;
 
   // Cylinder primitives composing this entity
-  repeated PJ.CylinderPrimitive cylinders = 9;
+  repeated PJ.CylinderPrimitive cylinders = 10;
 
   // Line primitives composing this entity
-  repeated PJ.LinePrimitive lines = 10;
+  repeated PJ.LinePrimitive lines = 11;
 
   // Triangle primitives composing this entity
-  repeated PJ.TrianglePrimitive triangles = 11;
+  repeated PJ.TrianglePrimitive triangles = 12;
 
   // Text primitives composing this entity
-  repeated PJ.TextPrimitive texts = 12;
+  repeated PJ.TextPrimitive texts = 13;
 
-  // Axes-glyph primitives composing this entity
-  repeated PJ.AxesPrimitive axes = 13;
+  // Model (mesh asset) primitives composing this entity
+  repeated PJ.ModelPrimitive models = 14;
+
+  // Axes-glyph primitives composing this entity. PlotJuggler extension with no Foxglove counterpart; placed after the
+  // Foxglove field range (1..14).
+  repeated PJ.AxesPrimitive axes = 15;
 }
 
-// A batch of scene entities published together. Each payload is a self-contained snapshot; entity-deletion semantics
-// may be introduced later if streaming sources require them.
+// A command to remove previously-published entities on a topic. `MATCHING_ID` removes the entity with the given `id`;
+// `ALL` removes every entity on the topic. `timestamp` bounds the deletion to entities published at or before it.
+message SceneEntityDeletion {
+  // Which entities a deletion matches
+  enum Type {
+    // Delete the entity on this topic whose id matches `id`
+    MATCHING_ID = 0;
+
+    // Delete all entities on this topic
+    ALL = 1;
+  }
+
+  // Timestamp of the deletion; only entities at or before this time are removed
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Type of deletion
+  Type type = 2;
+
+  // Entity id to match when `type` is MATCHING_ID
+  string id = 3;
+}
+
+// A batch of scene entities published together. Each payload is a self-contained snapshot: `entities` are added or
+// replaced (keyed by `(topic, id)`) and `deletions` remove previously-published entities. Entities neither present nor
+// deleted persist until they expire by lifetime. Field order matches Foxglove's SceneUpdate (deletions, then entities).
 message SceneEntities {
-  // Array of scene entities
-  repeated PJ.SceneEntity entities = 1;
+  // Commands removing previously-published entities
+  repeated PJ.SceneEntityDeletion deletions = 1;
+
+  // Scene entities to add or replace
+  repeated PJ.SceneEntity entities = 2;
 }

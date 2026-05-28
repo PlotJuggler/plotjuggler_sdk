@@ -1,0 +1,38 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical log-message protobuf schema.
+// Wire-level contract for the owned `Log` builtin
+// (SDK struct lives in pj_base/include/pj_base/builtin/log.hpp).
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A single textual log message. Mirrors the core of Foxglove's Log schema; the
+// source-location fields (file, line) are intentionally omitted.
+message Log {
+  // Severity level. Values match Foxglove's Log.Level.
+  enum Level {
+    UNKNOWN = 0;
+    DEBUG = 1;
+    INFO = 2;
+    WARNING = 3;
+    ERROR = 4;
+    FATAL = 5;
+  }
+
+  // Timestamp of the log message.
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Severity level.
+  Level level = 2;
+
+  // Log text.
+  string message = 3;
+
+  // Originating process / node / logger name.
+  string name = 4;
+}

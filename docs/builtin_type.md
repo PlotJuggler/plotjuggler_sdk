@@ -83,8 +83,8 @@ Builtin objects fall into two serialization families:
 
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
-| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
+| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`, `CameraInfo`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
 format contract. One file per top-level message, each named after its message
@@ -120,6 +120,9 @@ annotations, frame transforms, or no builtin object.
 | `kSceneEntities` | `PJ::sdk::SceneEntities` | Procedural 3D scene primitives (arrows, cubes, lines, text, …). |
 | `kAssetVideo` | `PJ::sdk::AssetVideo` | File-backed video reference plus typed playback metadata. |
 | `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
+| `kCameraInfo` | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
+| `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
+| `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -315,6 +318,34 @@ renderer cares about cell-to-world placement, not pixel layout.
 `pj_base/builtin/occupancy_grid_codec.hpp` serializes and deserializes this
 type using the canonical `PJ.OccupancyGrid` protobuf wire format.
 
+## OccupancyGridUpdate
+
+`OccupancyGridUpdate` is the incremental counterpart to `OccupancyGrid`: a
+row-major sub-rectangle patch into a previously-published base grid (ROS
+`map_msgs/OccupancyGridUpdate`, e.g. `<base>/costmap_updates`).
+
+It deliberately carries **no** `origin` / `resolution` — a patch is not
+independently placeable. A stateful consumer pairs the update with its base
+grid (by topic-name convention, `<base>/costmap_updates` ↔ `<base>/costmap`)
+and positions it at the base's `origin + (x, y) * resolution`. This keeps the
+producer stateless and cross-topic-blind; all accumulation / placement lives in
+the consumer. The patch is a self-contained snapshot at its own timestamp, so it
+stores and decodes like any other object (no replay required at decode time).
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Timestamp of the update. |
+| `frame_id` | `std::string` | Must match the base grid's frame. |
+| `x` | `int32_t` | Column offset (cells) of the patch top-left into the base grid. |
+| `y` | `int32_t` | Row offset (cells) of the patch top-left into the base grid. |
+| `width` | `uint32_t` | Patch width in cells. |
+| `height` | `uint32_t` | Patch height in cells. |
+| `data` | `Span<const uint8_t>` | Row-major signed-8-bit cells; size must equal `width * height`. |
+| `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |
+
+`pj_base/builtin/occupancy_grid_update_codec.hpp` serializes and deserializes
+this type using the canonical `PJ.OccupancyGridUpdate` protobuf wire format.
+
 ## CompressedPointCloud
 
 `CompressedPointCloud` carries a point cloud delivered in a format-specific
@@ -432,8 +463,8 @@ bundles heterogeneous primitives sharing a `frame_id` and timestamp;
 
 Use `SceneEntities` when the value is procedural 3D scene content
 expressible as a small set of primitives: arrows, cubes, spheres,
-cylinders, line strips/loops/lists, triangles, text labels, or coordinate
-axes glyphs.
+cylinders, line strips/loops/lists, triangles, text labels, coordinate
+axes glyphs, or model (mesh asset) references.
 
 | Field on `SceneEntity` | Type | Notes |
 |------------------------|------|-------|
@@ -442,7 +473,12 @@ axes glyphs.
 | `id` | `std::string` | Republishing with the same `(topic, id)` replaces the previous entity. |
 | `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp`. |
 | `frame_locked` | `bool` | When true, track `frame_id` as it moves; when false, stamp into the fixed frame at publish time. |
-| `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` | `std::vector<…Primitive>` | Heterogeneous primitive lists. |
+| `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` / `models` | `std::vector<…Primitive>` | Heterogeneous primitive lists. `models` references a mesh asset by `url` or inline `data`. |
+
+The `SceneEntities` batch also carries `deletions` (`std::vector<SceneEntityDeletion>`):
+removal commands that let a snapshot-based producer express the removal half of a
+stateful stream (e.g. ROS Marker `DELETE` / `DELETEALL`). A deletion is either
+`kMatchingId` (remove the entity with the given `id`) or `kAll` (clear the topic).
 
 Each primitive carries its own `Pose`, geometry-specific size or shape
 fields, and color (or per-vertex colors, where applicable). See
@@ -487,6 +523,51 @@ Design notes:
   `<robot>`) before emission. Generic `std_msgs/String` payloads on unrelated
   topics should not surface as RobotDescription.
 
+## CameraInfo
+
+`CameraInfo` carries pinhole camera calibration — intrinsics, distortion,
+rectification, and projection — for one camera frame (ROS
+`sensor_msgs/CameraInfo`). Consumers use it to draw camera frustums, back-project
+depth pixels into 3D, and rectify or overlay onto images.
+
+Like `OccupancyGridUpdate`, it is correlated to its image / depth topic by
+topic-name convention (`<ns>/camera_info` ↔ `<ns>/image_raw`); the object itself
+carries no topic linkage. It is an owned value (small matrices and a distortion
+vector, no byte blob), so no `BufferAnchor` is needed.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Timestamp associated with this calibration. |
+| `frame_id` | `std::string` | Camera optical frame. |
+| `width` | `uint32_t` | Image width in pixels. |
+| `height` | `uint32_t` | Image height in pixels. |
+| `distortion_model` | `std::string` | e.g. `plumb_bob`, `rational_polynomial`, `equidistant`; empty when rectified. |
+| `D` | `std::vector<double>` | Distortion coefficients; size depends on the model. |
+| `K` | `std::array<double, 9>` | 3x3 row-major intrinsics `[fx 0 cx; 0 fy cy; 0 0 1]`. |
+| `R` | `std::array<double, 9>` | 3x3 row-major rectification (identity for monocular). |
+| `P` | `std::array<double, 12>` | 3x4 row-major projection / camera matrix. |
+
+Sub-window fields (binning, ROI) from `sensor_msgs/CameraInfo` are intentionally
+omitted; they are additive later if a consumer needs them.
+`pj_base/builtin/camera_info_codec.hpp` serializes and deserializes this type
+using the canonical `PJ.CameraInfo` protobuf wire format.
+
+## Log
+
+`Log` is a single textual log message, for a log/console panel. It mirrors the
+core of Foxglove's `Log` schema (and `rcl_interfaces/Log` / `rosgraph_msgs/Log`).
+
+| Field on `Log` | Type | Notes |
+|----------------|------|-------|
+| `timestamp_ns` | `Timestamp` | Time of the log message. |
+| `level` | `Log::Level` | `kUnknown`/`kDebug`/`kInfo`/`kWarning`/`kError`/`kFatal` (values match Foxglove). |
+| `message` | `std::string` | Log text. |
+| `name` | `std::string` | Originating process / node / logger name. |
+
+Foxglove's source-location fields (`file`, `line`) are intentionally omitted.
+`pj_base/builtin/log_codec.hpp` serializes and deserializes this type using the
+canonical `PJ.Log` protobuf wire format.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -503,7 +584,8 @@ Design notes:
 | Detection or tracking message | `ImageAnnotations` | Convert boxes, points, circles, and labels into pixel-space primitives. |
 | ROS `tf2_msgs/TFMessage` | `FrameTransforms` | Convert transform batches into named parent/child frame relationships. |
 | ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
-| ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
+| ROS `sensor_msgs/CameraInfo` | `CameraInfo` | Map K / D / R / P plus dimensions; correlate to the image topic by name. Sub-window (binning / ROI) is dropped. |
+| ROS `map_msgs/OccupancyGridUpdate` | `OccupancyGridUpdate` | Forward the cell-space patch (`x`/`y`/`width`/`height` + bytes); the consumer pairs it with the base grid and supplies origin/resolution. |
 
 The builtin type is the boundary object. After conversion, consumers should not
 need to know which third-party schema produced it.

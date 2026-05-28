@@ -8,14 +8,17 @@
 using PJ::sdk::AssetVideo;
 using PJ::sdk::BuiltinObject;
 using PJ::sdk::BuiltinObjectType;
+using PJ::sdk::CameraInfo;
 using PJ::sdk::CompressedPointCloud;
 using PJ::sdk::DepthImage;
 using PJ::sdk::FrameTransforms;
 using PJ::sdk::Image;
 using PJ::sdk::ImageAnnotations;
+using PJ::sdk::Log;
 using PJ::sdk::Mesh3D;
 using PJ::sdk::name;
 using PJ::sdk::OccupancyGrid;
+using PJ::sdk::OccupancyGridUpdate;
 using PJ::sdk::parseBuiltinObjectType;
 using PJ::sdk::PointCloud;
 using PJ::sdk::RobotDescription;
@@ -37,6 +40,9 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{SceneEntities{}}), BuiltinObjectType::kSceneEntities);
   EXPECT_EQ(typeOf(BuiltinObject{AssetVideo{}}), BuiltinObjectType::kAssetVideo);
   EXPECT_EQ(typeOf(BuiltinObject{RobotDescription{}}), BuiltinObjectType::kRobotDescription);
+  EXPECT_EQ(typeOf(BuiltinObject{CameraInfo{}}), BuiltinObjectType::kCameraInfo);
+  EXPECT_EQ(typeOf(BuiltinObject{OccupancyGridUpdate{}}), BuiltinObjectType::kOccupancyGridUpdate);
+  EXPECT_EQ(typeOf(BuiltinObject{Log{}}), BuiltinObjectType::kLog);
 }
 
 TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
@@ -54,6 +60,9 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kSceneEntities,
            BuiltinObjectType::kAssetVideo,
            BuiltinObjectType::kRobotDescription,
+           BuiltinObjectType::kCameraInfo,
+           BuiltinObjectType::kOccupancyGridUpdate,
+           BuiltinObjectType::kLog,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);

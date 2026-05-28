@@ -1,0 +1,50 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical occupancy-grid-update protobuf schema.
+// Wire-level contract for the byte-backed `OccupancyGridUpdate` builtin
+// (SDK struct lives in pj_base/include/pj_base/builtin/occupancy_grid_update.hpp).
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// An incremental sub-rectangle patch for a previously-published OccupancyGrid.
+//
+// The patch deliberately carries NO origin/resolution: it is not independently
+// placeable. A stateful consumer pairs it with the base grid by topic-name
+// convention (`<base>/costmap_updates` <-> `<base>/costmap`) and positions it
+// at the base grid's `origin + (x, y) * resolution`.
+//
+// Cell values are signed 8-bit integers stored row-major in `data`:
+//   -1     = unknown / no data
+//   0..100 = probability of occupied, in percent
+// `data.size()` must equal `width * height`.
+//
+// On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a
+// `BufferAnchor` (same byte-backed view pattern as OccupancyGrid). The anchor
+// is a C++ lifetime concept with no wire-format equivalent.
+message OccupancyGridUpdate {
+  // Timestamp of the update.
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Frame of reference; must match the base grid's frame.
+  string frame_id = 2;
+
+  // Column offset (in cells) of the patch top-left into the base grid.
+  int32 x = 3;
+
+  // Row offset (in cells) of the patch top-left into the base grid.
+  int32 y = 4;
+
+  // Patch width in cells.
+  uint32 width = 5;
+
+  // Patch height in cells.
+  uint32 height = 6;
+
+  // Row-major signed 8-bit cell values. `data.size()` must equal `width * height`.
+  bytes data = 7;
+}

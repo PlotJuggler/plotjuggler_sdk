@@ -23,6 +23,11 @@ rationale.
 - **`FrameTransforms.proto`** — TF-style coordinate frame relationships so consumers can place data in a common world frame.
   - `FrameTransform`, `FrameTransforms`
 
+### Camera calibration
+
+- **`CameraInfo.proto`** — pinhole camera calibration (intrinsics, distortion, rectification, projection) so consumers can draw frustums, back-project depth, and rectify; correlated to an image topic by name.
+  - `CameraInfo`
+
 ### Byte-backed raster builtins
 
 - **`Image.proto`** — single 2D image, raw (`rgb8`, `mono16`, …) or compressed (`jpeg`, `png`, `qoi`) unified under a single `encoding` string.
@@ -31,6 +36,10 @@ rationale.
   - `DepthImage`
 - **`OccupancyGrid.proto`** — 2D metric occupancy grid (maps, costmaps) placed in world coordinates via an origin pose + cell resolution.
   - `OccupancyGrid`
+- **`OccupancyGridUpdate.proto`** — incremental sub-rectangle patch for a previously-published `OccupancyGrid`; placed by the consumer against the base grid (no own origin/resolution).
+  - `OccupancyGridUpdate`
+- **`Log.proto`** — a single textual log message (severity level + text + originating name) for a log/console panel; mirrors the core of Foxglove's `Log` (file/line omitted).
+  - `Log`
 - **`VideoFrame.proto`** — one frame of an inter-frame-coded video stream (`h264`, `h265`, `vp9`, `av1`) when per-frame `Image` messages would be wasteful.
   - `VideoFrame`
 - **`AssetVideo.proto`** — reference to a file-backed video plus typed playback metadata (path, MIME type, dimensions, frame rate) so consumers can size playback windows without opening the file.

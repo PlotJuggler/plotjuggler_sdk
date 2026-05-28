@@ -20,11 +20,13 @@ using sdk::CubePrimitive;
 using sdk::CylinderPrimitive;
 using sdk::LinePrimitive;
 using sdk::LineType;
+using sdk::ModelPrimitive;
 using sdk::Point3;
 using sdk::Pose;
 using sdk::Quaternion;
 using sdk::SceneEntities;
 using sdk::SceneEntity;
+using sdk::SceneEntityDeletion;
 using sdk::SpherePrimitive;
 using sdk::TextPrimitive;
 using sdk::TrianglePrimitive;
@@ -195,6 +197,80 @@ TEST(SceneEntitiesCodecTest, RoundTripLineWithPerVertexColorsAndIndices) {
   EXPECT_EQ(dst_line.indices, std::vector<uint32_t>({0, 1, 2, 3}));
   ASSERT_EQ(dst_line.colors.size(), 4u);
   EXPECT_TRUE(ColorNear(ColorRGBA{0, 255, 0, 255}, dst_line.colors[1]));
+}
+
+TEST(SceneEntitiesCodecTest, RoundTripModelPrimitive) {
+  SceneEntities in;
+  SceneEntity e;
+  e.frame_id = "base_link";
+  e.id = "robot_mesh";
+  e.metadata.push_back({.key = "source", .value = "urdf"});
+  ModelPrimitive model;
+  model.pose = makePose(1.0, 2.0, 3.0);
+  model.scale = {.x = 2.0, .y = 2.0, .z = 2.0};
+  model.color = {10, 20, 30, 200};
+  model.override_color = true;
+  model.url = "package://robot/meshes/base.dae";
+  model.media_type = "model/vnd.collada+xml";
+  model.data = {0x01, 0x02, 0x03, 0x04};
+  e.models.push_back(std::move(model));
+  in.entities.push_back(std::move(e));
+
+  const auto bytes = serializeSceneEntities(in);
+  auto out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  ASSERT_EQ(out->entities.size(), 1u);
+  ASSERT_EQ(out->entities.front().metadata.size(), 1u);
+  EXPECT_EQ(out->entities.front().metadata.front().key, "source");
+  EXPECT_EQ(out->entities.front().metadata.front().value, "urdf");
+  ASSERT_EQ(out->entities.front().models.size(), 1u);
+  const auto& src = in.entities.front().models.front();
+  const auto& dst = out->entities.front().models.front();
+  EXPECT_EQ(dst.pose, src.pose);
+  EXPECT_EQ(dst.scale, src.scale);
+  EXPECT_TRUE(ColorNear(src.color, dst.color));
+  EXPECT_TRUE(dst.override_color);
+  EXPECT_EQ(dst.url, src.url);
+  EXPECT_EQ(dst.media_type, src.media_type);
+  EXPECT_EQ(dst.data, src.data);
+}
+
+TEST(SceneEntitiesCodecTest, RoundTripEntitiesAndDeletions) {
+  SceneEntities in;
+  SceneEntity e;
+  e.frame_id = "world";
+  e.id = "keep";
+  e.cubes.push_back(
+      CubePrimitive{
+          .pose = makePose(0.0, 0.0, 0.0), .size = {.x = 1.0, .y = 1.0, .z = 1.0}, .color = {255, 255, 255, 255}});
+  in.entities.push_back(std::move(e));
+  in.deletions.push_back(
+      SceneEntityDeletion{.type = SceneEntityDeletion::Type::kMatchingId, .timestamp = 42, .id = "gone"});
+  in.deletions.push_back(SceneEntityDeletion{.type = SceneEntityDeletion::Type::kAll, .timestamp = 99, .id = ""});
+
+  const auto bytes = serializeSceneEntities(in);
+  auto out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  ASSERT_EQ(out->entities.size(), 1u);
+  ASSERT_EQ(out->deletions.size(), 2u);
+  EXPECT_EQ(out->deletions[0].type, SceneEntityDeletion::Type::kMatchingId);
+  EXPECT_EQ(out->deletions[0].timestamp, 42);
+  EXPECT_EQ(out->deletions[0].id, "gone");
+  EXPECT_EQ(out->deletions[1].type, SceneEntityDeletion::Type::kAll);
+  EXPECT_EQ(out->deletions[1].timestamp, 99);
+}
+
+TEST(SceneEntitiesCodecTest, DeletionsOnlyBatchRoundTrips) {
+  SceneEntities in;
+  in.deletions.push_back(SceneEntityDeletion{.type = SceneEntityDeletion::Type::kAll, .timestamp = 7, .id = ""});
+  EXPECT_FALSE(in.empty());
+
+  const auto bytes = serializeSceneEntities(in);
+  auto out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_TRUE(out->entities.empty());
+  ASSERT_EQ(out->deletions.size(), 1u);
+  EXPECT_EQ(out->deletions[0].type, SceneEntityDeletion::Type::kAll);
 }
 
 }  // namespace

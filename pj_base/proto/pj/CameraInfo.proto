@@ -1,0 +1,48 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical camera calibration protobuf schema.
+// Wire-level contract for the owned `CameraInfo` builtin
+// (SDK struct lives in pj_base/include/pj_base/builtin/camera_info.hpp).
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// Pinhole camera calibration: intrinsics, distortion, rectification, and
+// projection for one camera frame. Mirrors the calibration payload of
+// sensor_msgs/CameraInfo. Matrices are row-major. Correlated to an image or
+// depth topic by topic-name convention (`<ns>/camera_info` <-> `<ns>/image_raw`);
+// the message carries no topic linkage. Sub-window fields (binning, ROI) are
+// intentionally omitted and may be appended later.
+message CameraInfo {
+  // Timestamp associated with this calibration.
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Camera optical frame.
+  string frame_id = 2;
+
+  // Image width in pixels.
+  uint32 width = 3;
+
+  // Image height in pixels.
+  uint32 height = 4;
+
+  // Distortion model name, e.g. "plumb_bob", "rational_polynomial", "equidistant".
+  // Empty for a rectified camera with no distortion.
+  string distortion_model = 5;
+
+  // Distortion coefficients; size depends on `distortion_model`.
+  repeated double D = 6;
+
+  // 3x3 row-major intrinsic matrix [fx 0 cx; 0 fy cy; 0 0 1] (9 values).
+  repeated double K = 7;
+
+  // 3x3 row-major rectification matrix (identity for monocular) (9 values).
+  repeated double R = 8;
+
+  // 3x4 row-major projection / camera matrix (12 values).
+  repeated double P = 9;
+}
