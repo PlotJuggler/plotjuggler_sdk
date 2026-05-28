@@ -76,6 +76,17 @@ CLAUDE.md -> relevant docs -> code
 
 Dependencies: Conan (`conanfile.txt`).
 
+## Branch Convention
+
+- PRs target **`main`** (`gh repo view --json defaultBranchRef`). There is no
+  `development` branch — earlier docs/state hints may say otherwise; they are
+  stale.
+- The official PlotJuggler plugin collection lives in a separate repo,
+  `pj-official-plugins` (not bundled here). If you see a local
+  `pj_ported_plugins/` directory inside this checkout, it's an external repo
+  you cloned for staging; this build system does not depend on or descend
+  into it.
+
 ## Pre-commit Validation
 
 Before committing, first check whether the code changes require documentation updates. If documentation is stale

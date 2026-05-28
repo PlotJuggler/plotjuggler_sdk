@@ -121,7 +121,6 @@ class PlotjugglerCoreConan(ConanFile):
         tc.cache_variables["PJ_INSTALL_SDK"] = True
         tc.cache_variables["PJ_BUILD_DATASTORE"] = bool(self.options.with_datastore)
         tc.cache_variables["PJ_BUILD_TESTS"] = bool(self.options.with_tests)
-        tc.cache_variables["PJ_BUILD_PORTED_PLUGINS"] = False
         tc.cache_variables["PJ_BUILD_PARQUET_IMPORT_EXAMPLE"] = bool(
             self.options.with_parquet_example
         )

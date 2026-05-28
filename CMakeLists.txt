@@ -23,7 +23,6 @@ option(
   ON
 )
 option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires nanoarrow)" ON)
-option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
 option(PJ_ENABLE_ABI_CHECK "Enable abidiff-based ABI drift gate (requires libabigail)" OFF)
 
@@ -175,11 +174,6 @@ if(PJ_BUILD_DATASTORE)
   add_subdirectory(pj_datastore)
 endif()
 add_subdirectory(pj_plugins)
-
-if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
-  set(PJ_HAS_PORTED_PLUGINS TRUE)
-  add_subdirectory(pj_ported_plugins)
-endif()
 
 # ---------------------------------------------------------------------------
 # plotjuggler_core package install
