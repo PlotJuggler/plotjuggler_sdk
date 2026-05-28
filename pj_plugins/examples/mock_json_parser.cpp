@@ -1,9 +1,10 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cstdlib>
 #include <string>
+#include <string_view>
 
+#include "pj_base/number_parse.hpp"
 #include "pj_plugins/sdk/message_parser_plugin_base.hpp"
 
 namespace {
@@ -16,10 +17,12 @@ class MockJsonParser : public PJ::MessageParserPluginBase {
     if (!writeHostBound()) {
       return PJ::unexpected("write host not bound");
     }
-    std::string text(reinterpret_cast<const char*>(payload.data()), payload.size());
-    double value = std::strtod(text.c_str(), nullptr);
-
-    return writeHost().appendRecord(timestamp_ns, {{.name = "value", .value = value}});
+    const std::string_view text(reinterpret_cast<const char*>(payload.data()), payload.size());
+    const auto value = PJ::parseNumber<double>(text);
+    if (!value.has_value()) {
+      return PJ::unexpected("payload is not a valid number");
+    }
+    return writeHost().appendRecord(timestamp_ns, {{.name = "value", .value = *value}});
   }
 };
 

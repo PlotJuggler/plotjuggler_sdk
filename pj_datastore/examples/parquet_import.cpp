@@ -14,7 +14,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -22,6 +21,7 @@
 #include <variant>
 #include <vector>
 
+#include "pj_base/number_parse.hpp"
 #include "pj_base/span.hpp"
 #include "pj_base/types.hpp"
 #include "pj_datastore/arrow_import.hpp"
@@ -227,10 +227,12 @@ int main(int argc, char* argv[]) {
   const std::string path = argv[1];
   uint32_t chunk_rows = 8192;
   if (argc >= 3) {
-    chunk_rows = static_cast<uint32_t>(std::atoi(argv[2]));
-    if (chunk_rows == 0) {
-      chunk_rows = 8192;
+    const auto parsed = PJ::parseNumber<uint32_t>(argv[2]);
+    if (!parsed.has_value() || *parsed == 0) {
+      std::cerr << "Invalid chunk_rows value: " << argv[2] << " (expected a positive integer)\n";
+      return 1;
     }
+    chunk_rows = *parsed;
   }
 
   // ── 1. Open Parquet file ──────────────────────────────────────────────────

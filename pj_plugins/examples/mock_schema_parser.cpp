@@ -1,11 +1,12 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "pj_base/number_parse.hpp"
 #include "pj_plugins/sdk/message_parser_plugin_base.hpp"
 
 namespace {
@@ -65,18 +66,21 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
     }
 
     // Parse "a,b" from payload.
-    std::string text(reinterpret_cast<const char*>(payload.data()), payload.size());
-    auto comma = text.find(',');
-    if (comma == std::string::npos) {
+    const std::string_view text(reinterpret_cast<const char*>(payload.data()), payload.size());
+    const auto comma = text.find(',');
+    if (comma == std::string_view::npos) {
       return PJ::unexpected("expected comma-separated pair");
     }
 
-    double a = std::strtod(text.c_str(), nullptr);
-    double b = std::strtod(text.c_str() + comma + 1, nullptr);
+    const auto a = PJ::parseNumber<double>(text.substr(0, comma));
+    const auto b = PJ::parseNumber<double>(text.substr(comma + 1));
+    if (!a.has_value() || !b.has_value()) {
+      return PJ::unexpected("payload pair did not parse as two doubles");
+    }
 
     const PJ::sdk::BoundFieldValue fields[] = {
-        {.field = field_handles_[0], .value = a},
-        {.field = field_handles_[1], .value = b},
+        {.field = field_handles_[0], .value = *a},
+        {.field = field_handles_[1], .value = *b},
     };
     return writeHost().appendBoundRecord(timestamp_ns, PJ::Span<const PJ::sdk::BoundFieldValue>(fields, 2));
   }
