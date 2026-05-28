@@ -81,6 +81,12 @@ add_library(pj_internal_fmt INTERFACE)
 target_compile_definitions(pj_internal_fmt INTERFACE FMT_HEADER_ONLY=1)
 target_link_libraries(pj_internal_fmt INTERFACE ${PJ_FMT_TARGET})
 
+# fast_float backs the floating-point branch of PJ::parseNumber. Header-only;
+# linked PRIVATE under a BUILD_INTERFACE scope by pj_base so it never appears
+# in the installed plotjuggler_coreTargets file. Conan ships the CMake
+# package under the capitalised name `FastFloat`.
+find_package(FastFloat REQUIRED)
+
 if(PJ_BUILD_DATASTORE)
   find_package(tsl-robin-map REQUIRED)
   if(PJ_BUILD_TESTS)
@@ -196,7 +202,7 @@ endif()
 if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
-  set(PJ_PACKAGE_VERSION "0.4.1")
+  set(PJ_PACKAGE_VERSION "0.4.2")
   set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_core)
 
   install(EXPORT plotjuggler_coreTargets

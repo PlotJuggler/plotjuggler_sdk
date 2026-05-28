@@ -17,6 +17,7 @@ add_library(pj_base STATIC
   src/builtin/point_cloud_codec.cpp
   src/builtin/scene_entities_codec.cpp
   src/builtin/video_frame_codec.cpp
+  src/number_parse.cpp
   src/type_tree.cpp
 )
 target_include_directories(pj_base PUBLIC
@@ -26,6 +27,12 @@ target_include_directories(pj_base PUBLIC
 target_compile_features(pj_base PUBLIC cxx_std_20)
 target_compile_options(pj_base PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
+)
+# fast_float is an implementation detail of PJ::parseNumber. BUILD_INTERFACE
+# scoping keeps it off the installed plotjuggler_coreTargets file so
+# downstream consumers never inherit a fast_float include path or link req.
+target_link_libraries(pj_base PRIVATE
+  $<BUILD_INTERFACE:FastFloat::fast_float>
 )
 set_target_properties(pj_base PROPERTIES
   POSITION_INDEPENDENT_CODE ON
@@ -62,6 +69,7 @@ if(PJ_BUILD_TESTS)
     tests/type_tree_test.cpp
     tests/span_test.cpp
     tests/expected_test.cpp
+    tests/number_parse_test.cpp
     tests/plugin_data_api_test.cpp
     tests/settings_store_host_test.cpp
     tests/data_source_protocol_test.cpp

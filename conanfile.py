@@ -7,7 +7,7 @@ Exposes four CMake components under the `plotjuggler_core::` namespace:
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_core/0.4.1` and then:
+A consuming Conan recipe declares e.g. `plotjuggler_core/0.4.2` and then:
 
     find_package(plotjuggler_core REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_core::plugin_sdk)
@@ -27,7 +27,7 @@ import os
 
 class PlotjugglerCoreConan(ConanFile):
     name = "plotjuggler_core"
-    version = "0.4.1"
+    version = "0.4.2"
     # Apache-2.0 covers pj_base + pj_plugins (the plugin-facing SDK);
     # MPL-2.0 covers pj_datastore (the storage engine). See LICENSE.
     license = "Apache-2.0 AND MPL-2.0"
@@ -91,6 +91,18 @@ class PlotjugglerCoreConan(ConanFile):
         # into consumers of this static-library package.
         self.requires(
             "fmt/12.1.0",
+            headers=True,
+            libs=False,
+            visible=False,
+            transitive_headers=False,
+            transitive_libs=False,
+        )
+
+        # fast_float backs the floating-point branch of PJ::parseNumber. It
+        # is header-only and stays private: never appears in any public
+        # pj_base header, never propagated to downstream consumers.
+        self.requires(
+            "fast_float/8.1.0",
             headers=True,
             libs=False,
             visible=False,

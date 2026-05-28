@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "pj_base/number_parse.hpp"
+
 namespace PJ {
 
 /// Read-only view of the JSON returned by get_widget_data().
@@ -431,14 +433,11 @@ class WidgetDataView {
     }
     std::vector<std::pair<int, std::string>> result;
     for (auto kv = it->begin(); kv != it->end(); ++kv) {
-      try {
-        int row = std::stoi(kv.key());
-        if (kv.value().is_string()) {
-          result.emplace_back(row, kv.value().get<std::string>());
-        }
-      } catch (...) {
-        // skip malformed keys
+      const auto row = parseNumber<int>(kv.key());
+      if (!row.has_value() || !kv.value().is_string()) {
+        continue;
       }
+      result.emplace_back(*row, kv.value().get<std::string>());
     }
     return result;
   }
@@ -457,19 +456,16 @@ class WidgetDataView {
     std::vector<std::tuple<int, int, std::string>> result;
     for (auto kv = it->begin(); kv != it->end(); ++kv) {
       const std::string& key = kv.key();
-      auto comma = key.find(',');
+      const auto comma = key.find(',');
       if (comma == std::string::npos) {
         continue;
       }
-      try {
-        int row = std::stoi(key.substr(0, comma));
-        int col = std::stoi(key.substr(comma + 1));
-        if (kv.value().is_string()) {
-          result.emplace_back(row, col, kv.value().get<std::string>());
-        }
-      } catch (...) {
-        // skip malformed keys
+      const auto row = parseNumber<int>(std::string_view{key}.substr(0, comma));
+      const auto col = parseNumber<int>(std::string_view{key}.substr(comma + 1));
+      if (!row.has_value() || !col.has_value() || !kv.value().is_string()) {
+        continue;
       }
+      result.emplace_back(*row, *col, kv.value().get<std::string>());
     }
     return result;
   }
