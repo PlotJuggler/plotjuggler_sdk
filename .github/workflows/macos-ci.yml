@@ -1,0 +1,48 @@
+name: macOS CI
+on:
+  push:
+    branches: [development, main]
+  pull_request:
+    branches: [development, main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.pull_request.draft == false
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: conan-io/setup-conan@v1
+        with:
+          cache_packages: true
+
+      - name: Install cmake and ninja
+        run: pip install cmake ninja
+
+      - name: Conan install
+        run: >
+          conan install . --output-folder=build --build=missing
+          -s build_type=RelWithDebInfo -s compiler.cppstd=20
+          -o "plotjuggler_core/*:with_tests=True"
+          -o "plotjuggler_core/*:with_parquet_example=False"
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/build/conan_toolchain.cmake
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure

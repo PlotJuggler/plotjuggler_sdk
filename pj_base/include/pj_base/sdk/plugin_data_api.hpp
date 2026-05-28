@@ -2,7 +2,6 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -18,6 +17,7 @@
 
 #include "pj_base/builtin/builtin_object.hpp"
 #include "pj_base/expected.hpp"
+#include "pj_base/number_parse.hpp"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/arrow.hpp"
 #include "pj_base/sdk/object_bytes.hpp"
@@ -1309,11 +1309,11 @@ class SettingsValue {
   }
 
   [[nodiscard]] std::int64_t toInt(std::int64_t def = 0) const {
-    return parse<std::int64_t>(def);
+    return raw_.has_value() ? parseNumber<std::int64_t>(*raw_).value_or(def) : def;
   }
 
   [[nodiscard]] double toDouble(double def = 0.0) const {
-    return parse<double>(def);
+    return raw_.has_value() ? parseNumber<double>(*raw_).value_or(def) : def;
   }
 
   /// "true"/"1"/"on" → true; "false"/"0"/"off" → false; otherwise @p def.
@@ -1332,18 +1332,6 @@ class SettingsValue {
   }
 
  private:
-  template <typename T>
-  [[nodiscard]] T parse(T def) const {
-    if (!raw_.has_value()) {
-      return def;
-    }
-    T out{};
-    const char* begin = raw_->data();
-    const char* end = begin + raw_->size();
-    auto [ptr, ec] = std::from_chars(begin, end, out);
-    return (ec == std::errc{} && ptr == end) ? out : def;
-  }
-
   std::optional<std::string> raw_;
 };
 
