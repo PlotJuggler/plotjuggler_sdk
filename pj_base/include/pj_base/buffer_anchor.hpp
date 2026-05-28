@@ -51,14 +51,10 @@ struct PayloadView {
         anchor(std::move(buffer)) {}
 };
 
-/// Convenience helper for producers whose only payload is a plain
-/// std::vector<uint8_t>. Wraps it in a shared_ptr (which becomes both the
-/// owner of the bytes and the type-erased anchor), and returns a PayloadView
-/// whose Span points at that vector's contents. Use this when the producer
-/// materializes bytes from a source that has no natural anchor (e.g. a
-/// C-ABI fetch returning a raw byte buffer); when an upstream allocation
-/// already exists (a chunk cache, an mmap region), construct the PayloadView
-/// directly with that anchor to avoid the helper's copy.
+/// Wrap a fresh vector as both anchor and Span. Use when the producer has
+/// no natural anchor (e.g. raw bytes from a C-ABI fetch); when an upstream
+/// allocation already exists, construct PayloadView directly to avoid this
+/// helper's copy.
 inline PayloadView makePayloadView(std::vector<uint8_t> bytes) {
   auto shared = std::make_shared<const std::vector<uint8_t>>(std::move(bytes));
   return PayloadView{

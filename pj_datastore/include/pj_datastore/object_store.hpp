@@ -40,15 +40,11 @@ struct ObjectTopicDescriptor {
   std::string metadata_json;
 };
 
-/// Eager payload alternative: shared ownership of an owned byte buffer.
-/// memoryUsage() counts the buffer's size against the retention budget.
+/// Eager payload: store-owned bytes, counted against the retention budget.
 using SharedBuffer = std::shared_ptr<const std::vector<uint8_t>>;
 
-/// Lazy payload alternative: idempotent, thread-safe callable returning a
-/// PayloadView (Span + BufferAnchor). The anchor may be any shared_ptr-backed
-/// storage (chunk cache, mmap, etc.); type erasure is preserved end-to-end
-/// through the store. Lazy entries are not counted against the retention
-/// budget — bytes are owned upstream, not by the store.
+/// Lazy payload: idempotent, thread-safe fetcher returning bytes + anchor.
+/// Invoked on every read; bytes are not counted against the retention budget.
 using LazyCallback = std::function<sdk::PayloadView()>;
 
 struct ObjectEntry {
@@ -56,14 +52,9 @@ struct ObjectEntry {
   std::variant<SharedBuffer, LazyCallback> payload;
 };
 
-/// Result of resolving an ObjectEntry. Holds the type-erased BufferAnchor
-/// keeping the bytes alive and a Span over the producer-published range.
-/// For eager entries the anchor wraps the SharedBuffer's underlying vector;
-/// for lazy entries it is whatever the producer's PayloadView carries.
 struct ResolvedObjectEntry {
   Timestamp timestamp = 0;
-  sdk::BufferAnchor anchor;
-  Span<const uint8_t> view;
+  sdk::PayloadView payload;
 };
 
 struct RetentionBudget {
@@ -126,13 +117,9 @@ class ObjectStore {
 
   Status pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload);
 
-  // The fetch callable is invoked on every read. It returns a PayloadView
-  // (Span + anchor). When the producer already holds the bytes in memory
-  // behind a shared_ptr (e.g. a streaming buffer being handed off between
-  // stores), the closure can capture that shared_ptr and return a view
-  // backed by it — no copy. For producers that materialize bytes from disk
-  // or other sources, the closure allocates a fresh buffer and uses it as
-  // the anchor.
+  // Fetcher runs on every read. Producers anchor on whatever owns the bytes
+  // (chunk cache, mmap, fresh allocation); the store never copies — it just
+  // retains the anchor through PayloadView.
   Status pushLazy(ObjectTopicId id, Timestamp timestamp, LazyCallback fetch);
 
   // --- Read ---

@@ -141,9 +141,10 @@ TEST(ParserObjectWriteHostTest, ParserWritesToBothHostsFromOneParse) {
   // Object-store side: bytes landed.
   auto resolved = store.latestAt(ObjectTopicId{obj_topic.id}, 100);
   ASSERT_TRUE(resolved.has_value());
-  ASSERT_NE(resolved->anchor, nullptr);
+  ASSERT_NE(resolved->payload.anchor, nullptr);
   const std::vector<uint8_t> expected{0xAA, 0xBB, 0xCC};
-  EXPECT_TRUE(std::equal(resolved->view.begin(), resolved->view.end(), expected.begin(), expected.end()));
+  EXPECT_TRUE(
+      std::equal(resolved->payload.bytes.begin(), resolved->payload.bytes.end(), expected.begin(), expected.end()));
 
   // (Scalar side requires flushing + a read path; Phase-3 scope is proving
   // both hosts were resolved and invoked. Scalar writes go into DataEngine
@@ -204,7 +205,8 @@ TEST(ParserObjectWriteHostTest, ObjectHostViewPushLazyThroughSdk) {
   auto resolved = store.latestAt(ObjectTopicId{topic.id}, 10);
   ASSERT_TRUE(resolved.has_value());
   const std::vector<uint8_t> expected{0xAA, 0xBB};
-  EXPECT_TRUE(std::equal(resolved->view.begin(), resolved->view.end(), expected.begin(), expected.end()));
+  EXPECT_TRUE(
+      std::equal(resolved->payload.bytes.begin(), resolved->payload.bytes.end(), expected.begin(), expected.end()));
   EXPECT_GE(fetch_calls, 1);
 }
 

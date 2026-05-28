@@ -306,13 +306,13 @@ ResolvedObjectEntry ObjectStore::resolveEntry(const ObjectEntry& entry) {
 
   if (const auto* owned = std::get_if<SharedBuffer>(&entry.payload)) {
     if (*owned) {
-      resolved.anchor = sdk::BufferAnchor{*owned};
-      resolved.view = Span<const uint8_t>{(*owned)->data(), (*owned)->size()};
+      resolved.payload = sdk::PayloadView{
+          Span<const uint8_t>{(*owned)->data(), (*owned)->size()},
+          sdk::BufferAnchor{*owned},
+      };
     }
   } else if (const auto* lazy = std::get_if<LazyCallback>(&entry.payload)) {
-    auto pv = (*lazy)();
-    resolved.anchor = std::move(pv.anchor);
-    resolved.view = pv.bytes;
+    resolved.payload = (*lazy)();
   }
 
   return resolved;

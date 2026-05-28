@@ -64,9 +64,10 @@ TEST(PluginDataHostObjectTest, PushOwnedStoresBytes) {
   EXPECT_EQ(f.store.entryCount(store_id), 2U);
   auto resolved = f.store.latestAt(store_id, 2000);
   ASSERT_TRUE(resolved.has_value());
-  ASSERT_NE(resolved->anchor, nullptr);
-  EXPECT_EQ(resolved->view.size(), payload.size());
-  EXPECT_TRUE(std::equal(resolved->view.begin(), resolved->view.end(), payload.begin(), payload.end()));
+  ASSERT_NE(resolved->payload.anchor, nullptr);
+  EXPECT_EQ(resolved->payload.bytes.size(), payload.size());
+  EXPECT_TRUE(
+      std::equal(resolved->payload.bytes.begin(), resolved->payload.bytes.end(), payload.begin(), payload.end()));
 }
 
 TEST(PluginDataHostObjectTest, PushLazyRetainsClosureUntilEviction) {
@@ -94,8 +95,10 @@ TEST(PluginDataHostObjectTest, PushLazyRetainsClosureUntilEviction) {
   // Each read invokes the fetch closure.
   auto first = f.store.latestAt(ObjectTopicId{topic.id}, 42);
   ASSERT_TRUE(first.has_value());
-  ASSERT_NE(first->anchor, nullptr);
-  EXPECT_TRUE(std::equal(first->view.begin(), first->view.end(), shared->payload.begin(), shared->payload.end()));
+  ASSERT_NE(first->payload.anchor, nullptr);
+  EXPECT_TRUE(
+      std::equal(
+          first->payload.bytes.begin(), first->payload.bytes.end(), shared->payload.begin(), shared->payload.end()));
   EXPECT_GE(shared->fetch_calls.load(), 1);
 
   auto second = f.store.latestAt(ObjectTopicId{topic.id}, 42);
@@ -150,7 +153,9 @@ TEST(PluginDataHostObjectTest, PushLazyDestroyCallbackRunsExactlyOnceOnEviction)
   // Fetch once — the callback runs but the ctx stays alive.
   auto resolved = f.store.latestAt(ObjectTopicId{topic.id}, 100);
   ASSERT_TRUE(resolved.has_value());
-  EXPECT_TRUE(std::equal(resolved->view.begin(), resolved->view.end(), ctx->payload.begin(), ctx->payload.end()));
+  EXPECT_TRUE(
+      std::equal(
+          resolved->payload.bytes.begin(), resolved->payload.bytes.end(), ctx->payload.begin(), ctx->payload.end()));
   EXPECT_EQ(ctx->destroy_count.load(), 0);
 
   // Evict — destroy_fn runs exactly once.

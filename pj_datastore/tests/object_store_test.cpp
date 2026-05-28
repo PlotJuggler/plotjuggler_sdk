@@ -150,7 +150,7 @@ TEST(ObjectStoreTest, LatestAtExact) {
   auto r = store.latestAt(id, 200);
   ASSERT_TRUE(r.has_value());
   EXPECT_EQ(r->timestamp, 200);
-  EXPECT_EQ(r->view[0], 0x02);
+  EXPECT_EQ(r->payload.bytes[0], 0x02);
 }
 
 TEST(ObjectStoreTest, LatestAtBetween) {
@@ -292,17 +292,13 @@ TEST(ObjectStoreTest, PushLazyResolves) {
   auto r = store.latestAt(id, 100);
   ASSERT_TRUE(r.has_value());
   EXPECT_EQ(call_count, 1);
-  EXPECT_EQ(r->view.size(), 2u);
-  EXPECT_EQ(r->view[0], 0xDE);
+  EXPECT_EQ(r->payload.bytes.size(), 2u);
+  EXPECT_EQ(r->payload.bytes[0], 0xDE);
 }
 
-// Regression: the lazy path must preserve the BufferAnchor's concrete type.
-// Anchor here is a shared_ptr<TestBuffer> — NOT a shared_ptr<vector>. If
-// resolveEntry static_pointer_cast'd to vector (the prior implementation),
-// view would point at garbage and ASAN would flag it. We assert that
-// (a) the bytes the producer published survive resolution unchanged, and
-// (b) the anchor's refcount stays > 0 through the resolve (the store does
-// not silently swap it for a different anchor type).
+// Regression: anchor type-erasure must survive resolveEntry. The anchor here
+// is a shared_ptr<TestBuffer> (not vector); a prior static_pointer_cast to
+// vector would UB.
 TEST(ObjectStoreTest, PushLazyPreservesAnchorType) {
   struct TestBuffer {
     std::array<uint8_t, 4> bytes{0x11, 0x22, 0x33, 0x44};
@@ -322,16 +318,14 @@ TEST(ObjectStoreTest, PushLazyPreservesAnchorType) {
 
   auto r = store.latestAt(id, 100);
   ASSERT_TRUE(r.has_value());
-  ASSERT_EQ(r->view.size(), 4u);
-  EXPECT_EQ(r->view[0], 0x11);
-  EXPECT_EQ(r->view[3], 0x44);
+  ASSERT_EQ(r->payload.bytes.size(), 4u);
+  EXPECT_EQ(r->payload.bytes[0], 0x11);
+  EXPECT_EQ(r->payload.bytes[3], 0x44);
   EXPECT_FALSE(weak_buffer.expired());  // anchor still holds the buffer alive
 }
 
-// Regression: PayloadView::bytes is the *producer-chosen sub-range* of the
-// anchor's storage. resolveEntry must propagate that Span verbatim — not the
-// anchor's full extent. The prior implementation ignored the Span and
-// returned the anchor's whole vector.
+// Regression: the producer's Span is a sub-range of the anchor's storage.
+// resolveEntry must propagate it verbatim — not the anchor's full extent.
 TEST(ObjectStoreTest, PushLazyHonorsSpanSubview) {
   ObjectStore store;
   auto id = registerTestTopic(store);
@@ -350,10 +344,10 @@ TEST(ObjectStoreTest, PushLazyHonorsSpanSubview) {
 
   auto r = store.latestAt(id, 100);
   ASSERT_TRUE(r.has_value());
-  EXPECT_EQ(r->view.size(), 10u);
-  EXPECT_EQ(r->view.data(), chunk->data() + 20);
-  EXPECT_EQ(r->view[0], 20);
-  EXPECT_EQ(r->view[9], 29);
+  EXPECT_EQ(r->payload.bytes.size(), 10u);
+  EXPECT_EQ(r->payload.bytes.data(), chunk->data() + 20);
+  EXPECT_EQ(r->payload.bytes[0], 20);
+  EXPECT_EQ(r->payload.bytes[9], 29);
 }
 
 // =========================================================================
@@ -390,13 +384,13 @@ TEST(ObjectStoreTest, HandleSurvivesEviction) {
 
   auto handle = store.latestAt(id, 100);
   ASSERT_TRUE(handle.has_value());
-  EXPECT_EQ(handle->view[0], 0xAA);
+  EXPECT_EQ(handle->payload.bytes[0], 0xAA);
 
   store.evictBefore(id, 150);
   EXPECT_EQ(store.entryCount(id), 1u);
 
-  EXPECT_EQ(handle->view.size(), 4u);
-  EXPECT_EQ(handle->view[0], 0xAA);
+  EXPECT_EQ(handle->payload.bytes.size(), 4u);
+  EXPECT_EQ(handle->payload.bytes[0], 0xAA);
 }
 
 // =========================================================================
