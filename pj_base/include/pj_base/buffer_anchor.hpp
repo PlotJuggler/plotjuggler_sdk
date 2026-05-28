@@ -39,6 +39,14 @@ using BufferAnchor = std::shared_ptr<const void>;
 struct PayloadView {
   Span<const uint8_t> bytes;
   BufferAnchor anchor;
+
+  PayloadView() = default;
+
+  PayloadView(Span<const uint8_t> bytes_, BufferAnchor anchor_) : bytes(bytes_), anchor(std::move(anchor_)) {}
+
+  PayloadView(std::shared_ptr<std::vector<uint8_t>> bytes)
+      : bytes(bytes ? Span<const uint8_t>(bytes->data(), bytes->size()) : Span<const uint8_t>()),
+        anchor(std::move(bytes)) {}
 };
 
 }  // namespace sdk
