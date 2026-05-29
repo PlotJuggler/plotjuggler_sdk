@@ -53,6 +53,7 @@ typedef enum {
   PJ_TOOLBOX_MESSAGE_INFO = 0,
   PJ_TOOLBOX_MESSAGE_WARNING = 1,
   PJ_TOOLBOX_MESSAGE_ERROR = 2,
+  PJ_TOOLBOX_MESSAGE_FORCE_INT32 = 0x7FFFFFFF, /* pin 4-byte width; not a real level */
 } PJ_toolbox_message_level_t;
 
 enum {

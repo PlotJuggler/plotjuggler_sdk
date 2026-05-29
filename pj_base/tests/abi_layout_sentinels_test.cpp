@@ -40,12 +40,15 @@
 static_assert(sizeof(void*) == 8, "v4 ABI pinned to 64-bit targets");
 
 // --- Enum size guards --------------------------------------------------------
-// Defends against `-fshort-enums` and similar flags that silently shrink
-// enums below the 32-bit wire assumption.
+// Each ABI enum carries a `..._FORCE_INT32 = 0x7FFFFFFF` enumerator that pins
+// its width to a stable 4 bytes even under `-fshort-enums` in a third-party
+// plugin build — the enumerator is what travels into the plugin's compiler;
+// these static_asserts only verify the pinning holds in this build too.
 static_assert(sizeof(PJ_primitive_type_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_data_source_state_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_data_source_message_level_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_message_box_type_t) == 4, "enum layout pinned");
+static_assert(sizeof(PJ_message_box_buttons_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_toolbox_message_level_t) == 4, "enum layout pinned");
 
 // --- PJ_error_t (ABI-FROZEN) -------------------------------------------------

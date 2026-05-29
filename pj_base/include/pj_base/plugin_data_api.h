@@ -93,18 +93,22 @@ typedef enum {
   /** Sentinel: null value with no type information. Used when is_null=true
    *  and the plugin provides no type hint (untyped kNull). */
   PJ_PRIMITIVE_TYPE_UNSPECIFIED = 0xFF,
+  /* Forces a stable 4-byte width across compilers, so a plugin built with
+   * -fshort-enums cannot shrink this enum and misalign the by-value uses in
+   * PJ_scalar_value_t / PJ_field_info_t / ensure_field. Not a real type. */
+  PJ_PRIMITIVE_TYPE_FORCE_INT32 = 0x7FFFFFFF,
 } PJ_primitive_type_t;
 
 /* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   const char* data;
-  size_t size;
+  uint64_t size;
 } PJ_string_view_t;
 
 /* ABI-FROZEN: layout permanent; changes = ABI break. */
 typedef struct {
   const uint8_t* data;
-  size_t size;
+  uint64_t size;
 } PJ_bytes_view_t;
 
 /* ==========================================================================
@@ -317,11 +321,11 @@ typedef struct {
 
 typedef struct {
   const PJ_data_source_info_t* data_sources;
-  size_t data_source_count;
+  uint64_t data_source_count;
   const PJ_topic_info_t* topics;
-  size_t topic_count;
+  uint64_t topic_count;
   const PJ_field_info_t* fields;
-  size_t field_count;
+  uint64_t field_count;
   void* release_ctx;
   void (*release)(void* release_ctx);
 } PJ_catalog_snapshot_t;
@@ -373,13 +377,13 @@ typedef struct PJ_source_write_host_vtable_t {
   /* [stream-thread] Append a record by field name. Convenience path for
    * simple plugins; resolves field handles on every call. */
   bool (*append_record)(
-      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count,
+      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [stream-thread] Append a record with pre-resolved field handles. Fast
    * path for streaming producers — skip the name lookup. */
   bool (*append_bound_record)(
-      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
+      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [stream-thread] PRIMARY BATCH PATH. Plugin hands ownership of an Arrow
@@ -417,12 +421,12 @@ typedef struct PJ_parser_write_host_vtable_t {
 
   /* [stream-thread] Append a record by field name. */
   bool (*append_record)(
-      void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count,
+      void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [stream-thread] Append a record with pre-resolved field handles. */
   bool (*append_bound_record)(
-      void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
+      void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [stream-thread] Optional batch path. Plugin hands ownership of an Arrow
@@ -474,12 +478,12 @@ typedef struct PJ_toolbox_host_vtable_t {
 
   /* [main-thread] Append a record by field name. */
   bool (*append_record)(
-      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count,
+      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Append a record with pre-resolved field handles. */
   bool (*append_bound_record)(
-      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
+      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Bulk-write via Arrow C Data Interface (same ownership rule
@@ -516,7 +520,7 @@ typedef struct PJ_toolbox_host_vtable_t {
    * push is not offered on the toolbox surface (plugin holds the bytes
    * already by the time it calls). */
   bool (*push_owned_object)(
-      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, size_t size,
+      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, uint64_t size,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 
@@ -549,7 +553,7 @@ typedef struct {
  * fetch context — valid at least until the NEXT call to the same fn or
  * until fetch_ctx_destroy runs. The host immediately copies the bytes; the
  * plugin may reuse or free the buffer on the following call. */
-typedef bool (*PJ_lazy_fetch_fn_t)(void* fetch_ctx, const uint8_t** out_data, size_t* out_size) PJ_NOEXCEPT;
+typedef bool (*PJ_lazy_fetch_fn_t)(void* fetch_ctx, const uint8_t** out_data, uint64_t* out_size) PJ_NOEXCEPT;
 
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  *
@@ -580,7 +584,7 @@ typedef struct PJ_object_write_host_vtable_t {
    * (markers, annotations, scene primitives) whose aggregate volume stays
    * comfortably in memory. */
   bool (*push_owned)(
-      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, size_t size,
+      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, uint64_t size,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [stream-thread] Push a lazy entry — host stores the fetch closure, not
@@ -598,7 +602,7 @@ typedef struct PJ_object_write_host_vtable_t {
    * Typical plugin author usage: do NOT call this. The application owns
    * the retention policy; DataSource plugins should leave budgets alone. */
   void (*set_retention_budget)(
-      void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, size_t max_memory_bytes) PJ_NOEXCEPT;
+      void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, uint64_t max_memory_bytes) PJ_NOEXCEPT;
 } PJ_object_write_host_vtable_t;
 
 /* ABI-FROZEN: fat pointer layout permanent. */
@@ -634,7 +638,7 @@ typedef struct PJ_parser_object_write_host_vtable_t {
 
   /* [stream-thread] Eager push of serialized payload bytes into the bound
    * object topic. Store copies the bytes. */
-  bool (*push_owned)(void* ctx, int64_t timestamp_ns, const uint8_t* data, size_t size, PJ_error_t* out_error)
+  bool (*push_owned)(void* ctx, int64_t timestamp_ns, const uint8_t* data, uint64_t size, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 
   /* [stream-thread] Lazy push. Rarely used from parsers (a delegated parser
@@ -689,7 +693,7 @@ typedef struct PJ_object_read_host_vtable_t {
    * up to that many handles and always sets *out_count to the TOTAL number
    * of topics (so the caller can detect truncation and resize). */
   bool (*list_topics)(
-      void* ctx, PJ_object_topic_handle_t* out_buffer, size_t buffer_capacity, size_t* out_count,
+      void* ctx, PJ_object_topic_handle_t* out_buffer, uint64_t buffer_capacity, uint64_t* out_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Return the topic's metadata JSON — a pointer stable for
@@ -706,13 +710,13 @@ typedef struct PJ_object_read_host_vtable_t {
 
   /* [thread-safe] Expose the bytes behind an owning handle. View is valid
    * until release_bytes(handle). Safe to call from decoder worker threads. */
-  void (*get_bytes)(PJ_object_bytes_handle_t handle, const uint8_t** out_data, size_t* out_size) PJ_NOEXCEPT;
+  void (*get_bytes)(PJ_object_bytes_handle_t handle, const uint8_t** out_data, uint64_t* out_size) PJ_NOEXCEPT;
 
   /* [thread-safe] Release an owning handle. Idempotent on NULL. */
   void (*release_bytes)(PJ_object_bytes_handle_t handle) PJ_NOEXCEPT;
 
   /* [main-thread] Entry count for a topic. 0 on bad handle. */
-  size_t (*entry_count)(void* ctx, PJ_object_topic_handle_t topic) PJ_NOEXCEPT;
+  uint64_t (*entry_count)(void* ctx, PJ_object_topic_handle_t topic) PJ_NOEXCEPT;
 
   /* [main-thread] Time range [min, max] for a topic. Returns false if the
    * topic is unknown or empty. */
@@ -775,12 +779,13 @@ typedef struct PJ_settings_store_vtable_t {
   /* [main-thread] Read a string list. On found, *out_items points to an array
    * of *out_count entries, valid until the next call on this store. */
   bool (*get_string_list)(
-      void* ctx, PJ_string_view_t key, const PJ_string_view_t** out_items, size_t* out_count, bool* out_found,
+      void* ctx, PJ_string_view_t key, const PJ_string_view_t** out_items, uint64_t* out_count, bool* out_found,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Write a string list (create or overwrite). */
   bool (*set_string_list)(
-      void* ctx, PJ_string_view_t key, const PJ_string_view_t* items, size_t count, PJ_error_t* out_error) PJ_NOEXCEPT;
+      void* ctx, PJ_string_view_t key, const PJ_string_view_t* items, uint64_t count,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Report whether a key exists, in *out_present. */
   bool (*contains)(void* ctx, PJ_string_view_t key, bool* out_present, PJ_error_t* out_error) PJ_NOEXCEPT;
