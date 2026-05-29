@@ -952,5 +952,172 @@ TEST(EngineIntegrationTest, BulkAppendEmpty) {
   EXPECT_TRUE(flushed.empty());
 }
 
+// =========================================================================
+// Cross-engine flush (flushTo) — zero-copy chunk transfer
+// =========================================================================
+
+namespace {
+
+// Builds two engines with the same topic registered (lockstep pattern used by
+// pj4's StreamingSourceManager dual-buffer) and writes `row_count` rows to src.
+struct FlushFixture {
+  DataEngine src;
+  DataEngine dst;
+  DatasetId src_dataset = 0;
+  DatasetId dst_dataset = 0;
+  ScalarSeriesHandle src_handle;
+  ScalarSeriesHandle dst_handle;
+};
+
+FlushFixture buildFlushFixture(const std::string& topic = "scalar/topic") {
+  FlushFixture f;
+  f.src_dataset = *f.src.createDataset(DatasetDescriptor{.source_name = "src", .time_domain_id = 0});
+  f.dst_dataset = *f.dst.createDataset(DatasetDescriptor{.source_name = "dst", .time_domain_id = 0});
+
+  DataWriter sw = f.src.createWriter();
+  f.src_handle = *sw.registerScalarSeries(f.src_dataset, topic, NumericType::kFloat64);
+
+  DataWriter dw = f.dst.createWriter();
+  f.dst_handle = *dw.registerScalarSeries(f.dst_dataset, topic, NumericType::kFloat64);
+  return f;
+}
+
+void writeScalars(DataEngine& engine, ScalarSeriesHandle handle, Timestamp start, std::size_t count) {
+  DataWriter w = engine.createWriter();
+  for (std::size_t i = 0; i < count; ++i) {
+    w.appendScalar(handle, start + static_cast<Timestamp>(i) * 1000, static_cast<double>(i));
+  }
+  auto flushed = w.flushAll();
+  engine.commitChunks(std::move(flushed));
+}
+
+}  // namespace
+
+TEST(DataEngineFlushTest, MovesAllChunksFromSrcToDst) {
+  auto f = buildFlushFixture();
+  writeScalars(f.src, f.src_handle, /*start=*/0, /*count=*/2500);  // ~3 chunks at default 1024 rows.
+
+  const auto* src_storage = f.src.getTopicStorage(f.src_handle.topic_id);
+  const auto* dst_storage = f.dst.getTopicStorage(f.dst_handle.topic_id);
+  ASSERT_NE(src_storage, nullptr);
+  ASSERT_NE(dst_storage, nullptr);
+
+  const std::size_t pre_src_chunks = src_storage->sealedChunks().size();
+  ASSERT_GE(pre_src_chunks, 2U);
+  ASSERT_EQ(dst_storage->sealedChunks().size(), 0U);
+
+  auto result = f.src.flushTo(f.dst);
+  ASSERT_TRUE(result.has_value()) << result.error();
+
+  EXPECT_EQ(src_storage->sealedChunks().size(), 0U);
+  EXPECT_EQ(dst_storage->sealedChunks().size(), pre_src_chunks);
+
+  // The destination can read the data via the standard reader interface.
+  DataReader reader = f.dst.createReader();
+  std::size_t count = 0;
+  auto cursor = reader.rangeQuery(
+      QueryRange{
+          .topic_id = f.dst_handle.topic_id,
+          .t_min = 0,
+          .t_max = static_cast<Timestamp>(2499) * 1000,
+      });
+  ASSERT_TRUE(cursor.has_value()) << cursor.error();
+  cursor->forEach([&count](const SampleRow& row) {
+    (void)row;
+    ++count;
+  });
+  EXPECT_EQ(count, 2500U);
+}
+
+TEST(DataEngineFlushTest, AppendsToExistingDstChunks) {
+  auto f = buildFlushFixture();
+  // dst already has data covering [0, 1023*1000].
+  writeScalars(f.dst, f.dst_handle, /*start=*/0, /*count=*/1024);
+  // src has the next window [1024*1000, 2047*1000].
+  writeScalars(f.src, f.src_handle, /*start=*/static_cast<Timestamp>(1024) * 1000, /*count=*/1024);
+
+  ASSERT_TRUE(f.src.flushTo(f.dst).has_value());
+
+  DataReader reader = f.dst.createReader();
+  std::size_t count = 0;
+  auto cursor = reader.rangeQuery(
+      QueryRange{
+          .topic_id = f.dst_handle.topic_id,
+          .t_min = 0,
+          .t_max = static_cast<Timestamp>(2047) * 1000,
+      });
+  ASSERT_TRUE(cursor.has_value());
+  cursor->forEach([&count](const SampleRow& row) {
+    (void)row;
+    ++count;
+  });
+  EXPECT_EQ(count, 2048U);
+}
+
+TEST(DataEngineFlushTest, RejectsMonotonicityViolation) {
+  auto f = buildFlushFixture();
+  writeScalars(f.dst, f.dst_handle, /*start=*/static_cast<Timestamp>(1000) * 1000, /*count=*/1024);
+  writeScalars(f.src, f.src_handle, /*start=*/0, /*count=*/1024);  // earlier than dst.
+
+  const auto* src_storage = f.src.getTopicStorage(f.src_handle.topic_id);
+  const auto* dst_storage = f.dst.getTopicStorage(f.dst_handle.topic_id);
+  const std::size_t pre_src = src_storage->sealedChunks().size();
+  const std::size_t pre_dst = dst_storage->sealedChunks().size();
+
+  auto result = f.src.flushTo(f.dst);
+  EXPECT_FALSE(result.has_value());
+
+  // Neither engine mutated.
+  EXPECT_EQ(src_storage->sealedChunks().size(), pre_src);
+  EXPECT_EQ(dst_storage->sealedChunks().size(), pre_dst);
+}
+
+TEST(DataEngineFlushTest, RejectsUnknownTopicInDst) {
+  DataEngine src, dst;
+  DatasetId src_dataset = *src.createDataset(DatasetDescriptor{.source_name = "src", .time_domain_id = 0});
+  DatasetId dst_dataset = *dst.createDataset(DatasetDescriptor{.source_name = "dst", .time_domain_id = 0});
+
+  DataWriter sw = src.createWriter();
+  auto src_handle = *sw.registerScalarSeries(src_dataset, "only/in/src", NumericType::kFloat64);
+
+  DataWriter dw = dst.createWriter();
+  (void)dw.registerScalarSeries(dst_dataset, "only/in/dst", NumericType::kFloat64);
+
+  writeScalars(src, src_handle, /*start=*/0, /*count=*/100);
+
+  auto result = src.flushTo(dst);
+  EXPECT_FALSE(result.has_value());
+  const auto* src_storage = src.getTopicStorage(src_handle.topic_id);
+  EXPECT_GE(src_storage->sealedChunks().size(), 1U);  // src not mutated.
+}
+
+TEST(DataEngineFlushTest, RejectsSameEngine) {
+  DataEngine engine;
+  auto dataset_id = *engine.createDataset(DatasetDescriptor{.source_name = "self", .time_domain_id = 0});
+  DataWriter w = engine.createWriter();
+  auto handle = *w.registerScalarSeries(dataset_id, "topic", NumericType::kFloat64);
+  writeScalars(engine, handle, /*start=*/0, /*count=*/100);
+
+  auto result = engine.flushTo(engine);
+  EXPECT_FALSE(result.has_value());
+  const auto* storage = engine.getTopicStorage(handle.topic_id);
+  EXPECT_GE(storage->sealedChunks().size(), 1U);  // not mutated.
+}
+
+TEST(DataEngineFlushTest, PreservesTopicRegistrationOnSrc) {
+  auto f = buildFlushFixture();
+  writeScalars(f.src, f.src_handle, /*start=*/0, /*count=*/1024);
+
+  ASSERT_TRUE(f.src.flushTo(f.dst).has_value());
+
+  // src topic is still registered — a fresh writer can push more data.
+  const auto* src_storage = f.src.getTopicStorage(f.src_handle.topic_id);
+  ASSERT_NE(src_storage, nullptr);
+  EXPECT_TRUE(src_storage->empty());
+
+  writeScalars(f.src, f.src_handle, /*start=*/static_cast<Timestamp>(2000) * 1000, /*count=*/100);
+  EXPECT_FALSE(src_storage->empty());
+}
+
 }  // namespace
 }  // namespace PJ

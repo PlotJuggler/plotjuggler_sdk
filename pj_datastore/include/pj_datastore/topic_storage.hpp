@@ -57,6 +57,8 @@ struct TopicMetadata {
   uint32_t truncated_sample_count = 0;
 };
 
+class DataEngine;
+
 /// Storage container for committed chunks of one topic.
 class TopicStorage {
  public:
@@ -123,6 +125,12 @@ class TopicStorage {
   void setArrayExpansionCount(const std::string& field_path, uint32_t count);
 
  private:
+  // DataEngine::flushTo needs to move sealed_chunks_ between TopicStorage
+  // instances of different engines without copying. Friending it lets the
+  // transfer happen entirely inside DataEngine without exposing the move
+  // primitive on the public TopicStorage API.
+  friend class DataEngine;
+
   TopicId topic_id_;
   TopicDescriptor descriptor_;
   std::deque<TopicChunk> sealed_chunks_;

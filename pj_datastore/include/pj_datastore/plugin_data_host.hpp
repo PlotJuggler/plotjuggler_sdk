@@ -31,6 +31,13 @@ class DatastoreSourceWriteHost {
   [[nodiscard]] PJ_source_write_host_t raw() noexcept;
   void flushPending();
 
+  // Atomically swap the destination DataEngine. Mirrors the parser write
+  // host's setTarget: the streaming two-engine flow routes source-level
+  // scalar pushes to a secondary DataEngine during pause and back to the
+  // primary on resume. Pending rows are flushed to the current engine
+  // before the switch. Does not take ownership.
+  void setTarget(DataEngine* target);
+
  private:
   std::unique_ptr<DatastoreSourceWriteHostState> state_;
 };
@@ -51,6 +58,13 @@ class DatastoreSourceObjectWriteHost {
 
   [[nodiscard]] PJ_object_write_host_t raw() noexcept;
 
+  // Atomically swap the destination store. Used by the streaming two-store
+  // flow to route pushes to a secondary ObjectStore during pause and back to
+  // the primary on resume. Must point to a live store; the host does not
+  // take ownership and the caller must keep the target alive for as long as
+  // the host can receive pushes against it.
+  void setTarget(ObjectStore* target) noexcept;
+
  private:
   std::unique_ptr<DatastoreSourceObjectWriteHostState> state_;
 };
@@ -67,6 +81,14 @@ class DatastoreParserWriteHost {
 
   [[nodiscard]] PJ_parser_write_host_t raw() noexcept;
   void flushPending();
+
+  // Atomically swap the destination DataEngine. Mirrors the object write
+  // host's setTarget: the streaming two-store flow routes scalar pushes to a
+  // secondary DataEngine during pause and back to the primary on resume.
+  // Pending rows are flushed to the current engine before the switch; the
+  // bound topic must exist in `target` with the same TopicId (the streaming
+  // manager registers it lockstep on both engines). Does not take ownership.
+  void setTarget(DataEngine* target);
 
  private:
   std::unique_ptr<DatastoreParserWriteHostState> state_;
@@ -110,6 +132,13 @@ class DatastoreParserObjectWriteHost {
   DatastoreParserObjectWriteHost& operator=(DatastoreParserObjectWriteHost&&) noexcept;
 
   [[nodiscard]] PJ_parser_object_write_host_t raw() noexcept;
+
+  // Atomically swap the destination store. Used by the streaming two-store
+  // flow to route pushes to a secondary ObjectStore during pause and back to
+  // the primary on resume. The bound topic id must exist in `target` (the
+  // streaming manager ensures this via lockstep registerTopic on both
+  // stores). The host does not take ownership of the target.
+  void setTarget(ObjectStore* target) noexcept;
 
  private:
   std::unique_ptr<DatastoreParserObjectWriteHostState> state_;

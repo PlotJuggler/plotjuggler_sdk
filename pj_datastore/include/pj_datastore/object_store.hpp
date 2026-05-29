@@ -49,11 +49,15 @@ using LazyCallback = std::function<sdk::PayloadView()>;
 
 struct ObjectEntry {
   Timestamp timestamp = 0;
+  // Eager owned bytes or a lazy resolver; resolveEntry discriminates via std::get_if.
   std::variant<SharedBuffer, LazyCallback> payload;
 };
 
 struct ResolvedObjectEntry {
   Timestamp timestamp = 0;
+  // Non-owning Span over the bytes plus an opaque anchor (any shared_ptr<T>).
+  // Consumers read `payload.bytes`; retain `payload.anchor` to keep the bytes
+  // alive past the resolve call. resolveEntry never casts the anchor.
   sdk::PayloadView payload;
 };
 
@@ -117,9 +121,9 @@ class ObjectStore {
 
   Status pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload);
 
-  // Fetcher runs on every read. Producers anchor on whatever owns the bytes
-  // (chunk cache, mmap, fresh allocation); the store never copies — it just
-  // retains the anchor through PayloadView.
+  // Fetcher runs on every read; the store retains the anchor via PayloadView
+  // and never copies. The closure can return a view over bytes the producer
+  // already owns (chunk cache, mmap, hand-off between stores).
   Status pushLazy(ObjectTopicId id, Timestamp timestamp, LazyCallback fetch);
 
   // --- Read ---
@@ -146,6 +150,20 @@ class ObjectStore {
 
   void evictBefore(ObjectTopicId id, Timestamp threshold);
   void evictAllBefore(Timestamp threshold);
+
+  // --- Cross-store flush ---
+
+  // Move every entry into `dst`, leaving this store empty (registrations kept).
+  // Topics are matched by descriptor (dataset_id + topic_name); both stores
+  // must share descriptors. Monotonicity is enforced per series: the earliest
+  // moved timestamp must be >= the destination's last. Any validation failure
+  // returns an error and mutates neither store.
+  //
+  // Zero-copy: each ObjectEntry is moved by value, so the variant's shared_ptr
+  // or closure transfers as a pointer move — bytes are never copied. Lazy
+  // entries keep their semantics; their closure re-runs only on a dst read.
+  // Afterward, dst's retention budget is applied to each touched series.
+  Status flushTo(ObjectStore& dst);
 
   // --- Lifecycle ---
 

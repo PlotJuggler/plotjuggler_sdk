@@ -29,8 +29,15 @@ PJ::Status TopicStorage::appendSealedChunk(TopicChunk chunk) {
 }
 
 void TopicStorage::evictBefore(Timestamp t_keep_min) {
-  while (!sealed_chunks_.empty() && sealed_chunks_.front().stats.t_max < t_keep_min) {
-    sealed_chunks_.pop_front();
+  // Chunks are commit-ordered: evict the contiguous prefix whose chunks are
+  // entirely older than t_keep_min.
+  size_t end_to_remove = 0;
+  while (end_to_remove < sealed_chunks_.size() && sealed_chunks_[end_to_remove].stats.t_max < t_keep_min) {
+    ++end_to_remove;
+  }
+
+  if (end_to_remove > 0) {
+    sealed_chunks_.erase(sealed_chunks_.begin(), sealed_chunks_.begin() + static_cast<std::ptrdiff_t>(end_to_remove));
   }
 }
 

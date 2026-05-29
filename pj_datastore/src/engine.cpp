@@ -182,6 +182,63 @@ void DataEngine::enforceRetention(Timestamp retention_window_ns) {
   }
 }
 
+Status DataEngine::flushTo(DataEngine& dst) {
+  if (&dst == this) {
+    return PJ::unexpected("flushTo: source and destination are the same engine");
+  }
+
+  // Phase 1: validate. Walk every src topic with sealed chunks and look up
+  // the matching dst topic by descriptor (dataset_id + name). Verify
+  // monotonicity against dst's current time_max. No mutation yet.
+  struct Step {
+    TopicStorage* src;
+    TopicStorage* dst;
+  };
+  std::vector<Step> plan;
+  plan.reserve(impl_->topics.size());
+
+  for (auto it = impl_->topics.begin(); it != impl_->topics.end(); ++it) {
+    auto& src_storage = it.value();
+    if (src_storage.empty()) {
+      continue;
+    }
+    TopicStorage* dst_storage = nullptr;
+    for (auto dst_it = dst.impl_->topics.begin(); dst_it != dst.impl_->topics.end(); ++dst_it) {
+      auto& candidate = dst_it.value();
+      if (candidate.descriptor().dataset_id == src_storage.descriptor().dataset_id &&
+          candidate.descriptor().name == src_storage.descriptor().name) {
+        dst_storage = &candidate;
+        break;
+      }
+    }
+    if (dst_storage == nullptr) {
+      return PJ::unexpected(
+          "flushTo: destination has no topic '" + src_storage.descriptor().name + "' for dataset " +
+          std::to_string(src_storage.descriptor().dataset_id));
+    }
+    if (!dst_storage->empty() && src_storage.time_min() < dst_storage->time_max()) {
+      return PJ::unexpected("flushTo: monotonicity violation for topic '" + src_storage.descriptor().name + "'");
+    }
+    plan.push_back({&src_storage, dst_storage});
+  }
+
+  // Phase 2: execute. friend access lets us move sealed_chunks_ directly
+  // between TopicStorage instances of different engines — the deque move
+  // transfers chunk ownership without copying any column data or value
+  // buffers. Each chunk's TopicChunkStats (t_min/t_max/row_count) rides
+  // along inside the chunk by value, so dst's time_min/time_max queries
+  // reflect the new state immediately after the move.
+  for (auto& step : plan) {
+    auto drained = std::move(step.src->sealed_chunks_);
+    step.src->sealed_chunks_.clear();  // post-move state: deque is valid but empty.
+    for (auto& chunk : drained) {
+      step.dst->sealed_chunks_.push_back(std::move(chunk));
+    }
+  }
+
+  return {};
+}
+
 // ---------------------------------------------------------------------------
 // Listing helpers
 // ---------------------------------------------------------------------------

@@ -79,7 +79,8 @@ Status ObjectStore::pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector
     return unexpected("timestamp not monotonically non-decreasing");
   }
 
-  size_t payload_size = payload.size();
+  const size_t payload_size = payload.size();
+
   auto shared_data = std::make_shared<const std::vector<uint8_t>>(std::move(payload));
 
   ObjectEntry entry;
@@ -264,6 +265,74 @@ void ObjectStore::evictAllBefore(Timestamp threshold) {
   }
 }
 
+// --- Cross-store flush ---
+
+Status ObjectStore::flushTo(ObjectStore& dst) {
+  if (&dst == this) {
+    return unexpected("flushTo: source and destination are the same store");
+  }
+
+  // Deterministic lock order by address to avoid deadlock with concurrent flushTo calls.
+  ObjectStore* first = this < &dst ? this : &dst;
+  ObjectStore* second = first == this ? &dst : this;
+  std::unique_lock first_lock(first->store_mutex_);
+  std::unique_lock second_lock(second->store_mutex_);
+
+  // Phase 1: validate every source series can be matched to a destination
+  // topic by descriptor and that the move respects monotonicity. No mutation.
+  struct Step {
+    ObjectSeries* src;
+    ObjectSeries* dst;
+  };
+  std::vector<Step> plan;
+  plan.reserve(topics_.size());
+
+  for (auto& [src_id, src_series] : topics_) {
+    if (src_series->entry_timestamps.empty()) {
+      continue;
+    }
+    ObjectSeries* dst_series = nullptr;
+    for (auto& [dst_id, dst_series_ptr] : dst.topics_) {
+      if (dst_series_ptr->descriptor.dataset_id == src_series->descriptor.dataset_id &&
+          dst_series_ptr->descriptor.topic_name == src_series->descriptor.topic_name) {
+        dst_series = dst_series_ptr.get();
+        break;
+      }
+    }
+    if (dst_series == nullptr) {
+      return unexpected(
+          "flushTo: destination has no topic '" + src_series->descriptor.topic_name + "' for dataset " +
+          std::to_string(src_series->descriptor.dataset_id));
+    }
+    if (!dst_series->entry_timestamps.empty() &&
+        src_series->entry_timestamps.front() < dst_series->entry_timestamps.back()) {
+      return unexpected("flushTo: monotonicity violation for topic '" + src_series->descriptor.topic_name + "'");
+    }
+    plan.push_back({src_series.get(), dst_series});
+  }
+
+  // Phase 2: execute the moves. Holding both store_mutex_ unique means no
+  // other reader or writer can observe an intermediate state; per-series
+  // mutexes are not needed because no concurrent access can occur.
+  for (auto& step : plan) {
+    for (auto& entry : step.src->entries) {
+      step.dst->entries.push_back(std::move(entry));
+    }
+    step.dst->entry_timestamps.insert(
+        step.dst->entry_timestamps.end(), step.src->entry_timestamps.begin(), step.src->entry_timestamps.end());
+    step.dst->memory_bytes += step.src->memory_bytes;
+
+    step.src->entries.clear();
+    step.src->entry_timestamps.clear();
+    step.src->memory_bytes = 0;
+
+    const Timestamp newest = step.dst->entry_timestamps.empty() ? 0 : step.dst->entry_timestamps.back();
+    applyRetention(*step.dst, newest);
+  }
+
+  return {};
+}
+
 // --- Lifecycle ---
 
 void ObjectStore::removeTopic(ObjectTopicId id) {
@@ -305,6 +374,8 @@ ResolvedObjectEntry ObjectStore::resolveEntry(const ObjectEntry& entry) {
   resolved.timestamp = entry.timestamp;
 
   if (const auto* owned = std::get_if<SharedBuffer>(&entry.payload)) {
+    // Span the vector, anchor on the same shared_ptr — refcount bump, no copy.
+    // A default-constructed entry holds a null SharedBuffer, so guard it.
     if (*owned) {
       resolved.payload = sdk::PayloadView{
           Span<const uint8_t>{(*owned)->data(), (*owned)->size()},
@@ -312,6 +383,8 @@ ResolvedObjectEntry ObjectStore::resolveEntry(const ObjectEntry& entry) {
       };
     }
   } else if (const auto* lazy = std::get_if<LazyCallback>(&entry.payload)) {
+    // Forward the closure's PayloadView verbatim. The anchor stays opaque (no
+    // cast), so producers can back it with arrow::Buffer, mmap, or a C-ABI anchor.
     resolved.payload = (*lazy)();
   }
 

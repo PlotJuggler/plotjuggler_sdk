@@ -79,8 +79,21 @@ class DataEngine {
   ///   derived.onSourceCommitted(engine.commitChunks(writer.flushAll()));
   std::vector<PJ::TopicId> commitChunks(std::vector<std::pair<PJ::TopicId, TopicChunk>> chunks);
 
-  /// Evict old chunks outside retention window.
+  /// Evict old chunks outside the retention window.
   void enforceRetention(PJ::Timestamp retention_window_ns);
+
+  /// Move every committed chunk into `dst`, leaving this engine's storages
+  /// empty (datasets, topics, schemas, time domains stay registered). Topics
+  /// are matched by descriptor (`dataset_id` + `name`); both engines must have
+  /// them registered. Monotonicity is enforced per topic: the source's
+  /// earliest chunk timestamp must be >= the destination's `time_max()`. Any
+  /// failure mutates neither engine.
+  ///
+  /// Zero-copy: dst's `std::deque<TopicChunk>` receives the chunks via
+  /// `std::move` (column buffers/value arrays are pointer moves). Schema
+  /// compatibility is the caller's responsibility — typically dst is kept in
+  /// lockstep with the source via parallel registration at startup.
+  PJ::Status flushTo(DataEngine& dst);
 
   // Writer/Reader factories
   /// Create a writer bound to this engine.

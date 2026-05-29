@@ -8,6 +8,7 @@
 #include <tsl/robin_set.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -909,14 +910,22 @@ struct ToolboxCore {
 
 struct DatastoreSourceWriteHostState {
   DatastoreSourceWriteHostState(DataEngine& engine, DataSourceHandle source_handle)
-      : core(engine), source(source_handle) {}
-  WriteCore core;
+      : core(std::make_unique<WriteCore>(engine)), source(source_handle) {}
+  // Held by pointer so setTarget() can rebind to a different engine (streaming
+  // two-engine pause/resume) by reconstructing the WriteCore — WriteCore holds
+  // DataEngine by reference and is not reseatable.
+  std::unique_ptr<WriteCore> core;
   DataSourceHandle source;
 };
 
 struct DatastoreParserWriteHostState {
-  DatastoreParserWriteHostState(DataEngine& engine, TopicHandle topic_handle) : core(engine), topic(topic_handle) {}
-  WriteCore core;
+  DatastoreParserWriteHostState(DataEngine& engine, TopicHandle topic_handle)
+      : core(std::make_unique<WriteCore>(engine)), topic(topic_handle) {}
+  // Held by pointer so setTarget() can rebind to a different engine (streaming
+  // two-store pause/resume) by reconstructing the WriteCore — its writer and
+  // caches are engine-specific. WriteCore itself is not reassignable (holds a
+  // DataEngine reference).
+  std::unique_ptr<WriteCore> core;
   TopicHandle topic;
 };
 
@@ -935,8 +944,13 @@ struct DatastoreToolboxHostState {
 };
 
 struct DatastoreSourceObjectWriteHostState {
-  DatastoreSourceObjectWriteHostState(ObjectStore& s, DatasetId dataset) : store(s), dataset_id(dataset) {}
-  ObjectStore& store;
+  DatastoreSourceObjectWriteHostState(ObjectStore& s, DatasetId dataset) : target(&s), dataset_id(dataset) {}
+  // Atomic pointer rather than reference: the streaming two-store flow
+  // retargets the host between the primary and secondary ObjectStore on each
+  // pause/resume transition. Plain reference would not be reassignable. The
+  // atomic guarantees the worker thread sees a fully-published swap from the
+  // manager thread without locking on the hot push path.
+  std::atomic<ObjectStore*> target;
   DatasetId dataset_id;
   std::string last_error;
 
@@ -956,8 +970,9 @@ struct DatastoreToolboxObjectReadHostState {
 };
 
 struct DatastoreParserObjectWriteHostState {
-  DatastoreParserObjectWriteHostState(ObjectStore& s, ObjectTopicId topic) : store(s), bound_topic(topic) {}
-  ObjectStore& store;
+  DatastoreParserObjectWriteHostState(ObjectStore& s, ObjectTopicId topic) : target(&s), bound_topic(topic) {}
+  // Atomic pointer rather than reference: see DatastoreSourceObjectWriteHostState.
+  std::atomic<ObjectStore*> target;
   ObjectTopicId bound_topic;
   std::string last_error;
 
@@ -985,8 +1000,8 @@ bool guardHostCallback(PJ_error_t* out_error, Fn&& fn) noexcept {
 bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic, PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-    if (!impl->core.ensureTopic(impl->source, toStringView(topic_name), out_topic)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->ensureTopic(impl->source, toStringView(topic_name), out_topic)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     return true;
@@ -998,8 +1013,8 @@ bool sourceEnsureField(
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-    if (!impl->core.ensureField(topic, toStringView(field_name), type, out_field)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->ensureField(topic, toStringView(field_name), type, out_field)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     return true;
@@ -1011,8 +1026,8 @@ bool sourceAppendRecord(
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-    if (!impl->core.appendRecord(topic, timestamp, fields, field_count)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->appendRecord(topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     return true;
@@ -1024,8 +1039,8 @@ bool sourceAppendBoundRecord(
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-    if (!impl->core.appendBoundRecord(topic, timestamp, fields, field_count)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->appendBoundRecord(topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     return true;
@@ -1037,9 +1052,9 @@ bool sourceAppendArrowStream(
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-    if (!impl->core.appendArrowStream(topic, stream, timestamp_column)) {
+    if (!impl->core->appendArrowStream(topic, stream, timestamp_column)) {
       // Failure: plugin retains ownership of the stream; we do NOT release.
-      propagateError(out_error, impl->core.lastError());
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     // Success: host now owns the stream — release it.
@@ -1055,8 +1070,8 @@ bool parserEnsureField(
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-    if (!impl->core.ensureField(impl->topic, toStringView(field_name), type, out_field)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->ensureField(impl->topic, toStringView(field_name), type, out_field)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     return true;
@@ -1068,8 +1083,8 @@ bool parserAppendRecord(
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-    if (!impl->core.appendRecord(impl->topic, timestamp, fields, field_count)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->appendRecord(impl->topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     return true;
@@ -1081,8 +1096,8 @@ bool parserAppendBoundRecord(
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-    if (!impl->core.appendBoundRecord(impl->topic, timestamp, fields, field_count)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->appendBoundRecord(impl->topic, timestamp, fields, field_count)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     return true;
@@ -1093,8 +1108,8 @@ bool parserAppendArrowStream(
     void* ctx, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-    if (!impl->core.appendArrowStream(impl->topic, stream, timestamp_column)) {
-      propagateError(out_error, impl->core.lastError());
+    if (!impl->core->appendArrowStream(impl->topic, stream, timestamp_column)) {
+      propagateError(out_error, impl->core->lastError());
       return false;
     }
     if (stream != nullptr && stream->release != nullptr) {
@@ -1323,12 +1338,13 @@ bool sourceObjectRegisterTopic(
     propagateError(out_error, "out_handle must not be null");
     return false;
   }
+  auto* target = impl->target.load(std::memory_order_acquire);
   try {
     ObjectTopicDescriptor desc{};
     desc.dataset_id = impl->dataset_id;
     desc.topic_name = std::string(toStringView(topic_name));
     desc.metadata_json = std::string(toStringView(metadata_json));
-    auto result = impl->store.registerTopic(desc);
+    auto result = target->registerTopic(desc);
     if (!result) {
       impl->setError(result.error());
       propagateError(out_error, impl->last_error.c_str());
@@ -1352,12 +1368,13 @@ bool sourceObjectPushOwned(
     void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, std::size_t size,
     PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  auto* target = impl->target.load(std::memory_order_acquire);
   try {
     std::vector<uint8_t> bytes;
     if (data != nullptr && size > 0) {
       bytes.assign(data, data + size);
     }
-    auto result = impl->store.pushOwned(ObjectTopicId{topic.id}, timestamp_ns, std::move(bytes));
+    auto result = target->pushOwned(ObjectTopicId{topic.id}, timestamp_ns, std::move(bytes));
     if (!result) {
       impl->setError(result.error());
       propagateError(out_error, impl->last_error.c_str());
@@ -1387,6 +1404,7 @@ bool sourceObjectPushLazy(
     propagateError(out_error, "fetch_fn must not be null");
     return false;
   }
+  auto* target = impl->target.load(std::memory_order_acquire);
   try {
     // shared_ptr keeps the ctx holder alive as long as ObjectStore keeps
     // the lambda; destructor runs exactly once when ObjectStore drops the
@@ -1394,8 +1412,10 @@ bool sourceObjectPushLazy(
     auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
     // Plugins return raw bytes via the C ABI; wrap them as a PayloadView whose
     // anchor is a shared_ptr<const vector<uint8_t>>, per the pushLazy contract.
+    // Target pointer comes from the atomic swap layer (so writes follow the
+    // current target store, not a captured-at-construction one).
     auto closure = [holder]() -> sdk::PayloadView { return sdk::makePayloadView(holder->invoke()); };
-    auto result = impl->store.pushLazy(ObjectTopicId{topic.id}, timestamp_ns, std::move(closure));
+    auto result = target->pushLazy(ObjectTopicId{topic.id}, timestamp_ns, std::move(closure));
     if (!result) {
       impl->setError(result.error());
       propagateError(out_error, impl->last_error.c_str());
@@ -1421,11 +1441,12 @@ bool sourceObjectPushLazy(
 void sourceObjectSetRetentionBudget(
     void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, std::size_t max_memory_bytes) noexcept {
   auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
+  auto* target = impl->target.load(std::memory_order_acquire);
   try {
     RetentionBudget budget{};
     budget.time_window_ns = time_window_ns;
     budget.max_memory_bytes = max_memory_bytes;
-    impl->store.setRetentionBudget(ObjectTopicId{topic.id}, budget);
+    target->setRetentionBudget(ObjectTopicId{topic.id}, budget);
   } catch (...) {
     // Infallible by contract — swallow any exception from the store.
   }
@@ -1435,12 +1456,9 @@ void sourceObjectSetRetentionBudget(
 // Toolbox object read host trampolines
 // ---------------------------------------------------------------------------
 
-/// Heap holder for the PayloadView backing PJ_object_bytes_handle_t.
-/// Allocated by read_latest_at; freed by release_bytes.
-struct ObjectBytesBox {
-  sdk::PayloadView payload;
-};
-
+// PJ_object_bytes_handle_t is a heap-allocated sdk::PayloadView: its anchor
+// keeps the buffer alive until the plugin calls release_bytes. No wrapper
+// struct needed — PayloadView already carries the Span + anchor.
 PJ_object_topic_handle_t toolboxObjectLookupTopic(void* ctx, PJ_string_view_t topic_name) noexcept {
   auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
   try {
@@ -1513,8 +1531,8 @@ bool toolboxObjectReadLatestAt(
       propagateError(out_error, impl->last_error.c_str());
       return false;
     }
-    auto* box = new ObjectBytesBox{std::move(entry->payload)};
-    *out_handle = reinterpret_cast<PJ_object_bytes_handle_t>(box);
+    auto* payload_handle = new sdk::PayloadView(std::move(entry->payload));
+    *out_handle = reinterpret_cast<PJ_object_bytes_handle_t>(payload_handle);
     if (out_timestamp != nullptr) {
       *out_timestamp = entry->timestamp;
     }
@@ -1541,15 +1559,15 @@ void toolboxObjectGetBytes(PJ_object_bytes_handle_t handle, const uint8_t** out_
   if (handle == nullptr) {
     return;
   }
-  auto* box = reinterpret_cast<ObjectBytesBox*>(handle);
-  if (box->payload.bytes.empty()) {
+  const auto* payload = reinterpret_cast<const sdk::PayloadView*>(handle);
+  if (payload->anchor == nullptr) {
     return;
   }
   if (out_data != nullptr) {
-    *out_data = box->payload.bytes.data();
+    *out_data = payload->bytes.data();
   }
   if (out_size != nullptr) {
-    *out_size = box->payload.bytes.size();
+    *out_size = payload->bytes.size();
   }
 }
 
@@ -1557,7 +1575,7 @@ void toolboxObjectReleaseBytes(PJ_object_bytes_handle_t handle) noexcept {
   if (handle == nullptr) {
     return;
   }
-  delete reinterpret_cast<ObjectBytesBox*>(handle);
+  delete reinterpret_cast<sdk::PayloadView*>(handle);
 }
 
 std::size_t toolboxObjectEntryCount(void* ctx, PJ_object_topic_handle_t topic) noexcept {
@@ -1596,12 +1614,13 @@ bool toolboxObjectTimeRange(
 bool parserObjectPushOwned(
     void* ctx, int64_t timestamp_ns, const uint8_t* data, std::size_t size, PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserObjectWriteHostState*>(ctx);
+  auto* target = impl->target.load(std::memory_order_acquire);
   try {
     std::vector<uint8_t> bytes;
     if (data != nullptr && size > 0) {
       bytes.assign(data, data + size);
     }
-    auto result = impl->store.pushOwned(impl->bound_topic, timestamp_ns, std::move(bytes));
+    auto result = target->pushOwned(impl->bound_topic, timestamp_ns, std::move(bytes));
     if (!result) {
       impl->setError(result.error());
       propagateError(out_error, impl->last_error.c_str());
@@ -1631,10 +1650,11 @@ bool parserObjectPushLazy(
     propagateError(out_error, "fetch_fn must not be null");
     return false;
   }
+  auto* target = impl->target.load(std::memory_order_acquire);
   try {
     auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
     auto closure = [holder]() -> sdk::PayloadView { return sdk::makePayloadView(holder->invoke()); };
-    auto result = impl->store.pushLazy(impl->bound_topic, timestamp_ns, std::move(closure));
+    auto result = target->pushLazy(impl->bound_topic, timestamp_ns, std::move(closure));
     if (!result) {
       impl->setError(result.error());
       propagateError(out_error, impl->last_error.c_str());
@@ -1712,7 +1732,15 @@ PJ_source_write_host_t DatastoreSourceWriteHost::raw() noexcept {
 }
 
 void DatastoreSourceWriteHost::flushPending() {
-  state_->core.flushPending();
+  state_->core->flushPending();
+}
+
+void DatastoreSourceWriteHost::setTarget(DataEngine* target) {
+  // Seal + commit any open chunk to the current engine so no rows are lost,
+  // then rebind to the new engine with a fresh WriteCore (its writer and
+  // per-engine caches must not carry over). Mirrors DatastoreParserWriteHost.
+  state_->core->flushPending();
+  state_->core = std::make_unique<WriteCore>(*target);
 }
 
 DatastoreParserWriteHost::DatastoreParserWriteHost(DataEngine& engine, TopicHandle topic)
@@ -1726,7 +1754,16 @@ PJ_parser_write_host_t DatastoreParserWriteHost::raw() noexcept {
 }
 
 void DatastoreParserWriteHost::flushPending() {
-  state_->core.flushPending();
+  state_->core->flushPending();
+}
+
+void DatastoreParserWriteHost::setTarget(DataEngine* target) {
+  // Seal + commit any open chunk to the current engine so no rows are lost,
+  // then rebind to the new engine with a fresh WriteCore (its writer and
+  // per-engine caches must not carry over). The bound topic is expected to
+  // already exist in `target` with the same TopicId.
+  state_->core->flushPending();
+  state_->core = std::make_unique<WriteCore>(*target);
 }
 
 DatastoreToolboxHost::DatastoreToolboxHost(DataEngine& engine, ObjectStore& object_store)
@@ -1754,6 +1791,10 @@ PJ_object_write_host_t DatastoreSourceObjectWriteHost::raw() noexcept {
   return PJ_object_write_host_t{.ctx = state_.get(), .vtable = &kSourceObjectWriteVTable};
 }
 
+void DatastoreSourceObjectWriteHost::setTarget(ObjectStore* target) noexcept {
+  state_->target.store(target, std::memory_order_release);
+}
+
 DatastoreToolboxObjectReadHost::DatastoreToolboxObjectReadHost(ObjectStore& store)
     : state_(std::make_unique<DatastoreToolboxObjectReadHostState>(store)) {}
 DatastoreToolboxObjectReadHost::~DatastoreToolboxObjectReadHost() = default;
@@ -1774,6 +1815,10 @@ DatastoreParserObjectWriteHost& DatastoreParserObjectWriteHost::operator=(Datast
 
 PJ_parser_object_write_host_t DatastoreParserObjectWriteHost::raw() noexcept {
   return PJ_parser_object_write_host_t{.ctx = state_.get(), .vtable = &kParserObjectWriteVTable};
+}
+
+void DatastoreParserObjectWriteHost::setTarget(ObjectStore* target) noexcept {
+  state_->target.store(target, std::memory_order_release);
 }
 
 }  // namespace PJ

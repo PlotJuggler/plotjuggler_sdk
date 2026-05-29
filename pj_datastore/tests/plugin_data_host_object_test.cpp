@@ -211,5 +211,80 @@ TEST(PluginDataHostObjectTest, ViewReportsNotBoundWhenRawIsEmpty) {
   EXPECT_FALSE(status.has_value());
 }
 
+// ===========================================================================
+// setTarget — streaming two-store flow
+// ===========================================================================
+
+TEST(PluginDataHostObjectTest, SetTargetRedirectsRegisterAndPushToSecondary) {
+  // Simulates the streaming pause/resume routing: the manager flips the host
+  // between a primary and a secondary store. After setTarget(secondary) the
+  // host's registerTopic + pushOwned land in the secondary; pushes against
+  // primary stop. Flipping back to primary resumes routing there.
+  ObjectStore primary;
+  ObjectStore secondary;
+  DatastoreSourceObjectWriteHost host_impl{primary, kDatasetId};
+  SourceObjectWriteHostView host{host_impl.raw()};
+
+  // Lockstep registration on both stores BEFORE the swap, so the topic id
+  // is the same on each side (auto-counter ticks identically). This matches
+  // the manager wiring described in the two-store plan.
+  const auto primary_topic = *host.registerTopic("cam", "{}");
+  host_impl.setTarget(&secondary);
+  const auto secondary_topic = *host.registerTopic("cam", "{}");
+  EXPECT_EQ(primary_topic.id, secondary_topic.id);
+
+  // A push now must land in secondary, not primary.
+  const std::vector<uint8_t> payload_a{0x01, 0x02};
+  ASSERT_TRUE(host.pushOwned(secondary_topic, 1000, payload_a).has_value());
+  EXPECT_EQ(primary.entryCount(ObjectTopicId{primary_topic.id}), 0U);
+  EXPECT_EQ(secondary.entryCount(ObjectTopicId{secondary_topic.id}), 1U);
+
+  // Flip back: subsequent pushes return to primary.
+  host_impl.setTarget(&primary);
+  const std::vector<uint8_t> payload_b{0x03};
+  ASSERT_TRUE(host.pushOwned(primary_topic, 2000, payload_b).has_value());
+  EXPECT_EQ(primary.entryCount(ObjectTopicId{primary_topic.id}), 1U);
+  EXPECT_EQ(secondary.entryCount(ObjectTopicId{secondary_topic.id}), 1U);
+}
+
+TEST(PluginDataHostObjectTest, ParserSetTargetRedirectsPushToSecondary) {
+  // Same test as above but for the parser-scoped host, which is the one the
+  // streaming worker actually drives (parser-bound topic id captured at
+  // bind() — invariant under the swap because the manager has registered
+  // the topic in both stores via lockstep registerTopic).
+  ObjectStore primary;
+  ObjectStore secondary;
+  // Pre-register on both stores in lockstep. Both auto-assign the same id.
+  const auto primary_topic =
+      *primary.registerTopic({.dataset_id = kDatasetId, .topic_name = "cam", .metadata_json = "{}"});
+  const auto secondary_topic =
+      *secondary.registerTopic({.dataset_id = kDatasetId, .topic_name = "cam", .metadata_json = "{}"});
+  ASSERT_EQ(primary_topic.id, secondary_topic.id);
+
+  DatastoreParserObjectWriteHost host_impl{primary, primary_topic.id};
+  sdk::ParserObjectWriteHostView host{host_impl.raw()};
+
+  const std::vector<uint8_t> payload_a{0x01};
+  const std::vector<uint8_t> payload_b{0x02};
+  const std::vector<uint8_t> payload_c{0x03};
+
+  // Push before swap goes to primary.
+  ASSERT_TRUE(host.pushOwned(1000, payload_a).has_value());
+  EXPECT_EQ(primary.entryCount(primary_topic), 1U);
+  EXPECT_EQ(secondary.entryCount(secondary_topic), 0U);
+
+  // Swap and push: now lands in secondary, primary untouched.
+  host_impl.setTarget(&secondary);
+  ASSERT_TRUE(host.pushOwned(2000, payload_b).has_value());
+  EXPECT_EQ(primary.entryCount(primary_topic), 1U);
+  EXPECT_EQ(secondary.entryCount(secondary_topic), 1U);
+
+  // Swap back: resumes pushing into primary.
+  host_impl.setTarget(&primary);
+  ASSERT_TRUE(host.pushOwned(3000, payload_c).has_value());
+  EXPECT_EQ(primary.entryCount(primary_topic), 2U);
+  EXPECT_EQ(secondary.entryCount(secondary_topic), 1U);
+}
+
 }  // namespace
 }  // namespace PJ

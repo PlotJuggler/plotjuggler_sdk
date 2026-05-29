@@ -510,5 +510,228 @@ TEST(ObjectStoreTest, ConcurrentReadWriteSmoke) {
   EXPECT_EQ(store.entryCount(id), static_cast<size_t>(kPushCount));
 }
 
+// =========================================================================
+// Cross-store flush (flushTo)
+// =========================================================================
+
+namespace {
+
+ObjectTopicId registerSameDescriptor(
+    ObjectStore& store, DatasetId dataset_id = 1, const std::string& name = "test/topic") {
+  auto id_or = store.registerTopic({.dataset_id = dataset_id, .topic_name = name, .metadata_json = "{}"});
+  EXPECT_TRUE(id_or.has_value());
+  return *id_or;
+}
+
+}  // namespace
+
+TEST(ObjectStoreFlushTest, BasicMoveOwnedEntries) {
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src);
+  auto dst_id = registerSameDescriptor(dst);
+
+  src.pushOwned(src_id, 100, makePayload(8, 0xAA));
+  src.pushOwned(src_id, 200, makePayload(8, 0xBB));
+  src.pushOwned(src_id, 300, makePayload(8, 0xCC));
+
+  ASSERT_EQ(src.entryCount(src_id), 3u);
+  ASSERT_EQ(dst.entryCount(dst_id), 0u);
+
+  auto result = src.flushTo(dst);
+  ASSERT_TRUE(result.has_value()) << result.error();
+
+  EXPECT_EQ(src.entryCount(src_id), 0u);
+  EXPECT_EQ(dst.entryCount(dst_id), 3u);
+
+  auto e0 = dst.at(dst_id, 0);
+  ASSERT_TRUE(e0.has_value());
+  EXPECT_EQ(e0->timestamp, 100);
+  EXPECT_EQ(e0->payload.bytes.size(), 8u);
+  EXPECT_EQ(e0->payload.bytes[0], 0xAA);
+
+  auto e2 = dst.at(dst_id, 2);
+  ASSERT_TRUE(e2.has_value());
+  EXPECT_EQ(e2->timestamp, 300);
+  EXPECT_EQ(e2->payload.bytes[0], 0xCC);
+}
+
+TEST(ObjectStoreFlushTest, PreservesTopicRegistrationOnSrc) {
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src);
+  registerSameDescriptor(dst);
+
+  src.pushOwned(src_id, 100, makePayload(4));
+
+  ASSERT_TRUE(src.flushTo(dst).has_value());
+
+  // src is empty but the topic is still registered — the same id can accept new pushes.
+  EXPECT_EQ(src.entryCount(src_id), 0u);
+  auto post_push = src.pushOwned(src_id, 400, makePayload(4));
+  EXPECT_TRUE(post_push.has_value());
+  EXPECT_EQ(src.entryCount(src_id), 1u);
+}
+
+TEST(ObjectStoreFlushTest, AppendsToExistingDstEntries) {
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src);
+  auto dst_id = registerSameDescriptor(dst);
+
+  dst.pushOwned(dst_id, 50, makePayload(4, 0x11));
+  dst.pushOwned(dst_id, 100, makePayload(4, 0x22));
+  src.pushOwned(src_id, 200, makePayload(4, 0x33));
+  src.pushOwned(src_id, 300, makePayload(4, 0x44));
+
+  ASSERT_TRUE(src.flushTo(dst).has_value());
+
+  EXPECT_EQ(dst.entryCount(dst_id), 4u);
+  EXPECT_EQ(dst.at(dst_id, 0)->timestamp, 50);
+  EXPECT_EQ(dst.at(dst_id, 1)->timestamp, 100);
+  EXPECT_EQ(dst.at(dst_id, 2)->timestamp, 200);
+  EXPECT_EQ(dst.at(dst_id, 3)->timestamp, 300);
+}
+
+TEST(ObjectStoreFlushTest, RejectsMonotonicityViolation) {
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src);
+  auto dst_id = registerSameDescriptor(dst);
+
+  dst.pushOwned(dst_id, 200, makePayload(4));
+  src.pushOwned(src_id, 100, makePayload(4));  // earlier than dst's last
+
+  auto result = src.flushTo(dst);
+  EXPECT_FALSE(result.has_value());
+
+  // Neither store is mutated on failure.
+  EXPECT_EQ(src.entryCount(src_id), 1u);
+  EXPECT_EQ(dst.entryCount(dst_id), 1u);
+}
+
+TEST(ObjectStoreFlushTest, RejectsUnknownTopicInDst) {
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src, 1, "missing/topic");
+  // dst has a different topic.
+  registerSameDescriptor(dst, 1, "other/topic");
+
+  src.pushOwned(src_id, 100, makePayload(4));
+
+  auto result = src.flushTo(dst);
+  EXPECT_FALSE(result.has_value());
+  EXPECT_EQ(src.entryCount(src_id), 1u);
+}
+
+TEST(ObjectStoreFlushTest, EmptySourceSeriesSkipped) {
+  ObjectStore src, dst;
+  auto src_id_with_data = registerSameDescriptor(src, 1, "with/data");
+  registerSameDescriptor(src, 1, "empty/series");  // registered but no pushes
+
+  auto dst_id_with_data = registerSameDescriptor(dst, 1, "with/data");
+  // dst does NOT register "empty/series" — flush should still succeed since src
+  // has no entries for it.
+
+  src.pushOwned(src_id_with_data, 100, makePayload(4));
+
+  auto result = src.flushTo(dst);
+  EXPECT_TRUE(result.has_value()) << (result.has_value() ? "" : result.error());
+  EXPECT_EQ(dst.entryCount(dst_id_with_data), 1u);
+}
+
+TEST(ObjectStoreFlushTest, RejectsSameStore) {
+  ObjectStore store;
+  auto id = registerSameDescriptor(store);
+  store.pushOwned(id, 100, makePayload(4));
+
+  auto result = store.flushTo(store);
+  EXPECT_FALSE(result.has_value());
+  EXPECT_EQ(store.entryCount(id), 1u);
+}
+
+TEST(ObjectStoreFlushTest, MultipleTopicsFlushed) {
+  ObjectStore src, dst;
+  auto src_a = registerSameDescriptor(src, 1, "topic/a");
+  auto src_b = registerSameDescriptor(src, 1, "topic/b");
+  auto dst_a = registerSameDescriptor(dst, 1, "topic/a");
+  auto dst_b = registerSameDescriptor(dst, 1, "topic/b");
+
+  src.pushOwned(src_a, 100, makePayload(4, 0xAA));
+  src.pushOwned(src_b, 100, makePayload(4, 0xBB));
+  src.pushOwned(src_a, 200, makePayload(4, 0xCC));
+  src.pushOwned(src_b, 200, makePayload(4, 0xDD));
+
+  ASSERT_TRUE(src.flushTo(dst).has_value());
+
+  EXPECT_EQ(dst.entryCount(dst_a), 2u);
+  EXPECT_EQ(dst.entryCount(dst_b), 2u);
+  EXPECT_EQ(dst.at(dst_a, 0)->payload.bytes[0], 0xAA);
+  EXPECT_EQ(dst.at(dst_b, 1)->payload.bytes[0], 0xDD);
+}
+
+TEST(ObjectStoreFlushTest, LazyEntriesPreserveSemantics) {
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src);
+  auto dst_id = registerSameDescriptor(dst);
+
+  int src_invocations = 0;
+  src.pushLazy(src_id, 100, [&src_invocations]() -> sdk::PayloadView {
+    ++src_invocations;
+    return sdk::makePayloadView({0xDE, 0xAD, 0xBE, 0xEF});
+  });
+
+  // Flush itself must NOT invoke the closure — it just moves the std::function.
+  EXPECT_EQ(src_invocations, 0);
+  ASSERT_TRUE(src.flushTo(dst).has_value());
+  EXPECT_EQ(src_invocations, 0);
+
+  EXPECT_EQ(src.entryCount(src_id), 0u);
+  EXPECT_EQ(dst.entryCount(dst_id), 1u);
+
+  // Reading from dst invokes the closure once, exactly like in src.
+  auto resolved = dst.latestAt(dst_id, 100);
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(src_invocations, 1);
+  ASSERT_EQ(resolved->payload.bytes.size(), 4u);
+  EXPECT_EQ(resolved->payload.bytes[0], 0xDE);
+}
+
+TEST(ObjectStoreFlushTest, RetentionBudgetAppliedAfterFlush) {
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src);
+  auto dst_id = registerSameDescriptor(dst);
+
+  // Time-window retention of 100 ns on dst: anything older than newest - 100 evicts.
+  dst.setRetentionBudget(dst_id, RetentionBudget{.time_window_ns = 100, .max_memory_bytes = 0});
+
+  src.pushOwned(src_id, 100, makePayload(4));
+  src.pushOwned(src_id, 150, makePayload(4));
+  src.pushOwned(src_id, 250, makePayload(4));  // newest after flush; evict anything < 150.
+
+  ASSERT_TRUE(src.flushTo(dst).has_value());
+
+  // After flush: newest is 250, threshold = 150, so the entry at 100 evicts.
+  EXPECT_EQ(dst.entryCount(dst_id), 2u);
+  EXPECT_EQ(dst.at(dst_id, 0)->timestamp, 150);
+  EXPECT_EQ(dst.at(dst_id, 1)->timestamp, 250);
+}
+
+TEST(ObjectStoreFlushTest, ZeroCopyOwnershipChainSurvives) {
+  // A shared_ptr handed in via pushOwned is shared between the entry's payload
+  // and any consumer of `at()`. After flushTo, the same shared_ptr instance
+  // must be the one observed in the destination — no copy, just refcount
+  // transfer through the move of the underlying ObjectEntry.
+  ObjectStore src, dst;
+  auto src_id = registerSameDescriptor(src);
+  auto dst_id = registerSameDescriptor(dst);
+
+  src.pushOwned(src_id, 100, makePayload(16, 0x77));
+  auto pre_handle = src.at(src_id, 0);
+  ASSERT_TRUE(pre_handle.has_value());
+  const auto* pre_ptr = pre_handle->payload.anchor.get();
+
+  ASSERT_TRUE(src.flushTo(dst).has_value());
+
+  auto post_handle = dst.at(dst_id, 0);
+  ASSERT_TRUE(post_handle.has_value());
+  EXPECT_EQ(post_handle->payload.anchor.get(), pre_ptr) << "shared_ptr identity must survive the flush";
+}
+
 }  // namespace
 }  // namespace PJ
