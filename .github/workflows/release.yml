@@ -1,16 +1,32 @@
 name: Release
 
 # Triggers on tag push (e.g. `git push origin v0.2.0`). Builds the Conan
-# package, uploads it to the project's Cloudsmith remote, and publishes a
-# GitHub Release with auto-generated notes.
+# package on every consumer platform (Linux, macOS, Windows), uploads each
+# binary to the project's Cloudsmith remote, and publishes a GitHub Release
+# with auto-generated notes.
 #
-# Secrets required (set in repo Settings → Secrets and variables → Actions):
-#   CLOUDSMITH_USER     — Cloudsmith username (e.g. "davide-faconti")
-#   CLOUDSMITH_API_KEY  — Cloudsmith API key with write access to the
+# Why a matrix: Cloudsmith stores one binary package per platform/compiler
+# (package_id). A single ubuntu job only ever publishes a Linux/gcc binary, so
+# macOS and Windows consumers are forced to build plotjuggler_core from source
+# via `--build=missing`. That is slow and, on macOS specifically, fragile: a
+# from-source build depends on the recipe's exported sources being intact in
+# the cache, which breaks (e.g. after a version is re-published with a new
+# recipe revision) with "exports_sources but sources not found in local cache".
+# Publishing a binary per platform means consumers download instead of compile.
+#
+# Secrets required (set in repo Settings -> Secrets and variables -> Actions):
+#   CLOUDSMITH_USER     - Cloudsmith username (e.g. "davide-faconti")
+#   CLOUDSMITH_API_KEY  - Cloudsmith API key with write access to the
 #                         plotjuggler/plotjuggler repository
 #
-# Manual trigger: workflow_dispatch lets you re-run for an existing tag if
-# the first attempt failed (e.g. flaky upload). Set `tag` input to e.g. v0.1.0.
+# Manual trigger: workflow_dispatch lets you re-run for an existing tag if the
+# first attempt failed (e.g. flaky upload on one platform). Set `tag` input to
+# e.g. v0.1.0. NOTE: do not *move* an already-released tag to a new commit —
+# cut a new patch version instead. Moving a tag changes the recipe revision on
+# the remote and orphans any consumer mid-resolve. The `prepare` job enforces
+# this: it refuses to publish a version that already exists on Cloudsmith under
+# a different recipe revision (override with the `allow_republish` input only to
+# repair a botched release).
 
 on:
   push:
@@ -21,16 +37,29 @@ on:
       tag:
         description: 'Tag to (re-)release (e.g. v0.1.0). Must already exist.'
         required: true
+      allow_republish:
+        description: 'Bypass the re-publish guard (only to repair a botched release of an existing version)'
+        type: boolean
+        default: false
+        required: false
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false  # never cancel an in-flight release
 
 jobs:
-  release:
+  # ---------------------------------------------------------------------------
+  # Resolve the version/tag once and verify it matches conanfile.py, so the
+  # build matrix and the GitHub Release all agree on a single source of truth.
+  # ---------------------------------------------------------------------------
+  prepare:
     runs-on: ubuntu-22.04
     permissions:
-      contents: write   # required to create the GitHub Release
+      contents: read
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+      tag: ${{ steps.ref.outputs.tag }}
+      version: ${{ steps.ref.outputs.version }}
     steps:
       - name: Resolve ref
         id: ref
@@ -54,11 +83,6 @@ jobs:
 
       - uses: conan-io/setup-conan@v1
 
-      - name: Detect Conan profile
-        run: |
-          conan profile detect --force
-          conan profile show
-
       - name: Verify recipe version matches tag
         # Prevents the common footgun of tagging vX.Y.Z but forgetting to bump
         # `version` in conanfile.py. Fails fast before we publish.
@@ -70,7 +94,105 @@ jobs:
           fi
           echo "Version match: ${recipe_version}"
 
+      - name: Guard against re-publishing an existing version with different sources
+        # The incident this matrix fixes was triggered by *moving* a released tag:
+        # v0.5.0 was published twice from two different commits, so the second run
+        # produced a new recipe revision that replaced the first and orphaned any
+        # consumer that had resolved the original mid-build. This guard computes
+        # the recipe revision THIS release would publish and compares it to what is
+        # already on Cloudsmith for this version:
+        #   * version not published yet     -> proceed (first release)
+        #   * same recipe revision present  -> proceed (idempotent re-run after a
+        #                                      flaky/partial upload)
+        #   * a different revision present  -> FAIL (sources changed under an
+        #                                      already-released version)
+        # prepare runs on Linux (LF); the build matrix forces an LF checkout, so
+        # both compute the same canonical recipe revision.
+        env:
+          CLOUDSMITH_USER: ${{ secrets.CLOUDSMITH_USER }}
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          if [[ "${{ inputs.allow_republish }}" == "true" ]]; then
+            echo "allow_republish=true -> skipping the re-publish guard"
+            exit 0
+          fi
+          version="${{ steps.ref.outputs.version }}"
+
+          # Recipe revision this release would publish (deterministic from the
+          # checked-out sources, independent of build settings).
+          conan profile detect --force >/dev/null 2>&1 || true
+          local_rrev=$(conan export . --format=json \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['reference'].split('#',1)[1])")
+          echo "This release would publish recipe revision: ${local_rrev}"
+
+          conan remote add plotjuggler-cloudsmith https://conan.cloudsmith.io/plotjuggler/plotjuggler --force
+          if [[ -n "$CLOUDSMITH_USER" && -n "$CLOUDSMITH_API_KEY" ]]; then
+            conan remote login plotjuggler-cloudsmith "$CLOUDSMITH_USER" -p "$CLOUDSMITH_API_KEY"
+          fi
+
+          conan list "plotjuggler_core/${version}#*" -r plotjuggler-cloudsmith --format=json \
+            > /tmp/remote_revs.json 2>/dev/null || true
+
+          if grep -q "RECIPEUNKNOWN" /tmp/remote_revs.json; then
+            echo "Version ${version} is not yet published — first release, proceeding."
+          elif grep -q '"error"' /tmp/remote_revs.json; then
+            echo "::warning::Unexpected error reading published revisions for ${version} (transient?). Proceeding without the guard."
+            cat /tmp/remote_revs.json
+          elif grep -q "${local_rrev}" /tmp/remote_revs.json; then
+            echo "Recipe revision ${local_rrev} is already published for ${version} — idempotent re-run, proceeding."
+          else
+            echo "::error::plotjuggler_core/${version} is already published with a different recipe revision."
+            echo "::error::This build would publish ${local_rrev}, which is not on the remote. Refusing to overwrite a released version."
+            echo "::error::Cut a new version, or re-run via workflow_dispatch with allow_republish=true to repair a botched release."
+            echo "Currently published for ${version}:"
+            conan list "plotjuggler_core/${version}#*" -r plotjuggler-cloudsmith 2>/dev/null || true
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build + upload one Conan binary per consumer platform. fail-fast: false so
+  # a transient failure on one OS still publishes the others (re-run the
+  # workflow_dispatch for the failed leg); the GitHub Release is gated on ALL
+  # legs succeeding so we never advertise an incomplete release.
+  # ---------------------------------------------------------------------------
+  build:
+    needs: prepare
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash   # Git Bash on Windows; conan/cmake are on PATH everywhere
+    steps:
+      - name: Force LF line endings (consistent recipe revision across OSes)
+        # No .gitattributes in the repo, so on Windows git would convert text
+        # files to CRLF on checkout, changing the recipe revision hash and
+        # splitting the package across two revisions. Force LF everywhere so every
+        # matrix leg computes and uploads the SAME recipe revision (matching the
+        # one prepare's guard validated on Linux).
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - uses: conan-io/setup-conan@v1
+
+      - name: Detect Conan profile
+        run: |
+          conan profile detect --force
+          conan profile show
+
       - name: Build Conan package
+        # Same settings consumers use (-s build_type=Release -s
+        # compiler.cppstd=20) so the published package_id matches what
+        # downstream `conan install` resolves on each platform.
         run: |
           conan create . \
             --build=missing \
@@ -91,19 +213,32 @@ jobs:
           conan remote login plotjuggler-cloudsmith "$CLOUDSMITH_USER" -p "$CLOUDSMITH_API_KEY"
 
       - name: Upload package to Cloudsmith
+        # Each matrix leg uploads the recipe + its own binary. The recipe
+        # revision is identical across platforms (same recipe content), so
+        # concurrent recipe uploads are idempotent — only the per-platform
+        # binary differs. `--check` verifies integrity before/after transfer.
         run: |
-          conan upload "plotjuggler_core/${{ steps.ref.outputs.version }}" \
+          conan upload "plotjuggler_core/${{ needs.prepare.outputs.version }}" \
             -r plotjuggler-cloudsmith \
             --confirm \
             --check
 
+  # ---------------------------------------------------------------------------
+  # Cut the GitHub Release once, only after every platform binary is published.
+  # ---------------------------------------------------------------------------
+  github-release:
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # required to create the GitHub Release
+    steps:
       - name: Create GitHub Release
         # softprops/action-gh-release: handles auto-generated notes + idempotent
         # re-runs (skips if a release for the tag already exists).
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ref.outputs.tag }}
-          name: plotjuggler_core ${{ steps.ref.outputs.tag }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: plotjuggler_core ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
           body: |
             ## Install via Conan
@@ -115,7 +250,7 @@ jobs:
             Add to your `conanfile.py` / `conanfile.txt`:
 
             ```python
-            requires = ("plotjuggler_core/${{ steps.ref.outputs.version }}",)
+            requires = ("plotjuggler_core/${{ needs.prepare.outputs.version }}",)
             ```
 
             Link in CMake:
