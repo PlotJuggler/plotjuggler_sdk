@@ -106,10 +106,15 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
-  /// Code editor: code changed
-  [[nodiscard]] static std::string codeChanged(std::string_view code) {
+  /// Code editor: code changed. `cursor` is the caret offset (bytes) in the new
+  /// text, or negative when unknown; it is serialized only when >= 0, so callers
+  /// that omit it stay wire-compatible with readers that ignore the field.
+  [[nodiscard]] static std::string codeChanged(std::string_view code, int cursor = -1) {
     nlohmann::json j;
     j["code_changed"] = code;
+    if (cursor >= 0) {
+      j["code_cursor"] = cursor;
+    }
     return j.dump();
   }
 

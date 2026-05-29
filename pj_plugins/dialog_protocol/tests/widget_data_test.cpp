@@ -249,3 +249,11 @@ TEST(WidgetDataTest, Chaining) {
   EXPECT_EQ(j["port"]["value"], 80);
   EXPECT_EQ(j["tls"]["checked"], true);
 }
+
+TEST(WidgetDataTest, SetCodeCursor) {
+  WidgetData wd;
+  wd.setCodeContent("editor", "robot ==").setCodeCursor("editor", 8);
+  auto j = parse(wd);
+  EXPECT_EQ(j["editor"]["code_content"], "robot ==");
+  EXPECT_EQ(j["editor"]["code_cursor"], 8);
+}

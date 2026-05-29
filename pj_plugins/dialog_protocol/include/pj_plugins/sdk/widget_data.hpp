@@ -213,6 +213,14 @@ class WidgetData {
     return *this;
   }
 
+  /// Move the caret of a code editor to `cursor` (byte offset). Used after the
+  /// plugin programmatically rewrites the code (e.g. inserting a completion) so
+  /// the caret lands where the user expects rather than jumping to the start.
+  WidgetData& setCodeCursor(std::string_view name, int cursor) {
+    entry(name)["code_cursor"] = cursor;
+    return *this;
+  }
+
   // --- QLabel ---
   WidgetData& setLabel(std::string_view name, std::string_view text) {
     entry(name)["label"] = text;

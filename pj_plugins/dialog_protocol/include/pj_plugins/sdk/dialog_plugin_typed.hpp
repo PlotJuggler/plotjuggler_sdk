@@ -72,6 +72,16 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// Cursor-aware code change: `cursor` is the caret offset (bytes) in `code`,
+  /// or negative when the host didn't report one. The dispatch always calls
+  /// this; it defaults to onCodeChanged(name, code), so existing plugins keep
+  /// working. Override this (instead of onCodeChanged) to drive caret-aware
+  /// completion. A distinct name (rather than an overload) avoids the
+  /// overloaded-virtual hiding hazard.
+  virtual bool onCodeChangedWithCursor(std::string_view widget_name, std::string_view code, int /*cursor*/) {
+    return onCodeChanged(widget_name, code);
+  }
+
   virtual bool onItemsDropped(std::string_view /*widget_name*/, const std::vector<std::string>& /*items*/) {
     return false;
   }
@@ -113,7 +123,7 @@ class DialogPluginTyped : public DialogPluginBase {
       return onItemsDropped(widget_name, *v);
     }
     if (auto v = event.codeChanged()) {
-      return onCodeChanged(widget_name, *v);
+      return onCodeChangedWithCursor(widget_name, *v, event.codeCursor().value_or(-1));
     }
     if (auto v = event.text()) {
       return onTextChanged(widget_name, *v);

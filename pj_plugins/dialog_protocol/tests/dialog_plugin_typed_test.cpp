@@ -95,6 +95,14 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     return true;
   }
 
+  bool onCodeChangedWithCursor(std::string_view widget_name, std::string_view code, int cursor) override {
+    last_handler = "code_changed";
+    last_widget = std::string(widget_name);
+    last_text = std::string(code);
+    last_int = cursor;
+    return true;
+  }
+
   // Recorded state
   std::string last_handler;
   std::string last_widget;
@@ -240,4 +248,17 @@ TEST_F(TypedDispatchTest, CurrentIndexTakesPriorityOverValue) {
   // current_index is checked before value
   EXPECT_TRUE(dispatch(plugin, "w", R"({"current_index": 1, "value": 5})"));
   EXPECT_EQ(plugin.last_handler, "index_changed");
+}
+
+TEST_F(TypedDispatchTest, CodeChangedCarriesCursorToTypedHandler) {
+  EXPECT_TRUE(dispatch(plugin, "editor", R"({"code_changed": "robot ==", "code_cursor": 8})"));
+  EXPECT_EQ(plugin.last_handler, "code_changed");
+  EXPECT_EQ(plugin.last_text, "robot ==");
+  EXPECT_EQ(plugin.last_int, 8);
+}
+
+TEST_F(TypedDispatchTest, CodeChangedWithoutCursorPassesNegativeOne) {
+  EXPECT_TRUE(dispatch(plugin, "editor", R"({"code_changed": "x"})"));
+  EXPECT_EQ(plugin.last_handler, "code_changed");
+  EXPECT_EQ(plugin.last_int, -1);
 }

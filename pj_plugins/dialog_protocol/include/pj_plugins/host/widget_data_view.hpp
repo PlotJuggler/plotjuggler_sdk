@@ -209,6 +209,11 @@ class WidgetDataView {
   [[nodiscard]] std::optional<std::string> codeLanguage(std::string_view name) const {
     return getString(name, "code_language");
   }
+  /// Requested caret offset (bytes) for a code editor; the host moves the caret
+  /// here after applying new code content. Absent ⇒ leave the caret as-is.
+  [[nodiscard]] std::optional<int> codeCursor(std::string_view name) const {
+    return getInt(name, "code_cursor");
+  }
 
   // --- QLabel ---
   [[nodiscard]] std::optional<std::string> label(std::string_view name) const {

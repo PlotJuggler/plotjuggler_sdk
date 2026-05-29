@@ -155,3 +155,20 @@ TEST(WidgetEventBuilderTest, TextChangedDoesNotTriggerOtherFields) {
   EXPECT_FALSE(ev.checked().has_value());
   EXPECT_FALSE(ev.clicked());
 }
+
+TEST(WidgetEventBuilderTest, CodeChangedWithCursor) {
+  std::string json = PJ::WidgetEventBuilder::codeChanged("robot ==", 8);
+  PJ::WidgetEvent ev(json);
+  ASSERT_TRUE(ev.codeChanged().has_value());
+  EXPECT_EQ(*ev.codeChanged(), "robot ==");
+  ASSERT_TRUE(ev.codeCursor().has_value());
+  EXPECT_EQ(*ev.codeCursor(), 8);
+}
+
+TEST(WidgetEventBuilderTest, CodeChangedWithoutCursorOmitsField) {
+  std::string json = PJ::WidgetEventBuilder::codeChanged("x");
+  PJ::WidgetEvent ev(json);
+  ASSERT_TRUE(ev.codeChanged().has_value());
+  EXPECT_EQ(*ev.codeChanged(), "x");
+  EXPECT_FALSE(ev.codeCursor().has_value());
+}

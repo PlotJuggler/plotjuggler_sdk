@@ -251,3 +251,13 @@ TEST(WidgetDataViewTest, RawAccess) {
   EXPECT_TRUE(raw.is_object());
   EXPECT_EQ(raw["w"]["custom_field"], 99);
 }
+
+TEST(WidgetDataViewTest, CodeCursor) {
+  PJ::WidgetDataView v(R"({"editor": {"code_cursor": 12}})");
+  EXPECT_EQ(v.codeCursor("editor"), 12);
+}
+
+TEST(WidgetDataViewTest, CodeCursorAbsent) {
+  PJ::WidgetDataView v(R"({"editor": {"code_content": "x"}})");
+  EXPECT_FALSE(v.codeCursor("editor").has_value());
+}
