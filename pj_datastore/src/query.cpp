@@ -126,30 +126,37 @@ void RangeCursor::forEachChunk(std::function<void(const ChunkRowRange&)> callbac
 }
 
 void RangeCursor::findFirstValid() {
-  // Linear scan to find the first chunk whose t_max >= t_min_
-  // (i.e., that could contain data in our range)
-  for (chunk_index_ = 0; chunk_index_ < chunks_->size(); ++chunk_index_) {
-    const auto& chunk = (*chunks_)[chunk_index_];
-    if (chunk.stats.t_max >= t_min_) {
-      // This chunk might contain data in range.
-      // Now find the first row where timestamp >= t_min_.
-      for (row_index_ = 0; row_index_ < chunk.stats.row_count; ++row_index_) {
-        Timestamp ts = chunk.readTimestamp(row_index_);
-        if (ts >= t_min_) {
-          // Check if this row is also within t_max
-          if (ts <= t_max_) {
-            return;  // Found a valid starting position
-          }
-          // ts > t_max_ means no valid data in range at all
-          chunk_index_ = chunks_->size();
-          return;
-        }
-      }
-      // All rows in this chunk are before t_min, try next chunk
-      continue;
-    }
+  const auto& chunks = *chunks_;
+
+  // First chunk that could contain a row in range, i.e. whose t_max >= t_min_.
+  // Committed chunks are non-empty and time-ordered (each chunk's t_min >= the
+  // previous chunk's t_max), so t_max is non-decreasing across the deque and we
+  // can binary-search it.
+  const auto chunk_it = std::lower_bound(
+      chunks.begin(), chunks.end(), t_min_,
+      [](const TopicChunk& chunk, Timestamp value) { return chunk.stats.t_max < value; });
+  if (chunk_it == chunks.end()) {
+    // All data is strictly before t_min_.
+    chunk_index_ = chunks.size();
+    row_index_ = 0;
+    return;
   }
-  // No valid chunk found: chunk_index_ == chunks_->size() (past-end)
+  chunk_index_ = static_cast<std::size_t>(chunk_it - chunks.begin());
+
+  // First row with timestamp >= t_min_ within that chunk. Such a row exists
+  // because t_max (the chunk's last timestamp) >= t_min_.
+  const TopicChunk& chunk = *chunk_it;
+  const auto ts_begin = chunk.timestamps.begin();
+  const auto ts_end = ts_begin + static_cast<std::ptrdiff_t>(chunk.stats.row_count);
+  const auto row_it = std::lower_bound(ts_begin, ts_end, t_min_);
+  row_index_ = static_cast<std::size_t>(row_it - ts_begin);
+
+  // If the first row at or after t_min_ is already past t_max_, nothing in the
+  // deque falls inside [t_min_, t_max_].
+  if (row_it == ts_end || *row_it > t_max_) {
+    chunk_index_ = chunks.size();
+    row_index_ = 0;
+  }
 }
 
 void RangeCursor::skipToValid() {
@@ -171,30 +178,30 @@ void RangeCursor::skipToValid() {
 // ===========================================================================
 
 std::optional<SampleRow> latestAt(const std::deque<TopicChunk>& chunks, Timestamp t) {
-  if (chunks.empty()) {
+  // Last chunk that can contain a row at or before t, i.e. the latest chunk
+  // whose t_min <= t. Committed chunks are non-empty and have non-decreasing
+  // t_min, so upper_bound finds the first chunk strictly after t; the chunk
+  // before it is the answer. (At a shared boundary timestamp this selects the
+  // later chunk, matching the previous reverse-scan behaviour.)
+  const auto after = std::upper_bound(chunks.begin(), chunks.end(), t, [](Timestamp value, const TopicChunk& chunk) {
+    return value < chunk.stats.t_min;
+  });
+  if (after == chunks.begin()) {
+    // Empty deque, or every chunk starts strictly after t.
     return std::nullopt;
   }
+  const TopicChunk& chunk = *(after - 1);
 
-  // Reverse iterate chunks. For each chunk, if t_min <= t, search within it.
-  for (std::size_t ci = chunks.size(); ci > 0; --ci) {
-    const auto& chunk = chunks[ci - 1];
-    if (chunk.stats.t_min > t) {
-      continue;  // Entire chunk is after t
-    }
-    // chunk.stats.t_min <= t, so there might be a row <= t in this chunk.
-    // Reverse scan within the chunk to find the last row with timestamp <= t.
-    for (std::size_t ri = chunk.stats.row_count; ri > 0; --ri) {
-      Timestamp ts = chunk.readTimestamp(ri - 1);
-      if (ts <= t) {
-        return SampleRow{ts, &chunk, ri - 1};
-      }
-    }
-    // All rows in this chunk are after t, but t_min <= t was true.
-    // This shouldn't happen with sorted data, but handle gracefully
-    // by continuing to the previous chunk.
+  // Last row with timestamp <= t within that chunk. Such a row exists because
+  // the chunk's first timestamp (t_min) is <= t.
+  const auto ts_begin = chunk.timestamps.begin();
+  const auto ts_end = ts_begin + static_cast<std::ptrdiff_t>(chunk.stats.row_count);
+  const auto row_after = std::upper_bound(ts_begin, ts_end, t);
+  if (row_after == ts_begin) {
+    return std::nullopt;  // unreachable for committed chunks (row 0 ts == t_min <= t)
   }
-
-  return std::nullopt;
+  const std::size_t row = static_cast<std::size_t>((row_after - 1) - ts_begin);
+  return SampleRow{chunk.readTimestamp(row), &chunk, row};
 }
 
 // ===========================================================================

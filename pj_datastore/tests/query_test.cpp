@@ -28,6 +28,20 @@ TopicChunk make_test_chunk(Timestamp t_start, uint32_t num_rows, Timestamp step)
   return builder.seal();
 }
 
+// Helper: build a chunk from an explicit (possibly non-uniform / duplicated)
+// timestamp list. The column value equals the row index, so a returned
+// row_index can be cross-checked against value.
+TopicChunk make_chunk_from_timestamps(const std::vector<Timestamp>& ts) {
+  std::vector<ColumnDescriptor> cols = {{0, PrimitiveType::kFloat32, "value"}};
+  TopicChunkBuilder builder(1, 1, cols, static_cast<uint32_t>(ts.size()));
+  for (std::size_t i = 0; i < ts.size(); ++i) {
+    builder.beginRow(ts[i]);
+    builder.set(0, static_cast<float>(i));
+    builder.finishRow();
+  }
+  return builder.seal();
+}
+
 // Build the standard 5-chunk test fixture:
 //   Chunk 0: t=[0,   90],  step=10
 //   Chunk 1: t=[100, 190], step=10
@@ -158,6 +172,61 @@ TEST(QueryTest, LatestAtBetweenChunks) {
   auto result = latestAt(chunks, 95);
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->timestamp, 90);
+}
+
+// =========================================================================
+// Binary-search edge cases (duplicate timestamps, shared chunk boundaries)
+// =========================================================================
+
+TEST(QueryTest, LatestAtWithDuplicateTimestampsReturnsLastDuplicate) {
+  std::deque<TopicChunk> chunks;
+  // Rows:           0    1    2    3    4
+  chunks.push_back(make_chunk_from_timestamps({10, 20, 20, 20, 30}));
+
+  auto result = latestAt(chunks, 20);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->timestamp, 20);
+  // upper_bound semantics: the last row with ts <= 20 is row index 3.
+  EXPECT_EQ(result->row_index, 3u);
+}
+
+TEST(QueryTest, RangeQueryWithDuplicateTimestampsStartsAtFirstDuplicate) {
+  std::deque<TopicChunk> chunks;
+  // Rows:           0    1    2    3    4
+  chunks.push_back(make_chunk_from_timestamps({10, 20, 20, 20, 30}));
+
+  auto cursor = rangeQuery(chunks, 20, 20);
+  std::vector<std::size_t> rows;
+  cursor.forEach([&](const SampleRow& row) { rows.push_back(row.row_index); });
+
+  // lower_bound semantics: starts at the first ts >= 20 (row 1) and includes
+  // every row with ts <= 20 (rows 1, 2, 3).
+  ASSERT_EQ(rows.size(), 3u);
+  EXPECT_EQ(rows.front(), 1u);
+  EXPECT_EQ(rows.back(), 3u);
+}
+
+TEST(QueryTest, LatestAtAtSharedChunkBoundarySelectsLaterChunk) {
+  std::deque<TopicChunk> chunks;
+  chunks.push_back(make_chunk_from_timestamps({70, 80, 90}));    // chunk A, t_max=90
+  chunks.push_back(make_chunk_from_timestamps({90, 100, 110}));  // chunk B, t_min=90
+
+  auto result = latestAt(chunks, 90);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->timestamp, 90);
+  // The boundary value 90 exists in both chunks; the later chunk (B, row 0) wins.
+  EXPECT_EQ(result->chunk, &chunks[1]);
+  EXPECT_EQ(result->row_index, 0u);
+}
+
+TEST(QueryTest, RangeQuerySingleTimestampPoint) {
+  auto chunks = make_standard_chunks();
+  // Degenerate inclusive range [200, 200] hits exactly one row.
+  auto cursor = rangeQuery(chunks, 200, 200);
+  std::vector<Timestamp> timestamps;
+  cursor.forEach([&](const SampleRow& row) { timestamps.push_back(row.timestamp); });
+  ASSERT_EQ(timestamps.size(), 1u);
+  EXPECT_EQ(timestamps.front(), 200);
 }
 
 // =========================================================================
