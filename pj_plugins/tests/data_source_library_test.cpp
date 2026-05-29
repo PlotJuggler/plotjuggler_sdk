@@ -34,11 +34,11 @@ bool fwsEnsureField(
   *out = PJ_field_handle_t{topic, 1};
   return true;
 }
-bool fwsAppendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t*) noexcept {
+bool fwsAppendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, uint64_t, PJ_error_t*) noexcept {
   return true;
 }
 bool fwsAppendBoundRecord(
-    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
+    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, uint64_t, PJ_error_t*) noexcept {
   return true;
 }
 bool fwsAppendArrowStream(

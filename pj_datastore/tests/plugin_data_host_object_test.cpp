@@ -137,7 +137,7 @@ TEST(PluginDataHostObjectTest, PushLazyDestroyCallbackRunsExactlyOnceOnEviction)
   };
   auto* ctx = new Ctx();
 
-  auto fetch_fn = [](void* c, const uint8_t** out_data, size_t* out_size) noexcept -> bool {
+  auto fetch_fn = [](void* c, const uint8_t** out_data, uint64_t* out_size) noexcept -> bool {
     auto* self = static_cast<Ctx*>(c);
     self->last_bytes = self->payload;
     *out_data = self->last_bytes.data();

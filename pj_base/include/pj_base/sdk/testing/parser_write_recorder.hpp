@@ -179,7 +179,7 @@ class ParserWriteRecorder {
   }
 
   static bool trampolineAppendRecord(
-      void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count, PJ_error_t*) noexcept {
+      void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count, PJ_error_t*) noexcept {
     auto* self = static_cast<ParserWriteRecorder*>(ctx);
     RecordedRow row;
     row.timestamp = timestamp;
@@ -198,7 +198,7 @@ class ParserWriteRecorder {
   }
 
   static bool trampolineAppendBoundRecord(
-      void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count, PJ_error_t*) noexcept {
+      void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count, PJ_error_t*) noexcept {
     auto* self = static_cast<ParserWriteRecorder*>(ctx);
     RecordedRow row;
     row.timestamp = timestamp;

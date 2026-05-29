@@ -65,7 +65,7 @@ class ObjectBytes {
       return {};
     }
     const uint8_t* data = nullptr;
-    std::size_t size = 0;
+    uint64_t size = 0;  // matches PJ_object_read_host_vtable_t::get_bytes (uint64_t*)
     vtable_->get_bytes(handle_, &data, &size);
     return Span<const uint8_t>(data, size);
   }

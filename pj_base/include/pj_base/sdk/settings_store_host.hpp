@@ -105,7 +105,7 @@ class SettingsStoreHost {
   }
 
   static bool tGetStringList(
-      void* ctx, PJ_string_view_t key, const PJ_string_view_t** out_items, size_t* out_count, bool* out_found,
+      void* ctx, PJ_string_view_t key, const PJ_string_view_t** out_items, uint64_t* out_count, bool* out_found,
       PJ_error_t* out_error) noexcept {
     if (ctx == nullptr || out_items == nullptr || out_count == nullptr || out_found == nullptr) {
       fillError(out_error, 2, "settings", "null ctx or out-param");
@@ -140,7 +140,7 @@ class SettingsStoreHost {
   }
 
   static bool tSetStringList(
-      void* ctx, PJ_string_view_t key, const PJ_string_view_t* items, size_t count, PJ_error_t* out_error) noexcept {
+      void* ctx, PJ_string_view_t key, const PJ_string_view_t* items, uint64_t count, PJ_error_t* out_error) noexcept {
     if (ctx == nullptr || (items == nullptr && count != 0)) {
       fillError(out_error, 2, "settings", "null ctx or items");
       return false;

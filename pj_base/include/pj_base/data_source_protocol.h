@@ -80,6 +80,10 @@ typedef enum {
   PJ_DATA_SOURCE_STATE_STOPPING = 5,
   PJ_DATA_SOURCE_STATE_STOPPED = 6, /**< Terminal. */
   PJ_DATA_SOURCE_STATE_FAILED = 7,  /**< Terminal. */
+  /* Forces a stable 4-byte width across compilers, so a plugin built with
+   * -fshort-enums cannot shrink this enum and misalign by-value uses. Not a
+   * real state; never returned or accepted. */
+  PJ_DATA_SOURCE_STATE_FORCE_INT32 = 0x7FFFFFFF,
 } PJ_data_source_state_t;
 
 /** Severity level for plugin-to-host diagnostic messages. */
@@ -87,14 +91,16 @@ typedef enum {
   PJ_DATA_SOURCE_MESSAGE_INFO = 0,
   PJ_DATA_SOURCE_MESSAGE_WARNING = 1,
   PJ_DATA_SOURCE_MESSAGE_ERROR = 2,
+  PJ_DATA_SOURCE_MESSAGE_FORCE_INT32 = 0x7FFFFFFF, /* pin 4-byte width; not a real level */
 } PJ_data_source_message_level_t;
 
 /** Type of message box to display. Determines the icon shown. */
 typedef enum {
-  PJ_MESSAGE_BOX_INFO = 0,     /**< Information icon (i). */
-  PJ_MESSAGE_BOX_WARNING = 1,  /**< Warning icon (!). */
-  PJ_MESSAGE_BOX_ERROR = 2,    /**< Error/critical icon (X). */
-  PJ_MESSAGE_BOX_QUESTION = 3, /**< Question icon (?). */
+  PJ_MESSAGE_BOX_INFO = 0,                      /**< Information icon (i). */
+  PJ_MESSAGE_BOX_WARNING = 1,                   /**< Warning icon (!). */
+  PJ_MESSAGE_BOX_ERROR = 2,                     /**< Error/critical icon (X). */
+  PJ_MESSAGE_BOX_QUESTION = 3,                  /**< Question icon (?). */
+  PJ_MESSAGE_BOX_TYPE_FORCE_INT32 = 0x7FFFFFFF, /* pin 4-byte width; not a real type */
 } PJ_message_box_type_t;
 
 /**
@@ -110,6 +116,7 @@ typedef enum {
   PJ_MSG_BTN_ABORT = 0x20,
   PJ_MSG_BTN_RETRY = 0x40,
   PJ_MSG_BTN_IGNORE = 0x80,
+  PJ_MSG_BTN_FORCE_INT32 = 0x7FFFFFFF, /* pin 4-byte width; not a real button */
 } PJ_message_box_buttons_t;
 
 /**

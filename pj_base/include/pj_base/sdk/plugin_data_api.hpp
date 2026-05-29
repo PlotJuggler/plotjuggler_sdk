@@ -609,7 +609,7 @@ class ToolboxObjectReadHostView {
       return unexpected("toolbox object read host is not bound");
     }
     // First pass: ask for the count.
-    std::size_t count = 0;
+    uint64_t count = 0;  // matches PJ_object_read_host_vtable_t::list_topics (uint64_t*)
     PJ_error_t err{};
     if (!host_.vtable->list_topics(host_.ctx, nullptr, 0, &count, &err)) {
       return unexpected(errorToString(err));
@@ -655,7 +655,7 @@ class ToolboxObjectReadHostView {
     return ObjectBytes(handle, host_.vtable);
   }
 
-  [[nodiscard]] std::size_t entryCount(ObjectTopicHandle topic) const {
+  [[nodiscard]] uint64_t entryCount(ObjectTopicHandle topic) const {
     if (!valid() || host_.vtable->entry_count == nullptr) {
       return 0;
     }
@@ -764,7 +764,7 @@ class SourceObjectWriteHostView {
   }
 
   /// Configure retention. Application-level concern — plugins rarely call this.
-  void setRetentionBudget(ObjectTopicHandle topic, int64_t time_window_ns, size_t max_memory_bytes) const {
+  void setRetentionBudget(ObjectTopicHandle topic, int64_t time_window_ns, uint64_t max_memory_bytes) const {
     if (!valid()) {
       return;
     }
@@ -786,7 +786,7 @@ class SourceObjectWriteHostView {
     FetchFn fetch;
     std::vector<uint8_t> last_bytes;
 
-    static bool trampoline(void* ctx, const uint8_t** out_data, size_t* out_size) noexcept {
+    static bool trampoline(void* ctx, const uint8_t** out_data, uint64_t* out_size) noexcept {
       if (ctx == nullptr || out_data == nullptr || out_size == nullptr) {
         return false;
       }
@@ -866,7 +866,7 @@ class ParserObjectWriteHostView {
     FetchFn fetch;
     std::vector<uint8_t> last_bytes;
 
-    static bool trampoline(void* ctx, const uint8_t** out_data, size_t* out_size) noexcept {
+    static bool trampoline(void* ctx, const uint8_t** out_data, uint64_t* out_size) noexcept {
       if (ctx == nullptr || out_data == nullptr || out_size == nullptr) {
         return false;
       }
@@ -1442,7 +1442,7 @@ class SettingsView {
       return result;
     }
     const PJ_string_view_t* items = nullptr;
-    std::size_t count = 0;
+    uint64_t count = 0;  // matches PJ_settings_store_vtable_t::get_string_list (uint64_t*)
     bool found = false;
     PJ_error_t err{};
     if (!store_.vtable->get_string_list(store_.ctx, toAbiString(key), &items, &count, &found, &err)) {

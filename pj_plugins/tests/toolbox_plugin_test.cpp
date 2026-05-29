@@ -47,13 +47,13 @@ bool tbEnsureField(
   return true;
 }
 bool tbAppendRecord(
-    void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t*) noexcept {
+    void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, uint64_t, PJ_error_t*) noexcept {
   auto* s = static_cast<ToolboxState*>(ctx);
   ++s->append_record_calls;
   return true;
 }
 bool tbAppendBoundRecord(
-    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
+    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, uint64_t, PJ_error_t*) noexcept {
   return true;
 }
 bool tbAppendArrowStream(

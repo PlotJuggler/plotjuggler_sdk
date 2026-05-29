@@ -444,7 +444,7 @@ class ToolboxTestStore {
   }
 
   static bool trampolineAppendRecord(
-      void* ctx, PJ_topic_handle_t, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count,
+      void* ctx, PJ_topic_handle_t, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
       PJ_error_t*) noexcept {
     auto* self = static_cast<ToolboxTestStore*>(ctx);
     RecordedRow row;
@@ -464,7 +464,7 @@ class ToolboxTestStore {
   }
 
   static bool trampolineAppendBoundRecord(
-      void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
+      void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, uint64_t, PJ_error_t*) noexcept {
     // Bound writes are currently not captured — toolboxes that need them
     // can extend this later. Returning true keeps the write path happy.
     return true;

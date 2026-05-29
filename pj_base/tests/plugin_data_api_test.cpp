@@ -49,11 +49,11 @@ bool parserEnsureField(
   return true;
 }
 
-bool parserAppendRecord(void*, int64_t, const PJ_named_field_value_t*, std::size_t, PJ_error_t*) noexcept {
+bool parserAppendRecord(void*, int64_t, const PJ_named_field_value_t*, uint64_t, PJ_error_t*) noexcept {
   return true;
 }
 
-bool parserAppendBoundRecord(void* ctx, int64_t, const PJ_bound_field_value_t*, std::size_t, PJ_error_t*) noexcept {
+bool parserAppendBoundRecord(void* ctx, int64_t, const PJ_bound_field_value_t*, uint64_t, PJ_error_t*) noexcept {
   static_cast<TailSlotRecorder*>(ctx)->called = true;
   return true;
 }
