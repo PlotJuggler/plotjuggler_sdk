@@ -30,11 +30,14 @@ struct ObjectTopicDescriptor {
   std::string metadata_json;
 };
 
+// Eager payload: store-owned bytes, counted against the retention budget.
+using SharedBuffer = std::shared_ptr<const std::vector<uint8_t>>;
+// Lazy payload: idempotent fetcher returning a view + ownership anchor.
+using LazyCallback = std::function<sdk::PayloadView()>;
+
 struct ObjectEntry {
   Timestamp timestamp;
-  std::variant<
-      std::shared_ptr<const std::vector<uint8_t>>,
-      std::function<std::vector<uint8_t>()>> payload;
+  std::variant<SharedBuffer, LazyCallback> payload;
 };
 
 struct RetentionBudget {
@@ -55,9 +58,13 @@ order. Equal timestamps are allowed. Out-of-order writes fail.
 shared buffer owned by the store. Owned entries contribute to `memoryUsage()`.
 
 `pushLazy(id, timestamp, fetch)` stores a callable instead of bytes. The callable
-is invoked on each read and returns a fresh byte vector. Lazy entries do not
-contribute to `memoryUsage()` because the store does not retain the bytes between
-reads.
+is invoked on each read and returns a `sdk::PayloadView` — a `Span<const uint8_t>`
+paired with a type-erased `BufferAnchor` that keeps those bytes alive for as long
+as the resolved view is held. The producer anchors on whatever already owns the
+bytes (a decompressed chunk, an mmap, or a fresh allocation via
+`sdk::makePayloadView`), so the store never copies on resolve. Lazy entries do not
+contribute to `memoryUsage()` because the store retains the callable, not the
+fetched bytes.
 
 Both write paths apply the topic retention budget after the new entry is
 inserted.
@@ -80,12 +87,14 @@ Resolved entries contain:
 ```cpp
 struct ResolvedObjectEntry {
   Timestamp timestamp;
-  std::shared_ptr<const std::vector<uint8_t>> data;
+  sdk::PayloadView payload;  // { Span<const uint8_t> bytes; BufferAnchor anchor; }
 };
 ```
 
-The shared pointer keeps resolved bytes alive independently of later store
-mutation.
+`payload.bytes` is the resolved view; `payload.anchor` keeps those bytes alive
+independently of later store mutation (eviction, removal, or `clear()`). For an
+owned entry the anchor is the store's `SharedBuffer`; for a lazy entry it is
+whatever the fetcher anchored on. An empty `anchor` means "no bytes".
 
 ## Retention
 
