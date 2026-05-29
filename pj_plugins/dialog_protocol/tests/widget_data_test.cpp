@@ -249,3 +249,25 @@ TEST(WidgetDataTest, Chaining) {
   EXPECT_EQ(j["port"]["value"], 80);
   EXPECT_EQ(j["tls"]["checked"], true);
 }
+
+TEST(WidgetDataTest, SetCodeCursor) {
+  WidgetData wd;
+  wd.setCodeContent("editor", "robot ==").setCodeCursor("editor", 8);
+  auto j = parse(wd);
+  EXPECT_EQ(j["editor"]["code_content"], "robot ==");
+  EXPECT_EQ(j["editor"]["code_cursor"], 8);
+}
+
+TEST(WidgetDataTest, SetCodeCaretTracking) {
+  WidgetData wd;
+  wd.setCodeCaretTracking("editor");
+  auto j = parse(wd);
+  EXPECT_EQ(j["editor"]["code_caret_tracking"], true);
+}
+
+TEST(WidgetDataTest, SetCodeCaretTrackingExplicitFalse) {
+  WidgetData wd;
+  wd.setCodeCaretTracking("editor", false);
+  auto j = parse(wd);
+  EXPECT_EQ(j["editor"]["code_caret_tracking"], false);
+}

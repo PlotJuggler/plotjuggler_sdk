@@ -90,6 +90,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setPlainText(name, text)` | Set plain text content |
 | `setCodeContent(name, code)` | Set editable code content |
 | `setCodeLanguage(name, lang)` | Set syntax highlighting language such as `"lua"` or `"python"` |
+| `setCodeCursor(name, cursor)` | Move the caret to byte offset `cursor` (e.g. after inserting a completion) |
+| `setCodeCaretTracking(name, enabled=true)` | Opt into caret tracking: report the caret on cursor moves too, not just edits |
 
 ### QTabWidget
 
@@ -139,6 +141,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
 | `onCodeChanged(name, code)` | QPlainTextEdit code editor | Edited code |
+| `onCodeChangedWithCursor(name, code, cursor)` | QPlainTextEdit code editor | Edited code + caret offset (`cursor < 0` when no opt-in / not reported); defaults to `onCodeChanged` |
 | `onItemsDropped(name, items)` | Any widget with `setDropTarget` | Dropped item labels |
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |

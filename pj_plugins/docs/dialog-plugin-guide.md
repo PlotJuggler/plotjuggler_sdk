@@ -358,7 +358,7 @@ work like polling a server for available topics.
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
 | QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows`, `setVisibleRows`, `setRowColor`, `setCellTooltip` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
-| QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage` | `onCodeChanged(name, code)` for code editors |
+| QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage`, `setCodeCursor`, `setCodeCaretTracking` | `onCodeChanged(name, code)`, or `onCodeChangedWithCursor(name, code, cursor)` when the editor opts into caret tracking |
 | QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QDateTimeEdit | `setDateTime`, `setDateTimeRange` | (none — input only) |
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |

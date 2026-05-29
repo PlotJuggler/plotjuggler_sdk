@@ -106,6 +106,16 @@ class WidgetEvent {
     return getString("code_changed");
   }
 
+  /// Caret offset (bytes) accompanying a codeChanged event, when the host
+  /// reported one. Absent for hosts/events that don't carry the cursor.
+  std::optional<int> codeCursor() const {
+    auto it = data_.find("code_cursor");
+    if (it == data_.end() || !it->is_number_integer()) {
+      return std::nullopt;
+    }
+    return it->get<int>();
+  }
+
   /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
   std::optional<std::vector<std::string>> itemsDropped() const {
     auto it = data_.find("items_dropped");
