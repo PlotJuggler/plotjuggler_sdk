@@ -267,7 +267,7 @@ void ObjectStore::evictAllBefore(Timestamp threshold) {
 
 // --- Cross-store flush ---
 
-Expected<void, std::string> ObjectStore::flushTo(ObjectStore& dst) {
+Status ObjectStore::flushTo(ObjectStore& dst) {
   if (&dst == this) {
     return unexpected("flushTo: source and destination are the same store");
   }
@@ -374,9 +374,8 @@ ResolvedObjectEntry ObjectStore::resolveEntry(const ObjectEntry& entry) {
   resolved.timestamp = entry.timestamp;
 
   if (const auto* owned = std::get_if<SharedBuffer>(&entry.payload)) {
-    // Owned branch: build a PayloadView whose Span covers the vector and
-    // whose anchor IS the same shared_ptr — refcount bump, no copy. A
-    // default-constructed entry holds a null SharedBuffer, so guard it.
+    // Span the vector, anchor on the same shared_ptr — refcount bump, no copy.
+    // A default-constructed entry holds a null SharedBuffer, so guard it.
     if (*owned) {
       resolved.payload = sdk::PayloadView{
           Span<const uint8_t>{(*owned)->data(), (*owned)->size()},
@@ -384,12 +383,8 @@ ResolvedObjectEntry ObjectStore::resolveEntry(const ObjectEntry& entry) {
       };
     }
   } else if (const auto* lazy = std::get_if<LazyCallback>(&entry.payload)) {
-    // Lazy branch: forward whatever the closure returns. The anchor stays
-    // opaque (shared_ptr<const void>); consumers retain it without needing
-    // to know the concrete type. No static_pointer_cast here — that was the
-    // hidden contract that locked the slot to shared_ptr<vector<uint8_t>>;
-    // dropping it lets producers anchor on arrow::Buffer, mmap pools, or
-    // C-ABI payload anchors equally.
+    // Forward the closure's PayloadView verbatim. The anchor stays opaque (no
+    // cast), so producers can back it with arrow::Buffer, mmap, or a C-ABI anchor.
     resolved.payload = (*lazy)();
   }
 

@@ -1456,12 +1456,9 @@ void sourceObjectSetRetentionBudget(
 // Toolbox object read host trampolines
 // ---------------------------------------------------------------------------
 
-// The C-ABI exposes the bytes via a void-handle (PJ_object_bytes_handle_t)
-// that the plugin must later release. We allocate a sdk::PayloadView on the
-// heap and reinterpret_cast its pointer to the handle: the PayloadView's
-// anchor is what keeps the underlying buffer alive until the plugin calls
-// release_bytes. No wrapper struct needed — PayloadView already carries
-// bytes (Span) + anchor (BufferAnchor) in one value.
+// PJ_object_bytes_handle_t is a heap-allocated sdk::PayloadView: its anchor
+// keeps the buffer alive until the plugin calls release_bytes. No wrapper
+// struct needed — PayloadView already carries the Span + anchor.
 PJ_object_topic_handle_t toolboxObjectLookupTopic(void* ctx, PJ_string_view_t topic_name) noexcept {
   auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
   try {

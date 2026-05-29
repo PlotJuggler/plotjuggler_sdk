@@ -82,22 +82,18 @@ class DataEngine {
   /// Evict old chunks outside the retention window.
   void enforceRetention(PJ::Timestamp retention_window_ns);
 
-  /// Move every committed chunk from this engine into `dst`, leaving this
-  /// engine's topic storages empty (datasets, topics, schemas, and time
-  /// domains remain registered). Topics are matched by descriptor
-  /// (`dataset_id` + `name`); both engines must have the matching topics
-  /// registered or the call fails without partial mutation. Monotonicity is
-  /// enforced strictly per topic: the source's earliest chunk timestamp must
-  /// be greater than or equal to the destination's current `time_max()`.
+  /// Move every committed chunk into `dst`, leaving this engine's storages
+  /// empty (datasets, topics, schemas, time domains stay registered). Topics
+  /// are matched by descriptor (`dataset_id` + `name`); both engines must have
+  /// them registered. Monotonicity is enforced per topic: the source's
+  /// earliest chunk timestamp must be >= the destination's `time_max()`. Any
+  /// failure mutates neither engine.
   ///
-  /// Zero-copy on the chunk data: the destination's `std::deque<TopicChunk>`
-  /// receives the source's chunks via `std::move`, never via copy. The chunk
-  /// internals (column buffers, value arrays) are pointer/buffer moves.
-  ///
-  /// Schema compatibility is the caller's responsibility — typically the
-  /// destination is kept in lockstep with the source through parallel
-  /// `createDataset` / `createTopic` registration at startup.
-  PJ::Expected<void, std::string> flushTo(DataEngine& dst);
+  /// Zero-copy: dst's `std::deque<TopicChunk>` receives the chunks via
+  /// `std::move` (column buffers/value arrays are pointer moves). Schema
+  /// compatibility is the caller's responsibility — typically dst is kept in
+  /// lockstep with the source via parallel registration at startup.
+  PJ::Status flushTo(DataEngine& dst);
 
   // Writer/Reader factories
   /// Create a writer bound to this engine.

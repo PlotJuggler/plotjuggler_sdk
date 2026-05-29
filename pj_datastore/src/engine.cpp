@@ -182,7 +182,7 @@ void DataEngine::enforceRetention(Timestamp retention_window_ns) {
   }
 }
 
-Expected<void, std::string> DataEngine::flushTo(DataEngine& dst) {
+Status DataEngine::flushTo(DataEngine& dst) {
   if (&dst == this) {
     return PJ::unexpected("flushTo: source and destination are the same engine");
   }
