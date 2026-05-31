@@ -128,4 +128,3 @@ or push a release without the user's go-ahead.
   disagrees with code, fix the doc to match reality; add info whose absence caused a bug.
 - **"Check documentation"** — review the docs related to the changed module/API; confirm they still
   describe current intent and behavior, else update or ask before committing.
-

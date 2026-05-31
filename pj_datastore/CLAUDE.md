@@ -29,4 +29,3 @@ Level-0 foundation library (in the `plotjuggler_core` submodule). Owns the in-me
 | Series / range / latest-at queries | `include/pj_datastore/query.hpp` |
 | Transform interfaces + built-ins | `include/pj_datastore/derived_engine.hpp`, `builtin_transforms.hpp` |
 | C-ABI host bridges (source/parser/toolbox, object surfaces) | `include/pj_datastore/plugin_data_host.hpp`, `docs/OBJECT_STORE_DESIGN.md` |
-

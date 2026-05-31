@@ -214,17 +214,6 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      - name: (temp) Regenerate ABI baseline (workflow_dispatch only)
-        if: github.event_name == 'workflow_dispatch'
-        run: cmake --build build --target abi_update_baseline
-
-      - name: (temp) Upload regenerated ABI baseline
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: abi-baseline
-          path: pj_base/abi/baseline.abi
-
       - name: ABI drift gate
         # Mechanically enforces the Release Versioning policy (CLAUDE.md): a non-MAJOR
         # change must not break ABI. Diffs the mock_data_source_plugin canary DSO against
