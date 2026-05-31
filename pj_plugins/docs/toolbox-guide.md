@@ -402,7 +402,7 @@ row-of-fields shape. See
   the full `ToolboxPluginBase` API surface: capabilities, config persistence,
   host binding, and dialog context.
 - `pj_plugins/tests/toolbox_plugin_test.cpp` — end-to-end host-side test
-  using `PJ::ToolboxTestStore` (in `pj_plugins/include/pj_plugins/testing/`)
+  using `PJ::testing::ToolboxTestStore` (in `pj_plugins/include/pj_plugins/testing/`)
   to drive a toolbox plugin through ingest, transform, and config scenarios.
 
 ## Common Mistakes

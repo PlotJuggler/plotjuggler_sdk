@@ -2,6 +2,16 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file plugin_runtime_catalog.hpp
+ * @brief Shared host-side catalog that discovers, loads, and indexes plugin
+ *        DSOs across all four families.
+ *
+ * Wraps scanPluginDsos() discovery plus the per-family loaders; exposes the
+ * loaded DataSource/MessageParser/Toolbox sets and lookup helpers (by file
+ * extension, by parser encoding). reload() reconciles loaded state with disk.
+ */
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -49,7 +59,9 @@ struct RuntimeToolboxPlugin {
   std::filesystem::file_time_type loaded_mtime;
 };
 
-// Shared host-side runtime catalog for discovering and loading plugin DSOs.
+// Host-side catalog of loaded plugin DSOs for one plugin directory. Owns the
+// loaded libraries; the Runtime*Plugin structs above are non-owning views into
+// the loaded set plus the metadata host UIs/sessions need. Not thread-safe.
 class PluginRuntimeCatalog {
  public:
   // Creates a catalog rooted at plugin_dir and reporting through sink.

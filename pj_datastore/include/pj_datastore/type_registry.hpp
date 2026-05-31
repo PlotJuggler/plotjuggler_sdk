@@ -12,6 +12,10 @@
 
 namespace PJ {
 
+/// Engine-wide schema registry: assigns SchemaId to named TypeTreeNode trees,
+/// shared across topics. registerOrGet() supports late discovery (return existing
+/// id by name); evolveSchema() permits additive-only changes (no field removal or
+/// type change).
 class TypeRegistry {
  public:
   TypeRegistry();

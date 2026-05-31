@@ -2,6 +2,9 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MPL-2.0
 
+// Built-in ISISOTransform implementations registerable with DerivedEngine.
+// See derived_engine.hpp for the sequential calculate()/reset() contract.
+
 #include "pj_base/types.hpp"
 #include "pj_datastore/derived_engine.hpp"
 

@@ -2,6 +2,9 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+// PJ::Expected<T,E> / Unexpected<E> — the value-or-error result type used for
+// every fallible pj_base/SDK operation (see ../../docs/cpp_design_recommendations.md).
+
 #include <string>
 #include <type_traits>
 #include <utility>

@@ -2,6 +2,9 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+// PJ::Span<T> (alias of std::span) plus BitSpan, a packed-bit view over a byte
+// buffer (LSB-first). Non-owning views used across the codec and ABI surface.
+
 #include <array>
 #include <cstddef>
 #include <cstdint>

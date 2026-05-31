@@ -25,6 +25,9 @@
 namespace PJ {
 namespace sdk {
 
+/// How the host treats a DataSource's deferred FetchMessageData callable per
+/// (topic > source > type > default). Trades memory vs re-read cost; see the
+/// per-value comments and docs/ARCHITECTURE.md "Builtin-object pipeline".
 enum class ObjectIngestPolicy : uint8_t {
   /// Host never invokes the FetchMessageData callable during ingest. The
   /// (timestamp, callable) pair is registered in the ObjectStore and the

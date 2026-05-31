@@ -2,6 +2,10 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MPL-2.0
 
+// Host-side bridges that translate pj_plugins C-ABI write/read calls into
+// DataWriter / DataEngine / ObjectStore operations. raw() yields the C vtable;
+// flushPending() seals+commits. See docs/OBJECT_STORE_DESIGN.md (ABI bridge).
+
 #include <memory>
 
 #include "pj_base/plugin_data_api.h"
@@ -18,6 +22,9 @@ struct DatastoreParserObjectWriteHostState;
 struct DatastoreToolboxHostState;
 struct DatastoreToolboxObjectReadHostState;
 
+/// Bridges the `pj.source_write` C ABI onto DataWriter for a DataSource session.
+/// Owns a pimpl state; flushPending() seals+commits accumulated scalar rows.
+/// setTarget() supports the streaming two-engine pause/resume swap.
 class DatastoreSourceWriteHost {
  public:
   DatastoreSourceWriteHost(DataEngine& engine, PJ_data_source_handle_t source);
@@ -69,6 +76,9 @@ class DatastoreSourceObjectWriteHost {
   std::unique_ptr<DatastoreSourceObjectWriteHostState> state_;
 };
 
+/// Bridges the `pj.parser_write` C ABI onto DataWriter, bound to one host-chosen
+/// topic (parsers never name topics). flushPending() seals+commits; setTarget()
+/// is the streaming two-engine swap (bound topic must exist on the target).
 class DatastoreParserWriteHost {
  public:
   DatastoreParserWriteHost(DataEngine& engine, PJ_topic_handle_t topic);
@@ -144,6 +154,9 @@ class DatastoreParserObjectWriteHost {
   std::unique_ptr<DatastoreParserObjectWriteHostState> state_;
 };
 
+/// Bridges the toolbox C ABI onto both a DataEngine (scalar/Arrow columns) and an
+/// ObjectStore (media blobs); a toolbox plugin writes into either via one host
+/// fat pointer. raw() yields the vtable; flushPending() seals+commits.
 class DatastoreToolboxHost {
  public:
   /// Construct with both an engine (scalar/Arrow column writes) and an

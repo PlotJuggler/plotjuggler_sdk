@@ -2,6 +2,10 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+// Core vocabulary types shared across PlotJuggler: scalar Range<T>, stable id
+// aliases (DatasetId/TopicId/FieldId/ChunkId/SchemaId/...), Timestamp (ns since
+// Unix epoch), and the NumericType/NumericValue scalar payload. Zero deps.
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>

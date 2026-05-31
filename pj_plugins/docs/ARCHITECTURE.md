@@ -213,7 +213,6 @@ pj_base/
     sdk/
       data_source_plugin_base.hpp   ← C++ SDK
       data_source_patterns.hpp      ← FileSourceBase, StreamSourceBase
-      message_parser_plugin_base.hpp
       toolbox_plugin_base.hpp
       plugin_data_api.hpp           ← C++ wrappers for data hosts
 
@@ -237,7 +236,17 @@ pj_plugins/
     message_parser_handle.hpp
     toolbox_library.hpp
     toolbox_handle.hpp
+    plugin_catalog.hpp              ← embedded-manifest DSO scanner
+    plugin_runtime_catalog.hpp      ← shared host catalog (all families)
+    service_registry_builder.hpp    ← service wiring into bind()
     config_envelope.hpp             ← versioned config wrapper
+  include/pj_plugins/sdk/
+    message_parser_plugin_base.hpp  ← C++ SDK (parser base lives here, NOT pj_base)
+    object_ingest_policy.hpp        ← ObjectIngestPolicyResolver
+    detail/
+      message_parser_trampolines.hpp
+  include/pj_plugins/testing/
+    toolbox_test_store.hpp          ← fake Arrow host for toolbox tests
   src/
     data_source_library.cpp
     message_parser_library.cpp
@@ -496,7 +505,7 @@ out_array, err)`:
 | `mock_json_parser.cpp` | Minimal MessageParser: text→double |
 | `mock_schema_parser.cpp` | Schema binding, bound writes, config persistence |
 | `mock_toolbox.cpp` | ToolboxPluginBase: read→transform→write, notifyDataChanged |
-| `mock_dialog.cpp` | Standalone dialog: QLineEdit, QSpinBox, QCheckBox, config persistence |
+| `mock_dialog.cpp` (in `dialog_protocol/examples/`, not `pj_plugins/examples/`) | Standalone dialog: QLineEdit, QSpinBox, QCheckBox, config persistence |
 
 ### Test files (`pj_plugins/tests/`)
 
@@ -504,7 +513,7 @@ out_array, err)`:
 |---|---|
 | `data_source_library_test.cpp` | Library loading, vtable validation |
 | `file_source_integration_test.cpp` | FileSourceBase end-to-end |
-| `delegated_ingest_integration_test.cpp` | Parser binding + raw message dispatch |
+| `delegated_ingest_integration_test.cpp` | _Disabled (pending v3-port: uses removed `bindWriteHost`/`bindRuntimeHost`/`get_last_error`; CMake target commented out). Coverage currently provided by `data_source_library_test.cpp` + `message_parser_library_test.cpp`._ |
 | `source_dialog_integration_test.cpp` | DataSource dialog + config envelope |
 | `message_parser_library_test.cpp` | Parser library loading |
 | `toolbox_plugin_test.cpp` | Toolbox loading, host binding, read+write flow |

@@ -97,6 +97,11 @@ struct ColumnData {
   }
 };
 
+/// High-level write facade bound to one DataEngine. Accumulates rows in per-topic
+/// builders (row-at-a-time, bulk, or scalar) and seals them into chunks on
+/// flush(); the engine becomes visible to readers only after
+/// DataEngine::commitChunks(flushAll()). Supports mid-stream column addition and
+/// array expansion. See docs/USER_GUIDE.md and docs/ARCHITECTURE.md.
 class DataWriter {
  public:
   /// Create a writer bound to one engine instance.

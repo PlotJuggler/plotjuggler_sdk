@@ -1,5 +1,12 @@
 # pj_datastore Architecture
 
+> **Scope:** this document covers the **scalar `DataEngine` path** — the columnar
+> store, encoding, queries, and `DerivedEngine`. The library also compiles three
+> first-class components documented elsewhere or summarized below: the opaque-blob
+> **`ObjectStore`** (its own doc, [`OBJECT_STORE_DESIGN.md`](./OBJECT_STORE_DESIGN.md)),
+> the **`ColorMapRegistry`** + its C-ABI host (§3 *Color Map Layer*), and the
+> **streaming two-engine `flushTo`/`setTarget`** swap (§3 *Plugin Host Layer*).
+
 ## 1. Module Structure
 
 Two libraries with a strict dependency direction:
@@ -145,11 +152,21 @@ Encoding selection in `TopicChunkBuilder::seal()`:
 
 Incremental scheduling: each node tracks a `last_processed_chunk_id` watermark. `scheduleAll()` iterates only chunks with id > watermark, reads each row, calls `calculate()`, writes output via `beginRow`/`set`/`finishRow`, then flushes and commits.
 
+### Color Map Layer
+
+**`ColorMapRegistry`** (`colormap_registry.hpp`) — Registry of named colormap callbacks. A plugin registers one or more named `ColorMapEvalFn`s (scalar -> CSS color / `#rrggbb`) via `registerMap()` and selects an active one with `setActive()`; consumers (chart renderers, exporters) evaluate the active map per data point via `evaluate()`. The registry holds raw callback pointers + user contexts and does not own the plugin that supplied them.
+
+**`makeColorMapRegistryHost()`** (`colormap_registry_host.hpp`) — Wraps a `ColorMapRegistry` as a C-ABI `PJ_colormap_registry_t` fat pointer for `bind_colormap_registry`. The fat pointer references the registry by address (the registry must outlive every bound plugin); the vtable is a static singleton, safe to share across plugins and threads.
+
 ### Plugin Host Layer
 
-**`DatastoreSourceWriteHost`** / **`DatastoreParserWriteHost`** / **`DatastoreToolboxHost`** — Bridge between the C ABI plugin protocol (`PJ_source_write_host_t`, etc.) and the C++ `DataWriter`/`DataEngine`. Each wraps a pimpl state struct. Provides `raw()` to get the C function-pointer table and `flushPending()` to seal/commit accumulated data.
+**`DatastoreSourceWriteHost`** / **`DatastoreParserWriteHost`** / **`DatastoreToolboxHost`** — Bridge between the C ABI scalar-write protocol (`PJ_source_write_host_t`, etc.) and the C++ `DataWriter`/`DataEngine`. Each wraps a pimpl state struct. Provides `raw()` to get the C function-pointer table and `flushPending()` to seal/commit accumulated data.
 
 The host translates C ABI calls (ensureTopic, ensureField, appendRecord) into `DataWriter` operations (registerTopic/ensureColumn, beginRow/set/finishRow).
+
+**Object hosts** — `DatastoreSourceObjectWriteHost`, `DatastoreParserObjectWriteHost`, and `DatastoreToolboxObjectReadHost` are the `ObjectStore` peers of the scalar hosts (surfaces `pj.source_object_write` / `pj.parser_object_write` / `pj.toolbox_object_read`). They bridge the C ABI onto an `ObjectStore` rather than a `DataEngine`; see [`OBJECT_STORE_DESIGN.md`](./OBJECT_STORE_DESIGN.md) for their write/read contracts.
+
+**Streaming two-engine swap** — During paused streaming the host can route pushes to a *secondary* engine/store and swap back on resume. `DataEngine::flushTo(dst)` zero-copy-moves committed chunks from the secondary into the primary (topics matched by descriptor, per-topic monotonicity enforced); `DatastoreSourceWriteHost::setTarget()` / `DatastoreParserWriteHost::setTarget()` (and the object hosts' `setTarget()`) flush pending rows then atomically retarget the destination. The streaming manager keeps both engines/stores registered in lockstep so the bound topics exist on the target. `ObjectStore::flushTo()` provides the matching blob-side move.
 
 ### Import Adapter
 
@@ -216,7 +233,8 @@ Effectively single-threaded. `DataWriter` accumulates in-memory. `DataEngine::co
 
 ## 7. Testing
 
-15 core test executables covering all layers:
+18 core test executables covering all layers (the authoritative live set is the
+`PJ_DATASTORE_TESTS` list plus the explicitly-added targets in `CMakeLists.txt`):
 
 | Test | Coverage |
 |---|---|
@@ -232,8 +250,16 @@ Effectively single-threaded. `DataWriter` accumulates in-memory. `DataEngine::co
 | `derived_engine_test` | SISO/MIMO transforms, topological order, incremental + batch recompute |
 | `array_expansion_test` | `expandArray`, clamping, cross-builder expansion |
 | `regression_test` | Bug-specific regression cases |
-| `plugin_host_write_test` | C ABI write host -> datastore round-trip |
-| `plugin_host_read_test` | C ABI read host queries |
+| `object_store_test` | `ObjectStore` owned/lazy push, latest-at, retention, `flushTo` |
+| `plugin_data_host_object_test` | Object-write host bridges (`pj.source_object_write` / `pj.parser_object_write`) onto `ObjectStore` |
+| `plugin_data_host_object_read_test` | Toolbox object-read host (`pj.toolbox_object_read`) queries |
+| `plugin_parser_object_write_test` | Parser plugin writing canonical builtin objects through the object-write host |
 | `arrow_import_test` | Arrow IPC schema parsing and batch import |
+| `arrow_stream_round_trip_test` | v4 Arrow C Data Interface round-trip (Phase 1b) |
+
+Disabled pending the Phase 1b v4-ABI rewrite (commented out in `CMakeLists.txt`,
+`.cpp` files still on disk): `plugin_host_write_test` (v3 `appendArrowIpc`/`readSeries`
+write path) and `plugin_host_read_test` (v3 toolbox read path; rewrite for
+`read_series_arrow`).
 
 Build and run: `./build.sh --debug && ./test.sh`

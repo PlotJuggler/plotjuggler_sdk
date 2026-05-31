@@ -2,6 +2,10 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+// PJ::parseNumber<T>: whole-string strict numeric parsing (nullopt on trailing
+// chars or overflow). Float paths are backed out-of-line by fast_float, a
+// private dependency invisible to consumers.
+
 #include <charconv>
 #include <optional>
 #include <string_view>
