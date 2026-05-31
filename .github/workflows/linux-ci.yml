@@ -221,6 +221,8 @@ jobs:
         # ABI-INCOMPATIBLE change (bit 8). Backward-compatible additions (bit 4) pass with
         # a "baseline may be stale" nudge — refresh via the abi_update_baseline target.
         run: cmake --build build --target abi_check
+
+      - name: ccache stats
         if: always()
         run: ccache -s
 
