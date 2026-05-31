@@ -61,7 +61,7 @@ add_custom_target(abi_update_baseline
     --drop-private-types
     --no-show-locs
     $<TARGET_FILE:${_pj_abi_canary_target}>
-    -o ${_pj_abi_baseline}
+    --out-file ${_pj_abi_baseline}
   DEPENDS ${_pj_abi_canary_target}
   COMMENT "Regenerating pj_base/abi/baseline.abi (intentional ABI change — review the diff)"
   VERBATIM
