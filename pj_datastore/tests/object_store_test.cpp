@@ -733,5 +733,89 @@ TEST(ObjectStoreFlushTest, ZeroCopyOwnershipChainSurvives) {
   EXPECT_EQ(post_handle->payload.anchor.get(), pre_ptr) << "shared_ptr identity must survive the flush";
 }
 
+// =========================================================================
+// replaceDatasetFrom: in-place object-data replace keeping ObjectTopicId stable
+// (the object-store half of reload).
+// =========================================================================
+
+TEST(ObjectStoreReplaceTest, EntryMoveAndIdPreservation) {
+  ObjectStore primary;
+  ObjectStore staged;
+  auto primary_id = primary.registerTopic({.dataset_id = 1, .topic_name = "cam/image", .metadata_json = "{}"});
+  ASSERT_TRUE(primary_id.has_value());
+  ASSERT_TRUE(primary.pushOwned(*primary_id, 10, makePayload(4, 0x11)).has_value());
+
+  auto staged_id = staged.registerTopic({.dataset_id = 7, .topic_name = "cam/image", .metadata_json = R"({"k":1})"});
+  ASSERT_TRUE(staged_id.has_value());
+  for (Timestamp t : {Timestamp{100}, Timestamp{200}, Timestamp{300}}) {
+    ASSERT_TRUE(staged.pushOwned(*staged_id, t, makePayload(4, 0x22)).has_value());
+  }
+
+  auto res = primary.replaceDatasetFrom(staged, /*staged_id=*/7, /*primary_id=*/1);
+  ASSERT_TRUE(res.has_value());
+  EXPECT_EQ(primary.entryCount(*primary_id), 3u) << "entries replaced with staged's";
+  EXPECT_EQ(staged.entryCount(*staged_id), 0u) << "staged drained";
+  EXPECT_EQ(primary.descriptor(*primary_id).metadata_json, R"({"k":1})") << "reloaded metadata adopted";
+  ASSERT_EQ(res->remapped.size(), 1u);
+  EXPECT_EQ(res->remapped[0].first.id, staged_id->id);
+  EXPECT_EQ(res->remapped[0].second.id, primary_id->id) << "primary ObjectTopicId preserved";
+  EXPECT_TRUE(res->removed_topics.empty());
+}
+
+TEST(ObjectStoreReplaceTest, RemovedTopic) {
+  ObjectStore primary;
+  ObjectStore staged;
+  auto keep = primary.registerTopic({.dataset_id = 1, .topic_name = "cam/image", .metadata_json = "{}"});
+  auto drop = primary.registerTopic({.dataset_id = 1, .topic_name = "cam/depth", .metadata_json = "{}"});
+  ASSERT_TRUE(keep.has_value());
+  ASSERT_TRUE(drop.has_value());
+  ASSERT_TRUE(primary.pushOwned(*keep, 10, makePayload(4)).has_value());
+  ASSERT_TRUE(primary.pushOwned(*drop, 10, makePayload(4)).has_value());
+
+  auto staged_keep = staged.registerTopic({.dataset_id = 5, .topic_name = "cam/image", .metadata_json = "{}"});
+  ASSERT_TRUE(staged_keep.has_value());
+  ASSERT_TRUE(staged.pushOwned(*staged_keep, 100, makePayload(4)).has_value());
+
+  auto res = primary.replaceDatasetFrom(staged, 5, 1);
+  ASSERT_TRUE(res.has_value());
+  ASSERT_EQ(res->removed_topics.size(), 1u);
+  EXPECT_EQ(res->removed_topics[0].id, drop->id);
+  EXPECT_TRUE(primary.descriptor(*drop).topic_name.empty()) << "removed topic gone from store";
+  EXPECT_EQ(primary.descriptor(*keep).topic_name, "cam/image");
+  EXPECT_EQ(primary.entryCount(*keep), 1u);
+}
+
+TEST(ObjectStoreReplaceTest, AddedTopic) {
+  ObjectStore primary;
+  ObjectStore staged;
+  auto img = primary.registerTopic({.dataset_id = 1, .topic_name = "cam/image", .metadata_json = "{}"});
+  ASSERT_TRUE(img.has_value());
+  ASSERT_TRUE(primary.pushOwned(*img, 10, makePayload(4)).has_value());
+
+  auto s_img = staged.registerTopic({.dataset_id = 3, .topic_name = "cam/image", .metadata_json = "{}"});
+  auto s_lidar = staged.registerTopic({.dataset_id = 3, .topic_name = "cam/lidar", .metadata_json = "{}"});
+  ASSERT_TRUE(s_img.has_value());
+  ASSERT_TRUE(s_lidar.has_value());
+  ASSERT_TRUE(staged.pushOwned(*s_img, 100, makePayload(4)).has_value());
+  ASSERT_TRUE(staged.pushOwned(*s_lidar, 100, makePayload(4)).has_value());
+
+  auto res = primary.replaceDatasetFrom(staged, 3, 1);
+  ASSERT_TRUE(res.has_value());
+  // The new lidar topic is registered under the primary dataset and reported in
+  // the remap as (staged lidar id -> its fresh primary id).
+  auto lidar_in_primary = primary.findTopic(1, "cam/lidar");
+  ASSERT_TRUE(lidar_in_primary.has_value());
+  EXPECT_EQ(primary.entryCount(*lidar_in_primary), 1u);
+  bool lidar_remapped = false;
+  for (const auto& [staged_id, primary_topic_id] : res->remapped) {
+    if (staged_id.id == s_lidar->id) {
+      EXPECT_EQ(primary_topic_id.id, lidar_in_primary->id);
+      lidar_remapped = true;
+    }
+  }
+  EXPECT_TRUE(lidar_remapped) << "added topic must appear in the remap";
+  EXPECT_EQ(primary.findTopic(1, "cam/image")->id, img->id) << "existing topic id preserved";
+}
+
 }  // namespace
 }  // namespace PJ

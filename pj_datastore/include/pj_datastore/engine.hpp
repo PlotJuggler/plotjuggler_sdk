@@ -9,6 +9,7 @@
 #include "pj_base/dataset.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/types.hpp"
+#include "pj_datastore/replace_result.hpp"
 #include "pj_datastore/topic_storage.hpp"
 #include "pj_datastore/type_registry.hpp"
 
@@ -95,6 +96,22 @@ class DataEngine {
   /// lockstep with the source via parallel registration at startup.
   PJ::Status flushTo(DataEngine& dst);
 
+  /// In-place REPLACE of dataset `primary_id`'s data with the data ingested into
+  /// dataset `staged_id` of a throwaway `staged` engine — used for reload so the
+  /// primary DatasetId/TopicIds (and therefore all curve keys) stay stable.
+  /// Topics are matched by name. Matched primary topics have their chunks cleared
+  /// and replaced with the staged topic's chunks (each chunk's `topic_id` rewritten
+  /// to the primary id); their inline column layout is copied across. Staged-only
+  /// topics are created under `primary_id`. Primary-only topics are retired (chunks
+  /// cleared, id excluded from `listTopics`, storage kept so cached reader pointers
+  /// see an empty deque rather than dangling).
+  ///
+  /// Caller MUST invalidate every reader/adapter bound to `primary_id` BEFORE this
+  /// call (no live `TopicChunk*` may survive into the chunk clear) and run no event
+  /// loop between that invalidation and this call. The staged engine is drained.
+  [[nodiscard]] PJ::Expected<DatasetReplaceResult>
+  replaceDatasetFrom(DataEngine& staged, PJ::DatasetId staged_id, PJ::DatasetId primary_id);
+
   // Writer/Reader factories
   /// Create a writer bound to this engine.
   [[nodiscard]] DataWriter createWriter();
@@ -110,6 +127,12 @@ class DataEngine {
   [[nodiscard]] std::vector<PJ::TopicId> listTopics(PJ::DatasetId dataset_id) const;
 
  private:
+  // Move src's sealed chunks into dst, re-stamping each chunk's topic_id to
+  // dst's id. Shared by flushTo (append between mirrored topics) and
+  // replaceDatasetFrom (after dst is cleared). Needs friend access to
+  // TopicStorage::sealed_chunks_.
+  static void adoptChunksFrom(TopicStorage& dst, TopicStorage& src);
+
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

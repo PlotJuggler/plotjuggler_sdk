@@ -45,6 +45,19 @@ struct ObjectTopicDescriptor {
   std::string metadata_json;
 };
 
+/// Outcome of ObjectStore::replaceDatasetFrom() — the object-side parallel of
+/// DatasetReplaceResult. The remapped pairs let the caller re-register object
+/// parsers under the stable primary ObjectTopicId after the swap.
+struct ObjectDatasetReplaceResult {
+  /// (staged ObjectTopicId, primary ObjectTopicId) for every adopted topic
+  /// (both matched and newly added), so a parser keyed by the staged id can be
+  /// re-registered under the primary id. A newly added topic is simply one whose
+  /// primary id did not exist before — callers needing only the remap use this.
+  std::vector<std::pair<ObjectTopicId, ObjectTopicId>> remapped;
+  /// Primary object topics removed (no staged match).
+  std::vector<ObjectTopicId> removed_topics;
+};
+
 /// Eager payload: store-owned bytes, counted against the retention budget.
 using SharedBuffer = std::shared_ptr<const std::vector<uint8_t>>;
 
@@ -178,6 +191,16 @@ class ObjectStore {
   // Afterward, dst's retention budget is applied to each touched series.
   Status flushTo(ObjectStore& dst);
 
+  // In-place REPLACE of object dataset `primary_id` with the topics ingested
+  // into `staged` dataset `staged_id` — the object-store half of reload. Topics
+  // are matched by name. Matched topics keep their primary ObjectTopicId and have
+  // their entries replaced; staged-only topics are registered under `primary_id`;
+  // primary-only topics are removed. Returns the staged->primary id map so the
+  // caller re-registers parsers under the stable ids. Either fully applies or
+  // (on a validation error) mutates neither store.
+  [[nodiscard]] Expected<ObjectDatasetReplaceResult>
+  replaceDatasetFrom(ObjectStore& staged, DatasetId staged_id, DatasetId primary_id);
+
   // --- Lifecycle ---
 
   void removeTopic(ObjectTopicId id);
@@ -195,6 +218,10 @@ class ObjectStore {
 
   ObjectSeries* findSeries(ObjectTopicId id);
   const ObjectSeries* findSeries(ObjectTopicId id) const;
+
+  // Erase a topic from topics_. Caller must already hold store_mutex_ (used by
+  // removeTopic under its own lock and by replaceDatasetFrom under the dual lock).
+  void eraseTopicLocked(ObjectTopicId id);
 
   static std::optional<size_t> upperBoundIndex(const std::vector<Timestamp>& timestamps, Timestamp ts);
   static ResolvedObjectEntry resolveEntry(const ObjectEntry& entry);

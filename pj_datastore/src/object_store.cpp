@@ -4,6 +4,9 @@
 #include "pj_datastore/object_store.hpp"
 
 #include <algorithm>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace PJ {
 
@@ -333,10 +336,84 @@ Status ObjectStore::flushTo(ObjectStore& dst) {
   return {};
 }
 
+Expected<ObjectDatasetReplaceResult> ObjectStore::replaceDatasetFrom(
+    ObjectStore& staged, DatasetId staged_id, DatasetId primary_id) {
+  if (&staged == this) {
+    return unexpected("replaceDatasetFrom: staged and primary are the same store");
+  }
+
+  // Deterministic lock order by address (same discipline as flushTo).
+  ObjectStore* first = this < &staged ? this : &staged;
+  ObjectStore* second = first == this ? &staged : this;
+  std::unique_lock first_lock(first->store_mutex_);
+  std::unique_lock second_lock(second->store_mutex_);
+
+  ObjectDatasetReplaceResult result;
+
+  // Index primary (this) series under primary_id, by name -> (series, id).
+  // Pointers stay valid across topics_.emplace_back below because the
+  // ObjectSeries are heap-owned by unique_ptr — a vector realloc moves the
+  // pointers, not the pointees.
+  std::unordered_map<std::string, std::pair<ObjectSeries*, ObjectTopicId>> primary_by_name;
+  for (auto& [pid, series] : topics_) {
+    if (series->descriptor.dataset_id == primary_id) {
+      primary_by_name.emplace(series->descriptor.topic_name, std::pair{series.get(), pid});
+    }
+  }
+
+  std::unordered_set<std::string> staged_names;
+
+  for (auto& [sid, staged_series] : staged.topics_) {
+    if (staged_series->descriptor.dataset_id != staged_id) {
+      continue;
+    }
+    const std::string& name = staged_series->descriptor.topic_name;
+    staged_names.insert(name);
+
+    if (auto match = primary_by_name.find(name); match != primary_by_name.end()) {
+      // Matched: keep the primary ObjectTopicId, swap the entries in.
+      ObjectSeries* p = match->second.first;
+      p->entries = std::move(staged_series->entries);
+      p->entry_timestamps = std::move(staged_series->entry_timestamps);
+      p->memory_bytes = staged_series->memory_bytes;
+      p->descriptor.metadata_json = staged_series->descriptor.metadata_json;  // adopt reloaded metadata
+      result.remapped.emplace_back(sid, match->second.second);
+    } else {
+      // Added: register a fresh primary series under primary_id, move entries in.
+      ObjectTopicId new_id{next_id_++};
+      auto series = std::make_unique<ObjectSeries>();
+      series->descriptor = staged_series->descriptor;
+      series->descriptor.dataset_id = primary_id;
+      series->entries = std::move(staged_series->entries);
+      series->entry_timestamps = std::move(staged_series->entry_timestamps);
+      series->memory_bytes = staged_series->memory_bytes;
+      topics_.emplace_back(new_id, std::move(series));
+      result.remapped.emplace_back(sid, new_id);
+    }
+    staged_series->memory_bytes = 0;  // entries/timestamps already moved-from
+  }
+
+  // Remove primary topics the reloaded dataset no longer provides.
+  for (const auto& [name, slot] : primary_by_name) {
+    if (staged_names.count(name) == 0) {
+      result.removed_topics.push_back(slot.second);
+    }
+  }
+  for (const ObjectTopicId rid : result.removed_topics) {
+    eraseTopicLocked(rid);
+  }
+
+  return result;
+}
+
 // --- Lifecycle ---
 
 void ObjectStore::removeTopic(ObjectTopicId id) {
   std::unique_lock lock(store_mutex_);
+  eraseTopicLocked(id);
+}
+
+void ObjectStore::eraseTopicLocked(ObjectTopicId id) {
   auto it = std::find_if(topics_.begin(), topics_.end(), [&](const auto& pair) { return pair.first == id; });
   if (it != topics_.end()) {
     topics_.erase(it);

@@ -7,6 +7,9 @@
 #include <tsl/robin_map.h>
 
 #include <algorithm>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "pj_base/expected.hpp"
@@ -23,6 +26,10 @@ struct DataEngine::Impl {
   tsl::robin_map<PJ::DatasetId, PJ::DatasetInfo> datasets;
   tsl::robin_map<PJ::TopicId, TopicStorage> topics;
   tsl::robin_map<PJ::TimeDomainId, PJ::TimeDomain> time_domains;
+  // Topics retired by replaceDatasetFrom(): their storage is kept (so any
+  // cached reader pointer dereferences an empty deque, not freed memory) but
+  // they are hidden from listTopics so the catalog drops them.
+  std::unordered_set<PJ::TopicId> retired_topic_ids;
 };
 
 DataEngine::DataEngine() : impl_(std::make_unique<Impl>()) {}
@@ -222,21 +229,108 @@ Status DataEngine::flushTo(DataEngine& dst) {
     plan.push_back({&src_storage, dst_storage});
   }
 
-  // Phase 2: execute. friend access lets us move sealed_chunks_ directly
-  // between TopicStorage instances of different engines — the deque move
-  // transfers chunk ownership without copying any column data or value
-  // buffers. Each chunk's TopicChunkStats (t_min/t_max/row_count) rides
-  // along inside the chunk by value, so dst's time_min/time_max queries
-  // reflect the new state immediately after the move.
+  // Phase 2: execute. adoptChunksFrom moves sealed_chunks_ directly between
+  // TopicStorage instances (no column/value copy); the chunks' stats ride along
+  // by value, so dst's time_min/time_max reflect the new state immediately. The
+  // topic-id rewrite is a no-op here because flushTo's mirrored dst shares the
+  // source's TopicId.
   for (auto& step : plan) {
-    auto drained = std::move(step.src->sealed_chunks_);
-    step.src->sealed_chunks_.clear();  // post-move state: deque is valid but empty.
-    for (auto& chunk : drained) {
-      step.dst->sealed_chunks_.push_back(std::move(chunk));
-    }
+    adoptChunksFrom(*step.dst, *step.src);
   }
 
   return {};
+}
+
+void DataEngine::adoptChunksFrom(TopicStorage& dst, TopicStorage& src) {
+  // friend access: drain src's deque into dst, re-stamping each chunk's topic_id
+  // to dst's id (a no-op when the two storages already share one, e.g. flushTo).
+  // Appends — callers that need replace semantics clear dst first.
+  std::deque<TopicChunk> drained = std::move(src.sealed_chunks_);
+  src.sealed_chunks_.clear();  // post-move state: deque is valid but empty.
+  const TopicId dst_id = dst.topic_id();
+  for (auto& chunk : drained) {
+    chunk.topic_id = dst_id;
+    dst.sealed_chunks_.push_back(std::move(chunk));
+  }
+}
+
+Expected<DatasetReplaceResult> DataEngine::replaceDatasetFrom(
+    DataEngine& staged, DatasetId staged_id, DatasetId primary_id) {
+  if (&staged == this) {
+    return PJ::unexpected("replaceDatasetFrom: staged and primary are the same engine");
+  }
+  auto primary_it = impl_->datasets.find(primary_id);
+  if (primary_it == impl_->datasets.end()) {
+    return PJ::unexpected(fmt::format("replaceDatasetFrom: primary dataset {} not found", primary_id));
+  }
+  if (staged.impl_->datasets.find(staged_id) == staged.impl_->datasets.end()) {
+    return PJ::unexpected(fmt::format("replaceDatasetFrom: staged dataset {} not found", staged_id));
+  }
+
+  // Snapshot primary topic name -> primary TopicId (includes ids retired by a
+  // previous replace, so a topic that comes back re-binds to its stable id).
+  std::unordered_map<std::string, TopicId> primary_by_name;
+  for (const TopicId tid : primary_it->second.topic_ids) {
+    if (const auto* storage = getTopicStorage(tid)) {
+      primary_by_name.emplace(storage->descriptor().name, tid);
+    }
+  }
+
+  DatasetReplaceResult result;
+  std::unordered_set<std::string> staged_names;
+
+  // Adopt every staged topic into the primary dataset, by name.
+  for (const TopicId staged_tid : staged.listTopics(staged_id)) {
+    TopicStorage* staged_storage = staged.getTopicStorage(staged_tid);
+    if (staged_storage == nullptr) {
+      continue;
+    }
+    const std::string name = staged_storage->descriptor().name;
+    staged_names.insert(name);
+
+    const auto match = primary_by_name.find(name);
+    const bool is_new = (match == primary_by_name.end());
+    TopicId primary_tid = 0;
+    if (is_new) {
+      // Schema-less by design: post-replace reads resolve columns from the moved
+      // chunks' own descriptors (and the copied inline layout below), so a new
+      // topic needs no registry schema (which would not exist in this engine).
+      TopicDescriptor desc = staged_storage->descriptor();
+      desc.dataset_id = primary_id;
+      desc.schema_id = 0;
+      auto created = createTopic(primary_id, std::move(desc));
+      if (!created.has_value()) {
+        return PJ::unexpected("replaceDatasetFrom: createTopic failed for '" + name + "': " + created.error());
+      }
+      primary_tid = *created;
+      result.added_topics.push_back(primary_tid);
+    } else {
+      primary_tid = match->second;
+      impl_->retired_topic_ids.erase(primary_tid);  // un-retire if it had vanished
+      result.replaced_topics.push_back(primary_tid);
+    }
+
+    // Re-fetch AFTER any createTopic above (emplace may have rehashed impl_->topics).
+    TopicStorage* primary_storage = getTopicStorage(primary_tid);
+    primary_storage->clearChunks();
+    // Adopt the staged topic's inline layout (move, not copy — the staged engine
+    // is discarded next) then re-stamp + move its chunks onto the primary id.
+    primary_storage->column_descriptors_ = std::move(staged_storage->column_descriptors_);
+    adoptChunksFrom(*primary_storage, *staged_storage);
+  }
+
+  // Retire primary topics the new data no longer provides.
+  for (const auto& [name, primary_tid] : primary_by_name) {
+    if (staged_names.count(name) == 0 && impl_->retired_topic_ids.count(primary_tid) == 0) {
+      if (auto* storage = getTopicStorage(primary_tid)) {
+        storage->clearChunks();
+      }
+      impl_->retired_topic_ids.insert(primary_tid);
+      result.retired_topics.push_back(primary_tid);
+    }
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +351,17 @@ std::vector<TopicId> DataEngine::listTopics(DatasetId dataset_id) const {
   if (it == impl_->datasets.end()) {
     return {};
   }
-  return it->second.topic_ids;
+  if (impl_->retired_topic_ids.empty()) {
+    return it->second.topic_ids;
+  }
+  std::vector<TopicId> result;
+  result.reserve(it->second.topic_ids.size());
+  for (const TopicId tid : it->second.topic_ids) {
+    if (impl_->retired_topic_ids.count(tid) == 0) {
+      result.push_back(tid);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

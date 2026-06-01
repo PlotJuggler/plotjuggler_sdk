@@ -1119,5 +1119,132 @@ TEST(DataEngineFlushTest, PreservesTopicRegistrationOnSrc) {
   EXPECT_FALSE(src_storage->empty());
 }
 
+// ===========================================================================
+// replaceDatasetFrom: in-place data replace that keeps DatasetId/TopicId stable
+// (the engine half of reload). Match-by-name; staged chunks adopt the primary
+// topic id; added/retired topics handled.
+// ===========================================================================
+
+TopicId replaceWriteScalar(DataEngine& engine, DatasetId ds, const std::string& name, double base, int count) {
+  DataWriter writer = engine.createWriter();
+  auto handle = writer.registerScalarSeries(ds, name, NumericType::kFloat64);
+  EXPECT_TRUE(handle.has_value());
+  for (int i = 0; i < count; ++i) {
+    writer.appendScalar(*handle, static_cast<Timestamp>(i) * 1000, base + static_cast<double>(i));
+  }
+  engine.commitChunks(writer.flushAll());
+  return handle->topic_id;
+}
+
+double firstValue(DataEngine& engine, TopicId topic) {
+  DataReader reader = engine.createReader();
+  auto latest_or = reader.latestAt(QueryPoint{.topic_id = topic, .t = 0});
+  EXPECT_TRUE(latest_or.has_value());
+  auto& latest = *latest_or;
+  EXPECT_TRUE(latest.has_value());
+  return latest->chunk->readNumericAsDouble(0, latest->row_index);
+}
+
+std::size_t rowCount(DataEngine& engine, TopicId topic) {
+  DataReader reader = engine.createReader();
+  auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = topic, .t_min = 0, .t_max = static_cast<Timestamp>(1) << 40});
+  EXPECT_TRUE(cursor_or.has_value());
+  std::size_t n = 0;
+  cursor_or->forEach([&n](const SampleRow&) { ++n; });
+  return n;
+}
+
+TEST(EngineReplaceTest, ChunkMoveAndTopicIdRewrite) {
+  DataEngine primary;
+  auto pds = primary.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(pds.has_value());
+  const TopicId a = replaceWriteScalar(primary, *pds, "a", /*base=*/0.0, /*count=*/3);
+  const TopicId b = replaceWriteScalar(primary, *pds, "b", 0.0, 3);
+
+  DataEngine staged;
+  auto sds = staged.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(sds.has_value());
+  replaceWriteScalar(staged, *sds, "a", /*base=*/100.0, /*count=*/5);
+  replaceWriteScalar(staged, *sds, "b", 100.0, 5);
+
+  auto res = primary.replaceDatasetFrom(staged, *sds, *pds);
+  ASSERT_TRUE(res.has_value()) << res.error();
+  EXPECT_EQ(res->replaced_topics.size(), 2u);
+  EXPECT_TRUE(res->added_topics.empty());
+  EXPECT_TRUE(res->retired_topics.empty());
+
+  // Topic ids stable; moved chunks re-stamped to the primary id; data is staged's.
+  const TopicStorage* sa = primary.getTopicStorage(a);
+  ASSERT_NE(sa, nullptr);
+  ASSERT_FALSE(sa->sealedChunks().empty());
+  EXPECT_EQ(sa->sealedChunks().front().topic_id, a);
+  EXPECT_DOUBLE_EQ(firstValue(primary, a), 100.0);
+  EXPECT_EQ(rowCount(primary, a), 5u);
+  EXPECT_DOUBLE_EQ(firstValue(primary, b), 100.0);
+}
+
+TEST(EngineReplaceTest, AddedTopicCreatedUnderPrimary) {
+  DataEngine primary;
+  auto pds = primary.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(pds.has_value());
+  replaceWriteScalar(primary, *pds, "a", 0.0, 3);
+
+  DataEngine staged;
+  auto sds = staged.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(sds.has_value());
+  replaceWriteScalar(staged, *sds, "a", 0.0, 3);
+  replaceWriteScalar(staged, *sds, "b", 0.0, 3);  // new topic
+
+  auto res = primary.replaceDatasetFrom(staged, *sds, *pds);
+  ASSERT_TRUE(res.has_value()) << res.error();
+  EXPECT_EQ(res->added_topics.size(), 1u);
+  EXPECT_EQ(primary.listTopics(*pds).size(), 2u);
+}
+
+TEST(EngineReplaceTest, RetiredTopicHiddenButStorageKept) {
+  DataEngine primary;
+  auto pds = primary.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(pds.has_value());
+  const TopicId a = replaceWriteScalar(primary, *pds, "a", 0.0, 3);
+  const TopicId b = replaceWriteScalar(primary, *pds, "b", 0.0, 3);
+
+  DataEngine staged;
+  auto sds = staged.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(sds.has_value());
+  replaceWriteScalar(staged, *sds, "a", 7.0, 3);  // only "a" survives
+
+  auto res = primary.replaceDatasetFrom(staged, *sds, *pds);
+  ASSERT_TRUE(res.has_value()) << res.error();
+  ASSERT_EQ(res->retired_topics.size(), 1u);
+  EXPECT_EQ(res->retired_topics[0], b);
+
+  // listTopics hides the retired id; getTopicStorage still returns an empty storage.
+  const auto topics = primary.listTopics(*pds);
+  ASSERT_EQ(topics.size(), 1u);
+  EXPECT_EQ(topics[0], a);
+  const TopicStorage* sb = primary.getTopicStorage(b);
+  ASSERT_NE(sb, nullptr);
+  EXPECT_TRUE(sb->empty());
+}
+
+TEST(EngineReplaceTest, IdStabilityReaderSeesNewData) {
+  DataEngine primary;
+  auto pds = primary.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(pds.has_value());
+  const TopicId a = replaceWriteScalar(primary, *pds, "a", 0.0, 3);
+
+  DataEngine staged;
+  auto sds = staged.createDataset(DatasetDescriptor{.source_name = "f", .time_domain_id = 0});
+  ASSERT_TRUE(sds.has_value());
+  replaceWriteScalar(staged, *sds, "a", 50.0, 3);
+
+  ASSERT_TRUE(primary.replaceDatasetFrom(staged, *sds, *pds).has_value());
+
+  const auto topics = primary.listTopics(*pds);
+  ASSERT_EQ(topics.size(), 1u);
+  EXPECT_EQ(topics[0], a) << "topic id must be stable across replace";
+  EXPECT_DOUBLE_EQ(firstValue(primary, a), 50.0);
+}
+
 }  // namespace
 }  // namespace PJ
