@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Tests for the SDK template `DataSourceRuntimeHostView::pushMessage` and
-// its delegation to the C ABI slot `push_message_v2`. We exercise:
+// its delegation to the C ABI slot `push_message`. We exercise:
 //
 //   1. Vector closure → the captured FetchMessageData callable yields the
 //      same bytes when invoked from the host.
@@ -11,7 +11,7 @@
 //   3. Multiple invocations are idempotent (same bytes each time).
 //   4. The heap-held closure context is destroyed exactly once when the
 //      host calls `release`.
-//   5. When the host does not expose push_message_v2 (struct_size short
+//   5. When the host does not expose push_message (struct_size short
 //      or field NULL), pushMessage returns an explicit error rather than
 //      degrading silently.
 
@@ -28,7 +28,7 @@
 
 namespace {
 
-// Captured state from a push_message_v2 invocation.
+// Captured state from a push_message invocation.
 struct CapturedPush {
   PJ_parser_binding_handle_t handle{};
   int64_t timestamp_ns = 0;
@@ -36,24 +36,22 @@ struct CapturedPush {
   bool received = false;
 };
 
-// Mock runtime host — exposes a vtable that captures push_message_v2 calls
-// and, alternatively, push_raw_message calls (for the legacy fallback).
+// Mock runtime host — exposes a vtable that captures push_message calls.
 class MockHost {
  public:
   MockHost() {
     vtable_.protocol_version = PJ_DATA_SOURCE_PROTOCOL_VERSION;
     vtable_.struct_size = sizeof(PJ_data_source_runtime_host_vtable_t);
-    vtable_.push_raw_message = &MockHost::pushRawMessageThunk;
-    vtable_.push_message_v2 = &MockHost::pushMessageV2Thunk;
+    vtable_.push_message = &MockHost::pushMessageThunk;
     host_.ctx = this;
     host_.vtable = &vtable_;
   }
 
   // Drop the v2 slot — both clearing the field and shrinking struct_size,
   // matching the runtime scenario where the host predates the addition.
-  void disablePushMessageV2() {
-    vtable_.push_message_v2 = nullptr;
-    vtable_.struct_size = offsetof(PJ_data_source_runtime_host_vtable_t, push_message_v2);
+  void disablePushMessage() {
+    vtable_.push_message = nullptr;
+    vtable_.struct_size = offsetof(PJ_data_source_runtime_host_vtable_t, push_message);
   }
 
   PJ::DataSourceRuntimeHostView view() const {
@@ -63,20 +61,9 @@ class MockHost {
   CapturedPush& captured() {
     return captured_;
   }
-  std::vector<uint8_t>& receivedRawBytes() {
-    return raw_bytes_;
-  }
 
  private:
-  static bool pushRawMessageThunk(
-      void* ctx, PJ_parser_binding_handle_t /*handle*/, int64_t /*ts*/, PJ_bytes_view_t payload,
-      PJ_error_t* /*err*/) noexcept {
-    auto* self = static_cast<MockHost*>(ctx);
-    self->raw_bytes_.assign(payload.data, payload.data + payload.size);
-    return true;
-  }
-
-  static bool pushMessageV2Thunk(
+  static bool pushMessageThunk(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t ts, PJ_message_data_fetcher_t fetch_message_data,
       PJ_error_t* /*err*/) noexcept {
     auto* self = static_cast<MockHost*>(ctx);
@@ -90,7 +77,6 @@ class MockHost {
   PJ_data_source_runtime_host_vtable_t vtable_{};
   PJ_data_source_runtime_host_t host_{};
   CapturedPush captured_;
-  std::vector<uint8_t> raw_bytes_;
 };
 
 // Helper: invoke a captured FetchMessageData callable and assert the produced bytes match
@@ -108,9 +94,9 @@ void invokeFetchMessageDataAndExpect(
   }
 }
 
-// ---------- Tests against the new push_message_v2 path ----------
+// ---------- Tests against the new push_message path ----------
 
-TEST(PushMessageV2Test, VectorClosureFlowsThroughSlot) {
+TEST(PushMessageTest, VectorClosureFlowsThroughSlot) {
   MockHost host;
   std::vector<uint8_t> expected{1, 2, 3, 4, 5};
 
@@ -124,7 +110,7 @@ TEST(PushMessageV2Test, VectorClosureFlowsThroughSlot) {
   host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
 }
 
-TEST(PushMessageV2Test, PayloadViewClosureFlowsThroughSlot) {
+TEST(PushMessageTest, PayloadViewClosureFlowsThroughSlot) {
   MockHost host;
   std::vector<uint8_t> expected{10, 20, 30};
   auto owned = std::make_shared<std::vector<uint8_t>>(expected);
@@ -138,7 +124,7 @@ TEST(PushMessageV2Test, PayloadViewClosureFlowsThroughSlot) {
   host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
 }
 
-TEST(PushMessageV2Test, FetchIsIdempotent) {
+TEST(PushMessageTest, FetchIsIdempotent) {
   MockHost host;
   std::vector<uint8_t> expected{0x42, 0x43};
 
@@ -151,7 +137,7 @@ TEST(PushMessageV2Test, FetchIsIdempotent) {
   host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
 }
 
-TEST(PushMessageV2Test, FetchMessageDataCtxReleasedAfterHostCalls) {
+TEST(PushMessageTest, FetchMessageDataCtxReleasedAfterHostCalls) {
   MockHost host;
   auto canary = std::make_shared<int>(42);
   std::weak_ptr<int> witness = canary;
@@ -169,7 +155,7 @@ TEST(PushMessageV2Test, FetchMessageDataCtxReleasedAfterHostCalls) {
   EXPECT_TRUE(witness.expired()) << "after release, the captured shared_ptr should have been the last reference";
 }
 
-TEST(PushMessageV2Test, PayloadAnchorPropagates) {
+TEST(PushMessageTest, PayloadAnchorPropagates) {
   MockHost host;
   auto owned = std::make_shared<std::vector<uint8_t>>(std::vector<uint8_t>{0x99, 0x9A});
   std::weak_ptr<std::vector<uint8_t>> witness = owned;
@@ -204,17 +190,16 @@ TEST(PushMessageV2Test, PayloadAnchorPropagates) {
   EXPECT_TRUE(witness.expired());
 }
 
-// ---------- Host without push_message_v2 returns explicit error ----------
+// ---------- Host without push_message returns explicit error ----------
 
-TEST(PushMessageV2Test, ReturnsErrorWhenSlotMissing) {
+TEST(PushMessageTest, ReturnsErrorWhenSlotMissing) {
   MockHost host;
-  host.disablePushMessageV2();
+  host.disablePushMessage();
 
   std::vector<uint8_t> expected{0xA, 0xB, 0xC};
   auto status = host.view().pushMessage(PJ::ParserBindingHandle{1}, 100, [bytes = expected]() { return bytes; });
-  EXPECT_FALSE(status);  // explicit failure — no silent fallback to push_raw_message
+  EXPECT_FALSE(status);  // explicit failure — no silent fallback
   EXPECT_FALSE(host.captured().received);
-  EXPECT_TRUE(host.receivedRawBytes().empty());
 }
 
 }  // namespace

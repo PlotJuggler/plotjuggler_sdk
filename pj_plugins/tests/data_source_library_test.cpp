@@ -82,7 +82,11 @@ bool rhEnsureParserBinding(
   *out = PJ_parser_binding_handle_t{11};
   return true;
 }
-bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t, PJ_error_t*) noexcept {
+bool rhPushMessage(
+    void*, PJ_parser_binding_handle_t, int64_t, PJ_message_data_fetcher_t fetch_message_data, PJ_error_t*) noexcept {
+  if (fetch_message_data.release != nullptr) {
+    fetch_message_data.release(fetch_message_data.ctx);
+  }
   return true;
 }
 int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) noexcept {
@@ -104,10 +108,9 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .notify_state = rhNotifyState,
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
-      .push_raw_message = rhPushRawMessage,
       .show_message_box = rhShowMessageBox,
       .list_available_encodings = rhListEncodings,
-      .push_message_v2 = nullptr,
+      .push_message = rhPushMessage,
   };
   static const PJ_data_source_runtime_host_vtable_t no_enc_vt = {
       .protocol_version = 1,
@@ -120,10 +123,9 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .notify_state = rhNotifyState,
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
-      .push_raw_message = rhPushRawMessage,
       .show_message_box = rhShowMessageBox,
       .list_available_encodings = nullptr,
-      .push_message_v2 = nullptr,
+      .push_message = rhPushMessage,
   };
   return PJ_data_source_runtime_host_t{
       .ctx = reinterpret_cast<void*>(0x2),

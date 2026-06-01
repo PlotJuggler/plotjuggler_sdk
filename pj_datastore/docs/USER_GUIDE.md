@@ -200,8 +200,9 @@ auto binding = runtimeHost().ensureParserBinding({
     .parser_config_json = config_json,
 });
 
-// In onPoll(): push incoming messages
-runtimeHost().pushRawMessage(*binding, timestamp_ns, payload_span);
+// In onPoll(): push incoming messages (the host invokes the fetcher per policy)
+runtimeHost().pushMessage(
+    *binding, timestamp_ns, [bytes = payload]() -> std::vector<uint8_t> { return bytes; });
 ```
 
 - `parser_encoding` is the wire format (e.g., `"cdr"`, `"json"`, `"protobuf"`), not the schema format
@@ -372,7 +373,8 @@ class MyStreamer : public PJ::StreamSourceBase {
   PJ::Status onPoll() override {
     // Drain buffered messages (must not block!)
     while (auto msg = dequeue()) {
-      runtimeHost().pushRawMessage(binding_, msg->timestamp_ns, msg->payload);
+      runtimeHost().pushMessage(
+          binding_, msg->timestamp_ns, [bytes = msg->payload]() -> std::vector<uint8_t> { return bytes; });
     }
     return PJ::okStatus();
   }

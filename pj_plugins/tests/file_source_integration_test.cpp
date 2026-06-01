@@ -118,9 +118,6 @@ bool rhEnsureParserBinding(
   *out = PJ_parser_binding_handle_t{1};
   return true;
 }
-bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t, PJ_error_t*) noexcept {
-  return true;
-}
 int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) noexcept {
   return PJ_MSG_BTN_OK;
 }
@@ -154,10 +151,9 @@ PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state) {
       .notify_state = rhNotifyState,
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
-      .push_raw_message = rhPushRawMessage,
       .show_message_box = rhShowMessageBox,
       .list_available_encodings = nullptr,
-      .push_message_v2 = nullptr,
+      .push_message = nullptr,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }

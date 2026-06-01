@@ -209,19 +209,6 @@ class DataSourceRuntimeHostView {
     return handle;
   }
 
-  /// Push a raw message for host-side parsing via a previously obtained binding handle.
-  [[nodiscard]] Status pushRawMessage(
-      ParserBindingHandle handle, Timestamp host_timestamp_ns, Span<const uint8_t> payload) const {
-    if (!valid() || host_.vtable->push_raw_message == nullptr) {
-      return unexpected("runtime host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->push_raw_message(host_.ctx, handle, host_timestamp_ns, sdk::toAbiBytes(payload), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
-
   /// Push a message via a deferred FetchMessageData callable. The DataSource
   /// hands the host a callable that produces the payload bytes when invoked.
   /// The host applies the active ObjectIngestPolicy (resolved via the
@@ -245,12 +232,11 @@ class DataSourceRuntimeHostView {
   ///     heap-relocated and used as its own anchor; bytes survive across
   ///     the C ABI boundary at the cost of one alloc-and-move.
   ///
-  /// The host MUST advertise the push_message_v2 tail slot. We wrap the
+  /// The host MUST advertise the push_message tail slot. We wrap the
   /// closure into a PJ_message_data_fetcher_t and hand it over verbatim; the
   /// host applies ObjectIngestPolicy and decides when (and whether) to
   /// invoke it. There is no legacy fallback: a host that doesn't expose
-  /// the slot returns an explicit error here rather than silently
-  /// degrading to a kEager push_raw_message.
+  /// the slot returns an explicit error here.
   template <typename FetchMessageData>
   [[nodiscard]] Status pushMessage(
       ParserBindingHandle handle, Timestamp host_timestamp_ns, FetchMessageData&& fetch_message_data) const {
@@ -264,8 +250,8 @@ class DataSourceRuntimeHostView {
     if (!valid()) {
       return unexpected(std::string("runtime host is not bound"));
     }
-    if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, push_message_v2)) {
-      return unexpected(std::string("runtime host does not expose push_message_v2"));
+    if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, push_message)) {
+      return unexpected(std::string("runtime host does not expose push_message"));
     }
 
     auto* ctx = new FetchMessageDataT(std::forward<FetchMessageData>(fetch_message_data));
@@ -308,7 +294,7 @@ class DataSourceRuntimeHostView {
     };
 
     PJ_error_t err{};
-    if (!host_.vtable->push_message_v2(host_.ctx, handle, host_timestamp_ns, abi_fetch_message_data, &err)) {
+    if (!host_.vtable->push_message(host_.ctx, handle, host_timestamp_ns, abi_fetch_message_data, &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();

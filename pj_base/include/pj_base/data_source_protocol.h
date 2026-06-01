@@ -133,7 +133,7 @@ enum {
   PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG = 1ull << 5,        /**< Plugin provides a configuration dialog. */
 };
 
-/** Opaque handle returned by ensure_parser_binding, used with push_raw_message. */
+/** Opaque handle returned by ensure_parser_binding, used with push_message. */
 typedef struct {
   uint32_t id;
 } PJ_parser_binding_handle_t;
@@ -261,22 +261,6 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * [stream-thread] Push a raw message payload for host-side parsing.
-   * @p handle must have been obtained from ensure_parser_binding.
-   * @p host_timestamp_ns is nanoseconds since the Unix epoch
-   * (1970-01-01T00:00:00Z). Returns false + error on failure.
-   *
-   * Eager-only push: the host parses immediately and the bytes are not
-   * retained for later replay. Plugins that need lazy materialization or
-   * ObjectIngestPolicy dispatch should use push_message_v2 instead. This
-   * slot remains for sources that fan-out raw bytes without an associated
-   * FetchMessageData callable (streaming or eager-only consumers).
-   */
-  bool (*push_raw_message)(
-      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_bytes_view_t payload,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /**
    * [main-thread] Display a modal message box to the user and wait for
    * their response. BLOCKS until the user closes the dialog. The host is
    * responsible for showing the dialog on the UI thread in a thread-safe
@@ -340,7 +324,7 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * ObjectStore push failed, etc.). On failure the host still calls
    * `release` so the plugin's ctx leaks no resources.
    */
-  bool (*push_message_v2)(
+  bool (*push_message)(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns,
       PJ_message_data_fetcher_t fetch_message_data, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
