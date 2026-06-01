@@ -59,7 +59,10 @@ struct TopicMetadata {
 
 class DataEngine;
 
-/// Storage container for committed chunks of one topic.
+/// Per-topic container of committed chunks (commit-ordered deque).
+/// appendSealedChunk() enforces chunk t_min >= previous t_max; evictBefore()
+/// drops chunks fully older than a threshold. Also holds the column layout for
+/// schemaless (schema_id==0) topics and per-field array-expansion counts.
 class TopicStorage {
  public:
   /// Create storage for one topic descriptor.

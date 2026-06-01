@@ -51,7 +51,10 @@ struct ChunkStats {
   std::vector<ColumnStats> column_stats;
 };
 
-// Immutable sealed chunk - the result of sealing a TopicChunkBuilder
+/// Immutable sealed storage unit produced by TopicChunkBuilder::seal(): a
+/// timestamp column plus per-column EncodedData + optional validity bitmap.
+/// Read accessors do NOT null-check unless noted (readColumnAsDoubles fills NaN);
+/// readString() views chunk-internal dictionary memory.
 struct TopicChunk {
   /// Chunk identifier.
   ChunkId id = 0;
@@ -107,7 +110,10 @@ struct TopicChunk {
   void readColumnAsDoubles(std::size_t col_index, Span<double> out, std::size_t row_start) const;
 };
 
-// Builder for constructing a chunk row by row
+/// Mutable accumulator for one topic's rows; sealed into an immutable TopicChunk.
+/// Two append paths (row-at-a-time begin/set/finish, and bulk
+/// appendTimestamps/appendColumn/finishBulkAppend) that must not be interleaved
+/// within a row. Picks per-column encoding at seal() time from accumulated stats.
 class TopicChunkBuilder {
  public:
   /// Create a builder for one topic/schema pair.

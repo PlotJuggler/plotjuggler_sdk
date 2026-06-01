@@ -2,6 +2,9 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MPL-2.0
 
+// ObjectStore: timestamped opaque byte payloads stored beside the columnar
+// DataEngine, selectable by time. See docs/OBJECT_STORE_DESIGN.md.
+
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -34,6 +37,8 @@ struct ObjectTopicId {
   }
 };
 
+/// Identity for an object topic: dataset scope + name (unique per dataset) plus
+/// opaque metadata_json retained verbatim for callers that interpret bytes.
 struct ObjectTopicDescriptor {
   DatasetId dataset_id = 0;
   std::string topic_name;
@@ -66,6 +71,8 @@ struct RetentionBudget {
   size_t max_memory_bytes = 0;
 };
 
+/// Read view over a topic's entry timestamps that holds the series read lock for
+/// its lifetime; keep it short-lived to avoid blocking writers.
 class EntryTimestampsView {
  public:
   EntryTimestampsView() = default;
@@ -93,6 +100,12 @@ class EntryTimestampsView {
   const std::vector<Timestamp>* timestamps_ = nullptr;
 };
 
+/// Timestamped opaque-blob store living alongside DataEngine: payloads selected
+/// by time but never expanded into scalar columns (images, point clouds,
+/// annotations). Owned (`pushOwned`) or lazy (`pushLazy`) entries, per-topic
+/// retention, at-or-before lookup. Thread-safe: one shared_mutex per series +
+/// one global lock for registration. Does NOT decode payloads or own renderer/
+/// UI policy. See docs/OBJECT_STORE_DESIGN.md.
 class ObjectStore {
  public:
   ObjectStore() = default;

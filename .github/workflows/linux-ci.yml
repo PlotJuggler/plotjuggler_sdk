@@ -143,7 +143,8 @@ jobs:
           cache: 'true'
 
       - name: Install system packages
-        run: sudo apt-get update && sudo apt-get install -y xvfb ccache ninja-build zstd
+        # abigail-tools provides abidw/abidiff for the ABI drift gate (below).
+        run: sudo apt-get update && sudo apt-get install -y xvfb ccache ninja-build zstd abigail-tools
 
       - name: Configure ccache
         # Compiler-output cache for our own C++ — complementary to the Conan
@@ -208,9 +209,18 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
+          -DPJ_ENABLE_ABI_CHECK=ON
 
       - name: Build
         run: cmake --build build
+
+      - name: ABI drift gate
+        # Mechanically enforces the Release Versioning policy (CLAUDE.md): a non-MAJOR
+        # change must not break ABI. Diffs the mock_data_source_plugin canary DSO against
+        # the checked-in pj_base/abi/baseline.abi via libabigail and FAILS on an
+        # ABI-INCOMPATIBLE change (bit 8). Backward-compatible additions (bit 4) pass with
+        # a "baseline may be stale" nudge — refresh via the abi_update_baseline target.
+        run: cmake --build build --target abi_check
 
       - name: ccache stats
         if: always()

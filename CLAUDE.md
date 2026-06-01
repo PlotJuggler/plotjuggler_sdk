@@ -2,69 +2,65 @@
 
 ## Project Overview
 
-PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin SDKs, and host-side plugin loading.
+PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin SDKs, and host-side
+plugin loading. **Read-only submodule** inside PJ4: consumed as-is; changes happen in this repo,
+not in the PJ4 superproject. This file is the single navigation node for the whole submodule — the
+three modules below have no own CLAUDE.md.
 
 ### Modules
 
-- **pj_base** — foundational SDK/ABI types, canonical builtin object vocabulary, plugin ABI headers,
-  host-view helpers, ImageAnnotations codec, and shared utilities
-- **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
-- **pj_plugins** — C++ plugin SDK base classes, plugin discovery, host-side loaders, config envelope
-  helpers, and dialog protocol primitives; four plugin families: DataSource, MessageParser, Dialog, Toolbox
+- **pj_base** — vocabulary types (`Timestamp`, `DatasetId`, `Expected<T>`, `Span<T>`, type trees),
+  the canonical builtin object vocabulary (`pj_base/builtin/`: 15 struct headers — Image, DepthImage,
+  PointCloud, CompressedPointCloud, OccupancyGrid(+Update), Mesh3D, VideoFrame, AssetVideo,
+  SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms) and their 14
+  wire codecs (RobotDescription carries source text as-is — no codec), the C-ABI protocol headers for
+  DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them.
+- **pj_datastore** — columnar storage engine (`DataEngine`) + `ObjectStore` (media/opaque blobs) +
+  `DerivedEngine` (fmt, tsl::robin_map, nanoarrow). Plugin-data host implementations live here.
+- **pj_plugins** — host-side loaders + RAII handles + plugin discovery/catalog for four plugin
+  families (DataSource, MessageParser, Dialog, Toolbox), config-envelope helpers, and the **dialog
+  C ABI** (`pj_plugins/dialog_protocol/`). Note the split: the DataSource/MessageParser/Toolbox C-ABI
+  protocol headers live in `pj_base`; the **Dialog** protocol header lives here, not in `pj_base`.
 
 ### Dependency graph
 
-- `pj_datastore` → `pj_base`
-- `pj_plugins` → `pj_base`
+- `pj_datastore` → `pj_base` (+ fmt, nanoarrow)
+- `pj_plugins` → `pj_base` (+ nlohmann/json)
 
-## Documentation Workflow
-
-Coding agents should use this context hierarchy:
+## Read path
 
 ```text
-CLAUDE.md -> relevant docs -> code
+this CLAUDE.md -> relevant docs -> headers -> code
 ```
 
-- Start with this file to identify the module and the relevant source-of-truth documents.
-- Read the relevant docs before treating code as authoritative for intent. Code shows current implementation
-  details; docs define the intended architecture, public contracts, terminology, and module boundaries.
-- If docs and code disagree, treat that as a documentation consistency problem. Do not silently let stale docs survive.
-- Any change to behavior, public APIs, ABI structs, SDK types, module ownership, plugin workflows,
-  storage formats, or user-facing semantics must include a documentation check.
-- Before any commit, verify that documentation is up to date for the change. If docs are stale and the user did
-  not explicitly ask for a docs update, ask whether to update the docs before committing. Do not commit
-  known-stale documentation.
+Start here to pick the module + source-of-truth doc. Read the doc before treating code as
+authoritative for *intent*: code shows current implementation; docs define intended architecture,
+public contracts, terminology, and module boundaries. If docs and code disagree, that is a
+documentation bug — do not silently let stale docs survive. Any change to behavior, public APIs,
+ABI structs, SDK types, module ownership, plugin workflows, or storage formats must include a
+documentation check before commit.
 
 ## Key Documentation
 
-**Project-wide:**
+**Project-wide** (`docs/`):
 
 | Document | Content |
 |----------|---------|
-| `docs/builtin_type.md` | Canonical builtin object types used as the shim between third-party schemas and PlotJuggler internals |
-| `docs/image_annotations_format.md` | Canonical `PJ.ImageAnnotations` wire format for builtin `ImageAnnotations` payloads |
+| `docs/builtin_type.md` | Canonical builtin object types — the shim between third-party schemas and PJ internals; lists every builtin + its codec |
+| `docs/image_annotations_format.md` | Canonical `PJ.ImageAnnotations` wire format |
+| `docs/dialog-sdk-reference.md` | Quick reference for `WidgetData` setters + `DialogPluginTyped` event handlers |
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
-| `docs/toolbox-porting-gap-analysis.md` | SDK gaps identified when porting PJ3 toolboxes (being addressed) |
+| `docs/toolbox-porting-gap-analysis.md` | Historical PJ3→PJ4 toolbox SDK gap analysis (most gaps now closed; read as context, not current reference) |
+| `V4_STORE.md` | ObjectStore plugin ABI: services, ownership rules, lazy fetch |
 
-**Datastore** (`pj_datastore/docs/`):
+**Datastore** (`pj_datastore/docs/`): `REQUIREMENTS.md` (data model, ingest contract, schema
+evolution, query) · `ARCHITECTURE.md` (domain model, layers, encoding, DerivedEngine) ·
+`USER_GUIDE.md` (plugin-author write/read patterns, ValueRef, TypedNull) ·
+`OBJECT_STORE_DESIGN.md` (lazy-fetch blobs, retention).
 
-| Document | Content |
-|----------|---------|
-| `REQUIREMENTS.md` | Goals, data model, ingest contract, schema evolution (dynamic columns, variable-length sequences), query, derived series |
-| `ARCHITECTURE.md` | Internals: domain model, layers, data flow, encoding (constant, FoR, dictionary, packed bool), DerivedEngine |
-| `USER_GUIDE.md` | Plugin author's guide: write patterns (named vs bound vs Arrow IPC), read API, pitfalls, ValueRef, TypedNull |
-| `OBJECT_STORE_DESIGN.md` | ObjectStore: lazy-fetch media blobs, retention, concurrent access |
-
-**Plugin system** (`pj_plugins/docs/`):
-
-| Document | Content |
-|----------|---------|
-| `REQUIREMENTS.md` | Plugin families (DataSource, MessageParser, Dialog, Toolbox), interaction model, capability system, config contract |
-| `ARCHITECTURE.md` | C ABI protocols, SDK base classes, host loaders, RAII handles, dialog protocol, config envelope |
-| `data-source-guide.md` | SDK tutorial: FileSourceBase, StreamSourceBase, delegated ingest, dialog integration |
-| `message-parser-guide.md` | SDK tutorial: parse(), schema binding, dialog integration for parsers |
-| `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
-| `toolbox-guide.md` | SDK tutorial: read+write access, catalog, notifyDataChanged |
+**Plugin system** (`pj_plugins/docs/`): `REQUIREMENTS.md` (families, capability system, config
+contract) · `ARCHITECTURE.md` (C ABI protocols, SDK base classes, host loaders, dialog protocol) ·
+`data-source-guide.md` · `message-parser-guide.md` · `dialog-plugin-guide.md` · `toolbox-guide.md`.
 
 ## Build & Test
 
@@ -74,53 +70,61 @@ CLAUDE.md -> relevant docs -> code
 ./test.sh             # runs tests in all discovered build dirs
 ```
 
-Dependencies: Conan (`conanfile.txt`).
-
-## Pre-commit Validation
-
-Before committing, first check whether the code changes require documentation updates. If documentation is stale
-and the requested task did not include updating it, ask the user whether to update the docs before committing.
-
-Before committing, always run:
-
-```bash
-./build.sh --debug && ./test.sh
-```
-
-Code formatting and linting are enforced via pre-commit hooks (clang-format v17).
+Dependencies come from Conan (`conanfile.py`). Before committing always run
+`./build.sh --debug && ./test.sh`. Formatting/linting (clang-format, pinned to v22.1.0 in `.pre-commit-config.yaml`) is enforced by
+pre-commit hooks. Verify docs match reality before any commit that changes behavior, public APIs, ABI structs,
+SDK types, or storage formats; if stale and not asked to update, ask before committing.
 
 ## Release Versioning
 
-In **every PR**, proactively raise whether it warrants a new Conan release, and
-propose the version bump rather than waiting to be asked. Pre-1.0 versioning
-convention (`0.MINOR.PATCH`):
+The version is a **plugin-compatibility contract** (plugins pin this SDK by Conan range), not
+decoration. In every PR, proactively raise whether a release is warranted and propose the bump.
+The bump is decided by **plugin impact**, semver-style:
 
-- **MINOR** bump (`0.X.0`) — any API or ABI **break**: removing/reordering ABI
-  vtable slots, changing existing struct layouts or function signatures, or any
-  source-incompatible SDK change.
-- **PATCH** bump (`0.x.Y`) — **backward-compatible** changes: tail-appended ABI
-  slots (gated by `struct_size`), additive SDK helpers, bug fixes, docs.
+- **MAJOR** (`X.0.0`) — an **ABI or API break**: an existing plugin must be recompiled or its
+  source changed to keep working. Removing/reordering ABI vtable slots, changing a struct layout or
+  an existing function signature, bumping a `PJ_*_PROTOCOL_VERSION`, or changing a canonical builtin
+  object schema / `proto` wire format. **`abi/baseline.abi` changes only on a MAJOR.**
+- **MINOR** (`x.Y.0`) — a **backward-compatible API addition**: a new capability is added, but every
+  already-built plugin keeps working **with no recompile**. New entry points are tail-appended and
+  the host only calls slots an old plugin actually provides (gated by `struct_size`), so an old
+  `.so` loaded into a newer host is unaffected — it simply ignores what it does not use. `abidiff`
+  against the baseline must show **additions only**.
+- **PATCH** (`x.y.Z`) — backward-compatible **bug fixes** to installed headers/behavior. Changes
+  invisible to consumers (docs, CLAUDE.md, comments, tests, internal `.cpp` that does not alter an
+  installed header) take **no bump**.
 
-The version is declared in two places that **must stay in sync**: `version` in
-`conanfile.py` and `PJ_PACKAGE_VERSION` in the root `CMakeLists.txt` (also update
-the example tag in the `conanfile.py` docstring). Tagging and pushing the release
-is a separate, explicitly-authorized step — never tag or push a release without
-the user's go-ahead.
+**Plugin compatibility range.** A plugin built and tested on `X.Y.Z` works on every later
+MINOR/PATCH up to the next MAJOR, so it pins `plotjuggler_core/[>=X.Y.Z <(X+1).0.0]` — e.g. built on
+`1.4.2` → `[>=1.4.2 <2.0.0]`. The lower bound is the version that introduced the newest feature the
+plugin actually uses (a plugin that does not adopt `0.6`'s additions stays at `>=0.5.2`); the upper
+bound is the next MAJOR. Write the range **explicitly** — do not rely on caret/tilde shorthand.
 
-## Instructions Glossary
+**While pre-1.0 (currently `0.y.z`).** Same rules, with the major being `0`: there are **no breaking
+changes within `0.x`** — the next ABI/API break ships as `1.0.0`. So a plugin built on `0.Y.Z` pins
+`[>=0.Y.Z <1.0.0]`. (Deliberately stricter than the usual "0.x may break" convention, because
+plugins pin against this SDK.)
 
-- **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `docs/`, `pj_datastore/docs/`, `pj_plugins/docs/`, and any other location.
-
-- **"Update the documentation"** means: based on what you learned during this session, correct any documentation that is outdated or inaccurate, and clarify any ambiguity that caused confusion or errors. If a doc says one thing but the code does another, fix the doc to match reality. If missing information led to a bug, add it.
-
-- **"Check documentation"** means: review the docs listed above that are related to the changed module or API.
-  Confirm they still describe the current intent and behavior. If not, update them or ask the user before
-  committing.
+**Mechanics.** The version lives in two places that must stay in sync — `version` in `conanfile.py`
+and `PJ_PACKAGE_VERSION` in the root `CMakeLists.txt` (also update the example tag in the
+`conanfile.py` docstring). A non-MAJOR PR must not alter `abi/baseline.abi` beyond additions (verify
+with `abidiff`). Tagging and pushing a release is a separate, explicitly-authorized step — never tag
+or push a release without the user's go-ahead.
 
 ## Coding Conventions
 
-- **Formatting:** Google style via `.clang-format` — 2-space indent, 120-char limit
-- **Naming:** `CamelCase` classes, `camelBack` functions, `lower_case` variables, `lower_case_` members, `kCamelCase` constants
-- **Namespaces:** flat `PJ` namespace; `PJ::encoding` and `PJ::arrow_import` for internals
-- **Errors:** `PJ::Expected<T>` for fallible ops, `PJ_ASSERT(cond, msg)` for invariants
-- **Warnings:** `-Wall -Wextra -Werror` on all targets; pre-commit hooks enforce clang-format v17
+- **Formatting:** Google style via `.clang-format` — 2-space indent, 120-char limit.
+- **Naming:** `CamelCase` classes, `camelBack` functions, `lower_case` variables, `lower_case_`
+  members, `kCamelCase` constants.
+- **Namespaces:** flat `PJ`; `PJ::encoding` and `PJ::arrow_import` for internals.
+- **Errors:** `PJ::Expected<T>` for fallible ops, `PJ_ASSERT(cond, msg)` for invariants.
+- **Warnings:** `-Wall -Wextra -Werror` on all targets.
+
+## Instructions Glossary
+
+- **"Read all documentation"** — read every `.md` in the tree (`find . -name '*.md'`), including
+  `docs/`, `pj_datastore/docs/`, `pj_plugins/docs/`.
+- **"Update the documentation"** — correct any doc made outdated/inaccurate this session; if a doc
+  disagrees with code, fix the doc to match reality; add info whose absence caused a bug.
+- **"Check documentation"** — review the docs related to the changed module/API; confirm they still
+  describe current intent and behavior, else update or ask before committing.

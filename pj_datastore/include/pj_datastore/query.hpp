@@ -2,6 +2,10 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MPL-2.0
 
+// Read-side query primitives over committed chunk deques: RangeCursor (rows),
+// SeriesReader/SeriesCursor (one column as a value-bearing time series), and
+// latestAt(). Reached via DataReader. See docs/USER_GUIDE.md §5.
+
 #include <cstddef>
 #include <deque>
 #include <functional>

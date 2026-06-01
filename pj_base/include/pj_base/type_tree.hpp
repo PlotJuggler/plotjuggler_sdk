@@ -2,6 +2,10 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+// Recursive schema description (TypeTreeNode) for a topic's type, its leaf
+// primitive/enum kinds, and helpers to build and flatten it into ordered field
+// paths. The structural vocabulary parsers use to declare a topic's shape.
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>

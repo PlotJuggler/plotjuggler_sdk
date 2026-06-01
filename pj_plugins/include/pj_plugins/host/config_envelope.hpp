@@ -2,6 +2,12 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file config_envelope.hpp
+ * @brief Versioned wrapper pairing a DataSource's plugin-owned config with
+ *        host-owned parser-binding state for delegated-ingest sources.
+ */
+
 #include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>

@@ -2,6 +2,9 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+// Dataset/time-domain vocabulary: TimeDomain (display offset), DatasetDescriptor
+// (creation input), and the materialized dataset record stored by the engine.
+
 #include <string>
 #include <vector>
 
