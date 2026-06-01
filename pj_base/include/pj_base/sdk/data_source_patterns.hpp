@@ -136,7 +136,7 @@ class StreamSourceBase : public DataSourcePluginBase {
   /// MUST NOT BLOCK — drain buffered data and return immediately.
   /// Do not call recv(), read(), or any syscall that may wait.
   /// If your source has a receive thread, swap-drain a buffer here.
-  /// Host methods (appendRecord, pushRawMessage) may only be called from this method.
+  /// Host methods (appendRecord, pushMessage) may only be called from this method.
   virtual Status onPoll() = 0;
 
   /// Called from stop(). Close connections, free resources.

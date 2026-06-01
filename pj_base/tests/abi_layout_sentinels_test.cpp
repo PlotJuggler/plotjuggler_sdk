@@ -147,14 +147,11 @@ static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, protocol_version) =
 static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, struct_size) == 4, "v1 prefix pinned");
 static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, report_message) == 8, "v1 first slot pinned");
 static_assert(
-    offsetof(PJ_data_source_runtime_host_vtable_t, push_raw_message) == 72, "v1 push_raw_message slot pinned");
+    offsetof(PJ_data_source_runtime_host_vtable_t, list_available_encodings) == 80,
+    "list_available_encodings slot pinned");
+static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, push_message) == 88, "push_message tail slot pinned");
 static_assert(
-    offsetof(PJ_data_source_runtime_host_vtable_t, list_available_encodings) == 88,
-    "v1 list_available_encodings slot pinned");
-static_assert(
-    offsetof(PJ_data_source_runtime_host_vtable_t, push_message_v2) == 96, "v1 push_message_v2 tail slot pinned");
-static_assert(
-    sizeof(PJ_data_source_runtime_host_vtable_t) == 104, "Runtime host vtable size (update deliberately on append)");
+    sizeof(PJ_data_source_runtime_host_vtable_t) == 96, "Runtime host vtable size (update deliberately on append)");
 
 // --- Write-host vtables (ABI-APPENDABLE within v4) --------------------------
 static_assert(offsetof(PJ_source_write_host_vtable_t, abi_version) == 0, "source write host prefix pinned");

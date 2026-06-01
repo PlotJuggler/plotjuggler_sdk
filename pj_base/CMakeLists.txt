@@ -88,7 +88,7 @@ if(PJ_BUILD_TESTS)
     tests/image_annotations_codec_test.cpp
     tests/image_annotations_decoder_test.cpp
     tests/media_metadata_test.cpp
-    tests/push_message_v2_test.cpp
+    tests/push_message_test.cpp
     tests/image_codec_test.cpp
     tests/depth_image_codec_test.cpp
     tests/point_cloud_codec_test.cpp

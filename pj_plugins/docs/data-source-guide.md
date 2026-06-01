@@ -313,7 +313,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
 
     // Bind a parser for the configured encoding. The host resolves the
     // parser library, creates a parser instance, binds the write host
-    // and schema, and returns a handle for pushRawMessage().
+    // and schema, and returns a handle for pushMessage().
     binding_ = runtimeHost().ensureParserBinding({
         .topic_name = "udp/data",
         .parser_encoding = encoding_,
@@ -345,9 +345,11 @@ class UdpReceiver : public PJ::StreamSourceBase {
     }
 
     for (const auto& msg : batch) {
-      auto status = runtimeHost().pushRawMessage(
+      // pushMessage takes a deferred fetcher; the host invokes it according to
+      // the active ObjectIngestPolicy (eager for plain curves).
+      auto status = runtimeHost().pushMessage(
           *binding_, msg.timestamp,
-          PJ::Span<const uint8_t>(msg.payload.data(), msg.payload.size()));
+          [bytes = msg.payload]() -> std::vector<uint8_t> { return bytes; });
       if (!status) {
         return PJ::unexpected(status.error());
       }
@@ -415,7 +417,7 @@ changes, only a different config value.
 callback for flushing accumulated data. The host calls it periodically from
 its own thread. For sources with asynchronous I/O (sockets, hardware), the
 plugin must manage its own receive thread and use `onPoll()` as the sync
-point where buffered data is handed off. Host methods (`pushRawMessage`,
+point where buffered data is handed off. Host methods (`pushMessage`,
 `appendRecord`, etc.) must only be called from `onPoll()` / the host's
 thread, never from the background thread.
 
@@ -425,7 +427,7 @@ Key traits of `StreamSourceBase`:
 - `onStart()` opens connections and creates topics or parser bindings.
 - `onPoll()` flushes buffered data into the host — drain what your plugin
   has accumulated and return immediately. Must not block. Host methods
-  (`pushRawMessage`, `appendRecord`, etc.) may only be called from this
+  (`pushMessage`, `appendRecord`, etc.) may only be called from this
   callback.
 - `onStop()` tears down connections. Must be idempotent.
 - `stop()`, `start()`, `poll()`, and `currentState()` are managed by the
@@ -465,7 +467,7 @@ Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
 | `requestStop(terminal_state, reason)` | Ask the host to stop you (self-terminate). |
 | `isStopRequested()` | Check if the host wants you to stop. |
 | `ensureParserBinding(request)` | Bind a parser for delegated ingest (see below). |
-| `pushRawMessage(handle, timestamp, payload)` | Push raw bytes through a parser binding. |
+| `pushMessage(handle, timestamp, fetch_message_data)` | Push a message through a parser binding via a deferred fetcher callable; the host invokes it per the active ObjectIngestPolicy (eager/lazy). |
 
 ## Optional Features
 
@@ -543,8 +545,9 @@ auto binding = runtimeHost().ensureParserBinding({
 });
 if (!binding) { return PJ::unexpected(binding.error()); }
 
-// 2. Push raw payloads — the host parses and stores them
-auto status = runtimeHost().pushRawMessage(*binding, timestamp_ns, payload);
+// 2. Push payloads — the host invokes the fetcher and parses/stores per policy
+auto status = runtimeHost().pushMessage(
+    *binding, timestamp_ns, [bytes = payload]() -> std::vector<uint8_t> { return bytes; });
 ```
 
 The host manages parser instances, caches bindings, and handles schema

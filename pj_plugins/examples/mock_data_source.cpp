@@ -80,9 +80,8 @@ class MockDataSource : public PJ::DataSourcePluginBase {
         return PJ::unexpected(binding.error());
       }
 
-      const uint8_t payload[] = {'{', '}'};
       auto push_status =
-          runtimeHost().pushRawMessage(*binding, PJ::Timestamp{456}, PJ::Span<const uint8_t>(payload, sizeof(payload)));
+          runtimeHost().pushMessage(*binding, PJ::Timestamp{456}, []() -> std::vector<uint8_t> { return {'{', '}'}; });
       if (!push_status) {
         state_ = PJ::DataSourceState::kFailed;
         runtimeHost().notifyState(state_);

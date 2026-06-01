@@ -528,7 +528,7 @@ out_array, err)`:
 
 ## Builtin-object pipeline (PR #86)
 
-The v4 DataSource runtime host adds a tail slot `push_message_v2`
+The v4 DataSource runtime host adds a tail slot `push_message`
 (offset 96 in `PJ_data_source_runtime_host_vtable_t`) that takes a
 deferred byte-fetch callable instead of bytes:
 
@@ -539,7 +539,7 @@ typedef struct PJ_message_data_fetcher_t {
   void  (*release)(void* ctx);
 } PJ_message_data_fetcher_t;
 
-bool (*push_message_v2)(
+bool (*push_message)(
     void* ctx, PJ_parser_binding_handle_t handle, int64_t timestamp_ns,
     PJ_message_data_fetcher_t fetch_message_data,
     PJ_error_t* out_error) PJ_NOEXCEPT;

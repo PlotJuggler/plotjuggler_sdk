@@ -471,8 +471,8 @@ DataSource                        Host                         MessageParser
     │                               │       descriptor_bytes)       │
     │  ←── binding handle           │                               │
     │                               │                               │
-    │  pushRawMessage(handle,       │                               │
-    │    timestamp, payload)        │──→ parse(timestamp, payload)  │
+    │  pushMessage(handle,          │                               │
+    │    timestamp, fetcher)        │──→ parse(timestamp, payload)  │
     │                               │       │                       │
     │                               │       │ writeHost().append... │
     │                               │       ▼                       │
