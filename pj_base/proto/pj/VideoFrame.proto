@@ -30,6 +30,9 @@ package PJ;
 // On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor` that keeps the underlying
 // allocation alive (same byte-backed view pattern as Image, DepthImage, and PointCloud). The anchor is a C++ lifetime
 // concept with no wire-format equivalent.
+//
+// The field layout is wire-identical to `foxglove.CompressedVideo` (timestamp=1, frame_id=2, data=3, format=4), so a
+// single decoder parses both this canonical schema and the Foxglove one.
 message VideoFrame {
   // Timestamp of the frame
   google.protobuf.Timestamp timestamp = 1;
@@ -38,9 +41,9 @@ message VideoFrame {
   // the camera (into the scene).
   string frame_id = 2;
 
-  // Codec identifier, lowercase. Recognized values: "h264", "h265", "vp9", "av1".
-  string format = 3;
-
   // Compressed bitstream containing exactly one frame given prior stream state.
-  bytes data = 4;
+  bytes data = 3;
+
+  // Codec identifier, lowercase. Recognized values: "h264", "h265", "vp9", "av1".
+  string format = 4;
 }

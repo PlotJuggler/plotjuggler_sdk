@@ -40,7 +40,7 @@ rationale.
   - `OccupancyGridUpdate`
 - **`Log.proto`** — a single textual log message (severity level + text + originating name) for a log/console panel; mirrors the core of Foxglove's `Log` (file/line omitted).
   - `Log`
-- **`VideoFrame.proto`** — one frame of an inter-frame-coded video stream (`h264`, `h265`, `vp9`, `av1`) when per-frame `Image` messages would be wasteful.
+- **`VideoFrame.proto`** — one frame of an inter-frame-coded video stream (`h264`, `h265`, `vp9`, `av1`) when per-frame `Image` messages would be wasteful. Field layout is wire-identical to `foxglove.CompressedVideo` (timestamp=1, frame_id=2, data=3, format=4), so one decoder parses both.
   - `VideoFrame`
 - **`AssetVideo.proto`** — reference to a file-backed video plus typed playback metadata (path, MIME type, dimensions, frame rate) so consumers can size playback windows without opening the file.
   - `AssetVideo`
