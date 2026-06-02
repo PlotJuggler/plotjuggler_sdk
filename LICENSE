@@ -6,7 +6,6 @@ SPDX-License-Identifier header that is authoritative for that file.
   pj_base         Apache-2.0     LICENSE-APACHE
   pj_plugins      Apache-2.0     LICENSE-APACHE
   examples        Apache-2.0     LICENSE-APACHE
-  pj_datastore    MPL-2.0        LICENSE-MPL
 
 Rationale:
 
@@ -15,12 +14,8 @@ Rationale:
     the SDK without restriction. Apache-2.0 also grants an explicit patent
     license to downstream users.
 
-  - The storage engine (pj_datastore) is MPL-2.0. MPL-2.0 is file-level
-    (weak) copyleft: modifications to the engine's own source files must be
-    published, but the engine may be combined with proprietary code and
-    linked into proprietary applications.
-
-Plugins load through a stable C ABI and never statically link pj_datastore,
-so the MPL-2.0 engine imposes no obligations on plugin authors.
+The columnar storage engine (formerly the MPL-2.0 `pj_datastore` module) has
+moved to the PlotJuggler application repository; this SDK is now Apache-2.0
+in its entirety.
 
 Copyright (c) 2026 Davide Faconti

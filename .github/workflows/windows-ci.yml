@@ -177,7 +177,6 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/build/conan_toolchain.cmake
           -DCMAKE_C_COMPILER_LAUNCHER=sccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-          -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
 
       - name: Build
         run: cmake --build build --config Release

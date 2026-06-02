@@ -2,10 +2,15 @@
 
 ## Project Overview
 
-PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin SDKs, and host-side
+PlotJuggler Core — C++20 foundation libraries that make up the PlotJuggler plugin SDK and host-side
 plugin loading. **Read-only submodule** inside PJ4: consumed as-is; changes happen in this repo,
 not in the PJ4 superproject. This file is the single navigation node for the whole submodule — the
-three modules below have no own CLAUDE.md.
+two modules below have no own CLAUDE.md.
+
+> The columnar storage engine (`pj_datastore`) used to live here. It now lives in the PlotJuggler
+> application repo as a top-level module: plugins reach storage only through the C ABI defined in
+> `pj_base` (the host-side write implementations are not part of the SDK), so the engine does not
+> belong in the plugin SDK.
 
 ### Modules
 
@@ -15,8 +20,6 @@ three modules below have no own CLAUDE.md.
   SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms) and their 14
   wire codecs (RobotDescription carries source text as-is — no codec), the C-ABI protocol headers for
   DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them.
-- **pj_datastore** — columnar storage engine (`DataEngine`) + `ObjectStore` (media/opaque blobs) +
-  `DerivedEngine` (fmt, tsl::robin_map, nanoarrow). Plugin-data host implementations live here.
 - **pj_plugins** — host-side loaders + RAII handles + plugin discovery/catalog for four plugin
   families (DataSource, MessageParser, Dialog, Toolbox), config-envelope helpers, and the **dialog
   C ABI** (`pj_plugins/dialog_protocol/`). Note the split: the DataSource/MessageParser/Toolbox C-ABI
@@ -24,7 +27,6 @@ three modules below have no own CLAUDE.md.
 
 ### Dependency graph
 
-- `pj_datastore` → `pj_base` (+ fmt, nanoarrow)
 - `pj_plugins` → `pj_base` (+ nlohmann/json)
 
 ## Read path
@@ -52,11 +54,6 @@ documentation check before commit.
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
 | `docs/toolbox-porting-gap-analysis.md` | Historical PJ3→PJ4 toolbox SDK gap analysis (most gaps now closed; read as context, not current reference) |
 | `V4_STORE.md` | ObjectStore plugin ABI: services, ownership rules, lazy fetch |
-
-**Datastore** (`pj_datastore/docs/`): `REQUIREMENTS.md` (data model, ingest contract, schema
-evolution, query) · `ARCHITECTURE.md` (domain model, layers, encoding, DerivedEngine) ·
-`USER_GUIDE.md` (plugin-author write/read patterns, ValueRef, TypedNull) ·
-`OBJECT_STORE_DESIGN.md` (lazy-fetch blobs, retention).
 
 **Plugin system** (`pj_plugins/docs/`): `REQUIREMENTS.md` (families, capability system, config
 contract) · `ARCHITECTURE.md` (C ABI protocols, SDK base classes, host loaders, dialog protocol) ·
@@ -123,7 +120,7 @@ or push a release without the user's go-ahead.
 ## Instructions Glossary
 
 - **"Read all documentation"** — read every `.md` in the tree (`find . -name '*.md'`), including
-  `docs/`, `pj_datastore/docs/`, `pj_plugins/docs/`.
+  `docs/` and `pj_plugins/docs/`.
 - **"Update the documentation"** — correct any doc made outdated/inaccurate this session; if a doc
   disagrees with code, fix the doc to match reality; add info whose absence caused a bug.
 - **"Check documentation"** — review the docs related to the changed module/API; confirm they still

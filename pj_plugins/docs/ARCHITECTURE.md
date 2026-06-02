@@ -252,6 +252,7 @@ pj_plugins/
     message_parser_library.cpp
     toolbox_library.cpp
 
+(PlotJuggler application repo — not part of this SDK submodule)
 pj_datastore/
   include/pj_datastore/
     plugin_data_host.hpp            ← DatastoreSourceWriteHost,
@@ -260,9 +261,10 @@ pj_datastore/
 ```
 
 **Dependency direction:** Plugins depend only on `pj_base`. The host links
-`pj_plugins` (which depends on `pj_base`). `pj_datastore`
-provides the concrete data-host implementations that bridge plugin writes to
-the columnar storage engine.
+`pj_plugins` (which depends on `pj_base`). `pj_datastore` — now a module in the
+PlotJuggler application repo, not part of this SDK — provides the concrete
+data-host implementations that bridge plugin writes to the columnar storage
+engine.
 
 ## 3. C ABI Protocols
 

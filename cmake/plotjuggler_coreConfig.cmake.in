@@ -16,11 +16,6 @@ foreach(_comp ${plotjuggler_core_FIND_COMPONENTS})
   if(_comp STREQUAL "base")
     set(plotjuggler_core_base_FOUND TRUE)
 
-  elseif(_comp STREQUAL "datastore")
-    find_dependency(tsl-robin-map)
-    find_dependency(nanoarrow)
-    set(plotjuggler_core_datastore_FOUND TRUE)
-
   elseif(_comp STREQUAL "plugin_sdk")
     find_dependency(nlohmann_json)
     # Ship the cmake/PjPluginManifest.cmake helper so plugin authors can call

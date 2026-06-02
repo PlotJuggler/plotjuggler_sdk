@@ -169,7 +169,6 @@ jobs:
           conan install . --output-folder=build --build=missing
           -s build_type=RelWithDebInfo -s compiler.cppstd=20
           -o "plotjuggler_core/*:with_tests=True"
-          -o "plotjuggler_core/*:with_parquet_example=False"
 
       - name: Save Conan cache to ghcr.io
         # Only push from the canonical repo on real pushes (forks lack write
@@ -208,7 +207,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
           -DPJ_ENABLE_ABI_CHECK=ON
 
       - name: Build

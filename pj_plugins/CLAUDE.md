@@ -6,10 +6,11 @@ plugin DSOs. Owns **four plugin families** — DataSource, MessageParser, Toolbo
 Dialog. Plugins depend only on `pj_base`; this module (the host side) links
 `pj_base` and is consumed by the app. It does **not** own the data-plane bridge
 (that is `pj_datastore`'s `DatastoreSourceWriteHost` / `…ParserWriteHost` /
-`…ToolboxHost`) and links **no Qt** — dialogs are toolkit-neutral (the GUI host
-supplies the renderer). The submodule's read-path is `plotjuggler_core/CLAUDE.md`
-→ this file → `docs/` → headers → code (the PJ4 per-module-CLAUDE contract does
-not govern submodule-internal modules; `pj_base`/`pj_datastore` carry none).
+`…ToolboxHost`, which now lives in the PlotJuggler application repo, not in this
+SDK) and links **no Qt** — dialogs are toolkit-neutral (the GUI host supplies the
+renderer). The submodule's read-path is `plotjuggler_core/CLAUDE.md` → this file
+→ `docs/` → headers → code (the PJ4 per-module-CLAUDE contract does not govern
+submodule-internal modules; `pj_base` carries none).
 
 ## Layout
 - `include/pj_plugins/host/` — host loaders + RAII handles for DataSource /

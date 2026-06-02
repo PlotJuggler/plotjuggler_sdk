@@ -1,13 +1,12 @@
 """Conan 2 recipe for plotjuggler_core.
 
-Exposes four CMake components under the `plotjuggler_core::` namespace:
+Exposes three CMake components under the `plotjuggler_core::` namespace:
 
   base         — pj_base, vocabulary types (always available)
-  datastore    — pj_datastore, columnar engine (option: with_datastore)
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_core/0.5.1` and then:
+A consuming Conan recipe declares e.g. `plotjuggler_core/0.6.0` and then:
 
     find_package(plotjuggler_core REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_core::plugin_sdk)
@@ -15,8 +14,12 @@ A consuming Conan recipe declares e.g. `plotjuggler_core/0.5.1` and then:
 The `plugin_sdk` component also ships `PjPluginManifest.cmake`, so authors can
 call `pj_emit_plugin_manifest()` without copying the helper into their tree.
 
+The columnar storage engine (formerly the `datastore` component) is no longer
+part of this SDK package — it now lives in the PlotJuggler application repo,
+since plugins reach it only through the C ABI, never by linking it.
+
 Local development (build.sh) uses this same recipe with `with_tests=True` so
-gtest/benchmark/arrow are resolved as test_requires.
+gtest is resolved as a test_require.
 """
 
 from conan import ConanFile
@@ -27,54 +30,37 @@ import os
 
 class PlotjugglerCoreConan(ConanFile):
     name = "plotjuggler_core"
-    version = "0.5.1"
-    # Apache-2.0 covers pj_base + pj_plugins (the plugin-facing SDK);
-    # MPL-2.0 covers pj_datastore (the storage engine). See LICENSE.
-    license = "Apache-2.0 AND MPL-2.0"
+    version = "0.6.0"
+    # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
+    license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_core"
-    description = "C++20 foundation libraries for PlotJuggler: storage engine, plugin SDK, plugin host loaders."
+    description = "C++20 foundation libraries for PlotJuggler: plugin SDK and plugin host loaders."
     topics = ("plotjuggler", "plugin-sdk", "telemetry", "data-visualization")
     package_type = "static-library"
 
     settings = "os", "compiler", "build_type", "arch"
     options = {
         "fPIC": [True, False],
-        "with_datastore": [True, False],
         "with_host": [True, False],
         "with_tests": [True, False],
-        "with_parquet_example": [True, False],
         "assert_throws": [True, False],
     }
     default_options = {
         "fPIC": True,
-        "with_datastore": True,
         "with_host": True,
         "with_tests": False,
-        "with_parquet_example": False,
         "assert_throws": False,
-        # Arrow build flags (only resolved when with_parquet_example=True).
-        "arrow/*:parquet": True,
-        "arrow/*:with_snappy": True,
-        # pj_datastore's Arrow IPC import path needs nanoarrow_ipc + flatcc.
-        "nanoarrow/*:with_ipc": True,
         # fmt is an implementation detail. Compile it header-only so the
         # static archives do not export a downstream fmt link dependency.
         "fmt/*:header_only": True,
-        # Boost is pulled in transitively by arrow. without_cobalt avoids a
-        # known upstream packaging error in recent boost recipes; without_test
-        # trims unneeded modules.
-        "boost/*:without_test": True,
-        "boost/*:without_cobalt": True,
     }
 
     exports_sources = (
         "CMakeLists.txt",
         "LICENSE",
         "LICENSE-APACHE",
-        "LICENSE-MPL",
         "cmake/*",
         "pj_base/*",
-        "pj_datastore/*",
         "pj_plugins/*",
         "examples/*",
     )
@@ -110,20 +96,10 @@ class PlotjugglerCoreConan(ConanFile):
             transitive_libs=False,
         )
 
-        if self.options.with_datastore:
-            # tsl-robin-map is header-only; nanoarrow is in public headers.
-            self.requires("tsl-robin-map/1.4.0", transitive_headers=True)
-            self.requires("nanoarrow/0.7.0", transitive_headers=True)
-
     def build_requirements(self):
-        # Tests + benchmarks + parquet example are local-dev only. Consumers
-        # of plotjuggler_core never see these.
+        # Tests are local-dev only. Consumers of plotjuggler_core never see this.
         if self.options.with_tests:
             self.test_requires("gtest/1.17.0")
-            if self.options.with_datastore:
-                self.test_requires("benchmark/1.9.4")
-        if self.options.with_parquet_example:
-            self.test_requires("arrow/23.0.1")
 
     def generate(self):
         deps = CMakeDeps(self)
@@ -131,12 +107,8 @@ class PlotjugglerCoreConan(ConanFile):
 
         tc = CMakeToolchain(self)
         tc.cache_variables["PJ_INSTALL_SDK"] = True
-        tc.cache_variables["PJ_BUILD_DATASTORE"] = bool(self.options.with_datastore)
         tc.cache_variables["PJ_BUILD_TESTS"] = bool(self.options.with_tests)
         tc.cache_variables["PJ_BUILD_PORTED_PLUGINS"] = False
-        tc.cache_variables["PJ_BUILD_PARQUET_IMPORT_EXAMPLE"] = bool(
-            self.options.with_parquet_example
-        )
         tc.cache_variables["PJ_ASSERT_THROWS"] = bool(self.options.assert_throws)
         tc.generate()
 
@@ -148,8 +120,8 @@ class PlotjugglerCoreConan(ConanFile):
     def package(self):
         cmake = CMake(self)
         cmake.install()
-        # Ships LICENSE (the per-module map) plus the full Apache-2.0 and
-        # MPL-2.0 texts (LICENSE-APACHE, LICENSE-MPL).
+        # Ships LICENSE (the per-module map) plus the full Apache-2.0 text
+        # (LICENSE-APACHE).
         copy(
             self,
             "LICENSE*",
@@ -159,7 +131,7 @@ class PlotjugglerCoreConan(ConanFile):
 
     def package_info(self):
         self.cpp_info.set_property("cmake_file_name", "plotjuggler_core")
-        # No top-level umbrella target: the four components have
+        # No top-level umbrella target: the three components have
         # mutually-exclusive audiences. Consumers must request a component.
 
         # Conan 2's CMakeDeps only aggregates cmake_build_modules declared at
@@ -177,18 +149,6 @@ class PlotjugglerCoreConan(ConanFile):
         base.set_property("cmake_target_name", "plotjuggler_core::base")
         base.libs = ["pj_base"]
         base.includedirs = ["include"]
-
-        # --- datastore (optional) ---
-        if self.options.with_datastore:
-            ds = self.cpp_info.components["datastore"]
-            ds.set_property("cmake_target_name", "plotjuggler_core::datastore")
-            ds.libs = ["pj_datastore"]
-            ds.includedirs = ["include"]
-            ds.requires = [
-                "base",
-                "tsl-robin-map::tsl-robin-map",
-                "nanoarrow::nanoarrow",
-            ]
 
         # --- plugin_sdk (umbrella INTERFACE: pj_base + pj_dialog_sdk) ---
         sdk = self.cpp_info.components["plugin_sdk"]
