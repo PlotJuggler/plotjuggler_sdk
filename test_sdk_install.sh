@@ -72,7 +72,7 @@ cmake --build "$CONSUMER_BUILD_DIR" -j "$(nproc)"
 echo ""
 echo "--- Step 4: Smoke-test find_package COMPONENTS ---"
 
-for comp in base plugin_sdk plugin_host datastore; do
+for comp in base plugin_sdk plugin_host; do
   COMP_DIR="$(mktemp -d)"
   cat > "$COMP_DIR/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.22)

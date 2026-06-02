@@ -261,5 +261,5 @@ jobs:
             ```
 
             See [README.md](https://github.com/PlotJuggler/plotjuggler_core/blob/main/README.md)
-            for available components (`base`, `datastore`, `plugin_sdk`, `plugin_host`)
+            for available components (`base`, `plugin_sdk`, `plugin_host`)
             and consumer examples.

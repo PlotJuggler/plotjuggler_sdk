@@ -34,8 +34,8 @@ object topics. The source-scoped write host supports:
 - `setRetentionBudget(topic, time_window_ns, max_memory_bytes)`: configure
   automatic eviction for a topic.
 
-The host-side implementation is `DatastoreSourceObjectWriteHost` in
-`pj_datastore/include/pj_datastore/plugin_data_host.hpp`.
+The host-side implementation is `DatastoreSourceObjectWriteHost` (in the
+`pj_datastore` module of the PlotJuggler application repo, not part of this SDK).
 
 ## Parser Object Writes
 
@@ -93,11 +93,11 @@ interpretation above the core store.
 
 ## Tests
 
-The ObjectStore ABI surface is covered by datastore tests:
+The ObjectStore ABI surface is covered by tests in the `pj_datastore` module of
+the PlotJuggler application repo:
 
-- `pj_datastore/tests/plugin_data_host_object_test.cpp`
-- `pj_datastore/tests/plugin_data_host_object_read_test.cpp`
-- `pj_datastore/tests/plugin_parser_object_write_test.cpp`
+- `tests/plugin_data_host_object_test.cpp`
+- `tests/plugin_data_host_object_read_test.cpp`
+- `tests/plugin_parser_object_write_test.cpp`
 
-The underlying store behavior is covered by
-`pj_datastore/tests/object_store_test.cpp`.
+The underlying store behavior is covered by `tests/object_store_test.cpp`.
