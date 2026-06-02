@@ -29,7 +29,7 @@ target_compile_options(pj_base PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
 )
 # fast_float is an implementation detail of PJ::parseNumber. BUILD_INTERFACE
-# scoping keeps it off the installed plotjuggler_coreTargets file so
+# scoping keeps it off the installed plotjuggler_sdkTargets file so
 # downstream consumers never inherit a fast_float include path or link req.
 target_link_libraries(pj_base PRIVATE
   $<BUILD_INTERFACE:FastFloat::fast_float>
@@ -40,9 +40,9 @@ set_target_properties(pj_base PROPERTIES
 )
 # Build-tree alias so subdirectory-mode consumers can use the same namespaced
 # target name that the install/export tree exposes (and that the Conan package
-# emits). Keeps add_subdirectory() and find_package(plotjuggler_core) consumers
+# emits). Keeps add_subdirectory() and find_package(plotjuggler_sdk) consumers
 # writing identical link declarations.
-add_library(plotjuggler_core::base ALIAS pj_base)
+add_library(plotjuggler_sdk::base ALIAS pj_base)
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_base PUBLIC PJ_ASSERT_THROWS)
 endif()
@@ -52,7 +52,7 @@ endif()
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_base EXPORT plotjuggler_coreTargets
+  install(TARGETS pj_base EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )

@@ -3,10 +3,10 @@ project(sdk_consumer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(plotjuggler_core REQUIRED COMPONENTS plugin_sdk)
+find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
 
 add_library(minimal_data_source SHARED minimal_data_source.cpp)
-target_link_libraries(minimal_data_source PRIVATE plotjuggler_core::plugin_sdk)
+target_link_libraries(minimal_data_source PRIVATE plotjuggler_sdk::plugin_sdk)
 
 # Exercise the cmake helper shipped alongside plugin_sdk.
 pj_emit_plugin_manifest(minimal_data_source

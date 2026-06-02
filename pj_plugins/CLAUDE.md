@@ -1,6 +1,6 @@
 # pj_plugins — plugin ABI, SDK base classes, and host-side loaders
 
-The runtime-extension layer of `plotjuggler_core`: the stable C ABI, the C++ SDK
+The runtime-extension layer of `plotjuggler_sdk`: the stable C ABI, the C++ SDK
 plugin authors subclass, and the host-side loaders/RAII handles that `dlopen`
 plugin DSOs. Owns **four plugin families** — DataSource, MessageParser, Toolbox,
 Dialog. Plugins depend only on `pj_base`; this module (the host side) links
@@ -8,7 +8,7 @@ Dialog. Plugins depend only on `pj_base`; this module (the host side) links
 (that is `pj_datastore`'s `DatastoreSourceWriteHost` / `…ParserWriteHost` /
 `…ToolboxHost`, which now lives in the PlotJuggler application repo, not in this
 SDK) and links **no Qt** — dialogs are toolkit-neutral (the GUI host supplies the
-renderer). The submodule's read-path is `plotjuggler_core/CLAUDE.md` → this file
+renderer). The submodule's read-path is `plotjuggler_sdk/CLAUDE.md` → this file
 → `docs/` → headers → code (the PJ4 per-module-CLAUDE contract does not govern
 submodule-internal modules; `pj_base` carries none).
 

@@ -11,7 +11,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== plotjuggler_core install test ==="
+echo "=== plotjuggler_sdk install test ==="
 echo "Staging dir: ${STAGING_DIR}"
 echo ""
 
@@ -46,7 +46,7 @@ cmake --install "$BUILD_DIR"
 
 echo ""
 echo "Installed CMake package files:"
-find "$STAGING_DIR" -path '*/cmake/plotjuggler_core*' | sort
+find "$STAGING_DIR" -path '*/cmake/plotjuggler_sdk*' | sort
 
 echo ""
 echo "Installed libraries:"
@@ -77,17 +77,17 @@ for comp in base plugin_sdk plugin_host; do
   cat > "$COMP_DIR/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.22)
 project(comp_smoke LANGUAGES CXX)
-find_package(plotjuggler_core REQUIRED COMPONENTS ${comp})
-if(NOT TARGET plotjuggler_core::${comp})
-  message(FATAL_ERROR "plotjuggler_core::${comp} target missing")
+find_package(plotjuggler_sdk REQUIRED COMPONENTS ${comp})
+if(NOT TARGET plotjuggler_sdk::${comp})
+  message(FATAL_ERROR "plotjuggler_sdk::${comp} target missing")
 endif()
 EOF
   if cmake -S "$COMP_DIR" -B "$COMP_DIR/build" \
        -DCMAKE_PREFIX_PATH="$STAGING_DIR;$BUILD_DIR" \
        -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1; then
-    echo "  OK  plotjuggler_core::${comp}"
+    echo "  OK  plotjuggler_sdk::${comp}"
   else
-    echo "  FAIL plotjuggler_core::${comp}"
+    echo "  FAIL plotjuggler_sdk::${comp}"
     cmake -S "$COMP_DIR" -B "$COMP_DIR/build" \
        -DCMAKE_PREFIX_PATH="$STAGING_DIR;$BUILD_DIR" \
        -DCMAKE_BUILD_TYPE=Release
@@ -120,4 +120,4 @@ if [[ $LEAKED -ne 0 ]]; then
 fi
 
 echo ""
-echo "=== plotjuggler_core install test PASSED ==="
+echo "=== plotjuggler_sdk install test PASSED ==="

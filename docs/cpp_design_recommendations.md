@@ -292,7 +292,7 @@ Use `PJ::parseNumber<T>(std::string_view)` from `pj_base/number_parse.hpp` for a
 |---|---|
 | Whole-string parse, fallible | `PJ::parseNumber<T>(text)` |
 
-**Do not** call `std::strtod`, `std::strtof`, `std::strtol`, `std::stoi`, `std::stod`, `std::atoi`, `std::atof`, or `QString::toDouble`/`toInt` directly in plotjuggler_core code. The standard `std::strto*` family respects `LC_NUMERIC` (a `de_DE` user silently parses `"1.5"` as 1); `parseNumber` is locale-independent (backed by `fast_float` as a private dependency, hidden from the public ABI).
+**Do not** call `std::strtod`, `std::strtof`, `std::strtol`, `std::stoi`, `std::stod`, `std::atoi`, `std::atof`, or `QString::toDouble`/`toInt` directly in plotjuggler_sdk code. The standard `std::strto*` family respects `LC_NUMERIC` (a `de_DE` user silently parses `"1.5"` as 1); `parseNumber` is locale-independent (backed by `fast_float` as a private dependency, hidden from the public ABI).
 
 ### Hashing
 

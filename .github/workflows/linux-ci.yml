@@ -168,14 +168,14 @@ jobs:
         run: >
           conan install . --output-folder=build --build=missing
           -s build_type=RelWithDebInfo -s compiler.cppstd=20
-          -o "plotjuggler_core/*:with_tests=True"
+          -o "plotjuggler_sdk/*:with_tests=True"
 
       - name: Save Conan cache to ghcr.io
         # Only push from the canonical repo on real pushes (forks lack write
         # access to ghcr.io packages). Skip on exact cache HIT — the tag content
         # is already up to date, no point re-uploading the same bytes. Skip if
         # neither oras install path succeeded (graceful degradation).
-        if: github.event_name == 'push' && github.repository == 'PlotJuggler/plotjuggler_core' && env.CONAN_CACHE_EXACT_HIT != '1' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
+        if: github.event_name == 'push' && github.repository == 'PlotJuggler/plotjuggler_sdk' && env.CONAN_CACHE_EXACT_HIT != '1' && (steps.setup_oras.outcome == 'success' || steps.setup_oras_fallback.outcome == 'success')
         shell: bash
         run: |
           set -euo pipefail

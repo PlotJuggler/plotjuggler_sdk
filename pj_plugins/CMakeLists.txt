@@ -31,7 +31,7 @@ target_include_directories(pj_plugin_sdk INTERFACE
 )
 target_link_libraries(pj_plugin_sdk INTERFACE pj_base pj_dialog_sdk)
 set_target_properties(pj_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
-add_library(plotjuggler_core::plugin_sdk ALIAS pj_plugin_sdk)
+add_library(plotjuggler_sdk::plugin_sdk ALIAS pj_plugin_sdk)
 
 # ---------------------------------------------------------------------------
 # pj_plugin_catalog — host-side embedded-manifest discovery
@@ -257,7 +257,7 @@ target_link_libraries(pj_plugin_host INTERFACE
   pj_plugin_catalog
 )
 set_target_properties(pj_plugin_host PROPERTIES EXPORT_NAME plugin_host)
-add_library(plotjuggler_core::plugin_host ALIAS pj_plugin_host)
+add_library(plotjuggler_sdk::plugin_host ALIAS pj_plugin_host)
 
 if(PJ_BUILD_TESTS)
 
@@ -411,7 +411,7 @@ if(PJ_INSTALL_SDK)
       pj_toolbox_host
       pj_plugin_runtime_catalog
       pj_plugin_host
-    EXPORT plotjuggler_coreTargets
+    EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )

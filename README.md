@@ -1,7 +1,7 @@
-# PlotJuggler Core
+# PlotJuggler SDK
 
-[![Linux CI](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/linux-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/linux-ci.yml)
-[![Windows CI](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/windows-ci.yml)
+[![Linux CI](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/linux-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/linux-ci.yml)
+[![Windows CI](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/windows-ci.yml)
 
 C++20 foundation libraries for [PlotJuggler](https://github.com/facontidavide/PlotJuggler).
 
@@ -29,7 +29,7 @@ sudo apt install clangd-22 clang-format-22 clang-tidy-22
 
 ```bash
 git clone <this repo>
-cd plotjuggler_core
+cd plotjuggler_sdk
 
 ./build.sh              # RelWithDebInfo (build/)
 ./build.sh --debug      # Debug + ASAN (build/debug_asan)
@@ -47,7 +47,7 @@ docs/                      Project-wide design guides
 
 ## License
 
-PlotJuggler Core is **Apache-2.0** ([LICENSE-APACHE](LICENSE-APACHE)); each
+PlotJuggler SDK is **Apache-2.0** ([LICENSE-APACHE](LICENSE-APACHE)); each
 source file carries an authoritative `SPDX-License-Identifier` header. You may
 build **proprietary plugins and applications** on the SDK without restriction;
 Apache-2.0 also grants an explicit patent license.

@@ -7,7 +7,7 @@ name: Release
 #
 # Why a matrix: Cloudsmith stores one binary package per platform/compiler
 # (package_id). A single ubuntu job only ever publishes a Linux/gcc binary, so
-# macOS and Windows consumers are forced to build plotjuggler_core from source
+# macOS and Windows consumers are forced to build plotjuggler_sdk from source
 # via `--build=missing`. That is slow and, on macOS specifically, fragile: a
 # from-source build depends on the recipe's exported sources being intact in
 # the cache, which breaks (e.g. after a version is re-published with a new
@@ -130,7 +130,7 @@ jobs:
             conan remote login plotjuggler-cloudsmith "$CLOUDSMITH_USER" -p "$CLOUDSMITH_API_KEY"
           fi
 
-          conan list "plotjuggler_core/${version}#*" -r plotjuggler-cloudsmith --format=json \
+          conan list "plotjuggler_sdk/${version}#*" -r plotjuggler-cloudsmith --format=json \
             > /tmp/remote_revs.json 2>/dev/null || true
 
           if grep -q "RECIPEUNKNOWN" /tmp/remote_revs.json; then
@@ -141,11 +141,11 @@ jobs:
           elif grep -q "${local_rrev}" /tmp/remote_revs.json; then
             echo "Recipe revision ${local_rrev} is already published for ${version} — idempotent re-run, proceeding."
           else
-            echo "::error::plotjuggler_core/${version} is already published with a different recipe revision."
+            echo "::error::plotjuggler_sdk/${version} is already published with a different recipe revision."
             echo "::error::This build would publish ${local_rrev}, which is not on the remote. Refusing to overwrite a released version."
             echo "::error::Cut a new version, or re-run via workflow_dispatch with allow_republish=true to repair a botched release."
             echo "Currently published for ${version}:"
-            conan list "plotjuggler_core/${version}#*" -r plotjuggler-cloudsmith 2>/dev/null || true
+            conan list "plotjuggler_sdk/${version}#*" -r plotjuggler-cloudsmith 2>/dev/null || true
             exit 1
           fi
 
@@ -218,7 +218,7 @@ jobs:
         # concurrent recipe uploads are idempotent — only the per-platform
         # binary differs. `--check` verifies integrity before/after transfer.
         run: |
-          conan upload "plotjuggler_core/${{ needs.prepare.outputs.version }}" \
+          conan upload "plotjuggler_sdk/${{ needs.prepare.outputs.version }}" \
             -r plotjuggler-cloudsmith \
             --confirm \
             --check
@@ -238,7 +238,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: plotjuggler_core ${{ needs.prepare.outputs.tag }}
+          name: plotjuggler_sdk ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
           body: |
             ## Install via Conan
@@ -250,16 +250,16 @@ jobs:
             Add to your `conanfile.py` / `conanfile.txt`:
 
             ```python
-            requires = ("plotjuggler_core/${{ needs.prepare.outputs.version }}",)
+            requires = ("plotjuggler_sdk/${{ needs.prepare.outputs.version }}",)
             ```
 
             Link in CMake:
 
             ```cmake
-            find_package(plotjuggler_core REQUIRED COMPONENTS plugin_sdk)
-            target_link_libraries(my_plugin PRIVATE plotjuggler_core::plugin_sdk)
+            find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
+            target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
             ```
 
-            See [README.md](https://github.com/PlotJuggler/plotjuggler_core/blob/main/README.md)
+            See [README.md](https://github.com/PlotJuggler/plotjuggler_sdk/blob/main/README.md)
             for available components (`base`, `plugin_sdk`, `plugin_host`)
             and consumer examples.
