@@ -1147,7 +1147,8 @@ double firstValue(DataEngine& engine, TopicId topic) {
 
 std::size_t rowCount(DataEngine& engine, TopicId topic) {
   DataReader reader = engine.createReader();
-  auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = topic, .t_min = 0, .t_max = static_cast<Timestamp>(1) << 40});
+  auto cursor_or =
+      reader.rangeQuery(QueryRange{.topic_id = topic, .t_min = 0, .t_max = static_cast<Timestamp>(1) << 40});
   EXPECT_TRUE(cursor_or.has_value());
   std::size_t n = 0;
   cursor_or->forEach([&n](const SampleRow&) { ++n; });

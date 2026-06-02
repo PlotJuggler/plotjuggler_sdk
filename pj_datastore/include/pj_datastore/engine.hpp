@@ -109,8 +109,8 @@ class DataEngine {
   /// Caller MUST invalidate every reader/adapter bound to `primary_id` BEFORE this
   /// call (no live `TopicChunk*` may survive into the chunk clear) and run no event
   /// loop between that invalidation and this call. The staged engine is drained.
-  [[nodiscard]] PJ::Expected<DatasetReplaceResult>
-  replaceDatasetFrom(DataEngine& staged, PJ::DatasetId staged_id, PJ::DatasetId primary_id);
+  [[nodiscard]] PJ::Expected<DatasetReplaceResult> replaceDatasetFrom(
+      DataEngine& staged, PJ::DatasetId staged_id, PJ::DatasetId primary_id);
 
   // Writer/Reader factories
   /// Create a writer bound to this engine.

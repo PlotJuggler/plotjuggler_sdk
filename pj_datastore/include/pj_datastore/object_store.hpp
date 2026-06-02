@@ -198,8 +198,8 @@ class ObjectStore {
   // primary-only topics are removed. Returns the staged->primary id map so the
   // caller re-registers parsers under the stable ids. Either fully applies or
   // (on a validation error) mutates neither store.
-  [[nodiscard]] Expected<ObjectDatasetReplaceResult>
-  replaceDatasetFrom(ObjectStore& staged, DatasetId staged_id, DatasetId primary_id);
+  [[nodiscard]] Expected<ObjectDatasetReplaceResult> replaceDatasetFrom(
+      ObjectStore& staged, DatasetId staged_id, DatasetId primary_id);
 
   // --- Lifecycle ---
 
