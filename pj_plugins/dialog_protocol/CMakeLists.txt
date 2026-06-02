@@ -158,7 +158,7 @@ if(PJ_INSTALL_SDK)
       pj_dialog_sdk
       pj_dialog_host
       pj_dialog_library
-    EXPORT plotjuggler_coreTargets
+    EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )

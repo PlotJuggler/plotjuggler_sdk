@@ -29,7 +29,7 @@ jobs:
         run: >
           conan install . --output-folder=build --build=missing
           -s build_type=RelWithDebInfo -s compiler.cppstd=20
-          -o "plotjuggler_core/*:with_tests=True"
+          -o "plotjuggler_sdk/*:with_tests=True"
 
       - name: Configure
         run: >

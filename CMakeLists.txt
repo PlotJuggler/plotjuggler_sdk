@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(plotjuggler_core LANGUAGES CXX)
+project(plotjuggler_sdk LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -16,7 +16,7 @@ include(PjPluginManifest)
 option(PJ_ASSERT_THROWS "Use exceptions instead of assert() for PJ_ASSERT" OFF)
 option(PJ_ENABLE_SANITIZERS "Enable ASAN for Debug builds" OFF)
 option(PJ_ENABLE_TSAN "Enable ThreadSanitizer for Debug builds" OFF)
-option(PJ_INSTALL_SDK "Install plotjuggler_core CMake package (base/plugin_sdk/plugin_host)" OFF)
+option(PJ_INSTALL_SDK "Install plotjuggler_sdk CMake package (base/plugin_sdk/plugin_host)" OFF)
 option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
 option(PJ_ENABLE_ABI_CHECK "Enable abidiff-based ABI drift gate (requires libabigail)" OFF)
@@ -77,7 +77,7 @@ target_link_libraries(pj_internal_fmt INTERFACE ${PJ_FMT_TARGET})
 
 # fast_float backs the floating-point branch of PJ::parseNumber. Header-only;
 # linked PRIVATE under a BUILD_INTERFACE scope by pj_base so it never appears
-# in the installed plotjuggler_coreTargets file. Conan ships the CMake
+# in the installed plotjuggler_sdkTargets file. Conan ships the CMake
 # package under the capitalised name `FastFloat`.
 find_package(FastFloat REQUIRED)
 
@@ -98,9 +98,9 @@ if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plu
 endif()
 
 # ---------------------------------------------------------------------------
-# plotjuggler_core package install
+# plotjuggler_sdk package install
 #
-# Exported CMake namespace: plotjuggler_core::
+# Exported CMake namespace: plotjuggler_sdk::
 # Components:
 #   base         — vocabulary types (always available)
 #   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
@@ -112,28 +112,28 @@ if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
   set(PJ_PACKAGE_VERSION "0.6.0")
-  set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_core)
+  set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_sdk)
 
-  install(EXPORT plotjuggler_coreTargets
-    NAMESPACE plotjuggler_core::
+  install(EXPORT plotjuggler_sdkTargets
+    NAMESPACE plotjuggler_sdk::
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 
   configure_package_config_file(
-    cmake/plotjuggler_coreConfig.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfig.cmake"
+    cmake/plotjuggler_sdkConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfig.cmake"
     INSTALL_DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 
   write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
     VERSION ${PJ_PACKAGE_VERSION}
     COMPATIBILITY SameMajorVersion
   )
 
   install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_coreConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
     cmake/PjPluginManifest.cmake
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )

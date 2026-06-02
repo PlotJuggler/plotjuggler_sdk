@@ -4,7 +4,7 @@ This historical document compares PlotJuggler 3.x toolbox plugin features
 against the PJ 4.x SDK capabilities available when the porting work began.
 Some gaps listed below have since been closed in the Dialog SDK.
 
-**Scope:** `plotjuggler_core` (Dialog SDK, `ToolboxPluginBase`) + `pj-official-plugins`
+**Scope:** `plotjuggler_sdk` (Dialog SDK, `ToolboxPluginBase`) + `pj-official-plugins`
 (Quaternion to RPY port as the reference implementation).
 
 **Current status:** Dialog SDK support now exists for chart containers,
@@ -409,7 +409,7 @@ The Lua editor persists several settings directly via `QSettings` outside of `sa
 
 ## 9. Concrete SDK Extensions Required
 
-To port all three toolboxes with full feature parity, the following extensions are needed in `plotjuggler_core`:
+To port all three toolboxes with full feature parity, the following extensions are needed in `plotjuggler_sdk`:
 
 ### 9.1 Embedded chart widget
 

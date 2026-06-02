@@ -1,15 +1,15 @@
-"""Conan 2 recipe for plotjuggler_core.
+"""Conan 2 recipe for plotjuggler_sdk.
 
-Exposes three CMake components under the `plotjuggler_core::` namespace:
+Exposes three CMake components under the `plotjuggler_sdk::` namespace:
 
   base         — pj_base, vocabulary types (always available)
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_core/0.6.0` and then:
+A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.6.0` and then:
 
-    find_package(plotjuggler_core REQUIRED COMPONENTS plugin_sdk)
-    target_link_libraries(my_plugin PRIVATE plotjuggler_core::plugin_sdk)
+    find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
+    target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
 
 The `plugin_sdk` component also ships `PjPluginManifest.cmake`, so authors can
 call `pj_emit_plugin_manifest()` without copying the helper into their tree.
@@ -28,12 +28,12 @@ from conan.tools.files import copy
 import os
 
 
-class PlotjugglerCoreConan(ConanFile):
-    name = "plotjuggler_core"
+class PlotjugglerSdkConan(ConanFile):
+    name = "plotjuggler_sdk"
     version = "0.6.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
-    url = "https://github.com/PlotJuggler/plotjuggler_core"
+    url = "https://github.com/PlotJuggler/plotjuggler_sdk"
     description = "C++20 foundation libraries for PlotJuggler: plugin SDK and plugin host loaders."
     topics = ("plotjuggler", "plugin-sdk", "telemetry", "data-visualization")
     package_type = "static-library"
@@ -97,7 +97,7 @@ class PlotjugglerCoreConan(ConanFile):
         )
 
     def build_requirements(self):
-        # Tests are local-dev only. Consumers of plotjuggler_core never see this.
+        # Tests are local-dev only. Consumers of plotjuggler_sdk never see this.
         if self.options.with_tests:
             self.test_requires("gtest/1.17.0")
 
@@ -130,29 +130,29 @@ class PlotjugglerCoreConan(ConanFile):
         )
 
     def package_info(self):
-        self.cpp_info.set_property("cmake_file_name", "plotjuggler_core")
+        self.cpp_info.set_property("cmake_file_name", "plotjuggler_sdk")
         # No top-level umbrella target: the three components have
         # mutually-exclusive audiences. Consumers must request a component.
 
         # Conan 2's CMakeDeps only aggregates cmake_build_modules declared at
         # the package level (self.cpp_info), not at component level — declaring
         # it on the `sdk` component below silently produced an empty
-        # plotjuggler_core_BUILD_MODULES_PATHS_RELEASE in the generated data
+        # plotjuggler_sdk_BUILD_MODULES_PATHS_RELEASE in the generated data
         # file. Ship the PjPluginManifest helper from the package root so
         # CMakeDeps actually include()s it after find_package() returns.
         self.cpp_info.set_property("cmake_build_modules", [
-            os.path.join("lib", "cmake", "plotjuggler_core", "PjPluginManifest.cmake"),
+            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPluginManifest.cmake"),
         ])
 
         # --- base ---
         base = self.cpp_info.components["base"]
-        base.set_property("cmake_target_name", "plotjuggler_core::base")
+        base.set_property("cmake_target_name", "plotjuggler_sdk::base")
         base.libs = ["pj_base"]
         base.includedirs = ["include"]
 
         # --- plugin_sdk (umbrella INTERFACE: pj_base + pj_dialog_sdk) ---
         sdk = self.cpp_info.components["plugin_sdk"]
-        sdk.set_property("cmake_target_name", "plotjuggler_core::plugin_sdk")
+        sdk.set_property("cmake_target_name", "plotjuggler_sdk::plugin_sdk")
         sdk.libs = []  # INTERFACE only
         sdk.includedirs = ["include"]
         sdk.requires = ["base", "nlohmann_json::nlohmann_json"]
@@ -160,7 +160,7 @@ class PlotjugglerCoreConan(ConanFile):
         # --- plugin_host (umbrella linking every host-side loader) ---
         if self.options.with_host:
             host = self.cpp_info.components["plugin_host"]
-            host.set_property("cmake_target_name", "plotjuggler_core::plugin_host")
+            host.set_property("cmake_target_name", "plotjuggler_sdk::plugin_host")
             host.libs = [
                 "pj_plugin_runtime_catalog",
                 "pj_data_source_host",

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PlotJuggler Core — C++20 foundation libraries that make up the PlotJuggler plugin SDK and host-side
+PlotJuggler SDK — C++20 foundation libraries that make up the PlotJuggler plugin SDK and host-side
 plugin loading. **Read-only submodule** inside PJ4: consumed as-is; changes happen in this repo,
 not in the PJ4 superproject. This file is the single navigation node for the whole submodule — the
 two modules below have no own CLAUDE.md.
@@ -92,7 +92,7 @@ The bump is decided by **plugin impact**, semver-style:
   installed header) take **no bump**.
 
 **Plugin compatibility range.** A plugin built and tested on `X.Y.Z` works on every later
-MINOR/PATCH up to the next MAJOR, so it pins `plotjuggler_core/[>=X.Y.Z <(X+1).0.0]` — e.g. built on
+MINOR/PATCH up to the next MAJOR, so it pins `plotjuggler_sdk/[>=X.Y.Z <(X+1).0.0]` — e.g. built on
 `1.4.2` → `[>=1.4.2 <2.0.0]`. The lower bound is the version that introduced the newest feature the
 plugin actually uses (a plugin that does not adopt `0.6`'s additions stays at `>=0.5.2`); the upper
 bound is the next MAJOR. Write the range **explicitly** — do not rely on caret/tilde shorthand.
