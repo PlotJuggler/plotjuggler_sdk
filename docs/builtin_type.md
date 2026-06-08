@@ -150,6 +150,7 @@ messages.
 | `anchor` | `BufferAnchor` | Keeps `data` alive when it references shared storage. |
 | `compressed_depth_min` | `std::optional<float>` | ROS compressed-depth quantization metadata, when present. |
 | `compressed_depth_max` | `std::optional<float>` | ROS compressed-depth quantization metadata, when present. |
+| `frame_id` | `std::string` | Source coordinate frame (ROS `sensor_msgs/Image` and `foxglove.CompressedImage` both carry it). Lets a consumer match the image to the `CameraInfo` of the same `frame_id` (calibration / native resolution), e.g. to rectify lens distortion so 2D annotations align with the image. Empty when the producer has no frame information. |
 
 Common raw encodings are `rgb8`, `rgba8`, `bgr8`, `bgra8`, `mono8`, and
 `mono16`. Common compressed encodings are `jpeg`, `png`, and `qoi`.
