@@ -28,6 +28,12 @@ struct DatasetDescriptor {
   std::string source_name;
   /// Time domain used by all topics in this dataset.
   TimeDomainId time_domain_id = 0;
+  /// When non-zero, create the dataset with this exact DatasetId instead of the
+  /// next auto-assigned one (fails if already in use; advances the counter past
+  /// it). Lets the streaming lockstep mirror give the secondary engine the SAME
+  /// DatasetId as the primary even when their counters have drifted (e.g. a file
+  /// loaded between streams touched only the primary). Zero = auto-assign.
+  DatasetId requested_id = 0;
 };
 
 /// Materialized dataset record stored in the engine.
