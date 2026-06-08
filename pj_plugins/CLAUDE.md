@@ -35,9 +35,11 @@ submodule-internal modules; `pj_base` carries none).
   only `MessageParserPluginBase` + `object_ingest_policy.hpp` live here under
   `pj_plugins/sdk/`. (The `docs/ARCHITECTURE.md` §2 diagram is stale on this.)
 - **Handles keep the DSO mapped.** Every handle holds a `shared_ptr<void>`
-  library token, so destroying/hot-reloading the loader cannot `dlclose` a live
-  plugin. Dialog handles add a non-owning `borrowed()` form for source/toolbox
-  embedded dialogs — those must not outlive the owning handle.
+  library token (exposed via `libraryOwner()`), so destroying/hot-reloading the
+  loader cannot `dlclose` a live plugin — and a lazy ObjectStore payload anchor,
+  whose `release` fn is plugin code, can capture that token to stay safe past the
+  handle's own lifetime. Dialog handles add a non-owning `borrowed()` form for
+  source/toolbox embedded dialogs — those must not outlive the owning handle.
 
 ## Read deeper
 | For | Read |
