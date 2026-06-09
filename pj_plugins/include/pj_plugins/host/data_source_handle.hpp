@@ -73,6 +73,14 @@ class DataSourceHandle {
     return vt_ != nullptr && ctx_ != nullptr;
   }
 
+  // The shared library token that keeps this plugin's DSO mapped. Capture a copy
+  // anywhere a callback or payload anchor PRODUCED BY the plugin may outlive this
+  // handle (e.g. lazy ObjectStore payloads): the .so must not be dlclosed while
+  // plugin code (a payload anchor's release fn) can still run.
+  [[nodiscard]] std::shared_ptr<void> libraryOwner() const {
+    return library_owner_;
+  }
+
   [[nodiscard]] std::string manifest() const {
     return vt_->manifest_json != nullptr ? std::string(vt_->manifest_json) : std::string();
   }

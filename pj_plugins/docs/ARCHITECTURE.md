@@ -359,7 +359,10 @@ Each family has a move-only RAII handle:
 - Destructor calls `vt->destroy(ctx)`.
 - Handles created by a loader retain a shared DSO owner; destroying or
   hot-reloading the loader/catalog entry cannot `dlclose` the plugin while
-  live handles still call its vtable.
+  live handles still call its vtable. `DataSourceHandle` exposes this token via
+  `libraryOwner()` so it can be captured anywhere plugin code may outlive the
+  handle — e.g. a lazy `ObjectStore` payload anchor whose `release` fn lives in
+  the plugin `.so` — keeping the DSO mapped until that captor is gone too.
 - No copy, move-only semantics.
 - Methods delegate to vtable functions with the stored context pointer.
 
