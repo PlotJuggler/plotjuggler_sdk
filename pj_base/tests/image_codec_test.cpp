@@ -33,6 +33,7 @@ TEST(ImageCodecTest, RoundTripRawRGB8) {
   in.encoding = "rgb8";
   in.row_step = 6;  // 2 px * 3 bytes
   in.is_bigendian = false;
+  in.frame_id = "camera_front";
   const std::vector<uint8_t> pixels = {255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128};
   in.data = Span<const uint8_t>(pixels.data(), pixels.size());
 
@@ -45,6 +46,7 @@ TEST(ImageCodecTest, RoundTripRawRGB8) {
   EXPECT_EQ(out->encoding, in.encoding);
   EXPECT_EQ(out->row_step, in.row_step);
   EXPECT_FALSE(out->is_bigendian);
+  EXPECT_EQ(out->frame_id, "camera_front");
   EXPECT_FALSE(out->compressed_depth_min.has_value());
   EXPECT_FALSE(out->compressed_depth_max.has_value());
   ASSERT_EQ(out->data.size(), pixels.size());
@@ -70,6 +72,7 @@ TEST(ImageCodecTest, RoundTripCompressedDepthWithRange) {
   ASSERT_TRUE(out->compressed_depth_max.has_value());
   EXPECT_FLOAT_EQ(*out->compressed_depth_min, 0.5f);
   EXPECT_FLOAT_EQ(*out->compressed_depth_max, 10.0f);
+  EXPECT_TRUE(out->frame_id.empty());  // unset frame_id round-trips as empty
 }
 
 }  // namespace
