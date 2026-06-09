@@ -53,6 +53,7 @@ std::vector<uint8_t> serializeImage(const Image& image) {
   if (image.compressed_depth_max.has_value()) {
     writer.floatField(9, *image.compressed_depth_max);
   }
+  writer.string(10, image.frame_id);
 
   return out;
 }
@@ -139,6 +140,8 @@ Expected<sdk::Image> deserializeImage(const uint8_t* data, size_t size) {
         image.compressed_depth_max = v;
         return true;
       }
+      case 10:
+        return tag.type == WireType::kLengthDelimited && r.readString(image.frame_id);
       default:
         return false;
     }

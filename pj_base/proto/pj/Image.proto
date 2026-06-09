@@ -57,4 +57,9 @@ message Image {
   // ROS compressedDepth quantization maximum; set together with `compressed_depth_min` when `encoding ==
   // "compressedDepth"`.
   optional float compressed_depth_max = 9;
+
+  // Source coordinate frame (ROS sensor_msgs/Image, foxglove.CompressedImage). Lets a consumer match the image to the
+  // CameraInfo of the same frame_id (calibration / native resolution), e.g. to rectify lens distortion so 2D
+  // annotations align with the image. Empty when the producer has no frame information.
+  string frame_id = 10;
 }

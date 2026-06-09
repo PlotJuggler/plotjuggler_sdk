@@ -150,6 +150,13 @@ struct Image {
   std::optional<float> compressed_depth_max;
 
   Timestamp timestamp_ns = 0;
+
+  /// Source coordinate frame (ROS sensor_msgs/Image and foxglove.CompressedImage
+  /// both carry it). Lets a consumer match the image to the CameraInfo of the same
+  /// frame_id (calibration / native resolution), e.g. to rectify lens distortion so
+  /// 2D annotations align with the image. Empty when the producer has no frame
+  /// information.
+  std::string frame_id;
 };
 
 }  // namespace sdk
