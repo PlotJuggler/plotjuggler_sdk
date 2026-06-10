@@ -75,6 +75,9 @@ class WidgetDataView {
   [[nodiscard]] std::optional<std::vector<std::string>> selectedItems(std::string_view name) const {
     return getStringArray(name, "selected_items");
   }
+  [[nodiscard]] std::optional<std::vector<std::string>> listItemColors(std::string_view name) const {
+    return getStringArray(name, "list_item_colors");
+  }
 
   // --- QTableWidget ---
   [[nodiscard]] std::optional<std::vector<std::string>> tableHeaders(std::string_view name) const {

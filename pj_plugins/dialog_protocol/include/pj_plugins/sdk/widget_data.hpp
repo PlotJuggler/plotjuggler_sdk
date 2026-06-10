@@ -93,6 +93,14 @@ class WidgetData {
     return *this;
   }
 
+  // Set foreground colors for QListWidget items, parallel to the items vector
+  // set by setListItems. Each entry is a CSS color string (e.g. "#ff0000") or
+  // empty to use the default palette color. Size must match the items vector.
+  WidgetData& setListItemColors(std::string_view name, const std::vector<std::string>& colors) {
+    entry(name)["list_item_colors"] = colors;
+    return *this;
+  }
+
   // --- QTableWidget ---
   WidgetData& setTableHeaders(std::string_view name, const std::vector<std::string>& headers) {
     entry(name)["headers"] = headers;
