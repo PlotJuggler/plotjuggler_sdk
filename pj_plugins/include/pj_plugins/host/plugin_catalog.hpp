@@ -49,6 +49,7 @@ struct PluginDescriptor {
   std::vector<std::string> encoding;         ///< for message parsers (one or more)
   std::vector<std::string> file_extensions;  ///< for data sources
   std::vector<std::string> capabilities;     ///< optional capability tags
+  std::vector<std::string> tags;  ///< manifest `tags` — free-form labels (category, role flags like "plot_action", …)
 };
 
 /// Diagnostic for a candidate DSO that could not produce a valid descriptor.

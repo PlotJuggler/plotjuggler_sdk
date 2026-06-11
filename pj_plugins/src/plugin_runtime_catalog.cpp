@@ -247,6 +247,7 @@ bool PluginRuntimeCatalog::loadAndRegisterToolbox(const PluginDescriptor& descri
   loaded.name = descriptor.name;
   loaded.version = descriptor.version;
   loaded.capabilities = loaded.library.createHandle().capabilities();
+  loaded.tags = descriptor.tags;
 
   // Same fail-fast contract as DataSource above: kToolboxCapabilityHasDialog
   // requires an exported dialog vtable.

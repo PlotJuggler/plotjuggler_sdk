@@ -17,6 +17,23 @@ target_link_libraries(pj_plugin_loader_detail PUBLIC pj_base)
 
 add_subdirectory(dialog_protocol)
 
+# Filter Editor transform contract (header-only) — plugins implement the 12
+# concrete strategies and self-register with the factory at load time. See
+# pj_plugins/filter_protocol/include/pj_plugins/sdk/filter_transform.hpp.
+add_library(pj_filter_sdk INTERFACE)
+target_compile_features(pj_filter_sdk INTERFACE cxx_std_20)
+target_include_directories(pj_filter_sdk INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/filter_protocol/include>
+  $<INSTALL_INTERFACE:include>
+)
+# Builtin strategies (in the plugin) use nlohmann/json for saveParams /
+# loadParams; propagate the dep so consumers get it transitively.
+target_link_libraries(pj_filter_sdk INTERFACE nlohmann_json::nlohmann_json)
+set_target_properties(pj_filter_sdk PROPERTIES EXPORT_NAME filter_sdk)
+add_library(plotjuggler_sdk::filter_sdk ALIAS pj_filter_sdk)
+install(DIRECTORY filter_protocol/include/ DESTINATION include)
+install(TARGETS pj_filter_sdk EXPORT plotjuggler_sdkTargets ARCHIVE DESTINATION lib LIBRARY DESTINATION lib INCLUDES DESTINATION include)
+
 # ---------------------------------------------------------------------------
 # pj_plugin_sdk — umbrella INTERFACE library that exposes the full plugin-author
 # SDK surface: C++ SDK headers (MessageParserPluginBase, ObjectIngestPolicy,
@@ -29,7 +46,7 @@ target_include_directories(pj_plugin_sdk INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(pj_plugin_sdk INTERFACE pj_base pj_dialog_sdk)
+target_link_libraries(pj_plugin_sdk INTERFACE pj_base pj_dialog_sdk pj_filter_sdk)
 set_target_properties(pj_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
 add_library(plotjuggler_sdk::plugin_sdk ALIAS pj_plugin_sdk)
 
