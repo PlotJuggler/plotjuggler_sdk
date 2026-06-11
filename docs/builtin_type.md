@@ -27,6 +27,7 @@ The public headers live under:
 #include <pj_base/builtin/robot_description.hpp>
 #include <pj_base/builtin/image_annotations.hpp>
 #include <pj_base/builtin/frame_transforms.hpp>
+#include <pj_base/builtin/poses_in_frame.hpp>
 // Codecs — one per type, all share the canonical PJ.<Type> wire format under pj_base/proto/pj/.
 #include <pj_base/builtin/image_codec.hpp>
 #include <pj_base/builtin/depth_image_codec.hpp>
@@ -39,6 +40,7 @@ The public headers live under:
 #include <pj_base/builtin/scene_entities_codec.hpp>
 #include <pj_base/builtin/image_annotations_codec.hpp>
 #include <pj_base/builtin/frame_transforms_codec.hpp>
+#include <pj_base/builtin/poses_in_frame_codec.hpp>
 ```
 
 ## Design Principles
@@ -84,7 +86,7 @@ Builtin objects fall into two serialization families:
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
 | Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`, `CameraInfo`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`, `CameraInfo`, `PosesInFrame`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
 format contract. One file per top-level message, each named after its message
@@ -123,6 +125,7 @@ annotations, frame transforms, or no builtin object.
 | `kCameraInfo` | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
 | `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
 | `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
+| `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -569,6 +572,27 @@ Foxglove's source-location fields (`file`, `line`) are intentionally omitted.
 `pj_base/builtin/log_codec.hpp` serializes and deserializes this type using the
 canonical `PJ.Log` protobuf wire format.
 
+## PosesInFrame
+
+`PosesInFrame` is an array of poses expressed in a single reference frame at one
+instant — ROS `geometry_msgs/PoseArray`, `foxglove.PosesInFrame` (which it
+mirrors field-for-field), AMCL particle clouds, candidate grasp sets, sampled
+trajectories.
+
+It deliberately carries **no styling**: how the poses are drawn (arrows vs
+triads, scale, color) is a viewer-side decision, exactly as the source messages
+carry none. It is an owned value (strings and scalar geometry, no byte blob),
+so no `BufferAnchor` is needed.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Time of the poses. `0` when the source had no timestamp. |
+| `frame_id` | `std::string` | Frame all poses are expressed in. |
+| `poses` | `std::vector<Pose>` | The poses. Order is meaningful only to the producer. |
+
+`pj_base/builtin/poses_in_frame_codec.hpp` serializes and deserializes this
+type using the canonical `PJ.PosesInFrame` protobuf wire format.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -584,6 +608,7 @@ canonical `PJ.Log` protobuf wire format.
 | MP4 / MKV / AV1 dataset file | `AssetVideo` | Push once per topic with the file path and metadata; consumers seek into the file by tracker time. |
 | Detection or tracking message | `ImageAnnotations` | Convert boxes, points, circles, and labels into pixel-space primitives. |
 | ROS `tf2_msgs/TFMessage` | `FrameTransforms` | Convert transform batches into named parent/child frame relationships. |
+| ROS `geometry_msgs/PoseArray` | `PosesInFrame` | Forward timestamp, frame, and the pose array; the viewer chooses how to draw them. |
 | ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
 | ROS `sensor_msgs/CameraInfo` | `CameraInfo` | Map K / D / R / P plus dimensions; correlate to the image topic by name. Sub-window (binning / ROI) is dropped. |
 | ROS `map_msgs/OccupancyGridUpdate` | `OccupancyGridUpdate` | Forward the cell-space patch (`x`/`y`/`width`/`height` + bytes); the consumer pairs it with the base grid and supplies origin/resolution. |
