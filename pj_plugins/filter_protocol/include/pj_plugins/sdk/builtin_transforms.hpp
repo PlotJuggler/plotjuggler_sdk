@@ -12,11 +12,12 @@
 // itself via saveParams() / loadParams(), and clones via clone(). Pure C++20 —
 // no Qt, no Lua, no datastore — fully unit-testable in isolation.
 //
-// Registration: call registerAllTransforms() once per DSO (idempotent). Both
-// the plugin and the host call it to populate their own factory instances —
-// the singletons are per-DSO because plugins are dlopen'd RTLD_LOCAL, so
-// neither side ever sees the other's instances; only the JSON wire format
-// (saved params) crosses the boundary.
+// Registration: the Filter Editor plugin's loaderInit walks the list of
+// classes below and registers them into the host's filter registry service
+// (pj.filter_registry.v1). The host's FilterTransformFactory holds all
+// entries — preview, layout restore, and the streaming read path all resolve
+// through the same instance. The JSON wire format produced by saveParams() /
+// loadParams() is what crosses the plugin/host DSO boundary for parameters.
 
 #include <algorithm>
 #include <cmath>
@@ -42,7 +43,6 @@
 #endif
 
 #include "pj_plugins/sdk/filter_transform.hpp"
-#include "pj_plugins/sdk/filter_transform_factory.hpp"
 
 namespace PJ::sdk {
 
@@ -795,33 +795,5 @@ class TimeSincePreviousTransform : public FilterTransform {
  private:
   std::optional<double> prev_t_;
 };
-
-// ---------------------------------------------------------------------------
-// Registration — all transforms in display order (mirrors PJ3 dropdown order)
-// ---------------------------------------------------------------------------
-
-// Idempotent: caller can invoke this on every build path without worry. Each
-// DSO has its own factory instance and its own `registered` guard.
-inline void registerAllTransforms() {
-  auto& f = FilterTransformFactory::instance();
-  static bool registered = false;
-  if (registered) {
-    return;
-  }
-  registered = true;
-
-  f.registerTransform(NoneTransform{}.id(), [] { return std::make_unique<NoneTransform>(); });
-  f.registerTransform(AbsoluteTransform{}.id(), [] { return std::make_unique<AbsoluteTransform>(); });
-  f.registerTransform(ScaleTransform{}.id(), [] { return std::make_unique<ScaleTransform>(); });
-  f.registerTransform(DerivativeTransform{}.id(), [] { return std::make_unique<DerivativeTransform>(); });
-  f.registerTransform(IntegralTransform{}.id(), [] { return std::make_unique<IntegralTransform>(); });
-  f.registerTransform(MovingAverageTransform{}.id(), [] { return std::make_unique<MovingAverageTransform>(); });
-  f.registerTransform(MovingRMSTransform{}.id(), [] { return std::make_unique<MovingRMSTransform>(); });
-  f.registerTransform(MovingVarianceTransform{}.id(), [] { return std::make_unique<MovingVarianceTransform>(); });
-  f.registerTransform(OutlierRemovalTransform{}.id(), [] { return std::make_unique<OutlierRemovalTransform>(); });
-  f.registerTransform(SamplesCounterTransform{}.id(), [] { return std::make_unique<SamplesCounterTransform>(); });
-  f.registerTransform(BinaryFilterTransform{}.id(), [] { return std::make_unique<BinaryFilterTransform>(); });
-  f.registerTransform(TimeSincePreviousTransform{}.id(), [] { return std::make_unique<TimeSincePreviousTransform>(); });
-}
 
 }  // namespace PJ::sdk

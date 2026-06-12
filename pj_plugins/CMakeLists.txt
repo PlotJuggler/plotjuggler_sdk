@@ -27,8 +27,10 @@ target_include_directories(pj_filter_sdk INTERFACE
   $<INSTALL_INTERFACE:include>
 )
 # Builtin strategies (in the plugin) use nlohmann/json for saveParams /
-# loadParams; propagate the dep so consumers get it transitively.
-target_link_libraries(pj_filter_sdk INTERFACE nlohmann_json::nlohmann_json)
+# loadParams; propagate the dep so consumers get it transitively. Also pulls
+# pj_base for the C ABI primitives (PJ_string_view_t, PJ_error_t, PJ_NOEXCEPT)
+# referenced by the filter registry service.
+target_link_libraries(pj_filter_sdk INTERFACE pj_base nlohmann_json::nlohmann_json)
 set_target_properties(pj_filter_sdk PROPERTIES EXPORT_NAME filter_sdk)
 add_library(plotjuggler_sdk::filter_sdk ALIAS pj_filter_sdk)
 install(DIRECTORY filter_protocol/include/ DESTINATION include)
