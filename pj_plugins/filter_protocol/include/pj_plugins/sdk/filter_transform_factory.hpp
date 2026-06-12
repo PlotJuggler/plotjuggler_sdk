@@ -26,7 +26,11 @@ namespace PJ::sdk {
 class FilterTransformFactory {
  public:
   using CreateFn = std::function<FilterTransform*()>;
-  using DeleterFn = std::function<void(FilterTransform*) noexcept>;
+  // No `noexcept` qualifier: std::function cannot specialise on a noexcept
+  // function type in C++20. The contract still requires the deleter not to
+  // throw — the host wraps any registered deleter so the noexcept guarantee
+  // is enforced at the C-ABI boundary instead.
+  using DeleterFn = std::function<void(FilterTransform*)>;
 
   /// Register a transform class under @p id. The caller passes a paired
   /// `create_fn` / `delete_fn` so destruction happens on the same side that
@@ -81,7 +85,7 @@ class FilterTransformFactory {
         }
         auto deleter = e.delete_fn;
         auto owner = e.library_owner;
-        return std::shared_ptr<FilterTransform>(raw, [deleter, owner](FilterTransform* p) noexcept {
+        return std::shared_ptr<FilterTransform>(raw, [deleter, owner](FilterTransform* p) {
           deleter(p);
           (void)owner;  // owner ref drops here, after deleter — keeps DSO loaded
         });

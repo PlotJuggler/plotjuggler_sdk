@@ -48,7 +48,7 @@ class FilterRegistryView {
   template <class Class>
   [[nodiscard]] Expected<void> registerTransform(std::string id, std::shared_ptr<void> library_owner) {
     static_assert(std::is_base_of_v<FilterTransform, Class>, "Class must inherit FilterTransform");
-    auto* factory = +[](void*) -> PJ_filter_transform_t* {
+    auto* factory = +[](void*) noexcept -> PJ_filter_transform_t* {
       return reinterpret_cast<PJ_filter_transform_t*>(new Class{});
     };
     auto* deleter = +[](PJ_filter_transform_t* p) noexcept {
