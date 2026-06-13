@@ -102,6 +102,7 @@ if(PJ_BUILD_TESTS)
     tests/video_frame_codec_test.cpp
     tests/scene_entities_codec_test.cpp
     tests/asset_video_codec_test.cpp
+    tests/time_spine_test.cpp
     tests/poses_in_frame_codec_test.cpp
   )
 
