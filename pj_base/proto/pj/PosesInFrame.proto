@@ -1,0 +1,23 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "pj/Geometry.proto";
+
+package PJ;
+
+// An array of poses expressed in a single reference frame at one instant.
+// Mirrors foxglove.PosesInFrame field-for-field. Carries NO styling: how the
+// poses are drawn (arrows, triads, scale, color) is a viewer-side decision.
+message PosesInFrame {
+  // Time of the poses.
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Frame of reference for all poses.
+  string frame_id = 2;
+
+  // Poses in 3D space.
+  repeated PJ.Pose poses = 3;
+}

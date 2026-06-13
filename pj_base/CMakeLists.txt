@@ -15,6 +15,7 @@ add_library(pj_base STATIC
   src/builtin/occupancy_grid_codec.cpp
   src/builtin/occupancy_grid_update_codec.cpp
   src/builtin/point_cloud_codec.cpp
+  src/builtin/poses_in_frame_codec.cpp
   src/builtin/scene_entities_codec.cpp
   src/builtin/video_frame_codec.cpp
   src/number_parse.cpp
@@ -102,6 +103,7 @@ if(PJ_BUILD_TESTS)
     tests/scene_entities_codec_test.cpp
     tests/asset_video_codec_test.cpp
     tests/time_spine_test.cpp
+    tests/poses_in_frame_codec_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})

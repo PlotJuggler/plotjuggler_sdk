@@ -60,6 +60,8 @@ rationale.
   - Batch: `SceneEntities`
 - **`Mesh3D.proto`** — 3D mesh asset delivered in its native binary format (GLTF/GLB/STL/PLY/OBJ/USD/DAE) for URDF-style or scene-mesh visualization.
   - `Mesh3D`
+- **`PosesInFrame.proto`** — array of poses in a single reference frame at one instant (`geometry_msgs/PoseArray`, particle clouds); mirrors `foxglove.PosesInFrame` field-for-field and carries no styling — rendering is viewer-side.
+  - `PosesInFrame`
 
 ### 2D image annotations (vector overlays)
 
