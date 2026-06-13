@@ -252,11 +252,16 @@ Expected<PluginDescriptor> decodeManifest(
   if (!capabilities) {
     return unexpected(capabilities.error());
   }
+  auto tags = readStringArray(j, "tags");
+  if (!tags) {
+    return unexpected(tags.error());
+  }
 
   d.description = *description;
   d.category = *category;
   d.file_extensions = *file_extensions;
   d.capabilities = *capabilities;
+  d.tags = *tags;
 
   auto encoding = readStringArray(j, "encoding");
   if (!encoding) {

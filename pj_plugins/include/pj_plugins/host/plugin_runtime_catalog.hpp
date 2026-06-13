@@ -56,6 +56,7 @@ struct RuntimeToolboxPlugin {
   std::string id;
   std::string version;
   uint64_t capabilities = 0;
+  std::vector<std::string> tags;  ///< from manifest `tags` (e.g. "plot_action" — host routes by role)
   std::filesystem::file_time_type loaded_mtime;
 };
 
