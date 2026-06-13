@@ -101,6 +101,7 @@ if(PJ_BUILD_TESTS)
     tests/video_frame_codec_test.cpp
     tests/scene_entities_codec_test.cpp
     tests/asset_video_codec_test.cpp
+    tests/time_spine_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})
