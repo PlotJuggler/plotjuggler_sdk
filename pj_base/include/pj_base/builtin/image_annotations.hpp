@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "pj_base/point2.hpp"
 #include "pj_base/types.hpp"
 
 namespace PJ {
@@ -32,12 +33,8 @@ enum class AnnotationTopology : uint8_t {
   kLineLoop,   ///< Like LineStrip but closes back to the first point. 4-point loop = rectangle.
 };
 
-/// 2D point in image-pixel coordinates (origin top-left).
-struct Point2 {
-  double x = 0.0;
-  double y = 0.0;
-  bool operator==(const Point2&) const = default;
-};
+// `Point2` lives in pj_base/point2.hpp (generic 2D vocab type). In this header
+// it's used in image-pixel coordinates (origin top-left).
 
 /// 8-bit per-channel RGBA color. a=0 means transparent / disabled.
 struct ColorRGBA {
