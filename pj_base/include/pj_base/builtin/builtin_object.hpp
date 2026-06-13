@@ -38,6 +38,7 @@
 #include "pj_base/builtin/occupancy_grid.hpp"
 #include "pj_base/builtin/occupancy_grid_update.hpp"
 #include "pj_base/builtin/point_cloud.hpp"
+#include "pj_base/builtin/poses_in_frame.hpp"
 #include "pj_base/builtin/robot_description.hpp"
 #include "pj_base/builtin/scene_entities.hpp"
 #include "pj_base/builtin/video_frame.hpp"
@@ -62,6 +63,7 @@ enum class BuiltinObjectType : uint16_t {
   kCameraInfo = 14,           ///< sdk::CameraInfo — pinhole camera calibration (K/D/R/P).
   kOccupancyGridUpdate = 15,  ///< sdk::OccupancyGridUpdate — incremental sub-rectangle patch for an OccupancyGrid.
   kLog = 16,                  ///< sdk::Log — textual log message (level + text + name).
+  kPosesInFrame = 17,         ///< sdk::PosesInFrame — array of poses in one reference frame.
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -106,6 +108,8 @@ struct SchemaClassification {
       return "kOccupancyGridUpdate";
     case BuiltinObjectType::kLog:
       return "kLog";
+    case BuiltinObjectType::kPosesInFrame:
+      return "kPosesInFrame";
   }
   return "kNone";
 }
@@ -160,6 +164,9 @@ struct SchemaClassification {
   }
   if (s == "kLog") {
     return BuiltinObjectType::kLog;
+  }
+  if (s == "kPosesInFrame") {
+    return BuiltinObjectType::kPosesInFrame;
   }
   return std::nullopt;
 }
@@ -218,6 +225,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(Log)) {
     return BuiltinObjectType::kLog;
+  }
+  if (t == typeid(PosesInFrame)) {
+    return BuiltinObjectType::kPosesInFrame;
   }
   return BuiltinObjectType::kNone;
 }

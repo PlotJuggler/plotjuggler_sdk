@@ -21,6 +21,7 @@ using PJ::sdk::OccupancyGrid;
 using PJ::sdk::OccupancyGridUpdate;
 using PJ::sdk::parseBuiltinObjectType;
 using PJ::sdk::PointCloud;
+using PJ::sdk::PosesInFrame;
 using PJ::sdk::RobotDescription;
 using PJ::sdk::SceneEntities;
 using PJ::sdk::typeOf;
@@ -43,6 +44,7 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{CameraInfo{}}), BuiltinObjectType::kCameraInfo);
   EXPECT_EQ(typeOf(BuiltinObject{OccupancyGridUpdate{}}), BuiltinObjectType::kOccupancyGridUpdate);
   EXPECT_EQ(typeOf(BuiltinObject{Log{}}), BuiltinObjectType::kLog);
+  EXPECT_EQ(typeOf(BuiltinObject{PosesInFrame{}}), BuiltinObjectType::kPosesInFrame);
 }
 
 TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
@@ -63,6 +65,7 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kCameraInfo,
            BuiltinObjectType::kOccupancyGridUpdate,
            BuiltinObjectType::kLog,
+           BuiltinObjectType::kPosesInFrame,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);
