@@ -1,0 +1,66 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical plot markers protobuf schema.
+//
+// Markers (findings) anchored to a time-series plot. Unlike ImageAnnotations,
+// a marker is a homogeneous record distinguished by `kind`, and the container
+// holds a flat list of them. A marker carries no id (identity is owned by the
+// host marker store), no source, and no scope (its reach is decided by which
+// topic it is addressed to). The C++ codec is hand-written against this layout;
+// these field numbers and wire types are the source of truth.
+
+syntax = "proto3";
+
+import "pj/Color.proto";
+import "pj/KeyValuePair.proto";
+
+package PJ;
+
+// What a marker marks; selects which anchor fields are meaningful.
+enum MarkerKind {
+  MARKER_KIND_REGION = 0;      // time span [t_start, t_end]
+  MARKER_KIND_EVENT = 1;       // single time t_start (+ optional value)
+  MARKER_KIND_VALUE_BAND = 2;  // value span [value_low, value_high] (series-only)
+  MARKER_KIND_LABEL = 3;       // text callout anchored at t_start
+}
+
+// The finding verdict carried by a marker.
+enum MarkerStatus {
+  MARKER_STATUS_NONE = 0;
+  MARKER_STATUS_PASS = 1;
+  MARKER_STATUS_FAIL = 2;
+}
+
+// Severity; drives the default color when `color` is unset.
+enum MarkerSeverity {
+  MARKER_SEVERITY_INFO = 0;
+  MARKER_SEVERITY_WARNING = 1;
+  MARKER_SEVERITY_ERROR = 2;
+  MARKER_SEVERITY_CRITICAL = 3;
+}
+
+// One marker — a homogeneous, identity-less record.
+message PlotMarker {
+  // Anchor (interpret by kind; irrelevant fields are ignored).
+  MarkerKind kind = 1;
+  int64 t_start = 2;       // ns; Region start / Event / Label time
+  int64 t_end = 3;         // ns; Region end
+  double value_low = 4;    // ValueBand low / Event point value
+  double value_high = 5;   // ValueBand high
+  bool has_value = 6;      // Event: value_low is a meaningful point value
+
+  // Semantics / presentation (shared by every kind).
+  MarkerStatus status = 7;
+  MarkerSeverity severity = 8;
+  string category = 9;
+  string label = 10;
+  string description = 11;
+  PJ.Color color = 12;     // alpha 0 → derive from severity
+  repeated PJ.KeyValuePair metadata = 13;
+}
+
+// The set of markers for one topic (one series, or the dataset-global topic).
+message PlotMarkers {
+  repeated PJ.PlotMarker markers = 1;
+}

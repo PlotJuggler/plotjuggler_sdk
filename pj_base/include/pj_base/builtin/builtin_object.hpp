@@ -37,6 +37,7 @@
 #include "pj_base/builtin/mesh3d.hpp"
 #include "pj_base/builtin/occupancy_grid.hpp"
 #include "pj_base/builtin/occupancy_grid_update.hpp"
+#include "pj_base/builtin/plot_markers.hpp"
 #include "pj_base/builtin/point_cloud.hpp"
 #include "pj_base/builtin/poses_in_frame.hpp"
 #include "pj_base/builtin/robot_description.hpp"
@@ -64,6 +65,7 @@ enum class BuiltinObjectType : uint16_t {
   kOccupancyGridUpdate = 15,  ///< sdk::OccupancyGridUpdate — incremental sub-rectangle patch for an OccupancyGrid.
   kLog = 16,                  ///< sdk::Log — textual log message (level + text + name).
   kPosesInFrame = 17,         ///< sdk::PosesInFrame — array of poses in one reference frame.
+  kPlotMarkers = 18,          ///< sdk::PlotMarkers — findings on a time-series plot (regions, events, bands, labels).
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -110,6 +112,8 @@ struct SchemaClassification {
       return "kLog";
     case BuiltinObjectType::kPosesInFrame:
       return "kPosesInFrame";
+    case BuiltinObjectType::kPlotMarkers:
+      return "kPlotMarkers";
   }
   return "kNone";
 }
@@ -167,6 +171,9 @@ struct SchemaClassification {
   }
   if (s == "kPosesInFrame") {
     return BuiltinObjectType::kPosesInFrame;
+  }
+  if (s == "kPlotMarkers") {
+    return BuiltinObjectType::kPlotMarkers;
   }
   return std::nullopt;
 }
@@ -228,6 +235,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(PosesInFrame)) {
     return BuiltinObjectType::kPosesInFrame;
+  }
+  if (t == typeid(PlotMarkers)) {
+    return BuiltinObjectType::kPlotMarkers;
   }
   return BuiltinObjectType::kNone;
 }
