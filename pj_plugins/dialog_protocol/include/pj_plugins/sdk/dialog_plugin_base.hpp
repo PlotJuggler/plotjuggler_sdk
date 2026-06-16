@@ -85,7 +85,7 @@ class DialogPluginBase {
       return;
     }
     out_error->code = code;
-    auto writeField = [](char* dest, std::size_t dest_size, std::string_view src) {
+    auto write_field = [](char* dest, std::size_t dest_size, std::string_view src) {
       if (dest == nullptr || dest_size == 0) {
         return;
       }
@@ -93,8 +93,8 @@ class DialogPluginBase {
       std::memcpy(dest, src.data(), n);
       dest[n] = '\0';
     };
-    writeField(out_error->domain, sizeof(out_error->domain), domain);
-    writeField(out_error->message, sizeof(out_error->message), message);
+    write_field(out_error->domain, sizeof(out_error->domain), domain);
+    write_field(out_error->message, sizeof(out_error->message), message);
     // Clear the v3.1 growth-path slots so a reused error struct does not
     // carry a stale pointer from a previous call. Matches sdk::fillError.
     out_error->extended = nullptr;

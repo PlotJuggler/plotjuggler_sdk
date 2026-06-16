@@ -87,8 +87,8 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
 
  private:
   PJ::Status bindFields() {
-    const std::string& name_a = field_names_.empty() ? default_a_ : field_names_[0];
-    const std::string& name_b = field_names_.size() < 2 ? default_b_ : field_names_[1];
+    const std::string& name_a = field_names_.empty() ? kDefaultA : field_names_[0];
+    const std::string& name_b = field_names_.size() < 2 ? kDefaultB : field_names_[1];
 
     auto handle_a = writeHost().ensureField(name_a, PJ::PrimitiveType::kFloat64);
     if (!handle_a) {
@@ -110,8 +110,8 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
   std::vector<PJ::sdk::FieldHandle> field_handles_;
   bool fields_bound_ = false;
 
-  static inline const std::string default_a_ = "x";
-  static inline const std::string default_b_ = "y";
+  static inline const std::string kDefaultA = "x";
+  static inline const std::string kDefaultB = "y";
 };
 
 }  // namespace

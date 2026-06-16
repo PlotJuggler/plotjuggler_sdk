@@ -45,7 +45,7 @@ WarningsAsErrors: >
   modernize-use-nullptr,
   modernize-use-override,
   performance-move-const-arg,
-  # readability-identifier-naming,  # temporarily disabled during rename migration
+  readability-identifier-naming,
 
 HeaderFilterRegex: '.*'
 
@@ -98,6 +98,49 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.TemplateParameterCase
     value: CamelCase
+  # const/constexpr LOCALS follow lower_case (house style); the k-prefixed
+  # Constant policy above applies to file-scope/global constants only.
+  - key: readability-identifier-naming.LocalConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.LocalConstantPrefix
+    value: ''
+  - key: readability-identifier-naming.LocalVariableCase
+    value: lower_case
+  # `PJ` is the documented flat project namespace; `Ui` is uic-generated.
+  - key: readability-identifier-naming.NamespaceIgnoredRegexp
+    value: '^(PJ|Ui)$'
+  # extern "C" C-ABI plugin contract: PJ_* structs/enums/enum-constants/entry
+  # points and pj_* exported globals are the plugin binary ABI — recasing them
+  # breaks every compiled plugin. Also exempt Google Benchmark BM_ functions and
+  # the std::visit `overloaded` idiom.
+  - key: readability-identifier-naming.FunctionIgnoredRegexp
+    value: '(BM_|PJ_|pj_).*'
+  - key: readability-identifier-naming.StructIgnoredRegexp
+    value: '(overloaded|PJ_.*)'
+  - key: readability-identifier-naming.EnumIgnoredRegexp
+    value: 'PJ_.*'
+  - key: readability-identifier-naming.EnumConstantIgnoredRegexp
+    value: 'PJ_.*'
+  - key: readability-identifier-naming.GlobalConstantIgnoredRegexp
+    value: 'pj_.*'
+  # Canonical schema and STL-/plugin-facing API are grandfathered: the ROS/OpenCV
+  # CameraInfo/DepthImage intrinsics (single-capital D/K/R/P) are a wire-format
+  # field contract; `has_value`/`value_or`/`error_or` are the std::expected drop-in
+  # interface; and `load_config`/`save_config`/`trampoline_*` are plugin-author or
+  # C-ABI-bridge methods that every compiled plugin links by name. Recasing any of
+  # these breaks wire compat, STL-shaped generic code, or the plugin ABI. (Revisit
+  # the snake_case plugin virtuals in a future coordinated 1.0.0.)
+  - key: readability-identifier-naming.PublicMemberIgnoredRegexp
+    value: '([A-Z]|fetchMessageData)'
+  - key: readability-identifier-naming.MethodIgnoredRegexp
+    value: '(has_value|value_or|error_or|load_config|save_config|ui_content|widget_data|trampoline_.*)'
+  - key: readability-identifier-naming.TypeAliasIgnoredRegexp
+    value: 'json'
+  # A trailing underscore on a *parameter* is the idiomatic shadow-avoidance form
+  # (e.g. `PayloadView(Span bytes_) : bytes(bytes_)` where `bytes` is a member);
+  # stripping it reintroduces a -Wshadow error. Exempt trailing-underscore params.
+  - key: readability-identifier-naming.ParameterIgnoredRegexp
+    value: '.*_'
 
   # --- Function size limits ---
   - key: readability-function-size.LineThreshold

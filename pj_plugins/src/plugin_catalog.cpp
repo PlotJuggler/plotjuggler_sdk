@@ -196,14 +196,14 @@ Expected<PluginDescriptor> decodeManifest(
     return unexpected("plugin embedded manifest must be a JSON object");
   }
 
-  auto requiredString = [&](std::string_view key) -> Expected<std::string> {
+  auto required_string = [&](std::string_view key) -> Expected<std::string> {
     const auto it = j.find(std::string(key));
     if (it == j.end() || !it->is_string() || it->get<std::string>().empty()) {
       return unexpected(fmt::format("plugin embedded manifest missing required string key: {}", key));
     }
     return it->get<std::string>();
   };
-  auto optionalString = [&](std::string_view key) -> Expected<std::string> {
+  auto optional_string = [&](std::string_view key) -> Expected<std::string> {
     const auto it = j.find(std::string(key));
     if (it == j.end()) {
       return std::string{};
@@ -219,15 +219,15 @@ Expected<PluginDescriptor> decodeManifest(
   d.abi_major = PJ_ABI_VERSION;
   d.family = family;
 
-  auto id = requiredString("id");
+  auto id = required_string("id");
   if (!id) {
     return unexpected(id.error());
   }
-  auto name = requiredString("name");
+  auto name = required_string("name");
   if (!name) {
     return unexpected(name.error());
   }
-  auto version = requiredString("version");
+  auto version = required_string("version");
   if (!version) {
     return unexpected(version.error());
   }
@@ -236,11 +236,11 @@ Expected<PluginDescriptor> decodeManifest(
   d.name = *name;
   d.version = *version;
 
-  auto description = optionalString("description");
+  auto description = optional_string("description");
   if (!description) {
     return unexpected(description.error());
   }
-  auto category = optionalString("category");
+  auto category = optional_string("category");
   if (!category) {
     return unexpected(category.error());
   }
@@ -292,26 +292,26 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
   if (!hasDsoSuffix(dso_path)) {
     return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
   }
-  auto withPath = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
+  auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
 
   auto handle = detail::loadLibraryHandle(dso_path.string());
   if (!handle) {
-    return unexpected(withPath(handle.error()));
+    return unexpected(with_path(handle.error()));
   }
   std::unique_ptr<void, LibraryHandleCloser> library(*handle);
 
   if (auto abi = detail::checkPluginAbiVersion(library.get()); !abi) {
-    return unexpected(withPath(abi.error()));
+    return unexpected(with_path(abi.error()));
   }
 
   auto candidate = findEmbeddedManifest(library.get());
   if (!candidate) {
-    return unexpected(withPath(candidate.error()));
+    return unexpected(with_path(candidate.error()));
   }
 
   auto descriptor = decodeManifest(dso_path, candidate->family, candidate->manifest_json);
   if (!descriptor) {
-    return unexpected(withPath(descriptor.error()));
+    return unexpected(with_path(descriptor.error()));
   }
   return *descriptor;
 }

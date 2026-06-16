@@ -34,7 +34,7 @@ sdk::ImageAnnotations roundTrip(const sdk::ImageAnnotations& input) {
 
 // Compare two ColorRGBA values allowing 1-LSB drift on each channel from the
 // double-quantization round-trip (uint8 -> double in [0,1] -> uint8).
-::testing::AssertionResult ColorEq(const ColorRGBA& a, const ColorRGBA& b) {
+::testing::AssertionResult colorEq(const ColorRGBA& a, const ColorRGBA& b) {
   auto near = [](uint8_t x, uint8_t y) { return x > y ? (x - y) <= 1 : (y - x) <= 1; };
   if (near(a.r, b.r) && near(a.g, b.g) && near(a.b, b.b) && near(a.a, b.a)) {
     return ::testing::AssertionSuccess();
@@ -150,8 +150,8 @@ TEST(ImageAnnotationCodecTest, RoundTrip_LineLoopFourPoints) {
   ASSERT_EQ(out.points.size(), 1u);
   EXPECT_EQ(out.points[0].topology, AnnotationTopology::kLineLoop);
   EXPECT_EQ(out.points[0].points, in.points[0].points);
-  EXPECT_TRUE(ColorEq(in.points[0].color, out.points[0].color));
-  EXPECT_TRUE(ColorEq(in.points[0].fill_color, out.points[0].fill_color));
+  EXPECT_TRUE(colorEq(in.points[0].color, out.points[0].color));
+  EXPECT_TRUE(colorEq(in.points[0].fill_color, out.points[0].fill_color));
   EXPECT_DOUBLE_EQ(out.points[0].thickness, 2.5);
 }
 
@@ -190,8 +190,8 @@ TEST(ImageAnnotationCodecTest, RoundTrip_CirclePreservesDiameterRadiusInverse) {
   EXPECT_DOUBLE_EQ(out.circles[0].center.y, 60.0);
   EXPECT_DOUBLE_EQ(out.circles[0].radius, 10.0);
   EXPECT_DOUBLE_EQ(out.circles[0].thickness, 1.5);
-  EXPECT_TRUE(ColorEq(in.circles[0].color, out.circles[0].color));
-  EXPECT_TRUE(ColorEq(in.circles[0].fill_color, out.circles[0].fill_color));
+  EXPECT_TRUE(colorEq(in.circles[0].color, out.circles[0].color));
+  EXPECT_TRUE(colorEq(in.circles[0].fill_color, out.circles[0].fill_color));
 }
 
 TEST(ImageAnnotationCodecTest, RoundTrip_TextUtf8) {
@@ -209,7 +209,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_TextUtf8) {
   EXPECT_DOUBLE_EQ(out.texts[0].position.x, 320.5);
   EXPECT_DOUBLE_EQ(out.texts[0].position.y, 240.25);
   EXPECT_DOUBLE_EQ(out.texts[0].font_size, 14.0);
-  EXPECT_TRUE(ColorEq(in.texts[0].color, out.texts[0].color));
+  EXPECT_TRUE(colorEq(in.texts[0].color, out.texts[0].color));
 }
 
 TEST(ImageAnnotationCodecTest, RoundTrip_FullImageAnnotationAllThreeKinds) {
@@ -291,9 +291,9 @@ TEST(ImageAnnotationCodecTest, RoundTrip_PerVertexColors) {
   auto out = roundTrip(in);
   ASSERT_EQ(out.points.size(), 1u);
   ASSERT_EQ(out.points[0].colors.size(), 3u);
-  EXPECT_TRUE(ColorEq(in.points[0].colors[0], out.points[0].colors[0]));
-  EXPECT_TRUE(ColorEq(in.points[0].colors[1], out.points[0].colors[1]));
-  EXPECT_TRUE(ColorEq(in.points[0].colors[2], out.points[0].colors[2]));
+  EXPECT_TRUE(colorEq(in.points[0].colors[0], out.points[0].colors[0]));
+  EXPECT_TRUE(colorEq(in.points[0].colors[1], out.points[0].colors[1]));
+  EXPECT_TRUE(colorEq(in.points[0].colors[2], out.points[0].colors[2]));
 }
 
 }  // namespace

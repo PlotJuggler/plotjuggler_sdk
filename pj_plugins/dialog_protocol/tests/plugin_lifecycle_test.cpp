@@ -187,8 +187,8 @@ TEST_F(PluginLifecycleTest, SaveLoadConfigRoundTrip) {
 }
 
 TEST_F(PluginLifecycleTest, LoadConfigWithInvalidJson) {
-  const char kBad[] = "not valid json";
-  PJ_string_view_t sv{kBad, sizeof(kBad) - 1};
+  const char k_bad[] = "not valid json";
+  PJ_string_view_t sv{k_bad, sizeof(k_bad) - 1};
   bool loaded = vt_->load_config(ctx_, sv, nullptr);
   EXPECT_FALSE(loaded);
 }
@@ -196,8 +196,8 @@ TEST_F(PluginLifecycleTest, LoadConfigWithInvalidJson) {
 TEST_F(PluginLifecycleTest, LoadConfigWithWrongTypes) {
   // name as int instead of string — should not crash, should still return true
   // (type-safe loading just skips invalid fields)
-  const char kJson[] = R"({"name": 42, "count": "not_int"})";
-  PJ_string_view_t sv{kJson, sizeof(kJson) - 1};
+  const char k_json[] = R"({"name": 42, "count": "not_int"})";
+  PJ_string_view_t sv{k_json, sizeof(k_json) - 1};
   bool loaded = vt_->load_config(ctx_, sv, nullptr);
   EXPECT_TRUE(loaded);
   // Verify name was NOT overwritten (was string, got int — skipped)
