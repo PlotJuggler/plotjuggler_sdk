@@ -250,3 +250,26 @@ class DataSourcePluginBase {
         manifest);                                                                                       \
     return vt;                                                                                           \
   }
+
+// --- Static-link variant (WASM / no dlopen) ----------------------------------
+// With PJ_STATIC_PLUGINS the plugin is linked into the host binary. The fixed
+// `extern "C" PJ_get_data_source_vtable` symbol would collide across plugins in
+// one binary, so emit a uniquely-named (class-keyed) C++ function instead. The
+// host's static registry declares these extern and passes them to
+// PluginRuntimeCatalog::registerStaticDataSource().
+#ifdef PJ_STATIC_PLUGINS
+#undef PJ_DATA_SOURCE_PLUGIN
+#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                         \
+  const PJ_data_source_vtable_t* pj_static_get_data_source_vtable_##ClassName() noexcept { \
+    static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate( \
+        []() noexcept -> void* {                                                           \
+          try {                                                                            \
+            return new ClassName();                                                        \
+          } catch (...) {                                                                  \
+            return nullptr;                                                                \
+          }                                                                                \
+        },                                                                                 \
+        manifest);                                                                         \
+    return vt;                                                                             \
+  }
+#endif

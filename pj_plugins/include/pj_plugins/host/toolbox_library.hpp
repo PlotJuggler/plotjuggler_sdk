@@ -51,6 +51,10 @@ class ToolboxLibrary {
   /// Load a plugin from @p path. Returns an error string on failure.
   [[nodiscard]] static Expected<ToolboxLibrary> load(std::string_view path);
 
+  /// Wrap a statically-linked plugin vtable (no dlopen; for WASM/static builds).
+  /// @p vtable must have static storage duration (valid for the program lifetime).
+  [[nodiscard]] static Expected<ToolboxLibrary> loadStatic(const PJ_toolbox_vtable_t* vtable);
+
   /// True if the library was loaded and the vtable resolved successfully.
   [[nodiscard]] bool valid() const {
     return handle_ != nullptr && vtable_ != nullptr;

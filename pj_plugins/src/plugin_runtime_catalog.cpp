@@ -150,6 +150,107 @@ bool PluginRuntimeCatalog::reload() {
   return changed;
 }
 
+namespace {
+
+// Parse a plugin's embedded manifest JSON. Returns false on invalid JSON.
+bool parseStaticManifest(const char* manifest_json, nlohmann::json& out) {
+  try {
+    out = nlohmann::json::parse(manifest_json ? manifest_json : "");
+    return out.is_object();
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+std::vector<std::string> readManifestStringArray(const nlohmann::json& j, const char* key) {
+  std::vector<std::string> values;
+  if (auto it = j.find(key); it != j.end() && it->is_array()) {
+    for (const auto& v : *it) {
+      if (v.is_string()) {
+        values.push_back(v.get<std::string>());
+      }
+    }
+  }
+  return values;
+}
+
+}  // namespace
+
+bool PluginRuntimeCatalog::registerStaticDataSource(const PJ_data_source_vtable_t* vtable) {
+  auto result = DataSourceLibrary::loadStatic(vtable);
+  if (!result) {
+    report(DiagnosticLevel::kError, {}, "static DataSource: " + result.error());
+    return false;
+  }
+  nlohmann::json j;
+  if (!parseStaticManifest(vtable->manifest_json, j)) {
+    report(DiagnosticLevel::kError, {}, "static DataSource: invalid manifest JSON");
+    return false;
+  }
+  RuntimeDataSourcePlugin loaded;
+  loaded.library = std::move(*result);
+  loaded.id = j.value("id", std::string{});
+  loaded.name = j.value("name", std::string{});
+  loaded.version = j.value("version", std::string{});
+  loaded.path = "static://" + loaded.id;
+  loaded.loaded_mtime = std::filesystem::file_time_type{};
+  loaded.capabilities = loaded.library.createHandle().capabilities();
+  for (auto& ext : readManifestStringArray(j, "file_extensions")) {
+    loaded.file_extensions.push_back(normalizeExtension(std::move(ext)));
+  }
+  report(DiagnosticLevel::kInfo, loaded.id, "Registered static DataSource " + loaded.name);
+  data_sources_.push_back(std::move(loaded));
+  return true;
+}
+
+bool PluginRuntimeCatalog::registerStaticMessageParser(const PJ_message_parser_vtable_t* vtable) {
+  auto result = MessageParserLibrary::loadStatic(vtable);
+  if (!result) {
+    report(DiagnosticLevel::kError, {}, "static MessageParser: " + result.error());
+    return false;
+  }
+  nlohmann::json j;
+  if (!parseStaticManifest(vtable->manifest_json, j)) {
+    report(DiagnosticLevel::kError, {}, "static MessageParser: invalid manifest JSON");
+    return false;
+  }
+  RuntimeMessageParserPlugin loaded;
+  loaded.library = std::move(*result);
+  loaded.id = j.value("id", std::string{});
+  loaded.name = j.value("name", std::string{});
+  loaded.version = j.value("version", std::string{});
+  loaded.path = "static://" + loaded.id;
+  loaded.loaded_mtime = std::filesystem::file_time_type{};
+  loaded.encodings = readManifestStringArray(j, "encoding");
+  report(DiagnosticLevel::kInfo, loaded.id, "Registered static MessageParser " + loaded.name);
+  message_parsers_.push_back(std::move(loaded));
+  return true;
+}
+
+bool PluginRuntimeCatalog::registerStaticToolbox(const PJ_toolbox_vtable_t* vtable) {
+  auto result = ToolboxLibrary::loadStatic(vtable);
+  if (!result) {
+    report(DiagnosticLevel::kError, {}, "static Toolbox: " + result.error());
+    return false;
+  }
+  nlohmann::json j;
+  if (!parseStaticManifest(vtable->manifest_json, j)) {
+    report(DiagnosticLevel::kError, {}, "static Toolbox: invalid manifest JSON");
+    return false;
+  }
+  RuntimeToolboxPlugin loaded;
+  loaded.library = std::move(*result);
+  loaded.id = j.value("id", std::string{});
+  loaded.name = j.value("name", std::string{});
+  loaded.version = j.value("version", std::string{});
+  loaded.path = "static://" + loaded.id;
+  loaded.loaded_mtime = std::filesystem::file_time_type{};
+  loaded.capabilities = loaded.library.createHandle().capabilities();
+  report(DiagnosticLevel::kInfo, loaded.id, "Registered static Toolbox " + loaded.name);
+  toolbox_plugins_.push_back(std::move(loaded));
+  return true;
+}
+
 bool PluginRuntimeCatalog::loadAndRegister(const PluginDescriptor& descriptor) {
   switch (descriptor.family) {
     case PluginFamily::kDataSource:

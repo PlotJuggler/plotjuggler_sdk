@@ -81,6 +81,14 @@ class PluginRuntimeCatalog {
   // Reconciles loaded state with disk and returns true if it changed.
   [[nodiscard]] bool reload();
 
+  // --- Static plugin registration (WASM/static builds; no dlopen) -------------
+  // Register a statically-linked plugin by its vtable. The vtable must outlive
+  // this catalog (static storage duration); the manifest is read from
+  // vtable->manifest_json. Returns false (and reports a diagnostic) on failure.
+  bool registerStaticDataSource(const PJ_data_source_vtable_t* vtable);
+  bool registerStaticMessageParser(const PJ_message_parser_vtable_t* vtable);
+  bool registerStaticToolbox(const PJ_toolbox_vtable_t* vtable);
+
   // Returns loaded DataSource plugins.
   [[nodiscard]] const std::vector<RuntimeDataSourcePlugin>& dataSources() const {
     return data_sources_;

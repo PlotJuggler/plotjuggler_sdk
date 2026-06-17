@@ -67,6 +67,24 @@ Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
   return ToolboxLibrary(std::move(handle), vtable, std::string(path));
 }
 
+Expected<ToolboxLibrary> ToolboxLibrary::loadStatic(const PJ_toolbox_vtable_t* vtable) {
+  if (vtable == nullptr) {
+    return unexpected("static Toolbox vtable is null");
+  }
+  if (vtable->protocol_version != PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION) {
+    return unexpected("Toolbox protocol version mismatch");
+  }
+  if (vtable->struct_size < PJ_TOOLBOX_MIN_VTABLE_SIZE) {
+    return unexpected("Toolbox vtable smaller than v4.0 baseline");
+  }
+  if (auto status = detail::validateRequiredSlots(vtable); !status) {
+    return unexpected(status.error());
+  }
+  static char anchor = 0;
+  std::shared_ptr<void> handle(&anchor, [](void*) {});
+  return ToolboxLibrary(std::move(handle), vtable, "static://");
+}
+
 Expected<const PJ_dialog_vtable_t*> ToolboxLibrary::resolveDialogVtable() const {
   auto sym = detail::resolveSymbol(handle_.get(), "PJ_get_dialog_vtable");
   if (!sym) {
