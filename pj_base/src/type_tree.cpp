@@ -11,20 +11,20 @@
 namespace PJ {
 namespace {
 
-void flatten_impl(const TypeTreeNode& node, std::string_view prefix, std::vector<std::string>& out) {
+void flattenImpl(const TypeTreeNode& node, std::string_view prefix, std::vector<std::string>& out) {
   std::string current_path = prefix.empty() ? node.name : std::string(prefix) + "." + node.name;
 
   switch (node.kind) {
     case TypeKind::kStruct:
       for (const auto& child : node.children) {
-        flatten_impl(*child, current_path, out);
+        flattenImpl(*child, current_path, out);
       }
       break;
     case TypeKind::kArray:
       if (node.element_type && node.fixed_array_size.has_value()) {
         for (uint32_t idx = 0; idx < *node.fixed_array_size; ++idx) {
           std::string indexed = current_path + "[" + std::to_string(idx) + "]";
-          flatten_impl(*node.element_type, indexed, out);
+          flattenImpl(*node.element_type, indexed, out);
         }
       }
       // Dynamic arrays (no fixed_array_size) produce 0 paths
@@ -36,18 +36,18 @@ void flatten_impl(const TypeTreeNode& node, std::string_view prefix, std::vector
   }
 }
 
-std::size_t count_leaf_fields_impl(const TypeTreeNode& node) {
+std::size_t countLeafFieldsImpl(const TypeTreeNode& node) {
   switch (node.kind) {
     case TypeKind::kStruct: {
       std::size_t count = 0;
       for (const auto& child : node.children) {
-        count += count_leaf_fields_impl(*child);
+        count += countLeafFieldsImpl(*child);
       }
       return count;
     }
     case TypeKind::kArray:
       if (node.element_type && node.fixed_array_size.has_value()) {
-        return *node.fixed_array_size * count_leaf_fields_impl(*node.element_type);
+        return *node.fixed_array_size * countLeafFieldsImpl(*node.element_type);
       }
       return 0;  // dynamic array: 0 columns until expanded
     default:
@@ -118,13 +118,13 @@ std::vector<std::string> flattenFieldPaths(const TypeTreeNode& root) {
   }
   // Skip root struct name -- children use empty prefix
   for (const auto& child : root.children) {
-    flatten_impl(*child, "", result);
+    flattenImpl(*child, "", result);
   }
   return result;
 }
 
 std::size_t countLeafFields(const TypeTreeNode& root) {
-  return count_leaf_fields_impl(root);
+  return countLeafFieldsImpl(root);
 }
 
 }  // namespace PJ
