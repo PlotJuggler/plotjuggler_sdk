@@ -522,6 +522,19 @@ typedef struct PJ_toolbox_host_vtable_t {
   bool (*push_owned_object)(
       void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, uint64_t size,
       PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Register an object topic on an EXISTING dataset, addressed by
+   * its DatasetId, rather than under a data source the toolbox created. This is
+   * the ANNOTATION path: a toolbox attaches objects (e.g. plot markers) to data
+   * loaded by another source. Idempotent — if a topic with this name already
+   * exists on the dataset, its existing handle is returned (so a producer that
+   * republishes its whole set just re-resolves the handle each time).
+   * `metadata_json` is opaque (as in register_object_topic). Returns false (with
+   * out_error populated) if the dataset does not exist.
+   * ABI-APPENDED slot: gate via struct_size before calling. */
+  bool (*register_object_topic_on_dataset)(
+      void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
+      PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
@@ -728,67 +741,6 @@ typedef struct {
   void* ctx;
   const PJ_object_read_host_vtable_t* vtable;
 } PJ_object_read_host_t;
-
-/* ==========================================================================
- * Marker-store host ("pj.marker_store.v1", protocol v4)
- *
- * Exposed to Toolbox plugins (and, later, the scripting layer) to create,
- * delete, and query plot markers. Unlike the object store — a timestamped blob
- * log that can only front-evict — markers are a mutable, id-addressed set per
- * (dataset, topic): add() mints a stable id, remove() deletes by it. Markers
- * cross the ABI as serialized PJ.PlotMarkers bytes (the canonical codec); ids
- * cross as uint64. A marker's reach is decided by which topic it is addressed
- * to (a series topic vs. a reserved dataset-global topic name).
- * ========================================================================== */
-
-/* Opaque OWNING handle for a query result (serialized markers + parallel ids).
- * Valid until release_query(handle); never dereferenced by the plugin. */
-struct PJ_marker_query_handle_s;
-typedef struct PJ_marker_query_handle_s* PJ_marker_query_handle_t;
-
-/* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read. */
-typedef struct PJ_marker_store_host_vtable_t {
-  uint32_t abi_version;
-  uint32_t struct_size;
-
-  /* [main-thread] Add markers (serialized PJ.PlotMarkers) under (dataset,
-   * topic). The store mints one stable id per marker, in payload order, and
-   * writes them to out_ids (capacity out_ids_capacity); *out_count is always
-   * set to the TOTAL number of markers in the payload (so the caller can detect
-   * truncation). Returns false (out_error set) on a malformed payload. */
-  bool (*add)(
-      void* ctx, uint32_t dataset_id, PJ_string_view_t topic, const uint8_t* markers_data, uint64_t markers_size,
-      uint64_t* out_ids, uint64_t out_ids_capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Remove a marker by id from (dataset, topic). Returns false
-   * (out_error set) if the topic or id does not exist. */
-  bool (*remove)(
-      void* ctx, uint32_t dataset_id, PJ_string_view_t topic, uint64_t marker_id, PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Query all markers under (dataset, topic). On success
-   * allocates an owning handle carrying the serialized PJ.PlotMarkers bytes and
-   * the parallel id array; the caller releases it via release_query. An empty
-   * topic yields a valid handle whose marker/id count is zero. */
-  bool (*query)(
-      void* ctx, uint32_t dataset_id, PJ_string_view_t topic, PJ_marker_query_handle_t* out_handle,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [thread-safe] Expose the query result behind an owning handle: serialized
-   * PJ.PlotMarkers bytes plus the parallel id array (out_count ids, matching
-   * the markers in the payload, in order). Valid until release_query(handle). */
-  void (*query_bytes)(
-      PJ_marker_query_handle_t handle, const uint8_t** out_data, uint64_t* out_size, const uint64_t** out_ids,
-      uint64_t* out_count) PJ_NOEXCEPT;
-
-  /* [thread-safe] Release a query handle. Idempotent on NULL. */
-  void (*release_query)(PJ_marker_query_handle_t handle) PJ_NOEXCEPT;
-} PJ_marker_store_host_vtable_t;
-
-/* ABI-FROZEN: fat pointer layout permanent. */
-typedef struct {
-  void* ctx;
-  const PJ_marker_store_host_vtable_t* vtable;
-} PJ_marker_store_host_t;
 
 /**
  * Colormap registry service ("pj.colormap.v1", protocol_version 1).

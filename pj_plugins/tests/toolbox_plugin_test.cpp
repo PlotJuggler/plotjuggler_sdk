@@ -84,9 +84,11 @@ PJ_toolbox_host_t makeToolboxHost(ToolboxState* state) {
       .read_series_arrow = tbReadSeriesArrow,
       // Tail slots — left null because this mock host doesn't exercise the
       // object-topic surface. ToolboxHostView::registerObjectTopic /
-      // pushOwnedObject return `unexpected("older host")` for null slots.
+      // pushOwnedObject / registerObjectTopicOnDataset return
+      // `unexpected("older host")` for null slots.
       .register_object_topic = nullptr,
       .push_owned_object = nullptr,
+      .register_object_topic_on_dataset = nullptr,
   };
   return PJ_toolbox_host_t{.ctx = state, .vtable = &vtable};
 }

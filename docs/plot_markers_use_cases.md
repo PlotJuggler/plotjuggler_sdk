@@ -98,17 +98,17 @@ it to*, not by a field in the payload.
 - **UC-3 — ValueBand operating range.** A plugin `add`s a `ValueBand` for the nominal
   range of `motor/temp` (series-bound); samples leaving the band become obvious.
 
-- **UC-4 — Agent creates and deletes markers.** An agent, driving the SDK API, calls
-  `add(dataset="Waymo", father="cmd_vel/x", marker=Region{1.0s..2.0s, severity=error,
-  label="discontinuity"})` and gets back a store-assigned id. Later it removes that
-  one marker with `delete(dataset="Waymo", father="cmd_vel/x", id)`. Adding more
-  markers to the same topic and deleting specific ones covers all editing needs — no
+- **UC-4 — Agent republishes a marker set.** An agent (or script) builds the set for a
+  topic — e.g. a `Region{1.0s..2.0s, severity=error, label="discontinuity"}` on
+  `cmd_vel/x` of the Waymo dataset — and publishes the whole `PlotMarkers` set to that
+  topic. To add, change, or remove a marker it edits its in-memory set and republishes
+  the whole set (last-writer-publish) — there is no per-marker store mutation or
   in-place "modify."
 
-- **UC-5 — Query by series (bidirectional read).** The agent (or a report tool) asks
-  *"give me the markers on `cmd_vel/x` in the Waymo dataset"* →
-  `query(dataset="Waymo", series="cmd_vel/x")` returns that topic's markers directly
-  (no scanning). Optional filters narrow by time range and/or `severity ≥ warning`.
+- **UC-5 — Read by series.** A report tool asks *"give me the markers on `cmd_vel/x` in
+  the Waymo dataset"* → it reads that series' marker object topic (`latestAt`) and
+  deserializes the `PlotMarkers` set directly (no scanning). Filtering by time range /
+  `severity ≥ warning` is done on the deserialized set.
 
 - **UC-6 — JSON report.** A run exports a report — `overall_status`, plus every
   finding with its timestamps and severity. The data model supports this with no GUI;
@@ -122,8 +122,9 @@ it to*, not by a field in the payload.
 ## 5. Illustrative JSON (a query result / report)
 
 The wire form is the codec-serialized marker list; this JSON is the *report view* of
-the same data. Note there is no `source`/`scope` field, and `id` is the store handle
-returned alongside each marker, not part of the authored marker.
+the same data. Note there is no `source`/`scope` field, and no per-marker `id` — a
+producer owns and republishes its whole set, so identity (if ever needed for acks /
+cross-run correlation) is a host concern layered on top, not part of the marker.
 
 ```json
 {

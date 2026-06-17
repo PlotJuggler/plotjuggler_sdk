@@ -37,9 +37,11 @@ for field numbers and wire types.
 
 ## What the marker does NOT carry (by design)
 
-- **No `id`.** Identity (the delete handle) is owned by the host marker store and
-  surfaced by the marker API — not serialized into the value. This keeps
-  `PlotMarker` consistent with every other builtin, none of which carry an id.
+- **No `id`.** A producer owns its set and republishes it wholesale (last-writer
+  -publish), so no per-marker id is carried; identity (if ever needed for acks /
+  cross-run correlation) is a host concern layered on top — not serialized into the
+  value. This keeps `PlotMarker` consistent with every other builtin, none of which
+  carry an id.
 - **No `source`.** No builtin records its creator; provenance is the dataset/topic
   the marker lives under. Producer-specific extras go in `metadata`.
 - **No `scope`.** A marker's reach is decided by *which topic* it is addressed to

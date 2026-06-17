@@ -1,35 +1,45 @@
 # Plot Markers — Architecture
 
-> **Status: design draft.** The *what/why* and examples live in
-> [plot_markers_use_cases.md](plot_markers_use_cases.md). This document is the
-> *how*: the type, the store, the API surface, and how PJ4 renders markers. Names
-> and signatures are illustrative until frozen.
+> **Status: REVISED (was a dedicated-store draft).** Markers are now a **builtin
+> object** stored in the **ObjectStore** — there is NO dedicated marker store and NO
+> `pj.marker_store.v1` service. The *what/why* and examples live in
+> [plot_markers_use_cases.md](plot_markers_use_cases.md) (parts may still describe the
+> old model — being updated). The full reasoning for the pivot is in the session plan
+> `atomic-foraging-kettle.md`.
 >
 > Plot Markers reuse the **concept** of [`ImageAnnotations`](image_annotations_format.md)
-> (a canonical SDK builtin object with a wire codec) but not its structure.
+> (a canonical SDK builtin object with a wire codec) but not its structure — and, like
+> every builtin object, they ride the generic ObjectStore pipeline.
 
 ## 1. Layering & data flow
 
-Three layers, with a clean boundary at the SDK C-ABI:
+A marker set is a **builtin object** (`PlotMarkers` = a list of `PlotMarker`), one per
+`(dataset, marker-topic)`, stored in the host **ObjectStore**. The **producer owns its
+set and republishes the whole blob** on any change (last-writer-publish); the store is
+never mutated marker-by-marker, so no per-id delete / id-in-payload / RMW race is needed.
 
 ```
- Producer (toolbox plugin / future agent / ingestion parser)
-        │  add(dataset, father, marker) → id
-        │  delete(dataset, father, id)
-        │  query(dataset, [series], [filters]) → markers
-        ▼   ── SDK C-ABI (marker host-view service) ──
- Host marker store   ← owns identity (the marker id) and the mutable set
+ Producer (toolbox plugin / future Lua / in-process host)
+        │  build PlotMarkers set  →  serialize (PlotMarkers codec)
+        │  register object topic  "__markers__/<topic>"  on the dataset
+        │  push the whole serialized set  (republish)
+        ▼   ── generic object-write surface (no marker-specific service) ──
+ Host ObjectStore   ← holds the latest serialized PlotMarkers blob per topic
         ▼
- PJ4 consumers:  pj_plotting Qwt overlay · markers panel · JSON export
+ PJ4 consumers:  pj_plotting Qwt overlay (latestAt + deserialize) · JSON export
 ```
 
-- **SDK (`plotjuggler_sdk`)** owns the **type + codec** and the **marker host-view
-  service contract** (the C-ABI a producer speaks). This is the only code a plugin or
-  agent compiles against — which is exactly why the typed contract must live here.
-- **Host (`PJ4`)** owns the **marker store** (the identity owner) behind that
-  contract, plus rendering, the panel, and export.
-- Producers and the agent **never** see the store — only the API. The store is an
-  implementation detail and can change without touching a single producer.
+- **SDK (`plotjuggler_sdk`)** owns only the **type + codec** (`PlotMarkers`) plus the
+  marker object-topic naming convention (`markerObjectTopicName`, `kGlobalMarkerTopic`
+  in `pj_base/builtin/plot_markers.hpp`). Producers write via the **generic
+  object-write surface** (`registerObjectTopic*` + `pushOwnedObject`) — the same one
+  images/point clouds use. Annotating an *existing* dataset uses
+  `registerObjectTopicOnDataset(DatasetId, …)` (idempotent: re-resolves the topic).
+- **Host (`PJ4`)** owns the **ObjectStore** (which already holds all object media),
+  rendering, and export. No marker-specific store or service.
+- Producers never address individual markers — they publish a set. Identity, if ever
+  needed (acks / cross-run correlation), would be layered on top without changing the
+  SDK type or the object pipeline.
 
 ## 2. The `PlotMarker` / `PlotMarkers` type
 
@@ -111,76 +121,76 @@ Design notes:
   `abi/baseline.abi`) + a `plot_markers_codec` mirroring the `image_annotations_codec`
   *pattern*.
 
-## 3. Why a dedicated marker store (not ObjectStore, not DataEngine)
+## 3. Why ObjectStore + republish (not a dedicated store, not DataEngine)
 
-The feature's core operation is **delete one specific marker**. That single
-requirement decides the storage:
+Markers were originally planned in a dedicated mutable store keyed on "delete one
+specific marker". With the in-process `pj_scripting` Lua engine becoming the primary
+producer, the model flipped to **producer-owns-the-set + republish**, which removes the
+need for store-side per-marker mutation — and that makes the existing **ObjectStore**
+the right home (markers become just another builtin object).
 
-- **`DataEngine` (columnar) — no.** It stores scalar samples as numeric columns. A
-  marker is a heterogeneous record with a *span* `[t1,t2]`, an enum severity, strings.
-  Forcing it into columns and inventing a "sample timestamp" for a span is a deep
-  impedance mismatch.
-- **`ObjectStore` — no (for the real design).** It is a timestamped blob log whose
-  only removal verbs are **front-eviction** (`evictBefore`, `removeTopic`, `clear`):
-  it *structurally cannot delete entry #42*. To get per-marker delete on top of it you
-  must store the whole set as **one snapshot blob** and rewrite it on every edit — and
-  smuggle an `id` *into* the canonical type that no other builtin has.
-- **Dedicated marker store — yes.** One marker per entry, real per-id add/delete, and
-  identity owned by the store (a handle like `ObjectStore`'s native `SequentialUID`).
-  This keeps `PlotMarker` clean and consistent with all 16 other builtins, and the
-  `id` lives *outside* the payload, surfaced by the API.
+- **`DataEngine` (columnar) — no.** Strictly numeric columns (`PrimitiveType`),
+  append-only immutable chunks. A marker is a structured record over a span; it fits
+  neither the type nor the mutability model.
+- **`ObjectStore` — yes.** A marker *set* for a topic is one serialized `PlotMarkers`
+  blob = one object entry. The producer republishes the whole blob on every change, so
+  ObjectStore's append + latest-at semantics suffice — no per-entry delete needed.
+  Editing one marker = the producer mutates its in-memory set and re-pushes; there is
+  no read-modify-write against the store and no concurrency race for a single owner.
+  Set a keep-latest retention budget so superseded snapshots don't accumulate; the
+  overlay reads `latestAt(MAX)` so markers show regardless of the playback cursor.
+- **No dedicated store, no id in the payload.** `PlotMarker` stays id-less like every
+  other builtin; identity (if ever needed for acks / cross-run correlation) is layered
+  on top, not baked into the type.
 
-The `id` you asked about earlier is therefore a **store handle**, not a type field.
+## 4. The object-write surface (SDK C-ABI)
 
-> **Fallback.** If shipping speed ever outweighs cleanliness, back the same API with
-> an `ObjectStore` snapshot (one blob per topic, `id` carried inside the blob,
-> rewrite-on-edit). The producer-facing API is identical either way — this is purely
-> a host-internal choice.
-
-## 4. The marker host-view service (SDK C-ABI)
-
-Store-agnostic, symmetric (create + query), addressed by data identity:
+Markers reuse the **generic object pipeline** — there is no marker-specific service.
+A producer builds its set, serializes it, registers the object topic, and pushes:
 
 ```text
-add   (dataset, father_name, PlotMarker)                       -> MarkerId
-delete(dataset, father_name, MarkerId)                         -> Status
-query (dataset, father_name, [time_range], [min_severity], …)  -> {MarkerId, PlotMarker}[]
+register object topic  markerObjectTopicName(topic)  on the dataset
+push the whole serialized PlotMarkers set            (republish, last-writer wins)
 ```
 
-- `father_name` is the series topic (e.g. `cmd_vel/x`) or the dataset-level global
-  topic. There is no panel/GUI addressing.
-- **Per-series query is direct** — read the markers under that topic; no scan.
-- Cross-series aggregation ("all `warning+` markers in the dataset") enumerates the
-  dataset's marker topics (a known limitation, acceptable at marker scale).
-- This is the contract the **AI agent** drives and that **plugins** call; both are
-  data-domain operations, which is why they belong on the SDK ABI (and "create a
-  plot / edit layout" deliberately does **not** — that is app-control, not data).
+- The marker topic is a series field path (e.g. `cmd_vel/x`) or `kGlobalMarkerTopic`;
+  the object topic name is `markerObjectTopicName(topic)` = `"__markers__/" + topic`
+  (a reserved namespace so it never collides with media object topics).
+- **Producers creating their own dataset** use `registerObjectTopic(source, …)`.
+  **Producers annotating an existing dataset** (a compiled toolbox over loaded data)
+  use `registerObjectTopicOnDataset(DatasetId, …)` — a tail-appended, **idempotent**
+  toolbox-host slot that re-resolves the topic on each republish. In-process producers
+  (host / future Lua) can equally call `ObjectStore` directly.
+- **Per-series read is direct** (one object topic per series). Cross-series aggregation
+  ("all `warning+` markers in the dataset") enumerates the dataset's marker topics
+  (a known limitation, acceptable at marker scale).
 
 ## 5. Producers
 
-All produce the **same** `PlotMarker` type; they differ only in where the markers
-come from:
-- **Toolbox plugin (today).** Analysis over already-loaded series → `add`. The first
-  production user of the marker write path (analogous to the existing object-write
-  path that no toolbox uses yet).
-- **AI agent (future).** Drives the same `add`/`delete`/`query` API to manage markers
-  programmatically.
-- **Ingestion parser (future).** Markers that already exist in a recording (an event
-  channel, annotation messages) decode into `PlotMarker`s — the same role an image
-  parser plays for `ImageAnnotations`.
+All produce the **same** `PlotMarkers` set and publish it the same way; they differ
+only in where the markers come from:
+- **In-process host (today).** The Help → Add Demo Markers action builds a set and
+  publishes it via `ObjectStore` directly — the simplest exercise of the path.
+- **Toolbox plugin (today).** Analysis over already-loaded series → republish its set
+  via `registerObjectTopicOnDataset` + `pushOwnedObject`.
+- **Lua scripting / AI agent (future, `pj_scripting`).** The primary producer: an
+  in-process script regenerates and republishes its set; the agent most naturally emits
+  Lua. No new ABI — it rides the same path.
+- **Ingestion parser (future).** Markers already present in a recording decode into
+  `PlotMarkers` — the same role an image parser plays for `ImageAnnotations`.
 
 ## 6. Rendering (PJ4 host)
 
 - A **`PlotMarkersItem : QwtPlotItem`** overlay in `pj_plotting/widget/`, modeled on
-  `CurveTracker` (the existing custom Qwt item). Its `draw(painter, xMap, yMap, rect)`
-  maps marker times→pixels via `canvasMap()` and paints: `Region`/`ValueBand` as
-  translucent fills, `Event` as ticks/points, `Label` as text.
+  `CurveTracker`. Its `draw(painter, xMap, yMap, rect)` reads the marker set for each
+  target `(dataset, topic)` from `ObjectStore::latestAt` + `deserializePlotMarkers`,
+  maps marker times→pixels, and paints: `Region`/`ValueBand` as translucent fills,
+  `Event` as ticks/points, `Label` as text.
 - **Render rule:** a series marker draws on every plot showing that series; a global
-  marker draws on every plot of its dataset whose visible X-window overlaps it.
-- **Repaint** on data-change (the marker store notifying the host) and on time/zoom
-  changes, exactly as `CurveTracker` repaints on `PlaybackEngine::currentTimeChanged`.
-- **Markers panel** in `pj_app` (modeled on `CurveListPanel`): filterable list,
-  click-row → `PlaybackEngine::setCurrentTime(marker_time)`.
+  marker draws on every plot of its dataset.
+- **Repaint** on `SessionManager::markersChanged` (a store-agnostic signal a producer
+  fires after republishing) and on time/zoom changes.
+- A **markers panel** in `pj_app` (filterable list, click-row → seek) is optional/future.
 - This is the **`pj_plotting` Qwt path, not the scene2D image path** — markers
   annotate time-series plots, not image frames.
 
@@ -189,7 +199,8 @@ come from:
 - **Headless CLI.** PJ4 is GUI-only today (`pj_app/src/main.cpp` always opens a
   window). The data model is headless-ready (Qt-free `pj_runtime`/store), but a true
   no-GUI runner is a separate effort; v1 exposes JSON export as a host action.
-- **Cross-series aggregate query** enumerates topics (per-series query is direct).
-- **Concurrent writers** to the same topic (agent + plugin) need host-side locking on
-  that topic.
-- **`ObjectStore`-snapshot fallback** (§3) remains available behind the same API.
+- **Cross-series aggregate query** enumerates topics (per-series read is direct).
+- **Concurrent writers** to the same topic: the republish model assumes a single owner
+  per marker topic; two live writers to one topic would clobber (last-writer wins).
+- **Stable identity** (acks / correlating the same finding across producer re-runs) is
+  not provided by anonymous republished sets — it would be layered on if needed.

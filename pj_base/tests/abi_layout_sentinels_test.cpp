@@ -179,7 +179,10 @@ static_assert(offsetof(PJ_toolbox_host_vtable_t, append_arrow_stream) == 48, "to
 static_assert(offsetof(PJ_toolbox_host_vtable_t, read_series_arrow) == 64, "toolbox host read slot pinned");
 static_assert(offsetof(PJ_toolbox_host_vtable_t, register_object_topic) == 72, "toolbox host object-topic slot pinned");
 static_assert(offsetof(PJ_toolbox_host_vtable_t, push_owned_object) == 80, "toolbox host object-push tail slot pinned");
-static_assert(sizeof(PJ_toolbox_host_vtable_t) == 88, "Toolbox host size (update deliberately on append)");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, register_object_topic_on_dataset) == 88,
+    "toolbox host object-topic-on-dataset tail slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 96, "Toolbox host size (update deliberately on append)");
 
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 5, "v5 ABI version");

@@ -26,6 +26,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "pj_base/builtin/image_annotations.hpp"  // for ColorRGBA
@@ -101,6 +102,27 @@ struct PlotMarkers {
     return markers.empty();
   }
 };
+
+/// Reserved marker-topic name for dataset-global markers (drawn on every plot of
+/// the dataset, regardless of which series it shows).
+inline constexpr std::string_view kGlobalMarkerTopic = "__global__";
+
+/// Marker sets live in the host ObjectStore as serialized PlotMarkers objects.
+/// They sit under object topics in a reserved namespace so they never collide
+/// with media object topics (images, point clouds). Producers (plugins, scripts,
+/// host) and the plot overlay MUST agree on this mapping: the object topic for a
+/// marker topic `T` is `kMarkerObjectTopicPrefix + T`. A producer owns its set
+/// and republishes the whole PlotMarkers blob on every change (last-writer wins);
+/// the store is never mutated marker-by-marker.
+inline constexpr std::string_view kMarkerObjectTopicPrefix = "__markers__/";
+
+/// Object-topic name carrying the marker set addressed to `marker_topic` (a
+/// series field path, or kGlobalMarkerTopic for dataset-global markers).
+[[nodiscard]] inline std::string markerObjectTopicName(std::string_view marker_topic) {
+  std::string name(kMarkerObjectTopicPrefix);
+  name.append(marker_topic);
+  return name;
+}
 
 }  // namespace sdk
 }  // namespace PJ

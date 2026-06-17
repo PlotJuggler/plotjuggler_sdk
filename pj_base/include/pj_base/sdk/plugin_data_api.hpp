@@ -684,116 +684,6 @@ class ToolboxObjectReadHostView {
   PJ_object_read_host_t host_{};
 };
 
-/// A marker plus its store-assigned id, as returned by MarkerStoreHostView::query.
-struct MarkerEntry {
-  uint64_t id = 0;
-  PlotMarker marker;
-};
-
-// ---------------------------------------------------------------------------
-// Marker store host view ("pj.marker_store.v1")
-//
-// Create / delete / query plot markers on a (dataset, topic). Unlike the object
-// store, the marker set is mutable and id-addressed: add() mints a stable id,
-// remove() deletes by it. Markers cross the ABI as serialized PJ.PlotMarkers
-// bytes; this view wraps the codec so callers work in typed sdk::PlotMarker.
-// ---------------------------------------------------------------------------
-class MarkerStoreHostView {
- public:
-  MarkerStoreHostView() = default;
-  explicit MarkerStoreHostView(PJ_marker_store_host_t host) : host_(host) {}
-
-  [[nodiscard]] bool valid() const {
-    return host_.ctx != nullptr && host_.vtable != nullptr;
-  }
-
-  /// Add a batch of markers to (dataset, topic); returns their new ids in order.
-  [[nodiscard]] Expected<std::vector<uint64_t>> add(
-      DatasetId dataset, std::string_view topic, const PlotMarkers& markers) const {
-    if (!valid() || host_.vtable->add == nullptr) {
-      return unexpected("marker store host is not bound");
-    }
-    const std::vector<uint8_t> bytes = PJ::serializePlotMarkers(markers);
-    std::vector<uint64_t> ids(markers.markers.size());
-    uint64_t count = 0;
-    PJ_error_t err{};
-    if (!host_.vtable->add(
-            host_.ctx, dataset, toAbiString(topic), bytes.data(), bytes.size(), ids.data(), ids.size(), &count,
-            &err)) {
-      return unexpected(errorToString(err));
-    }
-    ids.resize(count < ids.size() ? count : ids.size());
-    return ids;
-  }
-
-  /// Add a single marker; returns its new id.
-  [[nodiscard]] Expected<uint64_t> add(DatasetId dataset, std::string_view topic, const PlotMarker& marker) const {
-    PlotMarkers one;
-    one.markers.push_back(marker);
-    auto ids = add(dataset, topic, one);
-    if (!ids) {
-      return unexpected(ids.error());
-    }
-    if (ids->empty()) {
-      return unexpected("marker store add returned no id");
-    }
-    return ids->front();
-  }
-
-  /// Remove a marker by id from (dataset, topic).
-  [[nodiscard]] Status remove(DatasetId dataset, std::string_view topic, uint64_t id) const {
-    if (!valid() || host_.vtable->remove == nullptr) {
-      return unexpected("marker store host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->remove(host_.ctx, dataset, toAbiString(topic), id, &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
-
-  /// Query all markers under (dataset, topic), each paired with its id.
-  [[nodiscard]] Expected<std::vector<MarkerEntry>> query(DatasetId dataset, std::string_view topic) const {
-    if (!valid() || host_.vtable->query == nullptr) {
-      return unexpected("marker store host is not bound");
-    }
-    PJ_marker_query_handle_t handle = nullptr;
-    PJ_error_t err{};
-    if (!host_.vtable->query(host_.ctx, dataset, toAbiString(topic), &handle, &err)) {
-      return unexpected(errorToString(err));
-    }
-    const uint8_t* data = nullptr;
-    uint64_t size = 0;
-    const uint64_t* ids = nullptr;
-    uint64_t count = 0;
-    host_.vtable->query_bytes(handle, &data, &size, &ids, &count);
-
-    std::vector<MarkerEntry> out;
-    Expected<PlotMarkers> decoded =
-        (size == 0) ? Expected<PlotMarkers>(PlotMarkers{}) : PJ::deserializePlotMarkers(data, size);
-    if (decoded.has_value()) {
-      const auto& markers = decoded->markers;
-      const uint64_t n = count < markers.size() ? count : markers.size();
-      out.reserve(n);
-      for (uint64_t i = 0; i < n; ++i) {
-        out.push_back(MarkerEntry{ids[i], markers[i]});
-      }
-    }
-    host_.vtable->release_query(handle);
-    if (!decoded.has_value()) {
-      return unexpected(decoded.error());
-    }
-    return out;
-  }
-
-  [[nodiscard]] const PJ_marker_store_host_t& raw() const noexcept {
-    return host_;
-  }
-
- private:
-  PJ_marker_store_host_t host_{};
-};
-
 // ---------------------------------------------------------------------------
 // Object write host view (protocol v4)
 //
@@ -1330,6 +1220,31 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return okStatus();
+  }
+
+  /// Register an object topic on an EXISTING dataset (by DatasetId) — the
+  /// annotation path used to attach objects (e.g. plot markers) to data that
+  /// another source loaded. Idempotent: returns the existing topic's handle if
+  /// one with this name already exists on the dataset, so a producer that
+  /// republishes its whole set just re-resolves the handle each time. Returns
+  /// `unexpected` on older hosts that don't expose the slot.
+  [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopicOnDataset(
+      DatasetId dataset, std::string_view name, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!hasTailSlot(
+            offsetof(PJ_toolbox_host_vtable_t, register_object_topic_on_dataset),
+            host_.vtable->register_object_topic_on_dataset)) {
+      return unexpected("toolbox host does not support object topics on existing datasets (older host)");
+    }
+    ObjectTopicHandle handle{};
+    PJ_error_t err{};
+    if (!host_.vtable->register_object_topic_on_dataset(
+            host_.ctx, static_cast<uint32_t>(dataset), toAbiString(name), toAbiString(metadata_json), &handle, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return handle;
   }
 
   [[nodiscard]] const PJ_toolbox_host_t& raw() const noexcept {
