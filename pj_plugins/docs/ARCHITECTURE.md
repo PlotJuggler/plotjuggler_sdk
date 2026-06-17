@@ -143,7 +143,16 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   (write hosts, runtime hosts, colormap, settings, etc.) under canonical
   reverse-DNS-style names (e.g. `"pj.source_write.v1"`,
   `"pj.runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`,
-  `"pj.settings.v1"`). Plugins acquire only the services they use.
+  `"pj.settings.v1"`, `"pj.data_processors.v1"`). Plugins acquire only the
+  services they use. `"pj.data_processors.v1"` (optional) lets a toolbox create
+  catalog-resident transform nodes in the host by data — a script plus
+  input/output names and a params JSON blob; nothing executable crosses the
+  boundary (the host owns execution). The script payload is **binary-safe**
+  (`PJ_string_view_t {data,size}`), so the native "door" is WASM bytes through
+  this same data-only surface (a future host-owned WASM/Python backend is purely
+  additive and survives plugin unload) — deliberately *not* a C++ kernel vtable
+  that would dangle on unload. The plugin sees a Qt-free
+  `sdk::DataProcessorsHostView` (`createTransform`/`remove`/`list`/`recipeOf`).
   `"pj.settings.v1"` (optional) is a QSettings-like key/value store any plugin
   family can use for persistent state — the plugin sees a Qt-free
   `sdk::SettingsView` (`setValue(key, v)` returns a `Status`; reads return an
