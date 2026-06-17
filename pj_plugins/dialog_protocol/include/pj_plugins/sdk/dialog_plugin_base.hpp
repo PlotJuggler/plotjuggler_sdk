@@ -303,3 +303,33 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
     return PJ_get_dialog_vtable();                                                          \
   }                                                                                         \
   }
+
+// --- Static-link variant (WASM / no dlopen) ---  see data_source_plugin_base.hpp.
+// Many statically-linked plugins each carry a PJ_DIALOG_PLUGIN, so the fixed
+// `extern "C" PJ_get_dialog_vtable` symbol (and the ABI-version export) would
+// collide at link. The static registry never resolves a dialog via dlsym (the
+// host short-circuits the dialog path on WASM), so emit only a uniquely
+// class-keyed getter — kept so dialogVtableFor<ClassName>() still resolves for
+// any in-binary caller.
+#ifdef PJ_STATIC_PLUGINS
+#undef PJ_DIALOG_PLUGIN_WITH_MANIFEST
+#define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson)                              \
+  inline const PJ_dialog_vtable_t* pj_static_get_dialog_vtable_##ClassName() noexcept {      \
+    static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate(            \
+        []() noexcept -> void* {                                                             \
+          try {                                                                              \
+            return static_cast<PJ::DialogPluginBase*>(new ClassName());                      \
+          } catch (...) {                                                                    \
+            return nullptr;                                                                  \
+          }                                                                                  \
+        },                                                                                   \
+        ManifestJson);                                                                       \
+    return vt;                                                                               \
+  }                                                                                          \
+  namespace PJ {                                                                             \
+  template <>                                                                                \
+  [[maybe_unused]] inline const PJ_dialog_vtable_t* dialogVtableFor<ClassName>() noexcept {  \
+    return pj_static_get_dialog_vtable_##ClassName();                                        \
+  }                                                                                          \
+  }
+#endif  // PJ_STATIC_PLUGINS
