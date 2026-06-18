@@ -37,36 +37,36 @@ int& streamReleaseCount() {
   return count;
 }
 
-void schema_release(::ArrowSchema* s) {
+void schemaRelease(::ArrowSchema* s) {
   ++schemaReleaseCount();
   std::memset(s, 0, sizeof(*s));  // spec: release sets fields to null/0
 }
 
-void array_release(::ArrowArray* a) {
+void arrayRelease(::ArrowArray* a) {
   ++arrayReleaseCount();
   std::memset(a, 0, sizeof(*a));
 }
 
-void stream_release(::ArrowArrayStream* s) {
+void streamRelease(::ArrowArrayStream* s) {
   ++streamReleaseCount();
   std::memset(s, 0, sizeof(*s));
 }
 
 ::ArrowSchema makeLiveSchema() {
   ::ArrowSchema s{};
-  s.release = schema_release;
+  s.release = schemaRelease;
   return s;
 }
 
 ::ArrowArray makeLiveArray() {
   ::ArrowArray a{};
-  a.release = array_release;
+  a.release = arrayRelease;
   return a;
 }
 
 ::ArrowArrayStream makeLiveStream() {
   ::ArrowArrayStream s{};
-  s.release = stream_release;
+  s.release = streamRelease;
   return s;
 }
 
