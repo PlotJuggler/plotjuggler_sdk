@@ -1,0 +1,42 @@
+[workspace]
+name = "plotjuggler_sdk"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "win-64"]
+
+# --- Dev build of the SDK itself (the same cmake the recipe drives) ---------
+[dependencies]
+cmake = ">=3.22"
+ninja = "*"
+cxx-compiler = "*"
+nlohmann_json = "3.12.*"
+fmt = "12.*"
+fast_float = "8.*"
+
+[tasks]
+configure = "cmake -G Ninja -B build -S . -DPJ_INSTALL_SDK=ON -DPJ_BUILD_TESTS=OFF -DPJ_BUILD_PORTED_PLUGINS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20"
+build = { cmd = "cmake --build build", depends-on = ["configure"] }
+install = { cmd = "cmake --install build --prefix $CONDA_PREFIX", depends-on = ["build"] }
+
+# --- Test env: builds the SDK gtest suite and runs ctest --------------------
+[feature.test.dependencies]
+gtest = "1.17.*"
+
+[feature.test.tasks]
+test = "cmake -G Ninja -B build-test -S . -DPJ_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 && cmake --build build-test && ctest --test-dir build-test --output-on-failure"
+
+# --- Pack env: builds the conda package. Output goes to ../conda-output (OUTSIDE
+# the repo) on purpose: the recipe's `source: path: .` copies the repo root, so an
+# in-tree output dir would be recursively copied into the build sandbox on re-runs.
+# Do not change to ./output. The /output/ entry in .gitignore only guards against an
+# accidental rattler-build run that uses its default (in-tree) --output-dir. --------
+[feature.pack.dependencies]
+# Pin to the exact rattler-build the CI publish workflow uses (v0.66.2) so the dev
+# `pack` task and the release build resolve the same recipe-schema behavior.
+rattler-build = "0.66.2.*"
+
+[feature.pack.tasks]
+pack = "rattler-build build --recipe recipe.yaml -c conda-forge --output-dir ../conda-output"
+
+[environments]
+test = ["test"]
+pack = ["pack"]
