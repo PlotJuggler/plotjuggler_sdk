@@ -1,0 +1,36 @@
+[workspace]
+name = "plotjuggler_sdk"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "win-64"]
+
+# --- Dev build of the SDK itself (the same cmake the recipe drives) ---------
+[dependencies]
+cmake = ">=3.22"
+ninja = "*"
+cxx-compiler = "*"
+nlohmann_json = "3.12.*"
+fmt = "12.*"
+fast_float = "8.*"
+
+[tasks]
+configure = "cmake -G Ninja -B build -S . -DPJ_INSTALL_SDK=ON -DPJ_BUILD_TESTS=OFF -DPJ_BUILD_PORTED_PLUGINS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20"
+build = { cmd = "cmake --build build", depends-on = ["configure"] }
+install = { cmd = "cmake --install build --prefix $CONDA_PREFIX", depends-on = ["build"] }
+
+# --- Test env: builds the SDK gtest suite and runs ctest --------------------
+[feature.test.dependencies]
+gtest = "1.17.*"
+
+[feature.test.tasks]
+test = "cmake -G Ninja -B build-test -S . -DPJ_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 && cmake --build build-test && ctest --test-dir build-test --output-on-failure"
+
+# --- Pack env: produces the conda package (output OUTSIDE the source tree) ---
+[feature.pack.dependencies]
+rattler-build = ">=0.66,<0.67"
+
+[feature.pack.tasks]
+pack = "rattler-build build --recipe recipe.yaml -c conda-forge --output-dir ../conda-output"
+
+[environments]
+test = ["test"]
+pack = ["pack"]
