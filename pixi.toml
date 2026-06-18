@@ -24,7 +24,11 @@ gtest = "1.17.*"
 [feature.test.tasks]
 test = "cmake -G Ninja -B build-test -S . -DPJ_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 && cmake --build build-test && ctest --test-dir build-test --output-on-failure"
 
-# --- Pack env: produces the conda package (output OUTSIDE the source tree) ---
+# --- Pack env: builds the conda package. Output goes to ../conda-output (OUTSIDE
+# the repo) on purpose: the recipe's `source: path: .` copies the repo root, so an
+# in-tree output dir would be recursively copied into the build sandbox on re-runs.
+# Do not change to ./output. The /output/ entry in .gitignore only guards against an
+# accidental rattler-build run that uses its default (in-tree) --output-dir. --------
 [feature.pack.dependencies]
 rattler-build = ">=0.66,<0.67"
 
