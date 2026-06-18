@@ -26,25 +26,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify tag matches conanfile.py and recipe.yaml versions
+      - name: Verify tag matches all version sources
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME#v}"
+          # The SDK version is hardcoded in three places that must agree with the tag:
+          #   conanfile.py  version = "..."           (Conan package + the tag guard)
+          #   recipe.yaml   context.version "..."     (embedded in the published .conda)
+          #   CMakeLists.txt PJ_PACKAGE_VERSION "..." (baked into ConfigVersion.cmake,
+          #                                            matched by find_package(... <ver>))
           conan_ver="$(grep -E '^\s*version\s*=' conanfile.py | head -1 | sed -E 's/.*"(.*)".*/\1/')"
-          # recipe.yaml carries its own context.version (the version embedded in the
-          # published .conda). Guard it too so a stale recipe can't ship a mislabeled
-          # package. Match only the quoted context line, not the templated package line.
           recipe_ver="$(grep -E '^[[:space:]]+version:[[:space:]]*"' recipe.yaml | head -1 | sed -E 's/.*"(.*)".*/\1/')"
-          echo "tag=$tag  conanfile.py=$conan_ver  recipe.yaml=$recipe_ver"
-          if [ "$tag" != "$conan_ver" ]; then
-            echo "::error::Tag v$tag does not match conanfile.py version ($conan_ver)"
-            exit 1
-          fi
-          if [ "$tag" != "$recipe_ver" ]; then
-            echo "::error::Tag v$tag does not match recipe.yaml version ($recipe_ver)"
-            exit 1
-          fi
+          cmake_ver="$(grep -E 'set\(PJ_PACKAGE_VERSION' CMakeLists.txt | head -1 | sed -E 's/.*"(.*)".*/\1/')"
+          echo "tag=$tag  conanfile.py=$conan_ver  recipe.yaml=$recipe_ver  CMakeLists.txt=$cmake_ver"
+          fail=0
+          for pair in "conanfile.py:$conan_ver" "recipe.yaml:$recipe_ver" "CMakeLists.txt:$cmake_ver"; do
+            if [ "$tag" != "${pair#*:}" ]; then
+              echo "::error::Tag v$tag does not match ${pair%%:*} version (${pair#*:})"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ]
 
       - name: Install rattler-build
         uses: prefix-dev/rattler-build-action@v0.2.38

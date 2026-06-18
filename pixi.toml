@@ -30,7 +30,9 @@ test = "cmake -G Ninja -B build-test -S . -DPJ_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE
 # Do not change to ./output. The /output/ entry in .gitignore only guards against an
 # accidental rattler-build run that uses its default (in-tree) --output-dir. --------
 [feature.pack.dependencies]
-rattler-build = ">=0.66,<0.67"
+# Pin to the exact rattler-build the CI publish workflow uses (v0.66.2) so the dev
+# `pack` task and the release build resolve the same recipe-schema behavior.
+rattler-build = "0.66.2.*"
 
 [feature.pack.tasks]
 pack = "rattler-build build --recipe recipe.yaml -c conda-forge --output-dir ../conda-output"
