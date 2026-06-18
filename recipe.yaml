@@ -1,0 +1,74 @@
+schema_version: 1
+
+context:
+  version: "0.8.0"
+
+package:
+  name: plotjuggler_sdk
+  version: ${{ version }}
+
+source:
+  path: .
+
+build:
+  number: 0
+  script:
+    - cmake -G Ninja -B build -S .
+        -DPJ_INSTALL_SDK=ON
+        -DPJ_BUILD_TESTS=OFF
+        -DPJ_BUILD_PORTED_PLUGINS=OFF
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_CXX_STANDARD=20
+        -DCMAKE_PREFIX_PATH=$PREFIX
+        -DCMAKE_INSTALL_PREFIX=$PREFIX
+        -DCMAKE_INSTALL_LIBDIR=lib
+    - cmake --build build
+    - cmake --install build --prefix $PREFIX
+
+requirements:
+  build:
+    - ${{ compiler('cxx') }}
+    - cmake
+    - ninja
+  host:
+    - nlohmann_json 3.12.*
+    - fmt 12.*
+    - fast_float 8.*
+  run:
+    - nlohmann_json
+  # fmt and fast_float are header-only / BUILD_INTERFACE-only in the SDK (they
+  # never appear in the installed Targets file or the static archives). Their
+  # conda-forge run_exports (fmt pins a tight >=12.2,<12.3) would over-depend,
+  # so suppress them.
+  ignore_run_exports:
+    by_name:
+      - fmt
+      - fast_float
+
+tests:
+  - script:
+      - test -f $PREFIX/lib/cmake/plotjuggler_sdk/plotjuggler_sdkConfig.cmake
+      - test -f $PREFIX/lib/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
+      - test -f $PREFIX/lib/cmake/plotjuggler_sdk/PjPluginManifest.cmake
+      - test -f $PREFIX/lib/libpj_base.a
+    requirements:
+      run:
+        - ${{ compiler('cxx') }}
+        - cmake
+        - ninja
+        - nlohmann_json
+    files:
+      source:
+        - examples/sdk_consumer/
+
+about:
+  homepage: https://github.com/PlotJuggler/plotjuggler_sdk
+  license: MIT AND Apache-2.0
+  license_file:
+    - LICENSE
+    - LICENSE-APACHE
+  summary: PlotJuggler SDK — vocabulary types, plugin-author SDK, and host-side plugin loaders
+  description: |
+    plotjuggler_sdk provides the native CMake package consumed by PlotJuggler
+    plugins. Exposes the components plotjuggler_sdk::base, ::plugin_sdk, and
+    ::plugin_host via find_package(plotjuggler_sdk).
