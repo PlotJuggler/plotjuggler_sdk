@@ -676,6 +676,21 @@ class ToolboxObjectReadHostView {
     return {lo, hi};
   }
 
+  /// Dataset-scoped topic lookup — disambiguates a topic name that exists on
+  /// several loaded datasets (the name-only lookupTopic cannot). nullopt on miss
+  /// or when the host predates this tail slot.
+  [[nodiscard]] std::optional<ObjectTopicHandle> lookupTopicOnDataset(DatasetId dataset, std::string_view name) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_object_read_host_vtable_t, host_.vtable, lookup_topic_on_dataset)) {
+      return std::nullopt;
+    }
+    ObjectTopicHandle h =
+        host_.vtable->lookup_topic_on_dataset(host_.ctx, static_cast<uint32_t>(dataset), toAbiString(name));
+    if (h.id == 0) {
+      return std::nullopt;
+    }
+    return h;
+  }
+
   [[nodiscard]] const PJ_object_read_host_t& raw() const noexcept {
     return host_;
   }
@@ -1245,6 +1260,26 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Bound a topic's retention to the last `max_entries` snapshots (0 = unlimited).
+  /// A producer republishing a whole set under one topic at a sentinel timestamp
+  /// passes 1 so superseded snapshots are evicted instead of accumulating. Returns
+  /// an error on a host that predates this slot.
+  [[nodiscard]] Status setObjectTopicRetention(ObjectTopicHandle topic, uint64_t max_entries) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!hasTailSlot(
+            offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention),
+            host_.vtable->set_object_topic_retention)) {
+      return unexpected("toolbox host does not support object retention (older host)");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_object_topic_retention(host_.ctx, topic, max_entries, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return {};
   }
 
   [[nodiscard]] const PJ_toolbox_host_t& raw() const noexcept {

@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark
 #include <string>
 #include <string_view>
 #include <vector>
@@ -161,6 +162,15 @@ class WidgetEvent {
       return std::nullopt;
     }
     return RangeValues{lo->get<int>(), hi->get<int>()};
+  }
+
+  /// MarkerTimeline: the full mark set after a user edit (drag / resize / delete).
+  std::optional<std::vector<TimelineMark>> markerTimelineChanged() const {
+    auto it = data_.find("marker_timeline_marks");
+    if (it == data_.end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    return timelineMarksFromJson(*it);
   }
 
   /// ChartPreviewWidget: visible range changed via zoom or pan.

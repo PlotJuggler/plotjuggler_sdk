@@ -26,6 +26,45 @@ struct ChartSeries {
   std::string color;  // optional hex "#rrggbb"
 };
 
+/// One mark on a MarkerTimeline. `region` true → a resizable [start,end] span;
+/// false → a single-point event at `start` (end ignored). Positions are in the
+/// timeline's integer step domain (see setMarkerTimelineBounds). `id` is a stable
+/// per-mark handle the host echoes back on edits.
+struct TimelineMark {
+  int id = 0;
+  bool region = true;
+  int start = 0;
+  int end = 0;
+};
+
+/// The single source of truth for the TimelineMark ⇆ JSON wire shape, shared by
+/// the data setter, the event builder, the event parser, and the data-view (so a
+/// field change cannot drift between the four).
+[[nodiscard]] inline nlohmann::json timelineMarksToJson(const std::vector<TimelineMark>& marks) {
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& m : marks) {
+    arr.push_back({{"id", m.id}, {"region", m.region}, {"start", m.start}, {"end", m.end}});
+  }
+  return arr;
+}
+
+[[nodiscard]] inline std::vector<TimelineMark> timelineMarksFromJson(const nlohmann::json& arr) {
+  std::vector<TimelineMark> marks;
+  if (!arr.is_array()) {
+    return marks;
+  }
+  marks.reserve(arr.size());
+  for (const auto& jm : arr) {
+    TimelineMark m;
+    m.id = jm.value("id", 0);
+    m.region = jm.value("region", true);
+    m.start = jm.value("start", 0);
+    m.end = jm.value("end", 0);
+    marks.push_back(m);
+  }
+  return marks;
+}
+
 /// Builder for the JSON string returned by get_widget_data().
 /// Each method targets an existing widget in the .ui file by its objectName.
 class WidgetData {
@@ -338,6 +377,34 @@ class WidgetData {
     auto& e = entry(name);
     e["range_time_min_ns"] = std::to_string(min_ns);
     e["range_time_max_ns"] = std::to_string(max_ns);
+    return *this;
+  }
+
+  // --- MarkerTimeline (editable multi-marker strip) ---
+
+  /// Set the integer [min, max] step domain of a MarkerTimeline (mark positions
+  /// live in these units). Set before the marks, like the RangeSlider bounds.
+  WidgetData& setMarkerTimelineBounds(std::string_view name, int min, int max) {
+    auto& e = entry(name);
+    e["marker_timeline_min"] = min;
+    e["marker_timeline_max"] = max;
+    return *this;
+  }
+
+  /// Replace the whole mark set shown on a MarkerTimeline (last-writer-wins,
+  /// mirroring the producer's republish model). An empty vector clears it.
+  WidgetData& setMarkerTimelineMarks(std::string_view name, const std::vector<TimelineMark>& marks) {
+    entry(name)["marker_timeline_marks"] = timelineMarksToJson(marks);
+    return *this;
+  }
+
+  /// Map the MarkerTimeline's [min,max] step domain onto the absolute time window
+  /// [min_ns, max_ns] for hover/tooltip labels. Nanoseconds are carried as strings
+  /// to avoid double precision loss. Pass min_ns == max_ns == 0 to show raw steps.
+  WidgetData& setMarkerTimelineTimeSpan(std::string_view name, std::int64_t min_ns, std::int64_t max_ns) {
+    auto& e = entry(name);
+    e["marker_timeline_time_min_ns"] = std::to_string(min_ns);
+    e["marker_timeline_time_max_ns"] = std::to_string(max_ns);
     return *this;
   }
 

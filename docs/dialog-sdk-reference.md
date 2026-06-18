@@ -106,6 +106,18 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setOkEnabled(bool)` | Enable/disable OK button (targets `"buttonBox"`) |
 | `setOkEnabled(name, bool)` | Enable/disable OK button (custom name) |
 
+### MarkerTimeline (custom widget, class name `MarkerTimeline`)
+
+Editable multi-marker strip: any number of resizable Region spans + single-point Event marks, each draggable.
+
+| Method | Description |
+|--------|-------------|
+| `setMarkerTimelineBounds(name, min, max)` | Integer step domain marks live in (set before the marks) |
+| `setMarkerTimelineMarks(name, marks)` | Replace the whole `std::vector<TimelineMark>` set (last-writer-wins; empty clears) |
+| `setMarkerTimelineTimeSpan(name, min_ns, max_ns)` | Map the step domain onto `[min_ns, max_ns]` for hover labels (`0,0` → raw steps) |
+
+`TimelineMark{int id; bool region; int start; int end;}` — `region=false` is a point Event (`end` ignored).
+
 ### Generic (any widget)
 
 | Method | Description |
@@ -144,6 +156,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onCodeChangedWithCursor(name, code, cursor)` | QPlainTextEdit code editor | Edited code + caret offset (`cursor < 0` when no opt-in / not reported); defaults to `onCodeChanged` |
 | `onItemsDropped(name, items)` | Any widget with `setDropTarget` | Dropped item labels |
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
+| `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
 
 ---

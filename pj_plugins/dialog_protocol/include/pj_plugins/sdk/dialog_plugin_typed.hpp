@@ -103,6 +103,12 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// MarkerTimeline: a mark was moved, resized, or deleted. `marks` is the full set.
+  virtual bool onMarkerTimelineChanged(
+      std::string_view /*widget_name*/, const std::vector<TimelineMark>& /*marks*/) {
+    return false;
+  }
+
   /// DateRangePicker: the date/time range filter changed. from_iso/to_iso are
   /// ISO-8601 datetime strings (empty = unbounded on that side).
   virtual bool onDateRangeChanged(
@@ -120,6 +126,9 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.rangeChanged()) {
       return onRangeChanged(widget_name, v->lower, v->upper);
+    }
+    if (auto v = event.markerTimelineChanged()) {
+      return onMarkerTimelineChanged(widget_name, *v);
     }
     if (auto v = event.dateRangeChanged()) {
       return onDateRangeChanged(widget_name, v->from_iso, v->to_iso);

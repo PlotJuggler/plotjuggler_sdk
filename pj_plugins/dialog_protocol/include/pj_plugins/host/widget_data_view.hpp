@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "pj_base/number_parse.hpp"
+#include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark
 
 namespace PJ {
 
@@ -312,6 +313,39 @@ class WidgetDataView {
   }
   [[nodiscard]] std::optional<std::string> dateRangeLatest(std::string_view name) const {
     return getString(name, "date_range_latest");
+  }
+
+  // --- MarkerTimeline ---
+  [[nodiscard]] std::optional<int> markerTimelineMin(std::string_view name) const {
+    return getInt(name, "marker_timeline_min");
+  }
+  [[nodiscard]] std::optional<int> markerTimelineMax(std::string_view name) const {
+    return getInt(name, "marker_timeline_max");
+  }
+  [[nodiscard]] std::optional<std::vector<TimelineMark>> markerTimelineMarks(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("marker_timeline_marks");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    return timelineMarksFromJson(*it);
+  }
+  /// [min_ns, max_ns] time window for hover labels, parsed from string-encoded ns.
+  [[nodiscard]] std::optional<std::pair<std::int64_t, std::int64_t>> markerTimelineTimeSpan(
+      std::string_view name) const {
+    auto mn = getString(name, "marker_timeline_time_min_ns");
+    auto mx = getString(name, "marker_timeline_time_max_ns");
+    if (!mn.has_value() || !mx.has_value()) {
+      return std::nullopt;
+    }
+    try {
+      return std::make_pair(static_cast<std::int64_t>(std::stoll(*mn)), static_cast<std::int64_t>(std::stoll(*mx)));
+    } catch (...) {
+      return std::nullopt;
+    }
   }
 
   // --- Field validity indicator (generic) ---

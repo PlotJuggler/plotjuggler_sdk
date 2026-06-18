@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <nlohmann/json.hpp>
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark
 #include <string>
 #include <string_view>
 #include <vector>
@@ -139,6 +140,14 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["range_lower"] = lower;
     j["range_upper"] = upper;
+    return j.dump();
+  }
+
+  /// MarkerTimeline: the mark set changed (user drag / resize / delete). Carries
+  /// the whole set so the plugin replaces its draft wholesale.
+  [[nodiscard]] static std::string markerTimelineChanged(const std::vector<TimelineMark>& marks) {
+    nlohmann::json j;
+    j["marker_timeline_marks"] = timelineMarksToJson(marks);
     return j.dump();
   }
 

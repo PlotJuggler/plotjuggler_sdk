@@ -535,6 +535,15 @@ typedef struct PJ_toolbox_host_vtable_t {
   bool (*register_object_topic_on_dataset)(
       void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
       PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Bound an object topic's retention to keep at most `max_entries`
+   * of the most recent snapshots (0 = unlimited). Generic capability: a producer
+   * that republishes a whole set under one topic at a sentinel timestamp (e.g.
+   * plot markers) sets max_entries=1 so superseded snapshots are evicted instead
+   * of accumulating. Returns false (out_error populated) on a bad handle.
+   * ABI-APPENDED slot: gate via struct_size before calling. */
+  bool (*set_object_topic_retention)(
+      void* ctx, PJ_object_topic_handle_t topic, uint64_t max_entries, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
@@ -734,6 +743,14 @@ typedef struct PJ_object_read_host_vtable_t {
   /* [main-thread] Time range [min, max] for a topic. Returns false if the
    * topic is unknown or empty. */
   bool (*time_range)(void* ctx, PJ_object_topic_handle_t topic, int64_t* out_min_ts, int64_t* out_max_ts) PJ_NOEXCEPT;
+
+  /* [main-thread] Look up an object topic on a SPECIFIC dataset by name.
+   * Object-topic identity is (dataset_id, name): the same name can exist on
+   * several loaded datasets, so the name-only `lookup_topic` above is ambiguous
+   * across datasets. This dataset-scoped form returns the topic owned by
+   * `dataset_id`, or {id=0} on miss. ABI-APPENDED slot: gate via struct_size. */
+  PJ_object_topic_handle_t (*lookup_topic_on_dataset)(
+      void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name) PJ_NOEXCEPT;
 } PJ_object_read_host_vtable_t;
 
 /* ABI-FROZEN: fat pointer layout permanent. */

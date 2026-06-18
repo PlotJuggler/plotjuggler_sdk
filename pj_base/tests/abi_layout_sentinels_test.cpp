@@ -182,7 +182,10 @@ static_assert(offsetof(PJ_toolbox_host_vtable_t, push_owned_object) == 80, "tool
 static_assert(
     offsetof(PJ_toolbox_host_vtable_t, register_object_topic_on_dataset) == 88,
     "toolbox host object-topic-on-dataset tail slot pinned");
-static_assert(sizeof(PJ_toolbox_host_vtable_t) == 96, "Toolbox host size (update deliberately on append)");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention) == 96,
+    "toolbox host object-retention tail slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 104, "Toolbox host size (update deliberately on append)");
 
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 5, "v5 ABI version");

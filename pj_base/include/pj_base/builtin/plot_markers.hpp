@@ -124,5 +124,23 @@ inline constexpr std::string_view kMarkerObjectTopicPrefix = "__markers__/";
   return name;
 }
 
+/// Per-series marker topic key from a curve's (topic_name, field_name). The
+/// producer (e.g. the markers toolbox, via the host catalog_key_resolver) and
+/// the plot overlay MUST build this key identically, so they share this helper.
+/// Joins with a single '/', tolerating a field path that already carries a
+/// leading '/': "/sensor/pressure" + "/data" → "/sensor/pressure/data" (not
+/// the doubled "/sensor/pressure//data").
+[[nodiscard]] inline std::string markerSeriesKey(std::string_view topic_name, std::string_view field_name) {
+  std::string key(topic_name);
+  if (field_name.empty()) {
+    return key;  // no field → no separator (avoid a dangling trailing slash)
+  }
+  if (field_name.front() != '/') {
+    key.push_back('/');
+  }
+  key.append(field_name);
+  return key;
+}
+
 }  // namespace sdk
 }  // namespace PJ

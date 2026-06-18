@@ -1,11 +1,9 @@
 # Plot Markers — Architecture
 
-> **Status: REVISED (was a dedicated-store draft).** Markers are now a **builtin
-> object** stored in the **ObjectStore** — there is NO dedicated marker store and NO
-> `pj.marker_store.v1` service. The *what/why* and examples live in
-> [plot_markers_use_cases.md](plot_markers_use_cases.md) (parts may still describe the
-> old model — being updated). The full reasoning for the pivot is in the session plan
-> `atomic-foraging-kettle.md`.
+> Markers are a **builtin object** stored in the **ObjectStore** — there is no
+> dedicated marker store and no marker-store service; producers republish a whole
+> `PlotMarkers` set under an object topic (last-writer-wins). The *what/why* and
+> examples live in [plot_markers_use_cases.md](plot_markers_use_cases.md).
 >
 > Plot Markers reuse the **concept** of [`ImageAnnotations`](image_annotations_format.md)
 > (a canonical SDK builtin object with a wire codec) but not its structure — and, like
