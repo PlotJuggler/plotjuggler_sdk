@@ -35,7 +35,10 @@ requirements:
     - fmt 12.*
     - fast_float 8.*
   run:
-    - nlohmann_json
+    # nlohmann_json appears in PUBLIC installed headers (config_envelope.hpp) and is
+    # find_dependency()'d by the installed CMake config, so consumers need it at use
+    # time. Constrain to the 3.x line built against (header-only API breaks at majors).
+    - nlohmann_json >=3.12,<4
   # fmt and fast_float are header-only / BUILD_INTERFACE-only in the SDK (they
   # never appear in the installed Targets file or the static archives). Their
   # conda-forge run_exports (fmt pins a tight >=12.2,<12.3) would over-depend,
@@ -51,6 +54,12 @@ tests:
       - test -f $PREFIX/lib/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
       - test -f $PREFIX/lib/cmake/plotjuggler_sdk/PjPluginManifest.cmake
       - test -f $PREFIX/lib/libpj_base.a
+      # Actually exercise the package: build the repo's example consumer, which
+      # find_package(plotjuggler_sdk COMPONENTS plugin_sdk), links a plugin .so, and
+      # runs pj_emit_plugin_manifest(). Catches broken CMake config / find_dependency
+      # / manifest helper — failure modes the test -f checks above cannot see.
+      - cmake -G Ninja -B test_build -S examples/sdk_consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH=$PREFIX
+      - cmake --build test_build
     requirements:
       run:
         - ${{ compiler('cxx') }}
