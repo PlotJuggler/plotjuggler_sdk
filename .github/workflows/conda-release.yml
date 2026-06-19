@@ -7,6 +7,12 @@ on:
   push:
     tags:
       - "v*"
+  # Build-only on PRs that touch the recipe/workflow, so the win-64/osx-64 legs
+  # are validated before a release tag (the upload step is skipped — see below).
+  pull_request:
+    paths:
+      - "recipe.yaml"
+      - ".github/workflows/conda-release.yml"
   # Manual dispatch builds the current conanfile.py/recipe.yaml version (no tag
   # guard); idempotent via `rattler-build upload --skip-existing`.
   workflow_dispatch: {}
@@ -21,7 +27,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04]   # extend to macos-15-intel, windows-2022 in a later task
+        # linux-64, osx-64 (macos-13 is Intel), win-64.
+        os: [ubuntu-22.04, macos-13, windows-2022]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,18 +62,23 @@ jobs:
           setup-only: true
           rattler-build-version: v0.66.2
 
+      # Relative output dir (not runner.temp) so the bash glob below works
+      # identically under Git Bash on the Windows runner.
       - name: Build conda package
         shell: bash
         run: |
           rattler-build build \
             --recipe recipe.yaml \
             --channel conda-forge \
-            --output-dir "${{ runner.temp }}/conda-output"
+            --output-dir conda-output
 
+      # Upload only on a release tag or manual dispatch — never on pull_request
+      # (PRs are build-only validation of the win-64/osx-64 legs).
       - name: Upload to prefix.dev (plotjuggler)
+        if: github.event_name != 'pull_request'
         shell: bash
         env:
           PREFIX_API_KEY: ${{ secrets.PREFIX_API_KEY }}
         run: |
-          find "${{ runner.temp }}/conda-output" -name '*.conda' -print0 \
+          find conda-output -name '*.conda' -print0 \
             | xargs -0 rattler-build upload prefix --channel plotjuggler --skip-existing
