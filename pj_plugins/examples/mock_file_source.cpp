@@ -22,6 +22,15 @@ class MockFileSource : public PJ::FileSourceBase {
   }
 
   PJ::Status importData() override {
+    // Test-only failure injection: the host creates the dataset in the live engine
+    // before importData() runs, so returning an error here lets tests exercise the
+    // host's abandoned-dataset cleanup. config_ is opaque to this example (no JSON
+    // dependency), so the marker is matched by substring — safe because only tests
+    // set this config.
+    if (config_.find("fail_start") != std::string::npos) {
+      return PJ::unexpected("mock_file_source: configured start failure");
+    }
+
     if (!runtimeHost().progressStart("Importing", 3, true)) {
       return PJ::unexpected("progress unavailable");
     }
