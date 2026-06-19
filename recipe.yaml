@@ -13,17 +13,19 @@ source:
 build:
   number: 0
   script:
-    - cmake -G Ninja -B build -S .
-        -DPJ_INSTALL_SDK=ON
-        -DPJ_BUILD_TESTS=OFF
-        -DPJ_BUILD_PORTED_PLUGINS=OFF
-        -DCMAKE_BUILD_TYPE=Release
-        -DCMAKE_CXX_STANDARD=20
-        -DCMAKE_PREFIX_PATH=$PREFIX
-        -DCMAKE_INSTALL_PREFIX=$PREFIX
-        -DCMAKE_INSTALL_LIBDIR=lib
-    - cmake --build build
-    - cmake --install build --prefix $PREFIX
+    # Unix (linux-64, osx-64): install prefix is $PREFIX, libs in $PREFIX/lib.
+    - if: unix
+      then:
+        - cmake -G Ninja -B build -S . -DPJ_INSTALL_SDK=ON -DPJ_BUILD_TESTS=OFF -DPJ_BUILD_PORTED_PLUGINS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH=$PREFIX -DCMAKE_INSTALL_PREFIX=$PREFIX -DCMAKE_INSTALL_LIBDIR=lib
+        - cmake --build build
+        - cmake --install build --prefix $PREFIX
+    # Windows (win-64): conda installs under %LIBRARY_PREFIX% (the Library\ tree);
+    # MSVC needs an explicit Release config at build/install time.
+    - if: win
+      then:
+        - cmake -G Ninja -B build -S . -DPJ_INSTALL_SDK=ON -DPJ_BUILD_TESTS=OFF -DPJ_BUILD_PORTED_PLUGINS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH="%LIBRARY_PREFIX%" -DCMAKE_INSTALL_PREFIX="%LIBRARY_PREFIX%"
+        - cmake --build build --config Release
+        - cmake --install build --config Release
 
 requirements:
   build:
@@ -49,17 +51,25 @@ requirements:
       - fast_float
 
 tests:
+  # Installed CMake package files — cross-platform (conda puts them under
+  # $PREFIX/lib on unix, %LIBRARY_PREFIX%\lib i.e. Library/lib on Windows).
+  - package_contents:
+      files:
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfig.cmake
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjPluginManifest.cmake
+  # Actually exercise the package: build the repo's example consumer, which
+  # find_package(plotjuggler_sdk COMPONENTS plugin_sdk), links a plugin lib, and
+  # runs pj_emit_plugin_manifest(). Catches broken CMake config / find_dependency
+  # / manifest helper — failure modes the file checks above cannot see. Kept
+  # unix-only for now: the Windows package build itself is the win-64 gate, and
+  # the plugin-shared-lib example needs separate validation on MSVC (follow-up).
   - script:
-      - test -f $PREFIX/lib/cmake/plotjuggler_sdk/plotjuggler_sdkConfig.cmake
-      - test -f $PREFIX/lib/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
-      - test -f $PREFIX/lib/cmake/plotjuggler_sdk/PjPluginManifest.cmake
-      - test -f $PREFIX/lib/libpj_base.a
-      # Actually exercise the package: build the repo's example consumer, which
-      # find_package(plotjuggler_sdk COMPONENTS plugin_sdk), links a plugin .so, and
-      # runs pj_emit_plugin_manifest(). Catches broken CMake config / find_dependency
-      # / manifest helper — failure modes the test -f checks above cannot see.
-      - cmake -G Ninja -B test_build -S examples/sdk_consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH=$PREFIX
-      - cmake --build test_build
+      - if: unix
+        then:
+          - test -f $PREFIX/lib/libpj_base.a
+          - cmake -G Ninja -B test_build -S examples/sdk_consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH=$PREFIX
+          - cmake --build test_build
     requirements:
       run:
         - ${{ compiler('cxx') }}
