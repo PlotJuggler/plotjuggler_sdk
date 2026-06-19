@@ -85,7 +85,7 @@ Builtin objects fall into two serialization families:
 
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
-| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
+| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `VoxelGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
 | Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`, `CameraInfo`, `PosesInFrame`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
@@ -126,6 +126,7 @@ annotations, frame transforms, or no builtin object.
 | `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
 | `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
 | `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
+| `kVoxelGrid` | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -593,6 +594,40 @@ so no `BufferAnchor` is needed.
 `pj_base/builtin/poses_in_frame_codec.hpp` serializes and deserializes this
 type using the canonical `PJ.PosesInFrame` protobuf wire format.
 
+## VoxelGrid
+
+`VoxelGrid` is a dense 3D voxel grid placed in world coordinates — the
+volumetric sibling of `OccupancyGrid` — for 3D occupancy maps, costmaps,
+ESDFs, and semantic grids (e.g. `foxglove.VoxelGrid`, `costmap_2d/VoxelGrid`).
+
+It is a byte-backed view: the lattice of `column_count * row_count *
+slice_count` voxels lives in `data` (a `Span<const uint8_t>` + `BufferAnchor`)
+in depth-major, row-major **Z-Y-X** order (x fastest), and the per-voxel layout
+is described by `fields` — the same `PointField` channel model used by
+`PointCloud`. The byte layout mirrors `foxglove.VoxelGrid` (three strides +
+Z-Y-X order) so a parser can hand out `data` zero-copy rather than transcoding
+millions of cells; expanding occupied voxels into renderable primitives is a
+viewer-side concern.
+
+Unlike the 2D `OccupancyGrid` (which fixes `-1`/`0..100` cell semantics), the
+per-voxel **value is generic**: occupancy byte, RGBA, a float cost/intensity, a
+class id, etc. The draw predicate (which voxels are visible) and any colormap are
+viewer-side, so one type serves occupancy/cost/ESDF/semantic grids.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Time of the grid. `0` when the source had none. |
+| `frame_id` | `std::string` | Source coordinate frame; 3D consumers TF-transform from it. |
+| `origin` | `Pose` | Lower-front-left `(0,0,0)` corner of the grid in `frame_id`. |
+| `cell_size` | `Vector3` | Metric voxel size along x/y/z (meters); need not be cubic. |
+| `column_count` / `row_count` / `slice_count` | `uint32_t` | Voxels along x / y / z. |
+| `cell_stride` / `row_stride` / `slice_stride` | `uint32_t` | Byte spacing of a voxel / row / z-slice (padding allowed). |
+| `fields` | `std::vector<PointField>` | Per-voxel channel layout. |
+| `data` | `Span<const uint8_t>` + `BufferAnchor` | Packed voxel bytes in Z-Y-X order. |
+
+`pj_base/builtin/voxel_grid_codec.hpp` serializes and deserializes this type
+using the canonical `PJ.VoxelGrid` protobuf wire format.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -612,6 +647,7 @@ type using the canonical `PJ.PosesInFrame` protobuf wire format.
 | ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
 | ROS `sensor_msgs/CameraInfo` | `CameraInfo` | Map K / D / R / P plus dimensions; correlate to the image topic by name. Sub-window (binning / ROI) is dropped. |
 | ROS `map_msgs/OccupancyGridUpdate` | `OccupancyGridUpdate` | Forward the cell-space patch (`x`/`y`/`width`/`height` + bytes); the consumer pairs it with the base grid and supplies origin/resolution. |
+| `foxglove.VoxelGrid` / `costmap_2d/VoxelGrid` | `VoxelGrid` | Map counts/strides/`cell_size`/`origin` into the struct; keep voxel bytes zero-copy in Z-Y-X order. The draw predicate is viewer-side. |
 
 The builtin type is the boundary object. After conversion, consumers should not
 need to know which third-party schema produced it.

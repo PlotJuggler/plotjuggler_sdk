@@ -1,0 +1,71 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical voxel grid protobuf schema.
+// Wire-level contract for the byte-backed `VoxelGrid` builtin
+// (SDK struct lives in pj_base/include/pj_base/builtin/voxel_grid.hpp).
+
+syntax = "proto3";
+
+import "pj/Geometry.proto";
+import "pj/PointCloud.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A dense 3D voxel grid — the volumetric sibling of OccupancyGrid, reusing
+// PointCloud's per-channel field model. The grid is a regular lattice of
+// `column_count * row_count * slice_count` voxels stored densely in depth-major,
+// row-major Z-Y-X order (x varies fastest), matching foxglove.VoxelGrid so a
+// parser can expose `data` as a zero-copy view instead of transcoding cells.
+//
+// Strides (bytes) describe the packing and allow trailing padding; the byte
+// offset of voxel (cx, ry, sz) is `sz*slice_stride + ry*row_stride + cx*cell_stride`,
+// and `data.size()` must be at least `slice_count * slice_stride`.
+//
+// Voxel (cx, ry, sz) center is at world position
+// `origin + ((cx+.5)*cell_size.x, (ry+.5)*cell_size.y, (sz+.5)*cell_size.z)` in
+// `frame_id`, where `origin` is the grid's lower-front-left (0,0,0) corner.
+//
+// Per-voxel value is generic: `fields` declares the layout (occupancy byte,
+// RGBA, a float cost/intensity, class id, ...) and the viewer decides which
+// voxels are drawn. On the SDK side `data` is exposed as `Span<const uint8_t>`
+// plus a `BufferAnchor`; the anchor is a C++ lifetime concept with no wire
+// equivalent.
+message VoxelGrid {
+  // Timestamp of the grid
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Source coordinate frame for the grid (3D consumers TF-transform from this frame to a fixed render frame)
+  string frame_id = 2;
+
+  // Pose of the grid's lower-front-left (0,0,0) corner in `frame_id`
+  PJ.Pose origin = 3;
+
+  // Metric voxel size along x, y, z (meters); voxels need not be cubic
+  PJ.Vector3 cell_size = 4;
+
+  // Number of voxels along the local x axis (fastest-varying)
+  uint32 column_count = 5;
+
+  // Number of voxels along the local y axis
+  uint32 row_count = 6;
+
+  // Number of voxels along the local z axis (depth)
+  uint32 slice_count = 7;
+
+  // Bytes per voxel (>= sum of field element sizes)
+  uint32 cell_stride = 8;
+
+  // Bytes per row of x (>= column_count * cell_stride)
+  uint32 row_stride = 9;
+
+  // Bytes per z-slice (>= row_count * row_stride)
+  uint32 slice_stride = 10;
+
+  // Channel layout for each voxel in `data`
+  repeated PJ.PointField fields = 11;
+
+  // Packed voxel bytes in Z-Y-X order
+  bytes data = 12;
+}
