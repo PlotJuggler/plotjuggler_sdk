@@ -73,12 +73,12 @@ inline void appendBytes(std::vector<uint8_t>& out, const uint8_t* data, size_t s
 // each builds the inner message body (sans length prefix) for the proto type.
 
 inline std::vector<uint8_t> encodeTimestamp(Timestamp timestamp_ns) {
-  constexpr int64_t ns_per_second = 1'000'000'000LL;
-  int64_t seconds = timestamp_ns / ns_per_second;
-  int32_t nanos = static_cast<int32_t>(timestamp_ns % ns_per_second);
+  constexpr int64_t kNsPerSecond = 1'000'000'000LL;
+  int64_t seconds = timestamp_ns / kNsPerSecond;
+  int32_t nanos = static_cast<int32_t>(timestamp_ns % kNsPerSecond);
   if (nanos < 0) {
     --seconds;
-    nanos += static_cast<int32_t>(ns_per_second);
+    nanos += static_cast<int32_t>(kNsPerSecond);
   }
   std::vector<uint8_t> body;
   appendTag(body, 1, 0);

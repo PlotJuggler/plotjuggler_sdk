@@ -19,7 +19,7 @@ namespace {
 //   position: struct {x: float32, y: float32, z: float32}
 //   rotation: struct {w: float32, x: float32, y: float32, z: float32}
 //             semantic_tags = {"quaternion"}
-std::shared_ptr<TypeTreeNode> make_robot_pose() {
+std::shared_ptr<TypeTreeNode> makeRobotPose() {
   auto position = makeStruct(
       "position", {
                       makePrimitive("x", PrimitiveType::kFloat32),
@@ -51,7 +51,7 @@ std::shared_ptr<TypeTreeNode> make_robot_pose() {
 // ---------- Test 1: flatten_field_paths on robot_pose ----------
 
 TEST(TypeTreeTest, FlattenFieldPathsRobotPose) {
-  auto pose = make_robot_pose();
+  auto pose = makeRobotPose();
   auto paths = flattenFieldPaths(*pose);
 
   const std::vector<std::string> expected = {
@@ -67,7 +67,7 @@ TEST(TypeTreeTest, FlattenFieldPathsRobotPose) {
 // ---------- Test 2: count_leaf_fields on robot_pose ----------
 
 TEST(TypeTreeTest, CountLeafFieldsRobotPose) {
-  auto pose = make_robot_pose();
+  auto pose = makeRobotPose();
   EXPECT_EQ(countLeafFields(*pose), 8u);
 }
 
@@ -110,7 +110,7 @@ TEST(TypeTreeTest, MakeEnumSetsKind) {
 // ---------- Test 4: semantic tags are preserved ----------
 
 TEST(TypeTreeTest, SemanticTagsPreserved) {
-  auto pose = make_robot_pose();
+  auto pose = makeRobotPose();
   // rotation is the third child (index 2)
   ASSERT_GE(pose->children.size(), 3u);
   const auto& rotation = pose->children[2];

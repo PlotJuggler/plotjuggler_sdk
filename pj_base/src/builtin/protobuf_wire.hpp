@@ -102,7 +102,12 @@ class Writer {
 
   template <typename BuildMessage>
   void message(uint32_t field, BuildMessage&& build_message) {
+    // GCC 14 false-positive -Wstringop-overflow workaround: without an initial
+    // capacity hint the optimizer concludes the buffer is size 0 after inlining and
+    // flags the push_back path. The value is arbitrary and behavior-independent —
+    // reserve() changes capacity only, never the bytes produced.
     std::vector<uint8_t> body;
+    body.reserve(64);
     Writer nested(body);
     build_message(nested);
     bytes(field, body.data(), body.size());

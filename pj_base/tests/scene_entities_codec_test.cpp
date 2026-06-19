@@ -35,7 +35,7 @@ namespace pb = ::PJ::test_pb;
 
 // Compare two ColorRGBA values allowing 1-LSB drift on each channel from the
 // uint8 -> double in [0,1] -> uint8 round-trip in the codec.
-::testing::AssertionResult ColorNear(const ColorRGBA& a, const ColorRGBA& b) {
+::testing::AssertionResult colorNear(const ColorRGBA& a, const ColorRGBA& b) {
   auto near = [](uint8_t x, uint8_t y) { return x > y ? (x - y) <= 1 : (y - x) <= 1; };
   if (near(a.r, b.r) && near(a.g, b.g) && near(a.b, b.b) && near(a.a, b.a)) {
     return ::testing::AssertionSuccess();
@@ -161,7 +161,7 @@ TEST(SceneEntitiesCodecTest, RoundTripOneEntityWithEachPrimitive) {
   ASSERT_EQ(dst.axes.size(), 1u);
 
   EXPECT_EQ(dst.arrows.front().pose, src.arrows.front().pose);
-  EXPECT_TRUE(ColorNear(src.arrows.front().color, dst.arrows.front().color));
+  EXPECT_TRUE(colorNear(src.arrows.front().color, dst.arrows.front().color));
   EXPECT_EQ(dst.cubes.front().size, src.cubes.front().size);
   EXPECT_DOUBLE_EQ(dst.cylinders.front().top_scale, src.cylinders.front().top_scale);
   EXPECT_EQ(dst.lines.front().type, src.lines.front().type);
@@ -196,7 +196,7 @@ TEST(SceneEntitiesCodecTest, RoundTripLineWithPerVertexColorsAndIndices) {
   EXPECT_EQ(dst_line.type, LineType::kLineList);
   EXPECT_EQ(dst_line.indices, std::vector<uint32_t>({0, 1, 2, 3}));
   ASSERT_EQ(dst_line.colors.size(), 4u);
-  EXPECT_TRUE(ColorNear(ColorRGBA{0, 255, 0, 255}, dst_line.colors[1]));
+  EXPECT_TRUE(colorNear(ColorRGBA{0, 255, 0, 255}, dst_line.colors[1]));
 }
 
 TEST(SceneEntitiesCodecTest, RoundTripModelPrimitive) {
@@ -228,7 +228,7 @@ TEST(SceneEntitiesCodecTest, RoundTripModelPrimitive) {
   const auto& dst = out->entities.front().models.front();
   EXPECT_EQ(dst.pose, src.pose);
   EXPECT_EQ(dst.scale, src.scale);
-  EXPECT_TRUE(ColorNear(src.color, dst.color));
+  EXPECT_TRUE(colorNear(src.color, dst.color));
   EXPECT_TRUE(dst.override_color);
   EXPECT_EQ(dst.url, src.url);
   EXPECT_EQ(dst.media_type, src.media_type);

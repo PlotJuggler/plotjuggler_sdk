@@ -9,3 +9,6 @@ pj_media/testdata/
 /.vscode/*
 /CMakeUserPresets.json
 /aqtinstall.log
+/.pixi/
+/output/
+/build-test/
