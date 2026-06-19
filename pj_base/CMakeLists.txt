@@ -72,6 +72,7 @@ if(PJ_BUILD_TESTS)
     tests/expected_test.cpp
     tests/number_parse_test.cpp
     tests/plugin_data_api_test.cpp
+    tests/data_processors_api_test.cpp
     tests/settings_store_host_test.cpp
     tests/data_source_protocol_test.cpp
     # TODO: data_source_plugin_base_test.cpp and

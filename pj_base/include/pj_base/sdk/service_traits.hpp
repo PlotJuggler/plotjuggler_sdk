@@ -158,6 +158,19 @@ struct ColorMapRegistryService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Optional service for plugins that create catalog-resident transform nodes in
+/// the host by data (script + input/output names + params JSON). Nothing
+/// executable crosses the boundary; the host owns execution. See the C ABI
+/// doc-comment on PJ_data_processors_host_vtable_t.
+struct DataProcessorsHostService {
+  static constexpr const char* kName = "pj.data_processors.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_data_processors_host_t;
+  using Vtable = PJ_data_processors_host_vtable_t;
+  using View = DataProcessorsHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Optional QSettings-like key/value persistence exposed to any plugin family.
 /// Host-backed (QSettings in the GUI app, JSON in a headless host); keys are
 /// namespaced per plugin by the host.
