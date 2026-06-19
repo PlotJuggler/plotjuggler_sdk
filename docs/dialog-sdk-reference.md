@@ -56,7 +56,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setButtonIcon(name, svg_data)` | Set an inline SVG icon (custom/one-off) |
 | `setButtonIconNamed(name, icon_id)` | Set a button icon by id, resolved from the host's themed icon set (consistent tinting; unknown id → no icon) |
 | `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) |
-| `setFilePicker(name, text, filter, title)` | Turn into file picker |
+| `setFilePicker(name, text, filter, title)` | Turn into an **open** file picker (existing file) |
+| `setSaveFilePicker(name, text, filter, title)` | Turn into a **save-as** file picker (navigate + type a new filename); reports via `onFileSelected` |
 | `setFolderPicker(name, text, title)` | Turn into folder picker |
 
 ### QListWidget
@@ -80,7 +81,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | Method | Description |
 |--------|-------------|
 | `setChartSeries(name, vector<ChartSeries>)` | Create/update chart series inside a QFrame |
-| `clearChart(name)` | Remove chart series |
+| `setChartMarkers(name, vector<ChartMarker>)` | Overlay markers (events/regions/value-bands) on top of the series |
+| `clearChart(name)` | Remove chart series and markers |
 | `setChartZoomEnabled(name, bool)` | Enable chart zoom/pan events |
 
 ### QPlainTextEdit

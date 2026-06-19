@@ -196,6 +196,49 @@ class WidgetDataView {
     return result;
   }
 
+  /// A marker overlaid on the chart (see PJ::ChartMarker / setChartMarkers).
+  /// Interpret by `kind`: "event" (point at x0,y0 if has_value, else vline at x0),
+  /// "region" (x-span [x0,x1]), "value_band" (y-band [y0,y1]; line when y0==y1), "label".
+  struct ChartMarkerView {
+    std::string kind;
+    double x0 = 0.0;
+    double x1 = 0.0;
+    double y0 = 0.0;
+    double y1 = 0.0;
+    bool has_value = false;
+    std::string color;  // optional hex "#rrggbb"; empty means use a default palette
+    std::string label;
+  };
+
+  [[nodiscard]] std::optional<std::vector<ChartMarkerView>> chartMarkers(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("chart_markers");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<ChartMarkerView> result;
+    result.reserve(it->size());
+    for (const auto& m : *it) {
+      if (!m.is_object()) {
+        continue;
+      }
+      ChartMarkerView mv;
+      mv.kind = m.value("kind", std::string());
+      mv.x0 = m.value("x0", 0.0);
+      mv.x1 = m.value("x1", 0.0);
+      mv.y0 = m.value("y0", 0.0);
+      mv.y1 = m.value("y1", 0.0);
+      mv.has_value = m.value("has_value", false);
+      mv.color = m.value("color", std::string());
+      mv.label = m.value("label", std::string());
+      result.push_back(std::move(mv));
+    }
+    return result;
+  }
+
   /// Returns whether interactive zoom is enabled on this chart widget.
   [[nodiscard]] std::optional<bool> chartZoomEnabled(std::string_view name) const {
     return getBool(name, "chart_zoom_enabled");
@@ -256,6 +299,17 @@ class WidgetDataView {
     }
     auto it = w->find("action");
     return it != w->end() && it->is_string() && it->get<std::string>() == "file_picker";
+  }
+
+  /// A "save-as" file picker (navigate + type a new filename), as opposed to the
+  /// open-existing-file picker above. Shares the same filter/title accessors.
+  [[nodiscard]] bool isSaveFilePicker(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return false;
+    }
+    auto it = w->find("action");
+    return it != w->end() && it->is_string() && it->get<std::string>() == "save_file_picker";
   }
 
   [[nodiscard]] std::optional<std::string> filePickerFilter(std::string_view name) const {

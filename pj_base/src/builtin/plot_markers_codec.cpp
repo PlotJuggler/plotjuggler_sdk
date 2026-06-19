@@ -14,6 +14,7 @@
 namespace PJ {
 namespace {
 
+using builtin_wire::parseFields;
 using builtin_wire::Reader;
 using builtin_wire::Tag;
 using builtin_wire::WireType;
@@ -171,143 +172,91 @@ bool decodeProperty(Reader& reader, MarkerProperty& out) {
 }
 
 bool decodeMarker(Reader& reader, PlotMarker& out) {
-  while (!reader.eof()) {
-    Tag tag;
-    if (!reader.readTag(tag)) {
-      return false;
-    }
-
+  // Handler returns true when it consumed the field, false to let parseFields skip
+  // it (unknown field, or a known field with the wrong wire type).
+  return parseFields(reader, [&](Tag tag, Reader& r) {
     switch (tag.field) {
-      case 1:
-        if (tag.type == WireType::kVarint) {
-          uint64_t v = 0;
-          if (!reader.readVarint(v)) {
-            return false;
-          }
-          out.kind = mapKind(v);
-          continue;
+      case 1: {
+        uint64_t v = 0;
+        if (tag.type != WireType::kVarint || !r.readVarint(v)) {
+          return false;
         }
-        break;
-      case 2:
-        if (tag.type == WireType::kVarint) {
-          uint64_t v = 0;
-          if (!reader.readVarint(v)) {
-            return false;
-          }
-          out.t_start = static_cast<Timestamp>(v);
-          continue;
+        out.kind = mapKind(v);
+        return true;
+      }
+      case 2: {
+        uint64_t v = 0;
+        if (tag.type != WireType::kVarint || !r.readVarint(v)) {
+          return false;
         }
-        break;
-      case 3:
-        if (tag.type == WireType::kVarint) {
-          uint64_t v = 0;
-          if (!reader.readVarint(v)) {
-            return false;
-          }
-          out.t_end = static_cast<Timestamp>(v);
-          continue;
+        out.t_start = static_cast<Timestamp>(v);
+        return true;
+      }
+      case 3: {
+        uint64_t v = 0;
+        if (tag.type != WireType::kVarint || !r.readVarint(v)) {
+          return false;
         }
-        break;
+        out.t_end = static_cast<Timestamp>(v);
+        return true;
+      }
       case 4:
-        if (tag.type == WireType::kFixed64) {
-          if (!reader.readDouble(out.value_low)) {
-            return false;
-          }
-          continue;
-        }
-        break;
+        return tag.type == WireType::kFixed64 && r.readDouble(out.value_low);
       case 5:
-        if (tag.type == WireType::kFixed64) {
-          if (!reader.readDouble(out.value_high)) {
-            return false;
-          }
-          continue;
+        return tag.type == WireType::kFixed64 && r.readDouble(out.value_high);
+      case 6: {
+        uint64_t v = 0;
+        if (tag.type != WireType::kVarint || !r.readVarint(v)) {
+          return false;
         }
-        break;
-      case 6:
-        if (tag.type == WireType::kVarint) {
-          uint64_t v = 0;
-          if (!reader.readVarint(v)) {
-            return false;
-          }
-          out.has_value = (v != 0);
-          continue;
+        out.has_value = (v != 0);
+        return true;
+      }
+      case 7: {
+        uint64_t v = 0;
+        if (tag.type != WireType::kVarint || !r.readVarint(v)) {
+          return false;
         }
-        break;
-      case 7:
-        if (tag.type == WireType::kVarint) {
-          uint64_t v = 0;
-          if (!reader.readVarint(v)) {
-            return false;
-          }
-          out.status = mapStatus(v);
-          continue;
+        out.status = mapStatus(v);
+        return true;
+      }
+      case 8: {
+        uint64_t v = 0;
+        if (tag.type != WireType::kVarint || !r.readVarint(v)) {
+          return false;
         }
-        break;
-      case 8:
-        if (tag.type == WireType::kVarint) {
-          uint64_t v = 0;
-          if (!reader.readVarint(v)) {
-            return false;
-          }
-          out.severity = mapSeverity(v);
-          continue;
-        }
-        break;
+        out.severity = mapSeverity(v);
+        return true;
+      }
       case 9:
-        if (tag.type == WireType::kLengthDelimited) {
-          if (!reader.readString(out.category)) {
-            return false;
-          }
-          continue;
-        }
-        break;
+        return tag.type == WireType::kLengthDelimited && r.readString(out.category);
       case 10:
-        if (tag.type == WireType::kLengthDelimited) {
-          if (!reader.readString(out.label)) {
-            return false;
-          }
-          continue;
-        }
-        break;
+        return tag.type == WireType::kLengthDelimited && r.readString(out.label);
       case 11:
-        if (tag.type == WireType::kLengthDelimited) {
-          if (!reader.readString(out.description)) {
-            return false;
-          }
-          continue;
+        return tag.type == WireType::kLengthDelimited && r.readString(out.description);
+      case 12: {
+        if (tag.type != WireType::kLengthDelimited) {
+          return false;
         }
-        break;
-      case 12:
-        if (tag.type == WireType::kLengthDelimited) {
-          Reader nested;
-          if (!reader.readMessage(nested) || !decodeColor(nested, out.color)) {
-            return false;
-          }
-          continue;
-        }
-        break;
+        Reader nested;
+        return r.readMessage(nested) && decodeColor(nested, out.color);
+      }
       case 13: {
         if (tag.type != WireType::kLengthDelimited) {
-          break;
+          return false;
         }
         Reader nested;
         MarkerProperty property;
-        if (!reader.readMessage(nested) || !decodeProperty(nested, property)) {
+        if (!r.readMessage(nested) || !decodeProperty(nested, property)) {
           return false;
         }
         out.metadata.push_back(std::move(property));
-        continue;
+        return true;
       }
       default:
-        break;
+        return false;
     }
-
-    if (!reader.skip(tag.type)) {
-      return false;
-    }
-  }
-  return true;
+  });
 }
 
 }  // namespace
