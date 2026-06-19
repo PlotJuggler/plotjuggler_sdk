@@ -26,6 +26,7 @@ using PJ::sdk::RobotDescription;
 using PJ::sdk::SceneEntities;
 using PJ::sdk::typeOf;
 using PJ::sdk::VideoFrame;
+using PJ::sdk::VoxelGrid;
 
 TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{}), BuiltinObjectType::kNone);
@@ -45,6 +46,7 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{OccupancyGridUpdate{}}), BuiltinObjectType::kOccupancyGridUpdate);
   EXPECT_EQ(typeOf(BuiltinObject{Log{}}), BuiltinObjectType::kLog);
   EXPECT_EQ(typeOf(BuiltinObject{PosesInFrame{}}), BuiltinObjectType::kPosesInFrame);
+  EXPECT_EQ(typeOf(BuiltinObject{VoxelGrid{}}), BuiltinObjectType::kVoxelGrid);
 }
 
 TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
@@ -66,6 +68,7 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kOccupancyGridUpdate,
            BuiltinObjectType::kLog,
            BuiltinObjectType::kPosesInFrame,
+           BuiltinObjectType::kVoxelGrid,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);

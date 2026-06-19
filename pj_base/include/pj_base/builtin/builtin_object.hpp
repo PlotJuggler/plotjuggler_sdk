@@ -42,6 +42,7 @@
 #include "pj_base/builtin/robot_description.hpp"
 #include "pj_base/builtin/scene_entities.hpp"
 #include "pj_base/builtin/video_frame.hpp"
+#include "pj_base/builtin/voxel_grid.hpp"
 
 namespace PJ {
 namespace sdk {
@@ -64,6 +65,7 @@ enum class BuiltinObjectType : uint16_t {
   kOccupancyGridUpdate = 15,  ///< sdk::OccupancyGridUpdate — incremental sub-rectangle patch for an OccupancyGrid.
   kLog = 16,                  ///< sdk::Log — textual log message (level + text + name).
   kPosesInFrame = 17,         ///< sdk::PosesInFrame — array of poses in one reference frame.
+  kVoxelGrid = 18,            ///< sdk::VoxelGrid — dense 3D voxel grid (occupancy/cost/ESDF/semantic).
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -110,6 +112,8 @@ struct SchemaClassification {
       return "kLog";
     case BuiltinObjectType::kPosesInFrame:
       return "kPosesInFrame";
+    case BuiltinObjectType::kVoxelGrid:
+      return "kVoxelGrid";
   }
   return "kNone";
 }
@@ -167,6 +171,9 @@ struct SchemaClassification {
   }
   if (s == "kPosesInFrame") {
     return BuiltinObjectType::kPosesInFrame;
+  }
+  if (s == "kVoxelGrid") {
+    return BuiltinObjectType::kVoxelGrid;
   }
   return std::nullopt;
 }
@@ -228,6 +235,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(PosesInFrame)) {
     return BuiltinObjectType::kPosesInFrame;
+  }
+  if (t == typeid(VoxelGrid)) {
+    return BuiltinObjectType::kVoxelGrid;
   }
   return BuiltinObjectType::kNone;
 }

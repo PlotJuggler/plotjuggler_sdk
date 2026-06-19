@@ -18,6 +18,7 @@ add_library(pj_base STATIC
   src/builtin/poses_in_frame_codec.cpp
   src/builtin/scene_entities_codec.cpp
   src/builtin/video_frame_codec.cpp
+  src/builtin/voxel_grid_codec.cpp
   src/number_parse.cpp
   src/type_tree.cpp
 )
@@ -105,6 +106,7 @@ if(PJ_BUILD_TESTS)
     tests/asset_video_codec_test.cpp
     tests/time_spine_test.cpp
     tests/poses_in_frame_codec_test.cpp
+    tests/voxel_grid_codec_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})

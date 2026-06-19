@@ -62,6 +62,8 @@ rationale.
   - `Mesh3D`
 - **`PosesInFrame.proto`** — array of poses in a single reference frame at one instant (`geometry_msgs/PoseArray`, particle clouds); mirrors `foxglove.PosesInFrame` field-for-field and carries no styling — rendering is viewer-side.
   - `PosesInFrame`
+- **`VoxelGrid.proto`** — dense 3D voxel grid (the volumetric sibling of `OccupancyGrid`); reuses `PointField` for the per-voxel channel layout and mirrors `foxglove.VoxelGrid`'s Z-Y-X byte layout so `data` stays a zero-copy view. Serves occupancy/cost/ESDF/semantic grids; the draw predicate is viewer-side.
+  - `VoxelGrid`
 
 ### 2D image annotations (vector overlays)
 
