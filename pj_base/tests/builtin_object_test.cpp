@@ -5,7 +5,6 @@
 
 #include <gtest/gtest.h>
 
-using PJ::sdk::AssetVideo;
 using PJ::sdk::BuiltinObject;
 using PJ::sdk::BuiltinObjectType;
 using PJ::sdk::CameraInfo;
@@ -40,7 +39,6 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{Mesh3D{}}), BuiltinObjectType::kMesh3D);
   EXPECT_EQ(typeOf(BuiltinObject{VideoFrame{}}), BuiltinObjectType::kVideoFrame);
   EXPECT_EQ(typeOf(BuiltinObject{SceneEntities{}}), BuiltinObjectType::kSceneEntities);
-  EXPECT_EQ(typeOf(BuiltinObject{AssetVideo{}}), BuiltinObjectType::kAssetVideo);
   EXPECT_EQ(typeOf(BuiltinObject{RobotDescription{}}), BuiltinObjectType::kRobotDescription);
   EXPECT_EQ(typeOf(BuiltinObject{CameraInfo{}}), BuiltinObjectType::kCameraInfo);
   EXPECT_EQ(typeOf(BuiltinObject{OccupancyGridUpdate{}}), BuiltinObjectType::kOccupancyGridUpdate);
@@ -62,7 +60,6 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kMesh3D,
            BuiltinObjectType::kVideoFrame,
            BuiltinObjectType::kSceneEntities,
-           BuiltinObjectType::kAssetVideo,
            BuiltinObjectType::kRobotDescription,
            BuiltinObjectType::kCameraInfo,
            BuiltinObjectType::kOccupancyGridUpdate,

@@ -15,9 +15,9 @@ two modules below have no own CLAUDE.md.
 ### Modules
 
 - **pj_base** — vocabulary types (`Timestamp`, `DatasetId`, `Expected<T>`, `Span<T>`, type trees),
-  the canonical builtin object vocabulary (`pj_base/builtin/`: 17 struct headers — Image, DepthImage,
-  PointCloud, CompressedPointCloud, OccupancyGrid(+Update), Mesh3D, VideoFrame, AssetVideo,
-  SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms, PosesInFrame, VoxelGrid) and their 16
+  the canonical builtin object vocabulary (`pj_base/builtin/`: 16 struct headers — Image, DepthImage,
+  PointCloud, CompressedPointCloud, OccupancyGrid(+Update), Mesh3D, VideoFrame,
+  SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms, PosesInFrame, VoxelGrid) and their 15
   wire codecs (RobotDescription carries source text as-is — no codec), the C-ABI protocol headers for
   DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them.
 - **pj_plugins** — host-side loaders + RAII handles + plugin discovery/catalog for four plugin
