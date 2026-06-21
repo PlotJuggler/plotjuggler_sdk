@@ -174,81 +174,66 @@ std::vector<std::string> readManifestStringArray(const nlohmann::json& j, const 
   return values;
 }
 
+// Shared body for the three registerStatic* methods: load the static vtable,
+// parse the embedded manifest, fill the common Runtime*Plugin fields, and push.
+// `fill` adds the family-specific fields (capabilities / extensions / encodings);
+// `report` bridges to the catalog's private diagnostic sink.
+template <typename LibraryT, typename RuntimeT, typename ReportFn, typename FillFn>
+bool registerStaticPlugin(
+    const auto* vtable, std::vector<RuntimeT>& out, const char* family, const ReportFn& report, const FillFn& fill) {
+  auto result = LibraryT::loadStatic(vtable);
+  if (!result) {
+    report(DiagnosticLevel::kError, std::string{}, "static " + std::string(family) + ": " + result.error());
+    return false;
+  }
+  nlohmann::json j;
+  if (!parseStaticManifest(vtable->manifest_json, j)) {
+    report(DiagnosticLevel::kError, std::string{}, "static " + std::string(family) + ": invalid manifest JSON");
+    return false;
+  }
+  RuntimeT loaded;
+  loaded.library = std::move(*result);
+  loaded.id = j.value("id", std::string{});
+  loaded.name = j.value("name", std::string{});
+  loaded.version = j.value("version", std::string{});
+  loaded.path = "static://" + loaded.id;
+  loaded.loaded_mtime = std::filesystem::file_time_type{};
+  fill(loaded, j);
+  report(DiagnosticLevel::kInfo, loaded.id, "Registered static " + std::string(family) + " " + loaded.name);
+  out.push_back(std::move(loaded));
+  return true;
+}
+
 }  // namespace
 
 bool PluginRuntimeCatalog::registerStaticDataSource(const PJ_data_source_vtable_t* vtable) {
-  auto result = DataSourceLibrary::loadStatic(vtable);
-  if (!result) {
-    report(DiagnosticLevel::kError, {}, "static DataSource: " + result.error());
-    return false;
-  }
-  nlohmann::json j;
-  if (!parseStaticManifest(vtable->manifest_json, j)) {
-    report(DiagnosticLevel::kError, {}, "static DataSource: invalid manifest JSON");
-    return false;
-  }
-  RuntimeDataSourcePlugin loaded;
-  loaded.library = std::move(*result);
-  loaded.id = j.value("id", std::string{});
-  loaded.name = j.value("name", std::string{});
-  loaded.version = j.value("version", std::string{});
-  loaded.path = "static://" + loaded.id;
-  loaded.loaded_mtime = std::filesystem::file_time_type{};
-  loaded.capabilities = loaded.library.createHandle().capabilities();
-  for (auto& ext : readManifestStringArray(j, "file_extensions")) {
-    loaded.file_extensions.push_back(normalizeExtension(std::move(ext)));
-  }
-  report(DiagnosticLevel::kInfo, loaded.id, "Registered static DataSource " + loaded.name);
-  data_sources_.push_back(std::move(loaded));
-  return true;
+  return registerStaticPlugin<DataSourceLibrary>(
+      vtable, data_sources_, "DataSource",
+      [this](DiagnosticLevel level, const std::string& id, std::string msg) { report(level, id, std::move(msg)); },
+      [](RuntimeDataSourcePlugin& loaded, const nlohmann::json& j) {
+        loaded.capabilities = loaded.library.createHandle().capabilities();
+        for (auto& ext : readManifestStringArray(j, "file_extensions")) {
+          loaded.file_extensions.push_back(normalizeExtension(std::move(ext)));
+        }
+      });
 }
 
 bool PluginRuntimeCatalog::registerStaticMessageParser(const PJ_message_parser_vtable_t* vtable) {
-  auto result = MessageParserLibrary::loadStatic(vtable);
-  if (!result) {
-    report(DiagnosticLevel::kError, {}, "static MessageParser: " + result.error());
-    return false;
-  }
-  nlohmann::json j;
-  if (!parseStaticManifest(vtable->manifest_json, j)) {
-    report(DiagnosticLevel::kError, {}, "static MessageParser: invalid manifest JSON");
-    return false;
-  }
-  RuntimeMessageParserPlugin loaded;
-  loaded.library = std::move(*result);
-  loaded.id = j.value("id", std::string{});
-  loaded.name = j.value("name", std::string{});
-  loaded.version = j.value("version", std::string{});
-  loaded.path = "static://" + loaded.id;
-  loaded.loaded_mtime = std::filesystem::file_time_type{};
-  loaded.encodings = readManifestStringArray(j, "encoding");
-  report(DiagnosticLevel::kInfo, loaded.id, "Registered static MessageParser " + loaded.name);
-  message_parsers_.push_back(std::move(loaded));
-  return true;
+  return registerStaticPlugin<MessageParserLibrary>(
+      vtable, message_parsers_, "MessageParser",
+      [this](DiagnosticLevel level, const std::string& id, std::string msg) { report(level, id, std::move(msg)); },
+      [](RuntimeMessageParserPlugin& loaded, const nlohmann::json& j) {
+        loaded.encodings = readManifestStringArray(j, "encoding");
+      });
 }
 
 bool PluginRuntimeCatalog::registerStaticToolbox(const PJ_toolbox_vtable_t* vtable) {
-  auto result = ToolboxLibrary::loadStatic(vtable);
-  if (!result) {
-    report(DiagnosticLevel::kError, {}, "static Toolbox: " + result.error());
-    return false;
-  }
-  nlohmann::json j;
-  if (!parseStaticManifest(vtable->manifest_json, j)) {
-    report(DiagnosticLevel::kError, {}, "static Toolbox: invalid manifest JSON");
-    return false;
-  }
-  RuntimeToolboxPlugin loaded;
-  loaded.library = std::move(*result);
-  loaded.id = j.value("id", std::string{});
-  loaded.name = j.value("name", std::string{});
-  loaded.version = j.value("version", std::string{});
-  loaded.path = "static://" + loaded.id;
-  loaded.loaded_mtime = std::filesystem::file_time_type{};
-  loaded.capabilities = loaded.library.createHandle().capabilities();
-  report(DiagnosticLevel::kInfo, loaded.id, "Registered static Toolbox " + loaded.name);
-  toolbox_plugins_.push_back(std::move(loaded));
-  return true;
+  return registerStaticPlugin<ToolboxLibrary>(
+      vtable, toolbox_plugins_, "Toolbox",
+      [this](DiagnosticLevel level, const std::string& id, std::string msg) { report(level, id, std::move(msg)); },
+      [](RuntimeToolboxPlugin& loaded, const nlohmann::json& /*j*/) {
+        loaded.capabilities = loaded.library.createHandle().capabilities();
+      });
 }
 
 bool PluginRuntimeCatalog::loadAndRegister(const PluginDescriptor& descriptor) {
