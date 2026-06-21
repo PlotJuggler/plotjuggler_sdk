@@ -35,6 +35,13 @@ else()
     -Wall -Wextra -Werror -Wshadow -Wnon-virtual-dtor -Wold-style-cast
     -Wcast-qual -Wconversion -Woverloaded-virtual -Wpedantic
   )
+  # On wasm32 size_t is 32-bit, so many uint64_t->size_t conversions trip
+  # -Wshorten-64-to-32 / -Wsign-conversion that never fire on 64-bit desktop
+  # (see SUSTAINABILITY.md T0-3). Keep the warnings visible but don't fail the
+  # build for the WASM prototype. TODO: make the ABI/size types 32-bit-clean.
+  if(EMSCRIPTEN)
+    list(APPEND PJ_WARNING_FLAGS -Wno-error)
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -111,7 +118,7 @@ endif()
 if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
-  set(PJ_PACKAGE_VERSION "0.10.0")
+  set(PJ_PACKAGE_VERSION "0.11.0")
   set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_sdk)
 
   install(EXPORT plotjuggler_sdkTargets

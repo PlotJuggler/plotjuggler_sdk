@@ -70,6 +70,26 @@ Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
   return DataSourceLibrary(std::move(handle), vtable, std::string(path));
 }
 
+Expected<DataSourceLibrary> DataSourceLibrary::loadStatic(const PJ_data_source_vtable_t* vtable) {
+  if (vtable == nullptr) {
+    return unexpected("static DataSource vtable is null");
+  }
+  if (vtable->protocol_version != PJ_DATA_SOURCE_PROTOCOL_VERSION) {
+    return unexpected("DataSource protocol version mismatch");
+  }
+  if (vtable->struct_size < PJ_DATA_SOURCE_MIN_VTABLE_SIZE) {
+    return unexpected("DataSource vtable smaller than v4.0 baseline");
+  }
+  if (auto status = detail::validateRequiredSlots(vtable); !status) {
+    return unexpected(status.error());
+  }
+  // Statically linked: no DSO to keep alive, but valid()/createHandle() expect a
+  // non-null owner. Use a sentinel shared_ptr with a no-op deleter.
+  static char anchor = 0;
+  std::shared_ptr<void> handle(&anchor, [](void*) {});
+  return DataSourceLibrary(std::move(handle), vtable, "static://");
+}
+
 Expected<const PJ_dialog_vtable_t*> DataSourceLibrary::resolveDialogVtable() const {
   auto sym = detail::resolveSymbol(handle_.get(), "PJ_get_dialog_vtable");
   if (!sym) {
