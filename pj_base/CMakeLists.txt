@@ -3,7 +3,6 @@
 # ---------------------------------------------------------------------------
 
 add_library(pj_base STATIC
-  src/builtin/asset_video_codec.cpp
   src/builtin/camera_info_codec.cpp
   src/builtin/compressed_point_cloud_codec.cpp
   src/builtin/depth_image_codec.cpp
@@ -103,7 +102,6 @@ if(PJ_BUILD_TESTS)
     tests/mesh3d_codec_test.cpp
     tests/video_frame_codec_test.cpp
     tests/scene_entities_codec_test.cpp
-    tests/asset_video_codec_test.cpp
     tests/time_spine_test.cpp
     tests/poses_in_frame_codec_test.cpp
     tests/voxel_grid_codec_test.cpp

@@ -22,7 +22,6 @@ The public headers live under:
 #include <pj_base/builtin/occupancy_grid.hpp>
 #include <pj_base/builtin/mesh3d.hpp>
 #include <pj_base/builtin/video_frame.hpp>
-#include <pj_base/builtin/asset_video.hpp>
 #include <pj_base/builtin/scene_entities.hpp>
 #include <pj_base/builtin/robot_description.hpp>
 #include <pj_base/builtin/image_annotations.hpp>
@@ -36,7 +35,6 @@ The public headers live under:
 #include <pj_base/builtin/occupancy_grid_codec.hpp>
 #include <pj_base/builtin/mesh3d_codec.hpp>
 #include <pj_base/builtin/video_frame_codec.hpp>
-#include <pj_base/builtin/asset_video_codec.hpp>
 #include <pj_base/builtin/scene_entities_codec.hpp>
 #include <pj_base/builtin/image_annotations_codec.hpp>
 #include <pj_base/builtin/frame_transforms_codec.hpp>
@@ -86,7 +84,7 @@ Builtin objects fall into two serialization families:
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
 | Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `VoxelGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`, `CameraInfo`, `PosesInFrame`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `RobotDescription`, `CameraInfo`, `PosesInFrame`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
 format contract. One file per top-level message, each named after its message
@@ -120,7 +118,6 @@ annotations, frame transforms, or no builtin object.
 | `kMesh3D` | `PJ::sdk::Mesh3D` | 3D mesh asset in its native binary format (GLTF/GLB/STL/PLY/OBJ/USD/DAE). |
 | `kVideoFrame` | `PJ::sdk::VideoFrame` | One frame of an inter-frame-coded video stream (h264/h265/vp9/av1). |
 | `kSceneEntities` | `PJ::sdk::SceneEntities` | Procedural 3D scene primitives (arrows, cubes, lines, text, …). |
-| `kAssetVideo` | `PJ::sdk::AssetVideo` | File-backed video reference plus typed playback metadata. |
 | `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
 | `kCameraInfo` | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
 | `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
@@ -421,44 +418,6 @@ frames within a stream.
 `pj_base/builtin/video_frame_codec.hpp` serializes and deserializes this
 type using the canonical `PJ.VideoFrame` protobuf wire format.
 
-## AssetVideo
-
-`AssetVideo` is the entry-point handle for video assets ingested by data
-loaders that point at an external media file — LeRobot datasets, MP4
-loaders, and similar. Producers push exactly one `AssetVideo` per topic;
-the ObjectStore timestamp of that entry equals `time_origin_ns` so
-timeline UIs naturally see the asset's start instant.
-
-Unlike `VideoFrame` (a single frame of a streamed payload), `AssetVideo`
-carries no pixel data — it references the file by path and surfaces
-decode-routing metadata (media type, dimensions, frame rate) without
-forcing the consumer to open the file just to size a playback window.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `time_origin_ns` | `std::optional<Timestamp>` | Wall-clock instant of the first frame. Absent means the asset is not aligned to wall clock. |
-| `start_ns` | `std::optional<int64_t>` | In-file offset (ns) where the playable window begins. Absent means "play from the start of the file". |
-| `end_ns` | `std::optional<int64_t>` | In-file offset (ns) where the playable window ends. Absent means "play to the end of the file". |
-| `file_path` | `std::string` | Absolute path or path relative to a consumer-known root. |
-| `media_type` | `std::string` | MIME type hint. Empty means probe the file. |
-| `width` | `uint32_t` | Pixel width. `0` means unknown. |
-| `height` | `uint32_t` | Pixel height. `0` means unknown. |
-| `frame_rate` | `double` | Nominal FPS. `0` or NaN means unknown. |
-
-When both `start_ns` and `end_ns` are absent the whole file is the playable
-window. When present, consumers must clamp seek requests to
-`[start_ns, end_ns]` and bound timeline UI to that range. This is how
-producers expose one clip out of a file that holds many concatenated
-clips — for example LeRobot v3.0, where a single MP4 per camera packs
-many episodes back-to-back and `[from_timestamp, to_timestamp]` in the
-episode metadata maps directly to `[start_ns, end_ns]`.
-
-The total file duration is *not* carried in the message — the decoder
-backend reports it.
-
-`pj_base/builtin/asset_video_codec.hpp` serializes and deserializes this
-type using the canonical `PJ.AssetVideo` protobuf wire format.
-
 ## SceneEntities
 
 `SceneEntities` is the workhorse for marker-style 3D visualization — the
@@ -640,7 +599,6 @@ using the canonical `PJ.VoxelGrid` protobuf wire format.
 | URDF / `visualization_msgs/Marker` mesh resource | `Mesh3D` | Embed `data` (with `format`) or point at `url`; preserve `pose` and `scale`. |
 | ROS `nav_msgs/Path`, marker arrays | `SceneEntities` | Map polylines to `LinePrimitive`, arrows to `ArrowPrimitive`, etc. |
 | H.264/H.265/VP9/AV1 stream frame | `VideoFrame` | Forward one frame's bitstream bytes plus the codec identifier. |
-| MP4 / MKV / AV1 dataset file | `AssetVideo` | Push once per topic with the file path and metadata; consumers seek into the file by tracker time. |
 | Detection or tracking message | `ImageAnnotations` | Convert boxes, points, circles, and labels into pixel-space primitives. |
 | ROS `tf2_msgs/TFMessage` | `FrameTransforms` | Convert transform batches into named parent/child frame relationships. |
 | ROS `geometry_msgs/PoseArray` | `PosesInFrame` | Forward timestamp, frame, and the pose array; the viewer chooses how to draw them. |

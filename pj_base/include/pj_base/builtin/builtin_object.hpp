@@ -26,7 +26,6 @@
 #include <optional>
 #include <string_view>
 
-#include "pj_base/builtin/asset_video.hpp"
 #include "pj_base/builtin/camera_info.hpp"
 #include "pj_base/builtin/compressed_point_cloud.hpp"
 #include "pj_base/builtin/depth_image.hpp"
@@ -59,7 +58,7 @@ enum class BuiltinObjectType : uint16_t {
   kMesh3D = 9,                ///< sdk::Mesh3D — binary mesh asset (GLTF/STL/PLY/OBJ/USD/DAE).
   kVideoFrame = 10,           ///< sdk::VideoFrame — single frame of h264/h265/vp9/av1 stream.
   kSceneEntities = 11,        ///< sdk::SceneEntities — procedural 3D scene primitives.
-  kAssetVideo = 12,           ///< sdk::AssetVideo — file-backed video reference + playback metadata.
+  // 12 reserved — was kAssetVideo (removed; video unified on kVideoFrame). Never reuse.
   kRobotDescription = 13,     ///< sdk::RobotDescription — raw URDF/SDF/MJCF text + format hint.
   kCameraInfo = 14,           ///< sdk::CameraInfo — pinhole camera calibration (K/D/R/P).
   kOccupancyGridUpdate = 15,  ///< sdk::OccupancyGridUpdate — incremental sub-rectangle patch for an OccupancyGrid.
@@ -100,8 +99,6 @@ struct SchemaClassification {
       return "kVideoFrame";
     case BuiltinObjectType::kSceneEntities:
       return "kSceneEntities";
-    case BuiltinObjectType::kAssetVideo:
-      return "kAssetVideo";
     case BuiltinObjectType::kRobotDescription:
       return "kRobotDescription";
     case BuiltinObjectType::kCameraInfo:
@@ -153,9 +150,6 @@ struct SchemaClassification {
   }
   if (s == "kSceneEntities") {
     return BuiltinObjectType::kSceneEntities;
-  }
-  if (s == "kAssetVideo") {
-    return BuiltinObjectType::kAssetVideo;
   }
   if (s == "kRobotDescription") {
     return BuiltinObjectType::kRobotDescription;
@@ -217,9 +211,6 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(SceneEntities)) {
     return BuiltinObjectType::kSceneEntities;
-  }
-  if (t == typeid(AssetVideo)) {
-    return BuiltinObjectType::kAssetVideo;
   }
   if (t == typeid(RobotDescription)) {
     return BuiltinObjectType::kRobotDescription;
