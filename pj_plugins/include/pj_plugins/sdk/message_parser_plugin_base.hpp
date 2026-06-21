@@ -380,17 +380,17 @@ class MessageParserPluginBase {
 // --- Static-link variant (WASM / no dlopen) ---  see data_source_plugin_base.hpp
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_MESSAGE_PARSER_PLUGIN
-#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                          \
-  const PJ_message_parser_vtable_t* pj_static_get_message_parser_vtable_##ClassName() noexcept {\
-    static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(\
-        []() noexcept -> void* {                                                               \
-          try {                                                                                \
-            return new ClassName();                                                            \
-          } catch (...) {                                                                      \
-            return nullptr;                                                                    \
-          }                                                                                    \
-        },                                                                                     \
-        manifest);                                                                             \
-    return vt;                                                                                 \
+#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                            \
+  const PJ_message_parser_vtable_t* pj_static_get_message_parser_vtable_##ClassName() noexcept { \
+    static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate( \
+        []() noexcept -> void* {                                                                 \
+          try {                                                                                  \
+            return new ClassName();                                                              \
+          } catch (...) {                                                                        \
+            return nullptr;                                                                      \
+          }                                                                                      \
+        },                                                                                       \
+        manifest);                                                                               \
+    return vt;                                                                                   \
   }
 #endif

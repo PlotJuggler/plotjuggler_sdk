@@ -254,17 +254,17 @@ class ToolboxPluginBase {
 // --- Static-link variant (WASM / no dlopen) ---  see data_source_plugin_base.hpp
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_TOOLBOX_PLUGIN
-#define PJ_TOOLBOX_PLUGIN(ClassName, manifest)                                       \
-  const PJ_toolbox_vtable_t* pj_static_get_toolbox_vtable_##ClassName() noexcept {    \
-    static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate(   \
-        []() noexcept -> void* {                                                     \
-          try {                                                                      \
-            return new ClassName();                                                  \
-          } catch (...) {                                                            \
-            return nullptr;                                                          \
-          }                                                                          \
-        },                                                                           \
-        manifest);                                                                   \
-    return vt;                                                                       \
+#define PJ_TOOLBOX_PLUGIN(ClassName, manifest)                                      \
+  const PJ_toolbox_vtable_t* pj_static_get_toolbox_vtable_##ClassName() noexcept {  \
+    static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate( \
+        []() noexcept -> void* {                                                    \
+          try {                                                                     \
+            return new ClassName();                                                 \
+          } catch (...) {                                                           \
+            return nullptr;                                                         \
+          }                                                                         \
+        },                                                                          \
+        manifest);                                                                  \
+    return vt;                                                                      \
   }
 #endif
