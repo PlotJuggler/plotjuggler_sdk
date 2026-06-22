@@ -150,6 +150,92 @@ bool PluginRuntimeCatalog::reload() {
   return changed;
 }
 
+namespace {
+
+// Parse a plugin's embedded manifest JSON. Returns false on invalid JSON.
+bool parseStaticManifest(const char* manifest_json, nlohmann::json& out) {
+  try {
+    out = nlohmann::json::parse(manifest_json ? manifest_json : "");
+    return out.is_object();
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+std::vector<std::string> readManifestStringArray(const nlohmann::json& j, const char* key) {
+  std::vector<std::string> values;
+  if (auto it = j.find(key); it != j.end() && it->is_array()) {
+    for (const auto& v : *it) {
+      if (v.is_string()) {
+        values.push_back(v.get<std::string>());
+      }
+    }
+  }
+  return values;
+}
+
+// Shared body for the three registerStatic* methods: load the static vtable,
+// parse the embedded manifest, fill the common Runtime*Plugin fields, and push.
+// `fill` adds the family-specific fields (capabilities / extensions / encodings);
+// `report` bridges to the catalog's private diagnostic sink.
+template <typename LibraryT, typename RuntimeT, typename ReportFn, typename FillFn>
+bool registerStaticPlugin(
+    const auto* vtable, std::vector<RuntimeT>& out, const char* family, const ReportFn& report, const FillFn& fill) {
+  auto result = LibraryT::loadStatic(vtable);
+  if (!result) {
+    report(DiagnosticLevel::kError, std::string{}, "static " + std::string(family) + ": " + result.error());
+    return false;
+  }
+  nlohmann::json j;
+  if (!parseStaticManifest(vtable->manifest_json, j)) {
+    report(DiagnosticLevel::kError, std::string{}, "static " + std::string(family) + ": invalid manifest JSON");
+    return false;
+  }
+  RuntimeT loaded;
+  loaded.library = std::move(*result);
+  loaded.id = j.value("id", std::string{});
+  loaded.name = j.value("name", std::string{});
+  loaded.version = j.value("version", std::string{});
+  loaded.path = "static://" + loaded.id;
+  loaded.loaded_mtime = std::filesystem::file_time_type{};
+  fill(loaded, j);
+  report(DiagnosticLevel::kInfo, loaded.id, "Registered static " + std::string(family) + " " + loaded.name);
+  out.push_back(std::move(loaded));
+  return true;
+}
+
+}  // namespace
+
+bool PluginRuntimeCatalog::registerStaticDataSource(const PJ_data_source_vtable_t* vtable) {
+  return registerStaticPlugin<DataSourceLibrary>(
+      vtable, data_sources_, "DataSource",
+      [this](DiagnosticLevel level, const std::string& id, std::string msg) { report(level, id, std::move(msg)); },
+      [](RuntimeDataSourcePlugin& loaded, const nlohmann::json& j) {
+        loaded.capabilities = loaded.library.createHandle().capabilities();
+        for (auto& ext : readManifestStringArray(j, "file_extensions")) {
+          loaded.file_extensions.push_back(normalizeExtension(std::move(ext)));
+        }
+      });
+}
+
+bool PluginRuntimeCatalog::registerStaticMessageParser(const PJ_message_parser_vtable_t* vtable) {
+  return registerStaticPlugin<MessageParserLibrary>(
+      vtable, message_parsers_, "MessageParser",
+      [this](DiagnosticLevel level, const std::string& id, std::string msg) { report(level, id, std::move(msg)); },
+      [](RuntimeMessageParserPlugin& loaded, const nlohmann::json& j) {
+        loaded.encodings = readManifestStringArray(j, "encoding");
+      });
+}
+
+bool PluginRuntimeCatalog::registerStaticToolbox(const PJ_toolbox_vtable_t* vtable) {
+  return registerStaticPlugin<ToolboxLibrary>(
+      vtable, toolbox_plugins_, "Toolbox",
+      [this](DiagnosticLevel level, const std::string& id, std::string msg) { report(level, id, std::move(msg)); },
+      [](RuntimeToolboxPlugin& loaded, const nlohmann::json& /*j*/) {
+        loaded.capabilities = loaded.library.createHandle().capabilities();
+      });
+}
+
 bool PluginRuntimeCatalog::loadAndRegister(const PluginDescriptor& descriptor) {
   switch (descriptor.family) {
     case PluginFamily::kDataSource:

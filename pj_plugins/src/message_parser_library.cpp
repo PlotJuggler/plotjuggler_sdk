@@ -68,6 +68,24 @@ Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path)
   return MessageParserLibrary(std::move(handle), vtable, std::string(path));
 }
 
+Expected<MessageParserLibrary> MessageParserLibrary::loadStatic(const PJ_message_parser_vtable_t* vtable) {
+  if (vtable == nullptr) {
+    return unexpected("static MessageParser vtable is null");
+  }
+  if (vtable->protocol_version != PJ_MESSAGE_PARSER_PROTOCOL_VERSION) {
+    return unexpected("MessageParser protocol version mismatch");
+  }
+  if (vtable->struct_size < PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE) {
+    return unexpected("MessageParser vtable smaller than v4.0 baseline");
+  }
+  if (auto status = detail::validateRequiredSlots(vtable); !status) {
+    return unexpected(status.error());
+  }
+  static char anchor = 0;
+  std::shared_ptr<void> handle(&anchor, [](void*) {});
+  return MessageParserLibrary(std::move(handle), vtable, "static://");
+}
+
 Expected<const PJ_dialog_vtable_t*> MessageParserLibrary::resolveDialogVtable() const {
   auto sym = detail::resolveSymbol(handle_.get(), "PJ_get_dialog_vtable");
   if (!sym) {

@@ -5,7 +5,6 @@
 
 #include <gtest/gtest.h>
 
-using PJ::sdk::AssetVideo;
 using PJ::sdk::BuiltinObject;
 using PJ::sdk::BuiltinObjectType;
 using PJ::sdk::CameraInfo;
@@ -27,6 +26,7 @@ using PJ::sdk::RobotDescription;
 using PJ::sdk::SceneEntities;
 using PJ::sdk::typeOf;
 using PJ::sdk::VideoFrame;
+using PJ::sdk::VoxelGrid;
 
 TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{}), BuiltinObjectType::kNone);
@@ -40,12 +40,12 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{Mesh3D{}}), BuiltinObjectType::kMesh3D);
   EXPECT_EQ(typeOf(BuiltinObject{VideoFrame{}}), BuiltinObjectType::kVideoFrame);
   EXPECT_EQ(typeOf(BuiltinObject{SceneEntities{}}), BuiltinObjectType::kSceneEntities);
-  EXPECT_EQ(typeOf(BuiltinObject{AssetVideo{}}), BuiltinObjectType::kAssetVideo);
   EXPECT_EQ(typeOf(BuiltinObject{RobotDescription{}}), BuiltinObjectType::kRobotDescription);
   EXPECT_EQ(typeOf(BuiltinObject{CameraInfo{}}), BuiltinObjectType::kCameraInfo);
   EXPECT_EQ(typeOf(BuiltinObject{OccupancyGridUpdate{}}), BuiltinObjectType::kOccupancyGridUpdate);
   EXPECT_EQ(typeOf(BuiltinObject{Log{}}), BuiltinObjectType::kLog);
   EXPECT_EQ(typeOf(BuiltinObject{PosesInFrame{}}), BuiltinObjectType::kPosesInFrame);
+  EXPECT_EQ(typeOf(BuiltinObject{VoxelGrid{}}), BuiltinObjectType::kVoxelGrid);
   EXPECT_EQ(typeOf(BuiltinObject{PlotMarkers{}}), BuiltinObjectType::kPlotMarkers);
 }
 
@@ -62,12 +62,12 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kMesh3D,
            BuiltinObjectType::kVideoFrame,
            BuiltinObjectType::kSceneEntities,
-           BuiltinObjectType::kAssetVideo,
            BuiltinObjectType::kRobotDescription,
            BuiltinObjectType::kCameraInfo,
            BuiltinObjectType::kOccupancyGridUpdate,
            BuiltinObjectType::kLog,
            BuiltinObjectType::kPosesInFrame,
+           BuiltinObjectType::kVoxelGrid,
            BuiltinObjectType::kPlotMarkers,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));

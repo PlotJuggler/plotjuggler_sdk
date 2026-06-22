@@ -42,8 +42,6 @@ rationale.
   - `Log`
 - **`VideoFrame.proto`** — one frame of an inter-frame-coded video stream (`h264`, `h265`, `vp9`, `av1`) when per-frame `Image` messages would be wasteful. Field layout is wire-identical to `foxglove.CompressedVideo` (timestamp=1, frame_id=2, data=3, format=4), so one decoder parses both.
   - `VideoFrame`
-- **`AssetVideo.proto`** — reference to a file-backed video plus typed playback metadata (path, MIME type, dimensions, frame rate) so consumers can size playback windows without opening the file.
-  - `AssetVideo`
 
 ### Point clouds
 
@@ -62,6 +60,8 @@ rationale.
   - `Mesh3D`
 - **`PosesInFrame.proto`** — array of poses in a single reference frame at one instant (`geometry_msgs/PoseArray`, particle clouds); mirrors `foxglove.PosesInFrame` field-for-field and carries no styling — rendering is viewer-side.
   - `PosesInFrame`
+- **`VoxelGrid.proto`** — dense 3D voxel grid (the volumetric sibling of `OccupancyGrid`); reuses `PointField` for the per-voxel channel layout and mirrors `foxglove.VoxelGrid`'s Z-Y-X byte layout so `data` stays a zero-copy view. Serves occupancy/cost/ESDF/semantic grids; the draw predicate is viewer-side.
+  - `VoxelGrid`
 
 ### 2D image annotations (vector overlays)
 

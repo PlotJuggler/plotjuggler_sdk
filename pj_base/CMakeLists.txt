@@ -3,7 +3,6 @@
 # ---------------------------------------------------------------------------
 
 add_library(pj_base STATIC
-  src/builtin/asset_video_codec.cpp
   src/builtin/camera_info_codec.cpp
   src/builtin/compressed_point_cloud_codec.cpp
   src/builtin/depth_image_codec.cpp
@@ -19,6 +18,7 @@ add_library(pj_base STATIC
   src/builtin/poses_in_frame_codec.cpp
   src/builtin/scene_entities_codec.cpp
   src/builtin/video_frame_codec.cpp
+  src/builtin/voxel_grid_codec.cpp
   src/number_parse.cpp
   src/type_tree.cpp
 )
@@ -73,6 +73,7 @@ if(PJ_BUILD_TESTS)
     tests/expected_test.cpp
     tests/number_parse_test.cpp
     tests/plugin_data_api_test.cpp
+    tests/data_processors_api_test.cpp
     tests/settings_store_host_test.cpp
     tests/data_source_protocol_test.cpp
     # TODO: data_source_plugin_base_test.cpp and
@@ -102,9 +103,9 @@ if(PJ_BUILD_TESTS)
     tests/mesh3d_codec_test.cpp
     tests/video_frame_codec_test.cpp
     tests/scene_entities_codec_test.cpp
-    tests/asset_video_codec_test.cpp
     tests/time_spine_test.cpp
     tests/poses_in_frame_codec_test.cpp
+    tests/voxel_grid_codec_test.cpp
     tests/plot_markers_codec_test.cpp
   )
 

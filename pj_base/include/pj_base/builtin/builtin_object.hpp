@@ -26,7 +26,6 @@
 #include <optional>
 #include <string_view>
 
-#include "pj_base/builtin/asset_video.hpp"
 #include "pj_base/builtin/camera_info.hpp"
 #include "pj_base/builtin/compressed_point_cloud.hpp"
 #include "pj_base/builtin/depth_image.hpp"
@@ -43,6 +42,7 @@
 #include "pj_base/builtin/robot_description.hpp"
 #include "pj_base/builtin/scene_entities.hpp"
 #include "pj_base/builtin/video_frame.hpp"
+#include "pj_base/builtin/voxel_grid.hpp"
 
 namespace PJ {
 namespace sdk {
@@ -59,13 +59,14 @@ enum class BuiltinObjectType : uint16_t {
   kMesh3D = 9,                ///< sdk::Mesh3D — binary mesh asset (GLTF/STL/PLY/OBJ/USD/DAE).
   kVideoFrame = 10,           ///< sdk::VideoFrame — single frame of h264/h265/vp9/av1 stream.
   kSceneEntities = 11,        ///< sdk::SceneEntities — procedural 3D scene primitives.
-  kAssetVideo = 12,           ///< sdk::AssetVideo — file-backed video reference + playback metadata.
+  // 12 reserved — was kAssetVideo (removed; video unified on kVideoFrame). Never reuse.
   kRobotDescription = 13,     ///< sdk::RobotDescription — raw URDF/SDF/MJCF text + format hint.
   kCameraInfo = 14,           ///< sdk::CameraInfo — pinhole camera calibration (K/D/R/P).
   kOccupancyGridUpdate = 15,  ///< sdk::OccupancyGridUpdate — incremental sub-rectangle patch for an OccupancyGrid.
   kLog = 16,                  ///< sdk::Log — textual log message (level + text + name).
   kPosesInFrame = 17,         ///< sdk::PosesInFrame — array of poses in one reference frame.
-  kPlotMarkers = 18,          ///< sdk::PlotMarkers — findings on a time-series plot (regions, events, bands, labels).
+  kVoxelGrid = 18,            ///< sdk::VoxelGrid — dense 3D voxel grid (occupancy/cost/ESDF/semantic).
+  kPlotMarkers = 19,          ///< sdk::PlotMarkers — findings on a time-series plot (regions, events, bands, labels).
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -100,8 +101,6 @@ struct SchemaClassification {
       return "kVideoFrame";
     case BuiltinObjectType::kSceneEntities:
       return "kSceneEntities";
-    case BuiltinObjectType::kAssetVideo:
-      return "kAssetVideo";
     case BuiltinObjectType::kRobotDescription:
       return "kRobotDescription";
     case BuiltinObjectType::kCameraInfo:
@@ -112,6 +111,8 @@ struct SchemaClassification {
       return "kLog";
     case BuiltinObjectType::kPosesInFrame:
       return "kPosesInFrame";
+    case BuiltinObjectType::kVoxelGrid:
+      return "kVoxelGrid";
     case BuiltinObjectType::kPlotMarkers:
       return "kPlotMarkers";
   }
@@ -154,9 +155,6 @@ struct SchemaClassification {
   if (s == "kSceneEntities") {
     return BuiltinObjectType::kSceneEntities;
   }
-  if (s == "kAssetVideo") {
-    return BuiltinObjectType::kAssetVideo;
-  }
   if (s == "kRobotDescription") {
     return BuiltinObjectType::kRobotDescription;
   }
@@ -171,6 +169,9 @@ struct SchemaClassification {
   }
   if (s == "kPosesInFrame") {
     return BuiltinObjectType::kPosesInFrame;
+  }
+  if (s == "kVoxelGrid") {
+    return BuiltinObjectType::kVoxelGrid;
   }
   if (s == "kPlotMarkers") {
     return BuiltinObjectType::kPlotMarkers;
@@ -218,9 +219,6 @@ using BuiltinObject = std::any;
   if (t == typeid(SceneEntities)) {
     return BuiltinObjectType::kSceneEntities;
   }
-  if (t == typeid(AssetVideo)) {
-    return BuiltinObjectType::kAssetVideo;
-  }
   if (t == typeid(RobotDescription)) {
     return BuiltinObjectType::kRobotDescription;
   }
@@ -235,6 +233,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(PosesInFrame)) {
     return BuiltinObjectType::kPosesInFrame;
+  }
+  if (t == typeid(VoxelGrid)) {
+    return BuiltinObjectType::kVoxelGrid;
   }
   if (t == typeid(PlotMarkers)) {
     return BuiltinObjectType::kPlotMarkers;

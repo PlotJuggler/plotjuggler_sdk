@@ -22,7 +22,6 @@ The public headers live under:
 #include <pj_base/builtin/occupancy_grid.hpp>
 #include <pj_base/builtin/mesh3d.hpp>
 #include <pj_base/builtin/video_frame.hpp>
-#include <pj_base/builtin/asset_video.hpp>
 #include <pj_base/builtin/scene_entities.hpp>
 #include <pj_base/builtin/robot_description.hpp>
 #include <pj_base/builtin/image_annotations.hpp>
@@ -36,7 +35,6 @@ The public headers live under:
 #include <pj_base/builtin/occupancy_grid_codec.hpp>
 #include <pj_base/builtin/mesh3d_codec.hpp>
 #include <pj_base/builtin/video_frame_codec.hpp>
-#include <pj_base/builtin/asset_video_codec.hpp>
 #include <pj_base/builtin/scene_entities_codec.hpp>
 #include <pj_base/builtin/image_annotations_codec.hpp>
 #include <pj_base/builtin/frame_transforms_codec.hpp>
@@ -85,8 +83,8 @@ Builtin objects fall into two serialization families:
 
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
-| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `AssetVideo`, `RobotDescription`, `CameraInfo`, `PosesInFrame`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
+| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `VoxelGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `RobotDescription`, `CameraInfo`, `PosesInFrame`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
 format contract. One file per top-level message, each named after its message
@@ -120,12 +118,12 @@ annotations, frame transforms, or no builtin object.
 | `kMesh3D` | `PJ::sdk::Mesh3D` | 3D mesh asset in its native binary format (GLTF/GLB/STL/PLY/OBJ/USD/DAE). |
 | `kVideoFrame` | `PJ::sdk::VideoFrame` | One frame of an inter-frame-coded video stream (h264/h265/vp9/av1). |
 | `kSceneEntities` | `PJ::sdk::SceneEntities` | Procedural 3D scene primitives (arrows, cubes, lines, text, …). |
-| `kAssetVideo` | `PJ::sdk::AssetVideo` | File-backed video reference plus typed playback metadata. |
 | `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
 | `kCameraInfo` | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
 | `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
 | `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
 | `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
+| `kVoxelGrid` | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -420,44 +418,6 @@ frames within a stream.
 `pj_base/builtin/video_frame_codec.hpp` serializes and deserializes this
 type using the canonical `PJ.VideoFrame` protobuf wire format.
 
-## AssetVideo
-
-`AssetVideo` is the entry-point handle for video assets ingested by data
-loaders that point at an external media file — LeRobot datasets, MP4
-loaders, and similar. Producers push exactly one `AssetVideo` per topic;
-the ObjectStore timestamp of that entry equals `time_origin_ns` so
-timeline UIs naturally see the asset's start instant.
-
-Unlike `VideoFrame` (a single frame of a streamed payload), `AssetVideo`
-carries no pixel data — it references the file by path and surfaces
-decode-routing metadata (media type, dimensions, frame rate) without
-forcing the consumer to open the file just to size a playback window.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `time_origin_ns` | `std::optional<Timestamp>` | Wall-clock instant of the first frame. Absent means the asset is not aligned to wall clock. |
-| `start_ns` | `std::optional<int64_t>` | In-file offset (ns) where the playable window begins. Absent means "play from the start of the file". |
-| `end_ns` | `std::optional<int64_t>` | In-file offset (ns) where the playable window ends. Absent means "play to the end of the file". |
-| `file_path` | `std::string` | Absolute path or path relative to a consumer-known root. |
-| `media_type` | `std::string` | MIME type hint. Empty means probe the file. |
-| `width` | `uint32_t` | Pixel width. `0` means unknown. |
-| `height` | `uint32_t` | Pixel height. `0` means unknown. |
-| `frame_rate` | `double` | Nominal FPS. `0` or NaN means unknown. |
-
-When both `start_ns` and `end_ns` are absent the whole file is the playable
-window. When present, consumers must clamp seek requests to
-`[start_ns, end_ns]` and bound timeline UI to that range. This is how
-producers expose one clip out of a file that holds many concatenated
-clips — for example LeRobot v3.0, where a single MP4 per camera packs
-many episodes back-to-back and `[from_timestamp, to_timestamp]` in the
-episode metadata maps directly to `[start_ns, end_ns]`.
-
-The total file duration is *not* carried in the message — the decoder
-backend reports it.
-
-`pj_base/builtin/asset_video_codec.hpp` serializes and deserializes this
-type using the canonical `PJ.AssetVideo` protobuf wire format.
-
 ## SceneEntities
 
 `SceneEntities` is the workhorse for marker-style 3D visualization — the
@@ -593,6 +553,40 @@ so no `BufferAnchor` is needed.
 `pj_base/builtin/poses_in_frame_codec.hpp` serializes and deserializes this
 type using the canonical `PJ.PosesInFrame` protobuf wire format.
 
+## VoxelGrid
+
+`VoxelGrid` is a dense 3D voxel grid placed in world coordinates — the
+volumetric sibling of `OccupancyGrid` — for 3D occupancy maps, costmaps,
+ESDFs, and semantic grids (e.g. `foxglove.VoxelGrid`, `costmap_2d/VoxelGrid`).
+
+It is a byte-backed view: the lattice of `column_count * row_count *
+slice_count` voxels lives in `data` (a `Span<const uint8_t>` + `BufferAnchor`)
+in depth-major, row-major **Z-Y-X** order (x fastest), and the per-voxel layout
+is described by `fields` — the same `PointField` channel model used by
+`PointCloud`. The byte layout mirrors `foxglove.VoxelGrid` (three strides +
+Z-Y-X order) so a parser can hand out `data` zero-copy rather than transcoding
+millions of cells; expanding occupied voxels into renderable primitives is a
+viewer-side concern.
+
+Unlike the 2D `OccupancyGrid` (which fixes `-1`/`0..100` cell semantics), the
+per-voxel **value is generic**: occupancy byte, RGBA, a float cost/intensity, a
+class id, etc. The draw predicate (which voxels are visible) and any colormap are
+viewer-side, so one type serves occupancy/cost/ESDF/semantic grids.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Time of the grid. `0` when the source had none. |
+| `frame_id` | `std::string` | Source coordinate frame; 3D consumers TF-transform from it. |
+| `origin` | `Pose` | Lower-front-left `(0,0,0)` corner of the grid in `frame_id`. |
+| `cell_size` | `Vector3` | Metric voxel size along x/y/z (meters); need not be cubic. |
+| `column_count` / `row_count` / `slice_count` | `uint32_t` | Voxels along x / y / z. |
+| `cell_stride` / `row_stride` / `slice_stride` | `uint32_t` | Byte spacing of a voxel / row / z-slice (padding allowed). |
+| `fields` | `std::vector<PointField>` | Per-voxel channel layout. |
+| `data` | `Span<const uint8_t>` + `BufferAnchor` | Packed voxel bytes in Z-Y-X order. |
+
+`pj_base/builtin/voxel_grid_codec.hpp` serializes and deserializes this type
+using the canonical `PJ.VoxelGrid` protobuf wire format.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -605,13 +599,13 @@ type using the canonical `PJ.PosesInFrame` protobuf wire format.
 | URDF / `visualization_msgs/Marker` mesh resource | `Mesh3D` | Embed `data` (with `format`) or point at `url`; preserve `pose` and `scale`. |
 | ROS `nav_msgs/Path`, marker arrays | `SceneEntities` | Map polylines to `LinePrimitive`, arrows to `ArrowPrimitive`, etc. |
 | H.264/H.265/VP9/AV1 stream frame | `VideoFrame` | Forward one frame's bitstream bytes plus the codec identifier. |
-| MP4 / MKV / AV1 dataset file | `AssetVideo` | Push once per topic with the file path and metadata; consumers seek into the file by tracker time. |
 | Detection or tracking message | `ImageAnnotations` | Convert boxes, points, circles, and labels into pixel-space primitives. |
 | ROS `tf2_msgs/TFMessage` | `FrameTransforms` | Convert transform batches into named parent/child frame relationships. |
 | ROS `geometry_msgs/PoseArray` | `PosesInFrame` | Forward timestamp, frame, and the pose array; the viewer chooses how to draw them. |
 | ROS `std_msgs/String` on `/robot_description` (or matching name) carrying URDF XML | `RobotDescription` | Validate root element matches `format`, then carry the raw text + format hint. No mesh resolution at parse time. |
 | ROS `sensor_msgs/CameraInfo` | `CameraInfo` | Map K / D / R / P plus dimensions; correlate to the image topic by name. Sub-window (binning / ROI) is dropped. |
 | ROS `map_msgs/OccupancyGridUpdate` | `OccupancyGridUpdate` | Forward the cell-space patch (`x`/`y`/`width`/`height` + bytes); the consumer pairs it with the base grid and supplies origin/resolution. |
+| `foxglove.VoxelGrid` / `costmap_2d/VoxelGrid` | `VoxelGrid` | Map counts/strides/`cell_size`/`origin` into the struct; keep voxel bytes zero-copy in Z-Y-X order. The draw predicate is viewer-side. |
 
 The builtin type is the boundary object. After conversion, consumers should not
 need to know which third-party schema produced it.

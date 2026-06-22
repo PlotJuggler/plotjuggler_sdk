@@ -116,13 +116,13 @@ static_assert(PJ_BUILTIN_OBJECT_TYPE_COMPRESSED_POINTCLOUD == 8, "CompressedPoin
 static_assert(PJ_BUILTIN_OBJECT_TYPE_MESH3D == 9, "Mesh3D type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_VIDEO_FRAME == 10, "VideoFrame type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_SCENE_ENTITIES == 11, "SceneEntities type id pinned");
-static_assert(PJ_BUILTIN_OBJECT_TYPE_ASSET_VIDEO == 12, "AssetVideo type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_ROBOT_DESCRIPTION == 13, "RobotDescription type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_CAMERA_INFO == 14, "CameraInfo type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID_UPDATE == 15, "OccupancyGridUpdate type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_LOG == 16, "Log type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_POSES_IN_FRAME == 17, "PosesInFrame type id pinned");
-static_assert(PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS == 18, "PlotMarkers type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID == 18, "VoxelGrid type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS == 19, "PlotMarkers type id pinned");
 static_assert(sizeof(PJ_schema_classification_t) == 4, "PJ_schema_classification_t layout pinned");
 static_assert(offsetof(PJ_schema_classification_t, object_type) == 0, "object_type at offset 0");
 static_assert(offsetof(PJ_schema_classification_t, reserved) == 2, "reserved at offset 2");

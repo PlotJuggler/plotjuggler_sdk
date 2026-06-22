@@ -785,6 +785,85 @@ typedef struct {
 } PJ_colormap_registry_t;
 
 /**
+ * Data-processor host service ("pj.data_processors.v1", protocol_version 1).
+ *
+ * Lets a toolbox plugin create catalog-resident "transform" nodes in the host
+ * by DATA only. Nothing executable crosses the boundary — only strings:
+ *
+ *   - id          : per-call stable key. The host namespaces it under the
+ *                   calling plugin. create() UPSERTS by id (idempotent Save).
+ *                   ids survive a session reload, so a plugin can re-edit its
+ *                   nodes after the host has replayed them from persisted
+ *                   recipes (see data_processor_config).
+ *   - inputs      : topic OR topic-field names ("pose/orientation" or
+ *                   "pose/orientation/x"); the host resolves them and exact-joins
+ *                   co-timestamped inputs. Field-level resolution is a host
+ *                   concern and needs no ABI change.
+ *   - outputs     : REQUIRED non-empty. This service creates named catalog
+ *                   topics (transforms). View-bound hidden-output "filters" are
+ *                   host-internal and are NOT created through this ABI.
+ *   - script      : the processor class source. Its first-line directive
+ *                   ("-- pj-script: <lang>") selects the backend; an unsupported
+ *                   one is rejected by the host at create() time. BINARY-SAFE:
+ *                   script is a PJ_string_view_t {data,size}, NOT a C string, so
+ *                   it MAY carry a non-text blob — e.g. a future WASM module
+ *                   detected by the leading "\0asm" magic. Nothing on the path
+ *                   may treat it as NUL-terminated (no strlen).
+ *   - params_json : forwarded VERBATIM to the backend's create(params); the host
+ *                   does not interpret its keys (translucent pass-through). Also
+ *                   a binary-safe PJ_string_view_t {data,size}.
+ *
+ * Per-plugin isolation: the host namespaces every id under the calling plugin, so
+ * list/remove/config only ever see or affect THAT plugin's nodes; one plugin can
+ * neither enumerate nor remove another's.
+ *
+ * FORWARD-COMPAT — the native door is WASM, not a C++ kernel. Because the script
+ * slot is a binary-safe blob the host owns and runs (today Luau; tomorrow a
+ * host-owned WASM/Python backend), a native processor needs NO new ABI: it ships
+ * as bytes through this same data-only surface, survives plugin unload (the host
+ * owns the payload + runtime), and is sandboxed. Adding a backend is purely
+ * additive. This is deliberately the OPPOSITE of crossing a C++ vtable across the
+ * DSO boundary (which dangles on unload).
+ *
+ * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ */
+typedef struct PJ_data_processors_host_vtable_t {
+  uint32_t protocol_version;  // = 1
+  uint32_t struct_size;       // = sizeof(PJ_data_processors_host_vtable_t)
+
+  /* [main-thread] Create or replace (upsert by id) a transform node. outputs
+   * MUST be non-empty. Transactional: on failure no partial node/topic is left
+   * behind. All string arguments are borrowed for the duration of the call. */
+  bool (*create_data_processor)(
+      void* ctx, PJ_string_view_t id, const PJ_string_view_t* inputs, uint64_t input_count,
+      const PJ_string_view_t* outputs, uint64_t output_count, PJ_string_view_t script, PJ_string_view_t params_json,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Remove a node by id. An unknown id is an error. */
+  bool (*remove_data_processor)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Enumerate the ids of THIS plugin's live processors.
+   * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
+   * buffer of that size. On success the first min(capacity, *out_count) entries
+   * of out_ids are filled and point into host storage valid only until the next
+   * call on this vtable. */
+  bool (*list_data_processor_ids)(
+      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Read a node's full recipe as JSON
+   * {"inputs":[...],"outputs":[...],"params":{...}} for re-edit (e.g. after a
+   * session reload). *out_recipe_json is borrowed, valid only until the next
+   * call on this vtable. An unknown id is an error. */
+  bool (*data_processor_config)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_data_processors_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_data_processors_host_vtable_t* vtable;
+} PJ_data_processors_host_t;
+
+/**
  * Settings store service ("pj.settings.v1", protocol_version 1).
  *
  * Optional host-provided key/value persistence, modeled on Qt's QSettings but

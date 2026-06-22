@@ -1,0 +1,93 @@
+schema_version: 1
+
+context:
+  version: "0.11.0"
+
+package:
+  name: plotjuggler_sdk
+  version: ${{ version }}
+
+source:
+  path: .
+
+build:
+  number: 0
+  script:
+    # Unix (linux-64, osx-64): install prefix is $PREFIX, libs in $PREFIX/lib.
+    - if: unix
+      then:
+        - cmake -G Ninja -B build -S . -DPJ_INSTALL_SDK=ON -DPJ_BUILD_TESTS=OFF -DPJ_BUILD_PORTED_PLUGINS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH=$PREFIX -DCMAKE_INSTALL_PREFIX=$PREFIX -DCMAKE_INSTALL_LIBDIR=lib
+        - cmake --build build
+        - cmake --install build --prefix $PREFIX
+    # Windows (win-64): conda installs under %LIBRARY_PREFIX% (the Library\ tree);
+    # MSVC needs an explicit Release config at build/install time.
+    - if: win
+      then:
+        - cmake -G Ninja -B build -S . -DPJ_INSTALL_SDK=ON -DPJ_BUILD_TESTS=OFF -DPJ_BUILD_PORTED_PLUGINS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH="%LIBRARY_PREFIX%" -DCMAKE_INSTALL_PREFIX="%LIBRARY_PREFIX%"
+        - cmake --build build --config Release
+        - cmake --install build --config Release
+
+requirements:
+  build:
+    - ${{ compiler('cxx') }}
+    - cmake
+    - ninja
+  host:
+    - nlohmann_json 3.12.*
+    - fmt 12.*
+    - fast_float 8.*
+  run:
+    # nlohmann_json appears in PUBLIC installed headers (config_envelope.hpp) and is
+    # find_dependency()'d by the installed CMake config, so consumers need it at use
+    # time. Constrain to the 3.x line built against (header-only API breaks at majors).
+    - nlohmann_json >=3.12,<4
+  # fmt and fast_float are header-only / BUILD_INTERFACE-only in the SDK (they
+  # never appear in the installed Targets file or the static archives). Their
+  # conda-forge run_exports (fmt pins a tight >=12.2,<12.3) would over-depend,
+  # so suppress them.
+  ignore_run_exports:
+    by_name:
+      - fmt
+      - fast_float
+
+tests:
+  # Installed CMake package files — cross-platform (conda puts them under
+  # $PREFIX/lib on unix, %LIBRARY_PREFIX%\lib i.e. Library/lib on Windows).
+  - package_contents:
+      files:
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfig.cmake
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjPluginManifest.cmake
+  # Actually exercise the package: build the repo's example consumer, which
+  # find_package(plotjuggler_sdk COMPONENTS plugin_sdk), links a plugin lib, and
+  # runs pj_emit_plugin_manifest(). Catches broken CMake config / find_dependency
+  # / manifest helper — failure modes the file checks above cannot see. Kept
+  # unix-only for now: the Windows package build itself is the win-64 gate, and
+  # the plugin-shared-lib example needs separate validation on MSVC (follow-up).
+  - script:
+      - if: unix
+        then:
+          - test -f $PREFIX/lib/libpj_base.a
+          - cmake -G Ninja -B test_build -S examples/sdk_consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_PREFIX_PATH=$PREFIX
+          - cmake --build test_build
+    requirements:
+      run:
+        - ${{ compiler('cxx') }}
+        - cmake
+        - ninja
+        - nlohmann_json
+    files:
+      source:
+        - examples/sdk_consumer/
+
+about:
+  homepage: https://github.com/PlotJuggler/plotjuggler_sdk
+  license: Apache-2.0
+  license_file:
+    - LICENSE
+    - LICENSE-APACHE
+  summary: PlotJuggler SDK — vocabulary types, plugin-author SDK, and host-side plugin loaders
+  description: |
+    plotjuggler_sdk provides the native CMake package consumed by PlotJuggler
+    plugins. Exposes the components plotjuggler_sdk::base, ::plugin_sdk, and
+    ::plugin_host via find_package(plotjuggler_sdk).

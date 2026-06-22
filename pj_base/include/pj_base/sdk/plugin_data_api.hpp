@@ -1348,6 +1348,109 @@ class ColorMapRegistryView {
 };
 
 // ---------------------------------------------------------------------------
+// DataProcessorsHostView — typed C++ view over PJ_data_processors_host_t
+// ---------------------------------------------------------------------------
+
+/// C++ wrapper around PJ_data_processors_host_t for plugins that create
+/// catalog-resident transform nodes in the host (see the C ABI doc-comment on
+/// PJ_data_processors_host_vtable_t). Empty-constructible; `valid()` tells
+/// whether the host exposed the service. Strings returned by `list()`/
+/// `recipeOf()` are copied into owned values, so they stay valid past the next
+/// vtable call.
+class DataProcessorsHostView {
+ public:
+  DataProcessorsHostView() = default;
+  explicit DataProcessorsHostView(PJ_data_processors_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Create or replace (upsert by id) a transform node. `outputs` must be
+  /// non-empty (the host rejects empty output lists). `params_json` is
+  /// forwarded verbatim to the script's create(params).
+  [[nodiscard]] Status createTransform(
+      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
+      std::string_view script, std::string_view params_json) const {
+    if (!valid() || host_.vtable->create_data_processor == nullptr) {
+      return unexpected("data processors host is not bound");
+    }
+    if (outputs.empty()) {
+      return unexpected("data processors transform requires at least one output topic");
+    }
+    std::vector<PJ_string_view_t> in_abi;
+    in_abi.reserve(inputs.size());
+    for (const auto& name : inputs) {
+      in_abi.push_back(toAbiString(name));
+    }
+    std::vector<PJ_string_view_t> out_abi;
+    out_abi.reserve(outputs.size());
+    for (const auto& name : outputs) {
+      out_abi.push_back(toAbiString(name));
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->create_data_processor(
+            host_.ctx, toAbiString(id), in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
+            toAbiString(script), toAbiString(params_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Remove a previously created node by id.
+  [[nodiscard]] Status remove(std::string_view id) const {
+    if (!valid() || host_.vtable->remove_data_processor == nullptr) {
+      return unexpected("data processors host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->remove_data_processor(host_.ctx, toAbiString(id), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Enumerate the ids of this plugin's live processors (owned copies).
+  [[nodiscard]] Expected<std::vector<std::string>> list() const {
+    if (!valid() || host_.vtable->list_data_processor_ids == nullptr) {
+      return unexpected("data processors host is not bound");
+    }
+    PJ_error_t err{};
+    uint64_t count = 0;
+    if (!host_.vtable->list_data_processor_ids(host_.ctx, nullptr, 0, &count, &err)) {
+      return unexpected(errorToString(err));
+    }
+    std::vector<PJ_string_view_t> borrowed(count);
+    uint64_t filled = 0;
+    if (count != 0 &&
+        !host_.vtable->list_data_processor_ids(host_.ctx, borrowed.data(), borrowed.size(), &filled, &err)) {
+      return unexpected(errorToString(err));
+    }
+    std::vector<std::string> ids;
+    ids.reserve(filled);
+    for (uint64_t i = 0; i < filled; ++i) {
+      ids.emplace_back(toStringView(borrowed[i]));
+    }
+    return ids;
+  }
+
+  /// Read a node's full recipe JSON (owned copy) for re-edit.
+  [[nodiscard]] Expected<std::string> recipeOf(std::string_view id) const {
+    if (!valid() || host_.vtable->data_processor_config == nullptr) {
+      return unexpected("data processors host is not bound");
+    }
+    PJ_error_t err{};
+    PJ_string_view_t recipe{};
+    if (!host_.vtable->data_processor_config(host_.ctx, toAbiString(id), &recipe, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(recipe));
+  }
+
+ private:
+  PJ_data_processors_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
 // SettingsView — typed C++ view over PJ_settings_store_t
 // ---------------------------------------------------------------------------
 

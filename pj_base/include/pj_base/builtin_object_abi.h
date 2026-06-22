@@ -51,13 +51,14 @@ typedef enum PJ_builtin_object_type_t {
   PJ_BUILTIN_OBJECT_TYPE_MESH3D = 9,
   PJ_BUILTIN_OBJECT_TYPE_VIDEO_FRAME = 10,
   PJ_BUILTIN_OBJECT_TYPE_SCENE_ENTITIES = 11,
-  PJ_BUILTIN_OBJECT_TYPE_ASSET_VIDEO = 12,
+  /* 12 reserved — was PJ_BUILTIN_OBJECT_TYPE_ASSET_VIDEO (removed; video unified on VIDEO_FRAME). */
   PJ_BUILTIN_OBJECT_TYPE_ROBOT_DESCRIPTION = 13,
   PJ_BUILTIN_OBJECT_TYPE_CAMERA_INFO = 14,
   PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID_UPDATE = 15,
   PJ_BUILTIN_OBJECT_TYPE_LOG = 16,
   PJ_BUILTIN_OBJECT_TYPE_POSES_IN_FRAME = 17,
-  PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS = 18,
+  PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID = 18,
+  PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS = 19,
   /* Reserve future types; appended at the tail. Numeric values are stable
    * across releases — never renumber. Each new value here must match the
    * matching kFoo entry in BuiltinObjectType (builtin_object.hpp). */
