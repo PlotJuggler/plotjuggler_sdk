@@ -187,8 +187,7 @@ static_assert(offsetof(PJ_toolbox_runtime_host_vtable_t, protocol_version) == 0,
 static_assert(offsetof(PJ_toolbox_runtime_host_vtable_t, struct_size) == 4, "toolbox runtime v1 prefix pinned");
 static_assert(offsetof(PJ_toolbox_runtime_host_vtable_t, report_message) == 8, "toolbox runtime first slot pinned");
 static_assert(
-    offsetof(PJ_toolbox_runtime_host_vtable_t, notify_data_changed) == 16,
-    "toolbox runtime second slot pinned");
+    offsetof(PJ_toolbox_runtime_host_vtable_t, notify_data_changed) == 16, "toolbox runtime second slot pinned");
 static_assert(
     offsetof(PJ_toolbox_runtime_host_vtable_t, create_parser_ingest) == 24,
     "toolbox runtime parser-ingest slot pinned");

@@ -92,8 +92,7 @@ typedef struct PJ_toolbox_runtime_host_vtable_t {
    * data source or parser ingest is not configured on this host; `out_host` is
    * left untouched on failure. */
   bool (*create_parser_ingest)(
-      void* ctx, uint32_t data_source_id, PJ_data_source_runtime_host_t* out_host,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
+      void* ctx, uint32_t data_source_id, PJ_data_source_runtime_host_t* out_host, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /** [thread-safe] Flush every row written through the context's parser bindings and
    * destroy it. Idempotent: releasing an unknown id succeeds. The fat
