@@ -180,6 +180,24 @@ static_assert(offsetof(PJ_toolbox_host_vtable_t, register_object_topic) == 72, "
 static_assert(offsetof(PJ_toolbox_host_vtable_t, push_owned_object) == 80, "toolbox host object-push tail slot pinned");
 static_assert(sizeof(PJ_toolbox_host_vtable_t) == 88, "Toolbox host size (update deliberately on append)");
 
+// --- Toolbox runtime host vtable (ABI-APPENDABLE within v4) ------------------
+// The vtable the host exposes to plugins under "pj.toolbox_runtime.v1".
+// Offsets of existing slots are pinned; size grows deliberately as tail slots append.
+static_assert(offsetof(PJ_toolbox_runtime_host_vtable_t, protocol_version) == 0, "toolbox runtime v1 prefix pinned");
+static_assert(offsetof(PJ_toolbox_runtime_host_vtable_t, struct_size) == 4, "toolbox runtime v1 prefix pinned");
+static_assert(offsetof(PJ_toolbox_runtime_host_vtable_t, report_message) == 8, "toolbox runtime first slot pinned");
+static_assert(
+    offsetof(PJ_toolbox_runtime_host_vtable_t, notify_data_changed) == 16,
+    "toolbox runtime second slot pinned");
+static_assert(
+    offsetof(PJ_toolbox_runtime_host_vtable_t, create_parser_ingest) == 24,
+    "toolbox runtime parser-ingest slot pinned");
+static_assert(
+    offsetof(PJ_toolbox_runtime_host_vtable_t, release_parser_ingest) == 32,
+    "toolbox runtime parser-ingest release slot pinned");
+static_assert(
+    sizeof(PJ_toolbox_runtime_host_vtable_t) == 40, "Toolbox runtime host size (update deliberately on append)");
+
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 5, "v5 ABI version");
 

@@ -157,6 +157,8 @@ class ToolboxTestStore {
         .struct_size = sizeof(PJ_toolbox_runtime_host_vtable_t),
         .report_message = &ToolboxTestStore::trampolineReportMessage,
         .notify_data_changed = &ToolboxTestStore::trampolineNotifyDataChanged,
+        .create_parser_ingest = nullptr,
+        .release_parser_ingest = nullptr,
     };
     return PJ_toolbox_runtime_host_t{.ctx = this, .vtable = &vtable};
   }

@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pj_base/data_source_protocol.h" /* PJ_data_source_runtime_host_t for parser ingest */
 #include "pj_base/plugin_data_api.h"
 
 #ifdef __cplusplus
@@ -74,6 +75,30 @@ typedef struct PJ_toolbox_runtime_host_vtable_t {
 
   /** [thread-safe] Notify the host that data has been modified; host refreshes UI. */
   void (*notify_data_changed)(void* ctx) PJ_NOEXCEPT;
+
+  /* ---- TAIL SLOTS (parser ingest) ------------------------------------
+   * Appended for toolbox-delegated parsing; struct_size-gated via
+   * PJ_HAS_TAIL_SLOT, no protocol_version bump — the same growth mechanism
+   * as the toolbox write host's object-topic slots (ABI v5). */
+
+  /** [thread-safe] Create (or return the existing) parser-ingest context bound to a
+   * toolbox-created data source. `data_source_id` is the handle id returned
+   * by the toolbox write host's create_data_source (== the dataset id).
+   * On success fills `out_host` with a standard data-source runtime host
+   * fat pointer: ensure_parser_binding / push_message on it behave exactly
+   * as they do for file/stream DataSource plugins. The context stays valid
+   * until release_parser_ingest or host teardown.
+   * Returns false (with out_error populated) if `data_source_id` is not a live
+   * data source or parser ingest is not configured on this host; `out_host` is
+   * left untouched on failure. */
+  bool (*create_parser_ingest)(
+      void* ctx, uint32_t data_source_id, PJ_data_source_runtime_host_t* out_host,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /** [thread-safe] Flush every row written through the context's parser bindings and
+   * destroy it. Idempotent: releasing an unknown id succeeds. The fat
+   * pointer from create_parser_ingest must not be used afterwards. */
+  bool (*release_parser_ingest)(void* ctx, uint32_t data_source_id, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_runtime_host_vtable_t;
 
 typedef struct {
