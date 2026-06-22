@@ -306,6 +306,43 @@ class WidgetDataView {
     }
   }
 
+  /// Boundary segments for a RangeSlider: (start, end, label) in slider units.
+  /// nullopt when never set; an empty vector when explicitly cleared.
+  struct Marker {
+    int start = 0;
+    int end = 0;
+    std::string label;
+  };
+  [[nodiscard]] std::optional<std::vector<Marker>> rangeSliderMarkers(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("range_markers");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<Marker> out;
+    out.reserve(it->size());
+    for (const auto& m : *it) {
+      if (!m.is_object()) {
+        continue;
+      }
+      auto s = m.find("start");
+      auto e = m.find("end");
+      auto l = m.find("label");
+      if (s == m.end() || !s->is_number_integer()) {
+        continue;
+      }
+      Marker mk;
+      mk.start = s->get<int>();
+      mk.end = (e != m.end() && e->is_number_integer()) ? e->get<int>() : mk.start;
+      mk.label = (l != m.end() && l->is_string()) ? l->get<std::string>() : std::string{};
+      out.push_back(std::move(mk));
+    }
+    return out;
+  }
+
   // --- DateRangePicker ---
   [[nodiscard]] std::optional<std::string> dateRangeEarliest(std::string_view name) const {
     return getString(name, "date_range_earliest");

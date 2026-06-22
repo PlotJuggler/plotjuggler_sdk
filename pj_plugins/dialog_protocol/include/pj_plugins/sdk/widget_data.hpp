@@ -26,6 +26,17 @@ struct ChartSeries {
   std::string color;  // optional hex "#rrggbb"
 };
 
+/// One boundary segment on a RangeSlider (used by setRangeSliderMarkers): a box
+/// covering [start, end] in slider units, with an optional label. The host draws
+/// each as a distinct box at its true extent — so disjoint selections leave
+/// blank slider space in the gaps — and shades the boxes overlapping the current
+/// [lower, upper] selection.
+struct RangeSliderMarker {
+  int start = 0;
+  int end = 0;
+  std::string label;
+};
+
 /// Builder for the JSON string returned by get_widget_data().
 /// Each method targets an existing widget in the .ui file by its objectName.
 class WidgetData {
@@ -338,6 +349,22 @@ class WidgetData {
     auto& e = entry(name);
     e["range_time_min_ns"] = std::to_string(min_ns);
     e["range_time_max_ns"] = std::to_string(max_ns);
+    return *this;
+  }
+
+  /// Draw boundary segments on a RangeSlider: one box per marker covering its
+  /// [start, end] (in slider units, same space as the handles) with an optional
+  /// label centered inside. Each box is drawn at its TRUE extent, so a disjoint
+  /// selection leaves blank slider space between boxes; the host shades the
+  /// boxes overlapping the current [lower, upper] selection, so the slider
+  /// doubles as a "which segment falls in the range" indicator. Empty clears.
+  WidgetData& setRangeSliderMarkers(std::string_view name, const std::vector<RangeSliderMarker>& markers) {
+    auto& e = entry(name);
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& m : markers) {
+      arr.push_back(nlohmann::json{{"start", m.start}, {"end", m.end}, {"label", m.label}});
+    }
+    e["range_markers"] = std::move(arr);
     return *this;
   }
 
