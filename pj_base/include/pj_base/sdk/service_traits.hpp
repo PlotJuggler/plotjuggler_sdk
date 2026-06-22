@@ -171,6 +171,19 @@ struct DataProcessorsHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Optional service for plugins that submit WHOLE-SERIES marker generators to the
+/// host by data (script + input names + a single output marker-topic + params).
+/// The host runs the script and publishes the resulting PlotMarkers. The marker
+/// analog of DataProcessorsHostService; see PJ_markers_host_vtable_t.
+struct MarkersHostService {
+  static constexpr const char* kName = "pj.markers.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_markers_host_t;
+  using Vtable = PJ_markers_host_vtable_t;
+  using View = MarkersHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Optional QSettings-like key/value persistence exposed to any plugin family.
 /// Host-backed (QSettings in the GUI app, JSON in a headless host); keys are
 /// namespaced per plugin by the host.

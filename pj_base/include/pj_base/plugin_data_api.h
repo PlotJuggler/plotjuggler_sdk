@@ -864,6 +864,95 @@ typedef struct {
 } PJ_data_processors_host_t;
 
 /**
+ * Markers host service ("pj.markers.v1", protocol_version 1).
+ *
+ * The WHOLE-SERIES analog of pj.data_processors.v1. A plugin submits a marker
+ * generator by DATA — nothing executable crosses the boundary — and the HOST runs
+ * it and owns its lifecycle. Differences from data_processors:
+ *   - The host runs the script over the WHOLE input series (random access, look
+ *     back AND forward), not sample-by-sample, and the result is a discrete
+ *     PlotMarkers set (events / regions / value bands), NOT a derived time series.
+ *   - There is exactly ONE output, addressed by `output_marker_topic` (a single
+ *     marker-topic key): kGlobalMarkerTopic ("__global__") for dataset-global
+ *     markers, or a per-series key (see markerSeriesKey). The host publishes the
+ *     serialized PlotMarkers to the ObjectStore under markerObjectTopicName(that
+ *     key). There is no `outputs` array: a generator never writes more than one
+ *     marker topic.
+ *
+ *   - id          : plugin-namespaced stable key (upsert key); the host scopes
+ *                   list/remove/config to the calling plugin (per-plugin isolation,
+ *                   identical to data_processors).
+ *   - inputs      : series/field names the script reads via series("name").
+ *   - script      : the marker rule source. First-line directive
+ *                   ("-- pj-script: <lang>") selects the backend (Luau today).
+ *                   BINARY-SAFE PJ_string_view_t {data,size} — never NUL-terminated.
+ *   - params_json : optional host-interpreted JSON. Today one key is recognized:
+ *                   {"scope":"all"} makes a global generator (output_marker_topic =
+ *                   kGlobalMarkerTopic) publish across EVERY dataset; absent/other =
+ *                   the active dataset only. Other keys are reserved/ignored.
+ *                   Binary-safe PJ_string_view_t {data,size}.
+ *
+ * The host owns execution + the runtime, so a generator survives plugin unload and
+ * re-runs on data change (the markers recompute live). Adding a future backend
+ * (WASM/Python) is purely additive — the script slot is opaque bytes.
+ *
+ * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ */
+typedef struct PJ_markers_host_vtable_t {
+  uint32_t protocol_version;  // = 1
+  uint32_t struct_size;       // = sizeof(PJ_markers_host_vtable_t)
+
+  /* [main-thread] Create or replace (upsert by id) a marker generator. The host
+   * runs `script` over `inputs` and publishes its PlotMarkers to the object topic
+   * for `output_marker_topic`. Transactional: on failure no partial state is left
+   * AND any previously published set for this id is preserved. All string arguments
+   * are borrowed for the duration of the call. */
+  bool (*create_marker_generator)(
+      void* ctx, PJ_string_view_t id, const PJ_string_view_t* inputs, uint64_t input_count,
+      PJ_string_view_t output_marker_topic, PJ_string_view_t script, PJ_string_view_t params_json,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Remove a generator by id. An unknown id is an error. */
+  bool (*remove_marker_generator)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Enumerate the ids of THIS plugin's live generators.
+   * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
+   * buffer of that size. On success the first min(capacity, *out_count) entries of
+   * out_ids are filled and point into host storage valid only until the next call
+   * on this vtable. */
+  bool (*list_marker_generator_ids)(
+      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Read a generator's full recipe as JSON
+   * {"inputs":[...],"output":"...","params":{...}} for re-edit (e.g. after a session
+   * reload). *out_recipe_json is borrowed, valid only until the next call on this
+   * vtable. An unknown id is an error. */
+  bool (*marker_generator_config)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Set (replace) THE live preview generator for this plugin. The host
+   * runs `script` over `inputs` EPHEMERALLY — it publishes the resulting PlotMarkers
+   * to a host-chosen per-plugin preview object topic but does NOT persist it (the
+   * generator never appears in list/config and is dropped on session save). The
+   * preview object topic name is returned in *out_preview_object_topic (borrowed,
+   * valid until the next call on this vtable) so the caller can read the markers back
+   * through the object read surface to render a live preview. Calling again replaces
+   * the previous preview. Tail-appended slot (gated by struct_size). */
+  bool (*set_marker_preview)(
+      void* ctx, const PJ_string_view_t* inputs, uint64_t input_count, PJ_string_view_t script,
+      PJ_string_view_t params_json, PJ_string_view_t* out_preview_object_topic, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Tear down this plugin's preview generator (and its preview object
+   * topic). A no-op if no preview is set. Tail-appended slot. */
+  bool (*clear_marker_preview)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_markers_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_markers_host_vtable_t* vtable;
+} PJ_markers_host_t;
+
+/**
  * Settings store service ("pj.settings.v1", protocol_version 1).
  *
  * Optional host-provided key/value persistence, modeled on Qt's QSettings but

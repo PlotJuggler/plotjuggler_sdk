@@ -1451,6 +1451,140 @@ class DataProcessorsHostView {
 };
 
 // ---------------------------------------------------------------------------
+// MarkersHostView — typed C++ view over PJ_markers_host_t
+// ---------------------------------------------------------------------------
+
+/// C++ wrapper around PJ_markers_host_t for plugins that submit WHOLE-SERIES
+/// marker generators to the host (see the C ABI doc-comment on
+/// PJ_markers_host_vtable_t). Empty-constructible; `valid()` tells whether the host
+/// exposed the service. Strings returned by `list()`/`recipeOf()` are copied into
+/// owned values, so they stay valid past the next vtable call. Unlike
+/// DataProcessorsHostView there is a single `output_marker_topic`, not an output
+/// list: a generator writes exactly one marker topic (global or per-series).
+class MarkersHostView {
+ public:
+  MarkersHostView() = default;
+  explicit MarkersHostView(PJ_markers_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Create or replace (upsert by id) a marker generator. `output_marker_topic` is
+  /// the single target marker-topic key (kGlobalMarkerTopic or markerSeriesKey).
+  /// `params_json` is forwarded verbatim to the script.
+  [[nodiscard]] Status createMarkerGenerator(
+      std::string_view id, Span<const std::string_view> inputs, std::string_view output_marker_topic,
+      std::string_view script, std::string_view params_json) const {
+    if (!valid() || host_.vtable->create_marker_generator == nullptr) {
+      return unexpected("markers host is not bound");
+    }
+    if (output_marker_topic.empty()) {
+      return unexpected("marker generator requires an output marker topic");
+    }
+    std::vector<PJ_string_view_t> in_abi;
+    in_abi.reserve(inputs.size());
+    for (const auto& name : inputs) {
+      in_abi.push_back(toAbiString(name));
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->create_marker_generator(
+            host_.ctx, toAbiString(id), in_abi.data(), in_abi.size(), toAbiString(output_marker_topic),
+            toAbiString(script), toAbiString(params_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Remove a previously created generator by id.
+  [[nodiscard]] Status remove(std::string_view id) const {
+    if (!valid() || host_.vtable->remove_marker_generator == nullptr) {
+      return unexpected("markers host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->remove_marker_generator(host_.ctx, toAbiString(id), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Enumerate the ids of this plugin's live generators (owned copies).
+  [[nodiscard]] Expected<std::vector<std::string>> list() const {
+    if (!valid() || host_.vtable->list_marker_generator_ids == nullptr) {
+      return unexpected("markers host is not bound");
+    }
+    PJ_error_t err{};
+    uint64_t count = 0;
+    if (!host_.vtable->list_marker_generator_ids(host_.ctx, nullptr, 0, &count, &err)) {
+      return unexpected(errorToString(err));
+    }
+    std::vector<PJ_string_view_t> borrowed(count);
+    uint64_t filled = 0;
+    if (count != 0 &&
+        !host_.vtable->list_marker_generator_ids(host_.ctx, borrowed.data(), borrowed.size(), &filled, &err)) {
+      return unexpected(errorToString(err));
+    }
+    std::vector<std::string> ids;
+    ids.reserve(filled);
+    for (uint64_t i = 0; i < filled; ++i) {
+      ids.emplace_back(toStringView(borrowed[i]));
+    }
+    return ids;
+  }
+
+  /// Read a generator's full recipe JSON (owned copy) for re-edit.
+  [[nodiscard]] Expected<std::string> recipeOf(std::string_view id) const {
+    if (!valid() || host_.vtable->marker_generator_config == nullptr) {
+      return unexpected("markers host is not bound");
+    }
+    PJ_error_t err{};
+    PJ_string_view_t recipe{};
+    if (!host_.vtable->marker_generator_config(host_.ctx, toAbiString(id), &recipe, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(recipe));
+  }
+
+  /// Set (replace) the live, EPHEMERAL preview generator: the host runs `script` over
+  /// `inputs` and publishes the markers to a preview object topic without persisting
+  /// it. Returns the preview object topic name (owned copy) so the caller can read the
+  /// markers back through the object read surface. `params_json` is forwarded verbatim.
+  [[nodiscard]] Expected<std::string> setPreview(
+      Span<const std::string_view> inputs, std::string_view script, std::string_view params_json) const {
+    if (!valid() || host_.vtable->set_marker_preview == nullptr) {
+      return unexpected("markers host does not support preview");
+    }
+    std::vector<PJ_string_view_t> in_abi;
+    in_abi.reserve(inputs.size());
+    for (const auto& name : inputs) {
+      in_abi.push_back(toAbiString(name));
+    }
+    PJ_error_t err{};
+    PJ_string_view_t topic{};
+    if (!host_.vtable->set_marker_preview(
+            host_.ctx, in_abi.data(), in_abi.size(), toAbiString(script), toAbiString(params_json), &topic, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(topic));
+  }
+
+  /// Tear down the live preview generator (and its preview object topic). No-op if none.
+  [[nodiscard]] Status clearPreview() const {
+    if (!valid() || host_.vtable->clear_marker_preview == nullptr) {
+      return unexpected("markers host does not support preview");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->clear_marker_preview(host_.ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+ private:
+  PJ_markers_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
 // SettingsView — typed C++ view over PJ_settings_store_t
 // ---------------------------------------------------------------------------
 
