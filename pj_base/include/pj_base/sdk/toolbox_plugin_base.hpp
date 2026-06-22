@@ -17,7 +17,7 @@
 
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_abi_export.hpp"
-#include "pj_base/sdk/data_source_host_views.hpp"  // DataSourceRuntimeHostView, errorToString
+#include "pj_base/sdk/data_source_host_views.hpp"  // ParserIngestHostView, errorToString
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
@@ -59,11 +59,11 @@ class ToolboxRuntimeHostView {
 
   /// Create (or fetch) the parser-ingest context for a toolbox-created data
   /// source (pass ToolboxHostView::createDataSource's handle `.id`). Returns
-  /// the standard delegated-ingest view: ensureParserBinding() once per topic,
-  /// pushMessage() per record — exactly like a DataSource plugin. Fails with
-  /// an "older host" error when the host predates the tail slot.
-  /// Drive the returned view from a single worker thread (the data-source ingest discipline — see the thread tags in data_source_protocol.h); unlike reportMessage/notifyDataChanged it is NOT GUI-marshalled.
-  [[nodiscard]] Expected<DataSourceRuntimeHostView> createParserIngest(uint32_t data_source_id) const {
+  /// the shared delegated-ingest view: ensureParserBinding() once per topic,
+  /// pushMessage() per record. Drive the returned view from a single worker
+  /// thread; unlike reportMessage/notifyDataChanged, parser ingest is not
+  /// GUI-marshalled.
+  [[nodiscard]] Expected<ParserIngestHostView> createParserIngest(uint32_t data_source_id) const {
     if (!valid()) {
       return unexpected("toolbox runtime host is not bound");
     }
@@ -75,7 +75,7 @@ class ToolboxRuntimeHostView {
     if (!host_.vtable->create_parser_ingest(host_.ctx, data_source_id, &raw, &err)) {
       return unexpected(errorToString(err));
     }
-    return DataSourceRuntimeHostView{raw};
+    return ParserIngestHostView{raw};
   }
 
   /// Flush + destroy the context. Idempotent. The view returned by

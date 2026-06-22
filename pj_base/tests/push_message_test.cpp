@@ -1,7 +1,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-// Tests for the SDK template `DataSourceRuntimeHostView::pushMessage` and
+// Tests for the SDK template `ParserIngestHostView::pushMessage` and
 // its delegation to the C ABI slot `push_message`. We exercise:
 //
 //   1. Vector closure → the captured FetchMessageData callable yields the
@@ -54,8 +54,8 @@ class MockHost {
     vtable_.struct_size = offsetof(PJ_data_source_runtime_host_vtable_t, push_message);
   }
 
-  PJ::DataSourceRuntimeHostView view() const {
-    return PJ::DataSourceRuntimeHostView(host_);
+  PJ::ParserIngestHostView view() const {
+    return PJ::DataSourceRuntimeHostView(host_).parserIngest();
   }
 
   CapturedPush& captured() {

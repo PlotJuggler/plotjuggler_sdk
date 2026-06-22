@@ -112,6 +112,8 @@ struct ParserBindingRequest {
   return out;
 }
 
+class ParserIngestHostView;
+
 /**
  * Type-safe view over the runtime host vtable.
  *
@@ -128,6 +130,8 @@ class DataSourceRuntimeHostView {
   [[nodiscard]] bool valid() const noexcept {
     return host_.ctx != nullptr && host_.vtable != nullptr;
   }
+
+  [[nodiscard]] ParserIngestHostView parserIngest() const noexcept;
 
   /// Send a diagnostic message to the host UI log. Never fails.
   void reportMessage(DataSourceMessageLevel level, std::string_view message) const {
@@ -361,5 +365,33 @@ class DataSourceRuntimeHostView {
  private:
   PJ_data_source_runtime_host_t host_{};
 };
+
+/// Narrow delegated-ingest facade shared by DataSource and Toolbox code.
+class ParserIngestHostView {
+ public:
+  ParserIngestHostView() = default;
+  explicit ParserIngestHostView(PJ_data_source_runtime_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.valid();
+  }
+
+  [[nodiscard]] Expected<ParserBindingHandle> ensureParserBinding(const ParserBindingRequest& request) const {
+    return host_.ensureParserBinding(request);
+  }
+
+  template <typename FetchMessageData>
+  [[nodiscard]] Status pushMessage(
+      ParserBindingHandle handle, Timestamp host_timestamp_ns, FetchMessageData&& fetch_message_data) const {
+    return host_.pushMessage(handle, host_timestamp_ns, std::forward<FetchMessageData>(fetch_message_data));
+  }
+
+ private:
+  DataSourceRuntimeHostView host_{};
+};
+
+inline ParserIngestHostView DataSourceRuntimeHostView::parserIngest() const noexcept {
+  return ParserIngestHostView{host_};
+}
 
 }  // namespace PJ
