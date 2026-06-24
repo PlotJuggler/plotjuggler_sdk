@@ -826,6 +826,28 @@ typedef struct PJ_data_processors_host_vtable_t {
    * call on this vtable. An unknown id is an error. */
   bool (*data_processor_config)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Create an EPHEMERAL transform node — identical to
+   * create_data_processor but the node is never persisted, never catalogued,
+   * and is automatically torn down when remove_data_processor is called with
+   * the same id. Intended for live preview: create on each keystroke, remove
+   * on cancel/close. Tail-appended: guard with struct_size before calling. */
+  bool (*create_data_processor_ephemeral)(
+      void* ctx, PJ_string_view_t id, const PJ_string_view_t* inputs, uint64_t input_count,
+      const PJ_string_view_t* outputs, uint64_t output_count, PJ_string_view_t script, PJ_string_view_t params_json,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Validate a transform script WITHOUT installing anything: the
+   * host compiles it with the backend named by `language` ("luau" today; "python"
+   * reserved for a future backend) to catch syntax and module-load errors. Returns
+   * true if the script compiles; on false, *out_error carries the reason (suitable
+   * for a UI semaphore / error box). Compilation-only: it does NOT run the script
+   * over data, so a runtime error or empty output is not detected here. An unknown
+   * language is an error. No node, topic or catalog entry is created. Tail-appended:
+   * guard with struct_size before calling. */
+  bool (*validate_data_processor_script)(
+      void* ctx, PJ_string_view_t script, PJ_string_view_t language, PJ_string_view_t params_json,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_processors_host_vtable_t;
 
 typedef struct {

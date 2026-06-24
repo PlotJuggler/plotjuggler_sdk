@@ -1385,6 +1385,57 @@ class DataProcessorsHostView {
     return std::string(toStringView(recipe));
   }
 
+  /// Create an EPHEMERAL transform node for live preview. Identical to
+  /// createTransform but the node is never persisted or catalogued.
+  /// Call remove() with the same id on cancel/close to tear it down.
+  /// Returns an error if the host does not support this slot (SDK < 0.12.0).
+  [[nodiscard]] Status createEphemeralTransform(
+      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
+      std::string_view script, std::string_view params_json) const {
+    if (!valid() ||
+        !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_ephemeral)) {
+      return unexpected("host does not support ephemeral transforms (SDK < 0.12.0)");
+    }
+    if (outputs.empty()) {
+      return unexpected("data processors transform requires at least one output topic");
+    }
+    std::vector<PJ_string_view_t> in_abi;
+    in_abi.reserve(inputs.size());
+    for (const auto& name : inputs) {
+      in_abi.push_back(toAbiString(name));
+    }
+    std::vector<PJ_string_view_t> out_abi;
+    out_abi.reserve(outputs.size());
+    for (const auto& name : outputs) {
+      out_abi.push_back(toAbiString(name));
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->create_data_processor_ephemeral(
+            host_.ctx, toAbiString(id), in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
+            toAbiString(script), toAbiString(params_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Validate a transform script without installing anything. `language` selects
+  /// the backend ("luau" today; "python" reserved). Returns ok if the script
+  /// compiles; otherwise the host's error message (ready for a semaphore / error
+  /// box). Compilation-only — it does not run the script over data. Errors if the
+  /// host predates this slot (SDK < 0.12.0) or the language is unknown.
+  [[nodiscard]] Status validateScript(
+      std::string_view script, std::string_view language, std::string_view params_json = "{}") const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, validate_data_processor_script)) {
+      return unexpected("host does not support script validation (SDK < 0.12.0)");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->validate_data_processor_script(
+            host_.ctx, toAbiString(script), toAbiString(language), toAbiString(params_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
  private:
   PJ_data_processors_host_t host_{};
 };
