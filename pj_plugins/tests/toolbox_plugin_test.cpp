@@ -106,6 +106,8 @@ PJ_toolbox_runtime_host_t makeRuntimeHost(RuntimeState* state) {
       .struct_size = sizeof(PJ_toolbox_runtime_host_vtable_t),
       .report_message = rhReportMessage,
       .notify_data_changed = rhNotifyDataChanged,
+      .create_parser_ingest = nullptr,  /* tail slot — not implemented in test stub */
+      .release_parser_ingest = nullptr, /* tail slot — not implemented in test stub */
   };
   return PJ_toolbox_runtime_host_t{.ctx = state, .vtable = &vtable};
 }
