@@ -23,7 +23,8 @@ struct ChartPoint {
 struct ChartSeries {
   std::string label;
   std::vector<ChartPoint> points;
-  std::string color;  // optional hex "#rrggbb"
+  std::string color;    // optional hex "#rrggbb"
+  bool dashed = false;  // draw with a dashed line (e.g. a faded "before" ghost curve)
 };
 
 /// One boundary segment on a RangeSlider (used by setRangeSliderMarkers): a box
@@ -192,6 +193,9 @@ class WidgetData {
       if (!s.color.empty()) {
         entry["color"] = s.color;
       }
+      if (s.dashed) {
+        entry["dashed"] = true;
+      }
       arr.push_back(std::move(entry));
     }
     e["chart_series"] = std::move(arr);
@@ -208,6 +212,14 @@ class WidgetData {
   /// When enabled, onChartViewChanged() is called whenever the user zooms or pans.
   WidgetData& setChartZoomEnabled(std::string_view name, bool enabled = true) {
     entry(name)["chart_zoom_enabled"] = enabled;
+    return *this;
+  }
+
+  /// Auto-fit (zoom-to-extents) the chart inside the named QFrame on every series
+  /// update when `enabled` is true; when false, preserve the user's current zoom.
+  /// Mirrors the Transform/Filter editor "AutoZoom" checkbox.
+  WidgetData& setChartAutoZoom(std::string_view name, bool enabled) {
+    entry(name)["chart_auto_zoom"] = enabled;
     return *this;
   }
 

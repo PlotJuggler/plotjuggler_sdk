@@ -30,7 +30,7 @@ import os
 
 class PlotjugglerSdkConan(ConanFile):
     name = "plotjuggler_sdk"
-    version = "0.11.0"
+    version = "0.12.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"
