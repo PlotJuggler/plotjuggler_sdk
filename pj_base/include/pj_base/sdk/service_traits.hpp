@@ -171,16 +171,18 @@ struct DataProcessorsHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
-/// Optional service for plugins that submit WHOLE-SERIES marker generators to the
-/// host by data (script + input names + a single output marker-topic + params).
-/// The host runs the script and publishes the resulting PlotMarkers. The marker
-/// analog of DataProcessorsHostService; see PJ_markers_host_vtable_t.
-struct MarkersHostService {
-  static constexpr const char* kName = "pj.markers.v1";
+/// Optional service for plugins that submit WHOLE-SERIES generators to the host by
+/// data (kind + language + script + input names + output topic(s) + params). The
+/// host compiles and runs the script and routes the output by `kind`: "markers"
+/// publishes a PlotMarkers set to the ObjectStore ("transform" — DerivedEngine
+/// timeseries — is reserved). The whole-series analog of DataProcessorsHostService;
+/// see PJ_generators_host_vtable_t.
+struct GeneratorsHostService {
+  static constexpr const char* kName = "pj.generators.v1";
   static constexpr uint32_t kMinVersion = 1;
-  using Raw = PJ_markers_host_t;
-  using Vtable = PJ_markers_host_vtable_t;
-  using View = MarkersHostView;
+  using Raw = PJ_generators_host_t;
+  using Vtable = PJ_generators_host_vtable_t;
+  using View = GeneratorsHostView;
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 

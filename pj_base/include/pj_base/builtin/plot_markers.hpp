@@ -124,6 +124,22 @@ inline constexpr std::string_view kMarkerObjectTopicPrefix = "__markers__/";
   return name;
 }
 
+/// Reserved marker-topic infix for an EPHEMERAL preview set (a generator created
+/// with PJ_GENERATOR_FLAG_EPHEMERAL). The host addresses a preview to the marker
+/// topic `kPreviewMarkerTopic + <owner-id>` so its object topic sorts under the
+/// marker namespace and renders like any set, yet is recognizable as throwaway and
+/// excluded from session save. The host and the plot overlay MUST agree on this.
+inline constexpr std::string_view kPreviewMarkerTopic = "__preview__/";
+
+/// True if `marker_topic` (or its object-topic form) names an ephemeral preview set.
+/// Accepts either the bare marker topic or the markerObjectTopicName() form.
+[[nodiscard]] inline bool isPreviewMarkerTopic(std::string_view topic) {
+  if (topic.starts_with(kMarkerObjectTopicPrefix)) {
+    topic.remove_prefix(kMarkerObjectTopicPrefix.size());
+  }
+  return topic.starts_with(kPreviewMarkerTopic);
+}
+
 /// Per-series marker topic key from a curve's (topic_name, field_name). The
 /// producer (e.g. the markers toolbox, via the host catalog_key_resolver) and
 /// the plot overlay MUST build this key identically, so they share this helper.

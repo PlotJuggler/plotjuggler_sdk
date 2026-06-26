@@ -864,93 +864,96 @@ typedef struct {
 } PJ_data_processors_host_t;
 
 /**
- * Markers host service ("pj.markers.v1", protocol_version 1).
+ * Generators host service ("pj.generators.v1", protocol_version 1).
  *
- * The WHOLE-SERIES analog of pj.data_processors.v1. A plugin submits a marker
- * generator by DATA — nothing executable crosses the boundary — and the HOST runs
- * it and owns its lifecycle. Differences from data_processors:
- *   - The host runs the script over the WHOLE input series (random access, look
- *     back AND forward), not sample-by-sample, and the result is a discrete
- *     PlotMarkers set (events / regions / value bands), NOT a derived time series.
- *   - There is exactly ONE output, addressed by `output_marker_topic` (a single
- *     marker-topic key): kGlobalMarkerTopic ("__global__") for dataset-global
- *     markers, or a per-series key (see markerSeriesKey). The host publishes the
- *     serialized PlotMarkers to the ObjectStore under markerObjectTopicName(that
- *     key). There is no `outputs` array: a generator never writes more than one
- *     marker topic.
+ * One host-driven service for plugins that submit WHOLE-SERIES *generators* by
+ * DATA — nothing executable crosses the boundary; the HOST compiles, runs, and
+ * owns the lifecycle (a generator survives plugin unload and re-runs on data
+ * change). A single polymorphic surface covers every output shape via a `kind`
+ * discriminator:
+ *   - kind="markers": the script emits a discrete PlotMarkers set (events /
+ *     regions / value bands). Exactly one output topic; the host publishes the
+ *     serialized PlotMarkers to the ObjectStore under markerObjectTopicName(key).
+ *     ("transform" — per-sample numeric series materialized into the DataEngine via
+ *     the DerivedEngine — is reserved for the MIMO backend, added later. Timeseries
+ *     outputs come from transform generators, never from object/marker generators.)
  *
+ * Arguments shared by every kind:
  *   - id          : plugin-namespaced stable key (upsert key); the host scopes
- *                   list/remove/config to the calling plugin (per-plugin isolation,
- *                   identical to data_processors).
+ *                   list/remove/config to the calling plugin (per-plugin isolation).
+ *   - kind        : output discriminator, see above ("markers"; "transform" reserved).
+ *   - language    : script backend, "luau" today; the host rejects anything else.
  *   - inputs      : series/field names the script reads via series("name").
- *   - script      : the marker rule source. First-line directive
- *                   ("-- pj-script: <lang>") selects the backend (Luau today).
- *                   BINARY-SAFE PJ_string_view_t {data,size} — never NUL-terminated.
- *   - params_json : optional host-interpreted JSON. Today one key is recognized:
- *                   {"scope":"all"} makes a global generator (output_marker_topic =
- *                   kGlobalMarkerTopic) publish across EVERY dataset; absent/other =
- *                   the active dataset only. Other keys are reserved/ignored.
- *                   Binary-safe PJ_string_view_t {data,size}.
- *
- * The host owns execution + the runtime, so a generator survives plugin unload and
- * re-runs on data change (the markers recompute live). Adding a future backend
- * (WASM/Python) is purely additive — the script slot is opaque bytes.
+ *   - outputs     : target topic key(s). markers: a single marker-topic key
+ *                   (kGlobalMarkerTopic or a per-series key, see markerSeriesKey).
+ *                   MAY be empty for an ephemeral preview, in which case the host
+ *                   names them and returns the resolved names in out_topics.
+ *   - script      : the rule source, opaque/binary-safe PJ_string_view_t {data,size}.
+ *   - params_json : optional host-interpreted JSON. {"scope":"all"} makes a global
+ *                   generator publish across EVERY dataset; absent = active dataset.
+ *   - flags       : bitset; PJ_GENERATOR_FLAG_EPHEMERAL marks a preview (never
+ *                   persisted, dropped on remove). Reserved bits must be 0.
  *
  * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  */
-typedef struct PJ_markers_host_vtable_t {
+
+/* create_generator flags. */
+#define PJ_GENERATOR_FLAG_EPHEMERAL (1u << 0) /* preview: never persisted, dropped on remove_generator */
+
+typedef struct PJ_generators_host_vtable_t {
   uint32_t protocol_version;  // = 1
-  uint32_t struct_size;       // = sizeof(PJ_markers_host_vtable_t)
+  uint32_t struct_size;       // = sizeof(PJ_generators_host_vtable_t)
 
-  /* [main-thread] Create or replace (upsert by id) a marker generator. The host
-   * runs `script` over `inputs` and publishes its PlotMarkers to the object topic
-   * for `output_marker_topic`. Transactional: on failure no partial state is left
-   * AND any previously published set for this id is preserved. All string arguments
-   * are borrowed for the duration of the call. */
-  bool (*create_marker_generator)(
-      void* ctx, PJ_string_view_t id, const PJ_string_view_t* inputs, uint64_t input_count,
-      PJ_string_view_t output_marker_topic, PJ_string_view_t script, PJ_string_view_t params_json,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
+  /* [main-thread] Create or replace (upsert by id) a generator of `kind`. The host
+   * compiles `script` with `language`, runs it over `inputs`, and routes the output
+   * by kind (markers -> ObjectStore; transform [reserved] -> DerivedEngine). `outputs`
+   * may be empty for an ephemeral preview, in which case the host auto-names the sink(s).
+   * The resolved physical topic name(s) are written to out_topics using the
+   * count-then-fill convention: pass out_topics=NULL/capacity=0 to read *out_count,
+   * or a buffer to receive min(capacity,*out_count) entries (borrowed, valid only
+   * until the next call on this vtable); pass out_count=NULL to ignore them.
+   * Transactional: on failure no partial state is left AND any previously published
+   * output for this id is preserved. All string arguments are borrowed for the call. */
+  bool (*create_generator)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t language,
+      const PJ_string_view_t* inputs, uint64_t input_count, const PJ_string_view_t* outputs, uint64_t output_count,
+      PJ_string_view_t script, PJ_string_view_t params_json, uint32_t flags, PJ_string_view_t* out_topics,
+      uint64_t out_topics_capacity, uint64_t* out_topics_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Remove a generator by id. An unknown id is an error. */
-  bool (*remove_marker_generator)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /* [main-thread] Remove a generator by id (persistent or ephemeral). Unknown id is an error. */
+  bool (*remove_generator)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Enumerate the ids of THIS plugin's live generators.
    * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
    * buffer of that size. On success the first min(capacity, *out_count) entries of
    * out_ids are filled and point into host storage valid only until the next call
-   * on this vtable. */
-  bool (*list_marker_generator_ids)(
+   * on this vtable. Ephemeral previews are excluded. */
+  bool (*list_generator_ids)(
       void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Read a generator's full recipe as JSON
-   * {"inputs":[...],"output":"...","params":{...}} for re-edit (e.g. after a session
-   * reload). *out_recipe_json is borrowed, valid only until the next call on this
-   * vtable. An unknown id is an error. */
-  bool (*marker_generator_config)(
+   * {"kind":"...","language":"...","inputs":[...],"outputs":[...],"params":{...}} for
+   * re-edit (e.g. after a session reload). *out_recipe_json is borrowed, valid only
+   * until the next call on this vtable. An unknown id is an error. */
+  bool (*generator_config)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Set (replace) THE live preview generator for this plugin. The host
-   * runs `script` over `inputs` EPHEMERALLY — it publishes the resulting PlotMarkers
-   * to a host-chosen per-plugin preview object topic but does NOT persist it (the
-   * generator never appears in list/config and is dropped on session save). The
-   * preview object topic name is returned in *out_preview_object_topic (borrowed,
-   * valid until the next call on this vtable) so the caller can read the markers back
-   * through the object read surface to render a live preview. Calling again replaces
-   * the previous preview. Tail-appended slot (gated by struct_size). */
-  bool (*set_marker_preview)(
-      void* ctx, const PJ_string_view_t* inputs, uint64_t input_count, PJ_string_view_t script,
-      PJ_string_view_t params_json, PJ_string_view_t* out_preview_object_topic, PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Tear down this plugin's preview generator (and its preview object
-   * topic). A no-op if no preview is set. Tail-appended slot. */
-  bool (*clear_marker_preview)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_markers_host_vtable_t;
+  /* [main-thread] Validate a script WITHOUT installing anything: the host compiles
+   * it with `language` for the given `kind` to catch syntax and module-load errors.
+   * Returns true if it compiles; on false, *out_error carries the reason (suitable
+   * for a UI semaphore / error box). Compilation-only: it does NOT run the script
+   * over data, so a runtime error or empty output is not detected here (use an
+   * ephemeral create for that). No node, topic or catalog entry is created. An
+   * unknown language or kind is an error. */
+  bool (*validate_script)(
+      void* ctx, PJ_string_view_t kind, PJ_string_view_t language, PJ_string_view_t script,
+      PJ_string_view_t params_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_generators_host_vtable_t;
 
 typedef struct {
   void* ctx;
-  const PJ_markers_host_vtable_t* vtable;
-} PJ_markers_host_t;
+  const PJ_generators_host_vtable_t* vtable;
+} PJ_generators_host_t;
 
 /**
  * Settings store service ("pj.settings.v1", protocol_version 1).
