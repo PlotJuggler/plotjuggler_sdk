@@ -106,6 +106,13 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// QTableWidget: a radio button in the radio column was selected (row index).
+  [[nodiscard]] static std::string tableRadioSelected(int row) {
+    nlohmann::json j;
+    j["table_radio_row"] = row;
+    return j.dump();
+  }
+
   /// Code editor: code changed. `cursor` is the caret offset (bytes) in the new
   /// text, or negative when unknown; it is serialized only when >= 0, so callers
   /// that omit it stay wire-compatible with readers that ignore the field.
