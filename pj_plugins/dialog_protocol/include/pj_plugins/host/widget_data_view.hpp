@@ -288,6 +288,26 @@ class WidgetDataView {
     return getString(name, "title");
   }
 
+  // --- Save-file picker ---
+  [[nodiscard]] bool isSaveFilePicker(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return false;
+    }
+    auto it = w->find("action");
+    return it != w->end() && it->is_string() && it->get<std::string>() == "save_file_picker";
+  }
+
+  [[nodiscard]] std::optional<std::string> saveFilePickerFilter(std::string_view name) const {
+    return getString(name, "filter");
+  }
+  [[nodiscard]] std::optional<std::string> saveFilePickerTitle(std::string_view name) const {
+    return getString(name, "title");
+  }
+  [[nodiscard]] std::optional<std::string> saveFilePickerDefaultSuffix(std::string_view name) const {
+    return getString(name, "default_suffix");
+  }
+
   // --- RangeSlider ---
   [[nodiscard]] std::optional<int> rangeSliderMin(std::string_view name) const {
     return getInt(name, "range_min");

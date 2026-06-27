@@ -316,6 +316,22 @@ class WidgetData {
     return *this;
   }
 
+  /// Mark a button as a "save file" chooser: the host opens a native save dialog
+  /// (the user types a name and picks a location), then delivers the chosen path
+  /// as a fileSelected event — handle it in onFileSelected, like setFilePicker.
+  /// `default_suffix` is appended when the typed name carries no extension.
+  WidgetData& setSaveFilePicker(
+      std::string_view name, std::string_view button_text, std::string_view filter, std::string_view title,
+      std::string_view default_suffix = "") {
+    auto& e = entry(name);
+    e["button_text"] = button_text;
+    e["action"] = "save_file_picker";
+    e["filter"] = filter;
+    e["title"] = title;
+    e["default_suffix"] = default_suffix;
+    return *this;
+  }
+
   // --- QDateTimeEdit ---
   /// Set the displayed date+time as an ISO-8601 string (e.g. "2026-05-21T13:45:00").
   /// Empty string clears any prior value (widget falls back to its default).
