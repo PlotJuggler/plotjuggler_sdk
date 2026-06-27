@@ -124,8 +124,8 @@ inline constexpr std::string_view kMarkerObjectTopicPrefix = "__markers__/";
   return name;
 }
 
-/// Reserved marker-topic infix for an EPHEMERAL preview set (a generator created
-/// with PJ_GENERATOR_FLAG_EPHEMERAL). The host addresses a preview to the marker
+/// Reserved marker-topic infix for an EPHEMERAL preview set (a kind="markers" data
+/// processor created with PJ_DATA_PROCESSOR_FLAG_EPHEMERAL). The host addresses a preview to the marker
 /// topic `kPreviewMarkerTopic + <owner-id>` so its object topic sorts under the
 /// marker namespace and renders like any set, yet is recognizable as throwaway and
 /// excluded from session save. The host and the plot overlay MUST agree on this.

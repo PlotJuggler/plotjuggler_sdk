@@ -1352,12 +1352,15 @@ class ColorMapRegistryView {
 // DataProcessorsHostView — typed C++ view over PJ_data_processors_host_t
 // ---------------------------------------------------------------------------
 
-/// C++ wrapper around PJ_data_processors_host_t for plugins that create
-/// catalog-resident transform nodes in the host (see the C ABI doc-comment on
-/// PJ_data_processors_host_vtable_t). Empty-constructible; `valid()` tells
-/// whether the host exposed the service. Strings returned by `list()`/
-/// `recipeOf()` are copied into owned values, so they stay valid past the next
-/// vtable call.
+/// C++ wrapper around PJ_data_processors_host_t for plugins that submit WHOLE-SERIES
+/// data processors to the host by data (see the C ABI doc-comment on
+/// PJ_data_processors_host_vtable_t). Empty-constructible; `valid()` tells whether the
+/// host exposed the service. Strings returned by `list()`/`recipeOf()`/`create()` are
+/// copied into owned values, so they stay valid past the next vtable call. One
+/// polymorphic surface serves every `kind` ("transform", "markers"); preview is
+/// `create(..., flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL)` and teardown is `remove(id)`.
+/// `createTransform`/`createEphemeralTransform`/`createMarkers` are thin convenience
+/// shims over `create`.
 class DataProcessorsHostView {
  public:
   DataProcessorsHostView() = default;
@@ -1367,17 +1370,18 @@ class DataProcessorsHostView {
     return host_.vtable != nullptr && host_.ctx != nullptr;
   }
 
-  /// Create or replace (upsert by id) a transform node. `outputs` must be
-  /// non-empty (the host rejects empty output lists). `params_json` is
-  /// forwarded verbatim to the script's create(params).
-  [[nodiscard]] Status createTransform(
-      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
-      std::string_view script, std::string_view params_json) const {
+  /// Create or replace (upsert by id) a data processor of `kind` ("transform" or
+  /// "markers"). `outputs` may be empty for an ephemeral preview (flags &
+  /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s).
+  /// Returns the resolved physical output topic name(s) (owned copies) so the caller
+  /// can read results back through the kind's read surface. `params_json` is forwarded
+  /// verbatim to the script.
+  [[nodiscard]] Expected<std::vector<std::string>> create(
+      std::string_view id, std::string_view kind, std::string_view language, Span<const std::string_view> inputs,
+      Span<const std::string_view> outputs, std::string_view script, std::string_view params_json,
+      uint32_t flags = 0) const {
     if (!valid() || host_.vtable->create_data_processor == nullptr) {
       return unexpected("data processors host is not bound");
-    }
-    if (outputs.empty()) {
-      return unexpected("data processors transform requires at least one output topic");
     }
     std::vector<PJ_string_view_t> in_abi;
     in_abi.reserve(inputs.size());
@@ -1390,15 +1394,79 @@ class DataProcessorsHostView {
       out_abi.push_back(toAbiString(name));
     }
     PJ_error_t err{};
+    // Convert the immutable scalar args once — they are identical across the (rare)
+    // count-then-fill retry below.
+    const PJ_string_view_t id_abi = toAbiString(id);
+    const PJ_string_view_t kind_abi = toAbiString(kind);
+    const PJ_string_view_t language_abi = toAbiString(language);
+    const PJ_string_view_t script_abi = toAbiString(script);
+    const PJ_string_view_t params_abi = toAbiString(params_json);
+    // The resolved sink name(s) are filled on the SAME upsert call. Pre-size to the
+    // caller's output count (the host resolves exactly that many for non-empty
+    // outputs); for an auto-named ephemeral preview reserve headroom and grow once if
+    // the host resolved more than fit — a re-upsert with identical args is idempotent.
+    uint64_t capacity = out_abi.empty() ? 8 : out_abi.size();
+    std::vector<PJ_string_view_t> resolved(capacity);
+    uint64_t count = 0;
     if (!host_.vtable->create_data_processor(
-            host_.ctx, toAbiString(id), in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
-            toAbiString(script), toAbiString(params_json), &err)) {
+            host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
+            script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
       return unexpected(errorToString(err));
+    }
+    if (count > capacity) {
+      resolved.assign(count, PJ_string_view_t{});
+      if (!host_.vtable->create_data_processor(
+              host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
+              script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
+        return unexpected(errorToString(err));
+      }
+    }
+    std::vector<std::string> topics;
+    topics.reserve(count);
+    for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
+      topics.emplace_back(toStringView(resolved[i]));
+    }
+    return topics;
+  }
+
+  /// Convenience: create a kind="transform" node (DerivedEngine timeseries). `outputs`
+  /// must be non-empty. Discards the resolved topic names (the caller supplied them);
+  /// use create() directly if you need them back.
+  [[nodiscard]] Status createTransform(
+      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
+      std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
+    if (outputs.empty()) {
+      return unexpected("data processors transform requires at least one output topic");
+    }
+    auto resolved = create(id, "transform", "luau", inputs, outputs, script, params_json, flags);
+    if (!resolved) {
+      return unexpected(resolved.error());
     }
     return okStatus();
   }
 
-  /// Remove a previously created node by id.
+  /// Convenience: create an EPHEMERAL kind="transform" node for live preview — never
+  /// persisted or catalogued. Call remove() with the same id on cancel/close.
+  [[nodiscard]] Status createEphemeralTransform(
+      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
+      std::string_view script, std::string_view params_json) const {
+    return createTransform(id, inputs, outputs, script, params_json, PJ_DATA_PROCESSOR_FLAG_EPHEMERAL);
+  }
+
+  /// Convenience: create a kind="markers" node writing the single `output_marker_topic`
+  /// key (kGlobalMarkerTopic or markerSeriesKey). Pass
+  /// flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL for a live preview (output may be left empty
+  /// to let the host name the preview topic). Returns the resolved object topic(s).
+  [[nodiscard]] Expected<std::vector<std::string>> createMarkers(
+      std::string_view id, Span<const std::string_view> inputs, std::string_view output_marker_topic,
+      std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
+    std::array<std::string_view, 1> outs{output_marker_topic};
+    Span<const std::string_view> out_span =
+        output_marker_topic.empty() ? Span<const std::string_view>{} : Span<const std::string_view>(outs.data(), 1);
+    return create(id, "markers", "luau", inputs, out_span, script, params_json, flags);
+  }
+
+  /// Remove a previously created node by id (persistent or ephemeral preview).
   [[nodiscard]] Status remove(std::string_view id) const {
     if (!valid() || host_.vtable->remove_data_processor == nullptr) {
       return unexpected("data processors host is not bound");
@@ -1410,7 +1478,7 @@ class DataProcessorsHostView {
     return okStatus();
   }
 
-  /// Enumerate the ids of this plugin's live processors (owned copies).
+  /// Enumerate the ids of this plugin's live (non-ephemeral) nodes (owned copies).
   [[nodiscard]] Expected<std::vector<std::string>> list() const {
     if (!valid() || host_.vtable->list_data_processor_ids == nullptr) {
       return unexpected("data processors host is not bound");
@@ -1447,158 +1515,19 @@ class DataProcessorsHostView {
     return std::string(toStringView(recipe));
   }
 
- private:
-  PJ_data_processors_host_t host_{};
-};
-
-// ---------------------------------------------------------------------------
-// GeneratorsHostView — typed C++ view over PJ_generators_host_t
-// ---------------------------------------------------------------------------
-
-/// C++ wrapper around PJ_generators_host_t for plugins that submit WHOLE-SERIES
-/// generators to the host (see the C ABI doc-comment on PJ_generators_host_vtable_t).
-/// Empty-constructible; `valid()` tells whether the host exposed the service. Strings
-/// returned by `list()`/`configOf()`/`createGenerator()` are copied into owned values,
-/// so they stay valid past the next vtable call. One polymorphic surface serves every
-/// `kind` (today "markers"; "transform" reserved); preview is
-/// `createGenerator(..., flags=EPHEMERAL)` and teardown is `remove(id)` — there are no
-/// dedicated preview verbs.
-class GeneratorsHostView {
- public:
-  GeneratorsHostView() = default;
-  explicit GeneratorsHostView(PJ_generators_host_t host) : host_(host) {}
-
-  [[nodiscard]] bool valid() const noexcept {
-    return host_.vtable != nullptr && host_.ctx != nullptr;
-  }
-
-  /// Create or replace (upsert by id) a generator of `kind` (today "markers"; the
-  /// "transform" backend is reserved). `outputs` may be empty for an ephemeral preview
-  /// (flags & PJ_GENERATOR_FLAG_EPHEMERAL),
-  /// in which case the host names the sink(s). Returns the resolved physical output
-  /// topic name(s) (owned copies) so the caller can read results back through the kind's
-  /// read surface. `params_json` is forwarded verbatim to the script.
-  [[nodiscard]] Expected<std::vector<std::string>> createGenerator(
-      std::string_view id, std::string_view kind, std::string_view language, Span<const std::string_view> inputs,
-      Span<const std::string_view> outputs, std::string_view script, std::string_view params_json,
-      uint32_t flags = 0) const {
-    if (!valid() || host_.vtable->create_generator == nullptr) {
-      return unexpected("generators host is not bound");
-    }
-    std::vector<PJ_string_view_t> in_abi;
-    in_abi.reserve(inputs.size());
-    for (const auto& name : inputs) {
-      in_abi.push_back(toAbiString(name));
-    }
-    std::vector<PJ_string_view_t> out_abi;
-    out_abi.reserve(outputs.size());
-    for (const auto& name : outputs) {
-      out_abi.push_back(toAbiString(name));
-    }
-    PJ_error_t err{};
-    // The resolved sink name(s) are filled on the SAME upsert call. Pre-size to the
-    // caller's output count (the host resolves exactly that many for non-empty
-    // outputs); for an auto-named ephemeral preview reserve headroom and grow once if
-    // the host resolved more than fit — a re-upsert with identical args is idempotent.
-    uint64_t capacity = out_abi.empty() ? 8 : out_abi.size();
-    std::vector<PJ_string_view_t> resolved(capacity);
-    uint64_t count = 0;
-    if (!host_.vtable->create_generator(
-            host_.ctx, toAbiString(id), toAbiString(kind), toAbiString(language), in_abi.data(), in_abi.size(),
-            out_abi.data(), out_abi.size(), toAbiString(script), toAbiString(params_json), flags, resolved.data(),
-            resolved.size(), &count, &err)) {
-      return unexpected(errorToString(err));
-    }
-    if (count > capacity) {
-      resolved.assign(count, PJ_string_view_t{});
-      if (!host_.vtable->create_generator(
-              host_.ctx, toAbiString(id), toAbiString(kind), toAbiString(language), in_abi.data(), in_abi.size(),
-              out_abi.data(), out_abi.size(), toAbiString(script), toAbiString(params_json), flags, resolved.data(),
-              resolved.size(), &count, &err)) {
-        return unexpected(errorToString(err));
-      }
-    }
-    std::vector<std::string> topics;
-    topics.reserve(count);
-    for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
-      topics.emplace_back(toStringView(resolved[i]));
-    }
-    return topics;
-  }
-
-  /// Convenience: create a kind="markers" generator writing the single
-  /// `output_marker_topic` key (kGlobalMarkerTopic or markerSeriesKey). Pass
-  /// flags=PJ_GENERATOR_FLAG_EPHEMERAL for a live preview (output may be left empty
-  /// to let the host name the preview topic). Returns the resolved object topic(s).
-  [[nodiscard]] Expected<std::vector<std::string>> createMarkerGenerator(
-      std::string_view id, Span<const std::string_view> inputs, std::string_view output_marker_topic,
-      std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
-    std::array<std::string_view, 1> outs{output_marker_topic};
-    Span<const std::string_view> out_span =
-        output_marker_topic.empty() ? Span<const std::string_view>{} : Span<const std::string_view>(outs.data(), 1);
-    return createGenerator(id, "markers", "luau", inputs, out_span, script, params_json, flags);
-  }
-
-  /// Remove a previously created generator by id (persistent or ephemeral preview).
-  [[nodiscard]] Status remove(std::string_view id) const {
-    if (!valid() || host_.vtable->remove_generator == nullptr) {
-      return unexpected("generators host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->remove_generator(host_.ctx, toAbiString(id), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
-
-  /// Enumerate the ids of this plugin's live (non-ephemeral) generators (owned copies).
-  [[nodiscard]] Expected<std::vector<std::string>> list() const {
-    if (!valid() || host_.vtable->list_generator_ids == nullptr) {
-      return unexpected("generators host is not bound");
-    }
-    PJ_error_t err{};
-    uint64_t count = 0;
-    if (!host_.vtable->list_generator_ids(host_.ctx, nullptr, 0, &count, &err)) {
-      return unexpected(errorToString(err));
-    }
-    std::vector<PJ_string_view_t> borrowed(count);
-    uint64_t filled = 0;
-    if (count != 0 && !host_.vtable->list_generator_ids(host_.ctx, borrowed.data(), borrowed.size(), &filled, &err)) {
-      return unexpected(errorToString(err));
-    }
-    std::vector<std::string> ids;
-    ids.reserve(filled);
-    for (uint64_t i = 0; i < filled; ++i) {
-      ids.emplace_back(toStringView(borrowed[i]));
-    }
-    return ids;
-  }
-
-  /// Read a generator's full recipe JSON (owned copy) for re-edit.
-  [[nodiscard]] Expected<std::string> configOf(std::string_view id) const {
-    if (!valid() || host_.vtable->generator_config == nullptr) {
-      return unexpected("generators host is not bound");
-    }
-    PJ_error_t err{};
-    PJ_string_view_t recipe{};
-    if (!host_.vtable->generator_config(host_.ctx, toAbiString(id), &recipe, &err)) {
-      return unexpected(errorToString(err));
-    }
-    return std::string(toStringView(recipe));
-  }
-
   /// Validate a script WITHOUT installing anything: compile + module-load only (no
-  /// inputs, no run, no side effects). Cheap enough to drive a live red/green editor
-  /// semaphore. Runtime/empty-output errors are NOT caught here — use an ephemeral
-  /// createGenerator for that. `params_json` is forwarded verbatim.
+  /// inputs, no run, no side effects) for the given `kind`. Cheap enough to drive a
+  /// live red/green editor semaphore. Runtime/empty-output errors are NOT caught here —
+  /// use an ephemeral create for that. `language` selects the backend ("luau" today).
+  /// Errors if the host predates this slot or the language/kind is unknown.
   [[nodiscard]] Status validateScript(
       std::string_view kind, std::string_view language, std::string_view script,
       std::string_view params_json = "{}") const {
-    if (!valid() || host_.vtable->validate_script == nullptr) {
-      return unexpected("generators host does not support validation");
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, validate_data_processor_script)) {
+      return unexpected("host does not support script validation");
     }
     PJ_error_t err{};
-    if (!host_.vtable->validate_script(
+    if (!host_.vtable->validate_data_processor_script(
             host_.ctx, toAbiString(kind), toAbiString(language), toAbiString(script), toAbiString(params_json), &err)) {
       return unexpected(errorToString(err));
     }
@@ -1606,7 +1535,7 @@ class GeneratorsHostView {
   }
 
  private:
-  PJ_generators_host_t host_{};
+  PJ_data_processors_host_t host_{};
 };
 
 // ---------------------------------------------------------------------------

@@ -787,35 +787,46 @@ typedef struct {
 /**
  * Data-processor host service ("pj.data_processors.v1", protocol_version 1).
  *
- * Lets a toolbox plugin create catalog-resident "transform" nodes in the host
- * by DATA only. Nothing executable crosses the boundary — only strings:
+ * One host-driven service for plugins that submit WHOLE-SERIES data processors by
+ * DATA — nothing executable crosses the boundary; the HOST compiles, runs, and owns
+ * the lifecycle (a node survives plugin unload and re-runs on data change). A single
+ * polymorphic surface covers every output shape via a `kind` discriminator:
+ *   - kind="transform": per-sample numeric series materialized into the DataEngine
+ *     via the DerivedEngine (catalog-resident timeseries; N inputs -> M outputs).
+ *   - kind="markers":   a discrete PlotMarkers set (events / regions / value bands).
+ *     Exactly one output topic; the host publishes the serialized PlotMarkers to the
+ *     ObjectStore under markerObjectTopicName(key).
+ * Future kinds (e.g. a host-owned engine backend) are added the same way — a new
+ * `kind` string plus host routing, no ABI change.
  *
- *   - id          : per-call stable key. The host namespaces it under the
- *                   calling plugin. create() UPSERTS by id (idempotent Save).
- *                   ids survive a session reload, so a plugin can re-edit its
- *                   nodes after the host has replayed them from persisted
- *                   recipes (see data_processor_config).
+ * Nothing executable crosses the boundary — only strings:
+ *   - id          : plugin-namespaced stable key. create() UPSERTS by id (idempotent
+ *                   Save). ids survive a session reload, so a plugin can re-edit its
+ *                   nodes after the host replays them from persisted recipes (see
+ *                   data_processor_config). The host scopes list/remove/config to the
+ *                   calling plugin (per-plugin isolation): one plugin can neither
+ *                   enumerate nor remove another's.
+ *   - kind        : output discriminator, see above ("transform", "markers").
+ *   - language    : script backend, "luau" today; the host rejects anything else.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
- *                   "pose/orientation/x"); the host resolves them and exact-joins
- *                   co-timestamped inputs. Field-level resolution is a host
- *                   concern and needs no ABI change.
- *   - outputs     : REQUIRED non-empty. This service creates named catalog
- *                   topics (transforms). View-bound hidden-output "filters" are
- *                   host-internal and are NOT created through this ABI.
- *   - script      : the processor class source. Its first-line directive
- *                   ("-- pj-script: <lang>") selects the backend; an unsupported
- *                   one is rejected by the host at create() time. BINARY-SAFE:
- *                   script is a PJ_string_view_t {data,size}, NOT a C string, so
- *                   it MAY carry a non-text blob — e.g. a future WASM module
- *                   detected by the leading "\0asm" magic. Nothing on the path
- *                   may treat it as NUL-terminated (no strlen).
- *   - params_json : forwarded VERBATIM to the backend's create(params); the host
- *                   does not interpret its keys (translucent pass-through). Also
- *                   a binary-safe PJ_string_view_t {data,size}.
- *
- * Per-plugin isolation: the host namespaces every id under the calling plugin, so
- * list/remove/config only ever see or affect THAT plugin's nodes; one plugin can
- * neither enumerate nor remove another's.
+ *                   "pose/orientation/x") the script reads; the host resolves them
+ *                   and exact-joins co-timestamped inputs.
+ *   - outputs     : target topic key(s). MAY be empty for an ephemeral preview
+ *                   (flags & PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host
+ *                   names the sink(s) and returns the resolved names in out_topics.
+ *                   transform: the created catalog topic(s). markers: a single
+ *                   marker-topic key (kGlobalMarkerTopic or a per-series key, see
+ *                   markerSeriesKey).
+ *   - script      : the processor source. BINARY-SAFE PJ_string_view_t {data,size},
+ *                   NOT a C string, so it MAY carry a non-text blob — e.g. a future
+ *                   WASM module detected by the leading "\0asm" magic. Nothing on the
+ *                   path may treat it as NUL-terminated (no strlen).
+ *   - params_json : forwarded VERBATIM to the backend's create(params) (translucent
+ *                   pass-through; binary-safe PJ_string_view_t {data,size}).
+ *                   {"scope":"all"} makes a global node publish across EVERY dataset;
+ *                   absent = active dataset.
+ *   - flags       : bitset; PJ_DATA_PROCESSOR_FLAG_EPHEMERAL marks a preview (never
+ *                   persisted, dropped on remove). Reserved bits must be 0.
  *
  * FORWARD-COMPAT — the native door is WASM, not a C++ kernel. Because the script
  * slot is a binary-safe blob the host owns and runs (today Luau; tomorrow a
@@ -827,115 +838,47 @@ typedef struct {
  *
  * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  */
+
+/* create_data_processor flags. */
+#define PJ_DATA_PROCESSOR_FLAG_EPHEMERAL (1u << 0) /* preview: never persisted, dropped on remove_data_processor */
+
 typedef struct PJ_data_processors_host_vtable_t {
   uint32_t protocol_version;  // = 1
   uint32_t struct_size;       // = sizeof(PJ_data_processors_host_vtable_t)
 
-  /* [main-thread] Create or replace (upsert by id) a transform node. outputs
-   * MUST be non-empty. Transactional: on failure no partial node/topic is left
-   * behind. All string arguments are borrowed for the duration of the call. */
+  /* [main-thread] Create or replace (upsert by id) a data processor of `kind`. The
+   * host compiles `script` with `language`, runs it over `inputs`, and routes the
+   * output by kind (transform -> DerivedEngine; markers -> ObjectStore). `outputs`
+   * may be empty for an ephemeral preview (flags & PJ_DATA_PROCESSOR_FLAG_EPHEMERAL),
+   * in which case the host auto-names the sink(s). The resolved physical topic
+   * name(s) are written to out_topics using the count-then-fill convention: pass
+   * out_topics=NULL/capacity=0 to read *out_topics_count, or a buffer to receive
+   * min(capacity,*out_topics_count) entries (borrowed, valid only until the next call
+   * on this vtable); pass out_topics_count=NULL to ignore them. Transactional: on
+   * failure no partial state is left AND any previously published output for this id
+   * is preserved. All string arguments are borrowed for the duration of the call. */
   bool (*create_data_processor)(
-      void* ctx, PJ_string_view_t id, const PJ_string_view_t* inputs, uint64_t input_count,
-      const PJ_string_view_t* outputs, uint64_t output_count, PJ_string_view_t script, PJ_string_view_t params_json,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Remove a node by id. An unknown id is an error. */
-  bool (*remove_data_processor)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Enumerate the ids of THIS plugin's live processors.
-   * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
-   * buffer of that size. On success the first min(capacity, *out_count) entries
-   * of out_ids are filled and point into host storage valid only until the next
-   * call on this vtable. */
-  bool (*list_data_processor_ids)(
-      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Read a node's full recipe as JSON
-   * {"inputs":[...],"outputs":[...],"params":{...}} for re-edit (e.g. after a
-   * session reload). *out_recipe_json is borrowed, valid only until the next
-   * call on this vtable. An unknown id is an error. */
-  bool (*data_processor_config)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_data_processors_host_vtable_t;
-
-typedef struct {
-  void* ctx;
-  const PJ_data_processors_host_vtable_t* vtable;
-} PJ_data_processors_host_t;
-
-/**
- * Generators host service ("pj.generators.v1", protocol_version 1).
- *
- * One host-driven service for plugins that submit WHOLE-SERIES *generators* by
- * DATA — nothing executable crosses the boundary; the HOST compiles, runs, and
- * owns the lifecycle (a generator survives plugin unload and re-runs on data
- * change). A single polymorphic surface covers every output shape via a `kind`
- * discriminator:
- *   - kind="markers": the script emits a discrete PlotMarkers set (events /
- *     regions / value bands). Exactly one output topic; the host publishes the
- *     serialized PlotMarkers to the ObjectStore under markerObjectTopicName(key).
- *     ("transform" — per-sample numeric series materialized into the DataEngine via
- *     the DerivedEngine — is reserved for the MIMO backend, added later. Timeseries
- *     outputs come from transform generators, never from object/marker generators.)
- *
- * Arguments shared by every kind:
- *   - id          : plugin-namespaced stable key (upsert key); the host scopes
- *                   list/remove/config to the calling plugin (per-plugin isolation).
- *   - kind        : output discriminator, see above ("markers"; "transform" reserved).
- *   - language    : script backend, "luau" today; the host rejects anything else.
- *   - inputs      : series/field names the script reads via series("name").
- *   - outputs     : target topic key(s). markers: a single marker-topic key
- *                   (kGlobalMarkerTopic or a per-series key, see markerSeriesKey).
- *                   MAY be empty for an ephemeral preview, in which case the host
- *                   names them and returns the resolved names in out_topics.
- *   - script      : the rule source, opaque/binary-safe PJ_string_view_t {data,size}.
- *   - params_json : optional host-interpreted JSON. {"scope":"all"} makes a global
- *                   generator publish across EVERY dataset; absent = active dataset.
- *   - flags       : bitset; PJ_GENERATOR_FLAG_EPHEMERAL marks a preview (never
- *                   persisted, dropped on remove). Reserved bits must be 0.
- *
- * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
- */
-
-/* create_generator flags. */
-#define PJ_GENERATOR_FLAG_EPHEMERAL (1u << 0) /* preview: never persisted, dropped on remove_generator */
-
-typedef struct PJ_generators_host_vtable_t {
-  uint32_t protocol_version;  // = 1
-  uint32_t struct_size;       // = sizeof(PJ_generators_host_vtable_t)
-
-  /* [main-thread] Create or replace (upsert by id) a generator of `kind`. The host
-   * compiles `script` with `language`, runs it over `inputs`, and routes the output
-   * by kind (markers -> ObjectStore; transform [reserved] -> DerivedEngine). `outputs`
-   * may be empty for an ephemeral preview, in which case the host auto-names the sink(s).
-   * The resolved physical topic name(s) are written to out_topics using the
-   * count-then-fill convention: pass out_topics=NULL/capacity=0 to read *out_count,
-   * or a buffer to receive min(capacity,*out_count) entries (borrowed, valid only
-   * until the next call on this vtable); pass out_count=NULL to ignore them.
-   * Transactional: on failure no partial state is left AND any previously published
-   * output for this id is preserved. All string arguments are borrowed for the call. */
-  bool (*create_generator)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t language,
       const PJ_string_view_t* inputs, uint64_t input_count, const PJ_string_view_t* outputs, uint64_t output_count,
       PJ_string_view_t script, PJ_string_view_t params_json, uint32_t flags, PJ_string_view_t* out_topics,
       uint64_t out_topics_capacity, uint64_t* out_topics_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Remove a generator by id (persistent or ephemeral). Unknown id is an error. */
-  bool (*remove_generator)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /* [main-thread] Remove a node by id (persistent or ephemeral). Unknown id is an error. */
+  bool (*remove_data_processor)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Enumerate the ids of THIS plugin's live generators.
+  /* [main-thread] Enumerate the ids of THIS plugin's live nodes.
    * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
-   * buffer of that size. On success the first min(capacity, *out_count) entries of
-   * out_ids are filled and point into host storage valid only until the next call
-   * on this vtable. Ephemeral previews are excluded. */
-  bool (*list_generator_ids)(
+   * buffer of that size. On success the first min(capacity, *out_count) entries
+   * of out_ids are filled and point into host storage valid only until the next
+   * call on this vtable. Ephemeral previews are excluded. */
+  bool (*list_data_processor_ids)(
       void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Read a generator's full recipe as JSON
+  /* [main-thread] Read a node's full recipe as JSON
    * {"kind":"...","language":"...","inputs":[...],"outputs":[...],"params":{...}} for
    * re-edit (e.g. after a session reload). *out_recipe_json is borrowed, valid only
    * until the next call on this vtable. An unknown id is an error. */
-  bool (*generator_config)(
+  bool (*data_processor_config)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Validate a script WITHOUT installing anything: the host compiles
@@ -945,15 +888,15 @@ typedef struct PJ_generators_host_vtable_t {
    * over data, so a runtime error or empty output is not detected here (use an
    * ephemeral create for that). No node, topic or catalog entry is created. An
    * unknown language or kind is an error. */
-  bool (*validate_script)(
+  bool (*validate_data_processor_script)(
       void* ctx, PJ_string_view_t kind, PJ_string_view_t language, PJ_string_view_t script,
       PJ_string_view_t params_json, PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_generators_host_vtable_t;
+} PJ_data_processors_host_vtable_t;
 
 typedef struct {
   void* ctx;
-  const PJ_generators_host_vtable_t* vtable;
-} PJ_generators_host_t;
+  const PJ_data_processors_host_vtable_t* vtable;
+} PJ_data_processors_host_t;
 
 /**
  * Settings store service ("pj.settings.v1", protocol_version 1).

@@ -30,12 +30,14 @@ import os
 
 class PlotjugglerSdkConan(ConanFile):
     name = "plotjuggler_sdk"
-    # UNRELEASED BREAK: 0.13.0 replaces the host service `pj.markers.v1` with
-    # `pj.generators.v1` (removed `PJ_markers_host_vtable_t` / `MarkersHostService`).
-    # This is an API removal — normally MAJOR — but no PUBLIC tag ever shipped
-    # `pj.markers.v1` (it lived only on this branch), so no released plugin breaks and
-    # 0.13.0 stays a valid pre-1.0 step. The FIRST public release that carries
-    # `pj.generators.v1` MUST be tagged 1.0.0. See CHANGELOG.md.
+    # UNRELEASED BREAK: 0.13.0 unifies markers + transforms into the single host
+    # service `pj.data_processors.v1` via a `kind` discriminator (removed the old
+    # `pj.markers.v1` and the interim `pj.generators.v1`; generalized
+    # `create_data_processor`/`validate_data_processor_script` with kind/language/flags).
+    # This is an ABI/API change — normally MAJOR — but no PUBLIC tag ever shipped
+    # `pj.data_processors.v1`, so no released plugin breaks and 0.13.0 stays a valid
+    # pre-1.0 step. The FIRST public release that carries the unified
+    # `pj.data_processors.v1` MUST be tagged 1.0.0. See CHANGELOG.md.
     version = "0.13.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"

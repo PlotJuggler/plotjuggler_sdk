@@ -156,6 +156,7 @@ class WidgetDataView {
     std::string label;
     std::vector<std::pair<double, double>> points;  // {x, y}
     std::string color;                              // optional hex "#rrggbb"; empty means use chart theme default
+    bool dashed = false;                            // draw with a dashed line
   };
 
   [[nodiscard]] std::optional<std::vector<ChartSeriesView>> chartSeries(std::string_view name) const {
@@ -190,6 +191,10 @@ class WidgetDataView {
       auto color_it = s.find("color");
       if (color_it != s.end() && color_it->is_string()) {
         sv.color = color_it->get<std::string>();
+      }
+      auto dashed_it = s.find("dashed");
+      if (dashed_it != s.end() && dashed_it->is_boolean()) {
+        sv.dashed = dashed_it->get<bool>();
       }
       result.push_back(std::move(sv));
     }
@@ -242,6 +247,11 @@ class WidgetDataView {
   /// Returns whether interactive zoom is enabled on this chart widget.
   [[nodiscard]] std::optional<bool> chartZoomEnabled(std::string_view name) const {
     return getBool(name, "chart_zoom_enabled");
+  }
+
+  /// Returns whether the chart should auto-fit on every series update.
+  [[nodiscard]] std::optional<bool> chartAutoZoom(std::string_view name) const {
+    return getBool(name, "chart_auto_zoom");
   }
 
   // --- QPlainTextEdit ---
