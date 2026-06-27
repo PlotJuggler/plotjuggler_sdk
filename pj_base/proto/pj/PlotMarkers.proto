@@ -44,11 +44,11 @@ enum MarkerSeverity {
 message PlotMarker {
   // Anchor (interpret by kind; irrelevant fields are ignored).
   MarkerKind kind = 1;
-  int64 t_start = 2;       // ns; Region start / Event / Label time
-  int64 t_end = 3;         // ns; Region end
-  double value_low = 4;    // ValueBand low / Event point value
-  double value_high = 5;   // ValueBand high
-  bool has_value = 6;      // Event: value_low is a meaningful point value
+  int64 t_start = 2;      // ns; Region start / Event / Label time
+  int64 t_end = 3;        // ns; Region end
+  double value_low = 4;   // ValueBand low / Event point value
+  double value_high = 5;  // ValueBand high
+  bool has_value = 6;     // Event: value_low is a meaningful point value
 
   // Semantics / presentation (shared by every kind).
   MarkerStatus status = 7;
@@ -56,7 +56,7 @@ message PlotMarker {
   string category = 9;
   string label = 10;
   string description = 11;
-  PJ.Color color = 12;     // alpha 0 → derive from severity
+  PJ.Color color = 12;  // alpha 0 → derive from severity
   repeated PJ.KeyValuePair metadata = 13;
 }
 

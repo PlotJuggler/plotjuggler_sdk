@@ -104,8 +104,7 @@ class DialogPluginTyped : public DialogPluginBase {
   }
 
   /// MarkerTimeline: a mark was moved, resized, or deleted. `marks` is the full set.
-  virtual bool onMarkerTimelineChanged(
-      std::string_view /*widget_name*/, const std::vector<TimelineMark>& /*marks*/) {
+  virtual bool onMarkerTimelineChanged(std::string_view /*widget_name*/, const std::vector<TimelineMark>& /*marks*/) {
     return false;
   }
 
