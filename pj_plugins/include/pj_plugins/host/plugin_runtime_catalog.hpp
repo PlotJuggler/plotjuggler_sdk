@@ -72,6 +72,13 @@ class PluginRuntimeCatalog {
   // Replaces the directory scanned by scanDirectory() and reload().
   void setPluginDir(std::filesystem::path plugin_dir);
 
+  // Replaces the ordered list of directories scanned by scanDirectory() and
+  // reload(). Directories are scanned in order and de-duplicated by manifest id:
+  // when the same plugin id appears in more than one directory, the first
+  // (highest-priority) directory wins and the later copies are skipped with an
+  // info diagnostic. Empty entries are ignored.
+  void setPluginDirs(std::vector<std::filesystem::path> plugin_dirs);
+
   // Replaces the optional diagnostic sink.
   void setDiagnosticSink(DiagnosticSink sink);
 
@@ -135,6 +142,11 @@ class PluginRuntimeCatalog {
   [[nodiscard]] std::string listAvailableEncodings() const;
 
  private:
+  // Scans every directory in plugin_dirs_ (in order) and returns the loadable
+  // descriptors de-duplicated by manifest id (first directory wins). Reports
+  // scan diagnostics and one info diagnostic per skipped duplicate.
+  [[nodiscard]] std::vector<PluginDescriptor> collectDeduplicatedPlugins() const;
+
   // Loads a descriptor using the family-specific loader.
   bool loadAndRegister(const PluginDescriptor& descriptor);
 
@@ -159,7 +171,7 @@ class PluginRuntimeCatalog {
   // Emits diagnostics produced by DSO discovery.
   void reportScanDiagnostics(const PluginScanResult& scan) const;
 
-  std::filesystem::path plugin_dir_;
+  std::vector<std::filesystem::path> plugin_dirs_;
   DiagnosticSink sink_;
   std::string diagnostic_source_;
   std::vector<RuntimeDataSourcePlugin> data_sources_;
