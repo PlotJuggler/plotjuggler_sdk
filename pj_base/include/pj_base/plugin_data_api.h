@@ -749,8 +749,8 @@ typedef struct PJ_object_read_host_vtable_t {
    * several loaded datasets, so the name-only `lookup_topic` above is ambiguous
    * across datasets. This dataset-scoped form returns the topic owned by
    * `dataset_id`, or {id=0} on miss. ABI-APPENDED slot: gate via struct_size. */
-  PJ_object_topic_handle_t (*lookup_topic_on_dataset)(
-      void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name) PJ_NOEXCEPT;
+  PJ_object_topic_handle_t (*lookup_topic_on_dataset)(void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name)
+      PJ_NOEXCEPT;
 } PJ_object_read_host_vtable_t;
 
 /* ABI-FROZEN: fat pointer layout permanent. */
@@ -858,10 +858,10 @@ typedef struct PJ_data_processors_host_vtable_t {
    * failure no partial state is left AND any previously published output for this id
    * is preserved. All string arguments are borrowed for the duration of the call. */
   bool (*create_data_processor)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t language,
-      const PJ_string_view_t* inputs, uint64_t input_count, const PJ_string_view_t* outputs, uint64_t output_count,
-      PJ_string_view_t script, PJ_string_view_t params_json, uint32_t flags, PJ_string_view_t* out_topics,
-      uint64_t out_topics_capacity, uint64_t* out_topics_count, PJ_error_t* out_error) PJ_NOEXCEPT;
+      void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t language, const PJ_string_view_t* inputs,
+      uint64_t input_count, const PJ_string_view_t* outputs, uint64_t output_count, PJ_string_view_t script,
+      PJ_string_view_t params_json, uint32_t flags, PJ_string_view_t* out_topics, uint64_t out_topics_capacity,
+      uint64_t* out_topics_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Remove a node by id (persistent or ephemeral). Unknown id is an error. */
   bool (*remove_data_processor)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;

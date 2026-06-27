@@ -73,18 +73,18 @@ struct PlotMarker {
   MarkerKind kind = MarkerKind::kRegion;
 
   // --- anchor (interpret by kind; irrelevant fields ignored) ---
-  Timestamp t_start = 0;       ///< Region start · Event/Label time · (ValueBand: ignored).
-  Timestamp t_end = 0;         ///< Region end · (others: ignored).
-  double value_low = 0.0;      ///< ValueBand low · Event point value · (others: ignored).
-  double value_high = 0.0;     ///< ValueBand high · (others: ignored).
-  bool has_value = false;      ///< Event: `value_low` is a meaningful point value.
+  Timestamp t_start = 0;    ///< Region start · Event/Label time · (ValueBand: ignored).
+  Timestamp t_end = 0;      ///< Region end · (others: ignored).
+  double value_low = 0.0;   ///< ValueBand low · Event point value · (others: ignored).
+  double value_high = 0.0;  ///< ValueBand high · (others: ignored).
+  bool has_value = false;   ///< Event: `value_low` is a meaningful point value.
 
   // --- semantics / presentation (shared by every kind) ---
   MarkerStatus status = MarkerStatus::kNone;
   MarkerSeverity severity = MarkerSeverity::kInfo;
-  std::string category;        ///< e.g. "overspeed", "state_transition".
-  std::string label;           ///< Short title (tooltip / panel / Label content).
-  std::string description;     ///< Optional longer text.
+  std::string category;            ///< e.g. "overspeed", "state_transition".
+  std::string label;               ///< Short title (tooltip / panel / Label content).
+  std::string description;         ///< Optional longer text.
   ColorRGBA color = {0, 0, 0, 0};  ///< a=0 → derive color from `severity`.
   std::vector<MarkerProperty> metadata;
 

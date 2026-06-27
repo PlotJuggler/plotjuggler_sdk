@@ -36,7 +36,7 @@ struct ChartSeries {
 /// X/Y are in the chart's own units (e.g. seconds-from-start), so the producer must
 /// rebase to match the series points it pushes alongside.
 struct ChartMarker {
-  std::string kind;        // "event" | "region" | "value_band" | "label"
+  std::string kind;  // "event" | "region" | "value_band" | "label"
   double x0 = 0.0;
   double x1 = 0.0;
   double y0 = 0.0;
@@ -51,8 +51,8 @@ struct ChartMarker {
 [[nodiscard]] inline nlohmann::json chartMarkersToJson(const std::vector<ChartMarker>& marks) {
   nlohmann::json arr = nlohmann::json::array();
   for (const auto& m : marks) {
-    nlohmann::json jm = {{"kind", m.kind}, {"x0", m.x0},   {"x1", m.x1},
-                         {"y0", m.y0},     {"y1", m.y1},   {"has_value", m.has_value}};
+    nlohmann::json jm = {{"kind", m.kind}, {"x0", m.x0}, {"x1", m.x1},
+                         {"y0", m.y0},     {"y1", m.y1}, {"has_value", m.has_value}};
     if (!m.color.empty()) {
       jm["color"] = m.color;
     }

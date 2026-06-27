@@ -2,10 +2,10 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <functional>
-#include <array>
 #include <initializer_list>
 #include <memory>
 #include <optional>
@@ -1272,8 +1272,7 @@ class ToolboxHostView {
       return unexpected("toolbox host is not bound");
     }
     if (!hasTailSlot(
-            offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention),
-            host_.vtable->set_object_topic_retention)) {
+            offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention), host_.vtable->set_object_topic_retention)) {
       return unexpected("toolbox host does not support object retention (older host)");
     }
     PJ_error_t err{};
