@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "pj_plugins/host/plugin_runtime_catalog.hpp"
+
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -176,6 +178,44 @@ TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {
   EXPECT_EQ(toString(PluginFamily::kToolbox), "toolbox");
   EXPECT_EQ(toString(PluginFamily::kDialog), "dialog");
   EXPECT_EQ(toString(PluginFamily::kUnknown), "unknown");
+}
+
+TEST_F(PluginCatalogTest, RuntimeCatalogDedupsDuplicateIdFirstFolderWins) {
+  // The same data-source DSO (manifest id "mock-data-source") placed in two
+  // folders: setPluginDirs scans them in order and must load it exactly once,
+  // from the first (higher-priority) folder.
+  const std::filesystem::path dir_a = dir_ / "a";
+  const std::filesystem::path dir_b = dir_ / "b";
+  std::filesystem::create_directories(dir_a);
+  std::filesystem::create_directories(dir_b);
+  std::filesystem::copy_file(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, dir_a / pluginFileName("ds"));
+  std::filesystem::copy_file(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, dir_b / pluginFileName("ds"));
+
+  PluginRuntimeCatalog catalog;
+  catalog.setPluginDirs({dir_a, dir_b});
+  catalog.scanDirectory();
+
+  ASSERT_EQ(catalog.dataSources().size(), 1U);
+  EXPECT_EQ(catalog.dataSources()[0].id, "mock-data-source");
+  EXPECT_NE(catalog.dataSources()[0].path.find(dir_a.string()), std::string::npos)
+      << "the winner must come from the first folder; got " << catalog.dataSources()[0].path;
+}
+
+TEST_F(PluginCatalogTest, RuntimeCatalogLoadsDistinctIdsFromMultipleFolders) {
+  // Different plugins in different folders all load.
+  const std::filesystem::path dir_a = dir_ / "a";
+  const std::filesystem::path dir_b = dir_ / "b";
+  std::filesystem::create_directories(dir_a);
+  std::filesystem::create_directories(dir_b);
+  std::filesystem::copy_file(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, dir_a / pluginFileName("ds"));
+  std::filesystem::copy_file(PJ_MOCK_TOOLBOX_PLUGIN_PATH, dir_b / pluginFileName("tb"));
+
+  PluginRuntimeCatalog catalog;
+  catalog.setPluginDirs({dir_a, dir_b});
+  catalog.scanDirectory();
+
+  EXPECT_EQ(catalog.dataSources().size(), 1U);
+  EXPECT_EQ(catalog.toolboxes().size(), 1U);
 }
 
 }  // namespace
