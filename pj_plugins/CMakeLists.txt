@@ -386,7 +386,7 @@ target_compile_definitions(plugin_catalog_test PRIVATE
 )
 target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(plugin_catalog_test PRIVATE
-  pj_plugin_catalog GTest::gtest_main
+  pj_plugin_catalog pj_plugin_runtime_catalog GTest::gtest_main
 )
 add_dependencies(plugin_catalog_test mock_data_source_plugin mock_json_parser_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
