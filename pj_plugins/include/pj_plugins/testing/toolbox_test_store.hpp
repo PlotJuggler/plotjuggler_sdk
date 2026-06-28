@@ -147,6 +147,7 @@ class ToolboxTestStore {
         // slots into clear "older host" errors.
         .register_object_topic = nullptr,
         .push_owned_object = nullptr,
+        .register_object_topic_on_dataset = nullptr,
     };
     return PJ_toolbox_host_t{.ctx = this, .vtable = &vtable};
   }

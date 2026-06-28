@@ -36,6 +36,7 @@
 #include "pj_base/builtin/mesh3d.hpp"
 #include "pj_base/builtin/occupancy_grid.hpp"
 #include "pj_base/builtin/occupancy_grid_update.hpp"
+#include "pj_base/builtin/plot_markers.hpp"
 #include "pj_base/builtin/point_cloud.hpp"
 #include "pj_base/builtin/poses_in_frame.hpp"
 #include "pj_base/builtin/robot_description.hpp"
@@ -65,6 +66,7 @@ enum class BuiltinObjectType : uint16_t {
   kLog = 16,                  ///< sdk::Log — textual log message (level + text + name).
   kPosesInFrame = 17,         ///< sdk::PosesInFrame — array of poses in one reference frame.
   kVoxelGrid = 18,            ///< sdk::VoxelGrid — dense 3D voxel grid (occupancy/cost/ESDF/semantic).
+  kPlotMarkers = 19,          ///< sdk::PlotMarkers — findings on a time-series plot (regions, events, bands, labels).
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -111,6 +113,8 @@ struct SchemaClassification {
       return "kPosesInFrame";
     case BuiltinObjectType::kVoxelGrid:
       return "kVoxelGrid";
+    case BuiltinObjectType::kPlotMarkers:
+      return "kPlotMarkers";
   }
   return "kNone";
 }
@@ -168,6 +172,9 @@ struct SchemaClassification {
   }
   if (s == "kVoxelGrid") {
     return BuiltinObjectType::kVoxelGrid;
+  }
+  if (s == "kPlotMarkers") {
+    return BuiltinObjectType::kPlotMarkers;
   }
   return std::nullopt;
 }
@@ -229,6 +236,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(VoxelGrid)) {
     return BuiltinObjectType::kVoxelGrid;
+  }
+  if (t == typeid(PlotMarkers)) {
+    return BuiltinObjectType::kPlotMarkers;
   }
   return BuiltinObjectType::kNone;
 }

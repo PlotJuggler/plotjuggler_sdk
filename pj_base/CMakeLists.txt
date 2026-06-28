@@ -13,6 +13,7 @@ add_library(pj_base STATIC
   src/builtin/mesh3d_codec.cpp
   src/builtin/occupancy_grid_codec.cpp
   src/builtin/occupancy_grid_update_codec.cpp
+  src/builtin/plot_markers_codec.cpp
   src/builtin/point_cloud_codec.cpp
   src/builtin/poses_in_frame_codec.cpp
   src/builtin/scene_entities_codec.cpp
@@ -105,6 +106,7 @@ if(PJ_BUILD_TESTS)
     tests/time_spine_test.cpp
     tests/poses_in_frame_codec_test.cpp
     tests/voxel_grid_codec_test.cpp
+    tests/plot_markers_codec_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})

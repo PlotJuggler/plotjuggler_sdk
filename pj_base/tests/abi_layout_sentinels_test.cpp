@@ -122,6 +122,7 @@ static_assert(PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID_UPDATE == 15, "OccupancyGrid
 static_assert(PJ_BUILTIN_OBJECT_TYPE_LOG == 16, "Log type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_POSES_IN_FRAME == 17, "PosesInFrame type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID == 18, "VoxelGrid type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS == 19, "PlotMarkers type id pinned");
 static_assert(sizeof(PJ_schema_classification_t) == 4, "PJ_schema_classification_t layout pinned");
 static_assert(offsetof(PJ_schema_classification_t, object_type) == 0, "object_type at offset 0");
 static_assert(offsetof(PJ_schema_classification_t, reserved) == 2, "reserved at offset 2");
@@ -178,7 +179,13 @@ static_assert(offsetof(PJ_toolbox_host_vtable_t, append_arrow_stream) == 48, "to
 static_assert(offsetof(PJ_toolbox_host_vtable_t, read_series_arrow) == 64, "toolbox host read slot pinned");
 static_assert(offsetof(PJ_toolbox_host_vtable_t, register_object_topic) == 72, "toolbox host object-topic slot pinned");
 static_assert(offsetof(PJ_toolbox_host_vtable_t, push_owned_object) == 80, "toolbox host object-push tail slot pinned");
-static_assert(sizeof(PJ_toolbox_host_vtable_t) == 88, "Toolbox host size (update deliberately on append)");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, register_object_topic_on_dataset) == 88,
+    "toolbox host object-topic-on-dataset tail slot pinned");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention) == 96,
+    "toolbox host object-retention tail slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 104, "Toolbox host size (update deliberately on append)");
 
 // --- Toolbox runtime host vtable (ABI-APPENDABLE within v4) ------------------
 // The vtable the host exposes to plugins under "pj.toolbox_runtime.v1".

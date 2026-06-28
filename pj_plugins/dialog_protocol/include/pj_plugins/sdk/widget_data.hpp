@@ -18,14 +18,111 @@ struct ChartPoint {
 };
 
 /// A named series of XY points for chart display (used by setChartSeries).
-/// If `color` is non-empty (e.g. "#ff7f0e"), it overrides the chart theme color
-/// for this series; otherwise the Qt Charts theme picks one.
+/// If `color` is non-empty (e.g. "#ff7f0e"), it overrides the built-in palette
+/// color for this series; otherwise the host's chart palette picks one.
 struct ChartSeries {
   std::string label;
   std::vector<ChartPoint> points;
   std::string color;    // optional hex "#rrggbb"
   bool dashed = false;  // draw with a dashed line (e.g. a faded "before" ghost curve)
 };
+
+/// One marker overlaid on a chart preview (used by setChartMarkers). Interpret by
+/// `kind`, mirroring the PlotMarkers vocabulary:
+///   "event"      → a point at (x0, y0) when `has_value`, else a vertical line at x0;
+///   "region"     → a shaded x-span [x0, x1];
+///   "value_band" → a shaded y-band [y0, y1] (a horizontal line when y0 == y1);
+///   "label"      → a labelled mark at x0.
+/// X/Y are in the chart's own units (e.g. seconds-from-start), so the producer must
+/// rebase to match the series points it pushes alongside.
+struct ChartMarker {
+  std::string kind;  // "event" | "region" | "value_band" | "label"
+  double x0 = 0.0;
+  double x1 = 0.0;
+  double y0 = 0.0;
+  double y1 = 0.0;
+  bool has_value = false;  // event: y0 is a real point value (draw a point, not a bare vline)
+  std::string color;       // optional hex "#rrggbb"; empty → host derives from a default palette
+  std::string label;
+};
+
+/// The single source of truth for the ChartMarker ⇆ JSON wire shape, shared by the
+/// data setter and the data-view (so a field change cannot drift between them).
+[[nodiscard]] inline nlohmann::json chartMarkersToJson(const std::vector<ChartMarker>& marks) {
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& m : marks) {
+    nlohmann::json jm = {{"kind", m.kind}, {"x0", m.x0}, {"x1", m.x1},
+                         {"y0", m.y0},     {"y1", m.y1}, {"has_value", m.has_value}};
+    if (!m.color.empty()) {
+      jm["color"] = m.color;
+    }
+    if (!m.label.empty()) {
+      jm["label"] = m.label;
+    }
+    arr.push_back(std::move(jm));
+  }
+  return arr;
+}
+
+[[nodiscard]] inline std::vector<ChartMarker> chartMarkersFromJson(const nlohmann::json& arr) {
+  std::vector<ChartMarker> marks;
+  if (!arr.is_array()) {
+    return marks;
+  }
+  marks.reserve(arr.size());
+  for (const auto& jm : arr) {
+    ChartMarker m;
+    m.kind = jm.value("kind", std::string());
+    m.x0 = jm.value("x0", 0.0);
+    m.x1 = jm.value("x1", 0.0);
+    m.y0 = jm.value("y0", 0.0);
+    m.y1 = jm.value("y1", 0.0);
+    m.has_value = jm.value("has_value", false);
+    m.color = jm.value("color", std::string());
+    m.label = jm.value("label", std::string());
+    marks.push_back(std::move(m));
+  }
+  return marks;
+}
+
+/// One mark on a MarkerTimeline. `region` true → a resizable [start,end] span;
+/// false → a single-point event at `start` (end ignored). Positions are in the
+/// timeline's integer step domain (see setMarkerTimelineBounds). `id` is a stable
+/// per-mark handle the host echoes back on edits.
+struct TimelineMark {
+  int id = 0;
+  bool region = true;
+  int start = 0;
+  int end = 0;
+};
+
+/// The single source of truth for the TimelineMark ⇆ JSON wire shape, shared by
+/// the data setter, the event builder, the event parser, and the data-view (so a
+/// field change cannot drift between the four).
+[[nodiscard]] inline nlohmann::json timelineMarksToJson(const std::vector<TimelineMark>& marks) {
+  nlohmann::json arr = nlohmann::json::array();
+  for (const auto& m : marks) {
+    arr.push_back({{"id", m.id}, {"region", m.region}, {"start", m.start}, {"end", m.end}});
+  }
+  return arr;
+}
+
+[[nodiscard]] inline std::vector<TimelineMark> timelineMarksFromJson(const nlohmann::json& arr) {
+  std::vector<TimelineMark> marks;
+  if (!arr.is_array()) {
+    return marks;
+  }
+  marks.reserve(arr.size());
+  for (const auto& jm : arr) {
+    TimelineMark m;
+    m.id = jm.value("id", 0);
+    m.region = jm.value("region", true);
+    m.start = jm.value("start", 0);
+    m.end = jm.value("end", 0);
+    marks.push_back(m);
+  }
+  return marks;
+}
 
 /// One boundary segment on a RangeSlider (used by setRangeSliderMarkers): a box
 /// covering [start, end] in slider units, with an optional label. The host draws
@@ -179,8 +276,8 @@ class WidgetData {
 
   // --- Chart (QFrame used as chart container) ---
 
-  /// Set chart series data on a QFrame widget. The host will create or update
-  /// a chart view inside the frame, displaying one QLineSeries per entry.
+  /// Set chart series data on a QFrame widget. The host creates or updates a Qwt
+  /// plot inside the frame, drawing one line curve per entry.
   WidgetData& setChartSeries(std::string_view name, const std::vector<ChartSeries>& series) {
     auto& e = entry(name);
     nlohmann::json arr = nlohmann::json::array();
@@ -202,9 +299,18 @@ class WidgetData {
     return *this;
   }
 
-  /// Remove all series from the chart inside the named QFrame.
+  /// Overlay markers on the chart inside the named QFrame (drawn on top of the
+  /// series). Pass an empty vector to clear just the markers. See ChartMarker.
+  WidgetData& setChartMarkers(std::string_view name, const std::vector<ChartMarker>& markers) {
+    entry(name)["chart_markers"] = chartMarkersToJson(markers);
+    return *this;
+  }
+
+  /// Remove all series AND markers from the chart inside the named QFrame.
   WidgetData& clearChart(std::string_view name) {
-    entry(name)["chart_series"] = nlohmann::json::array();
+    auto& e = entry(name);
+    e["chart_series"] = nlohmann::json::array();
+    e["chart_markers"] = nlohmann::json::array();
     return *this;
   }
 
@@ -308,18 +414,12 @@ class WidgetData {
     return *this;
   }
 
-  WidgetData& setFolderPicker(std::string_view name, std::string_view button_text, std::string_view title) {
-    auto& e = entry(name);
-    e["button_text"] = button_text;
-    e["action"] = "folder_picker";
-    e["title"] = title;
-    return *this;
-  }
-
-  /// Mark a button as a "save file" chooser: the host opens a native save dialog
-  /// (the user types a name and picks a location), then delivers the chosen path
-  /// as a fileSelected event — handle it in onFileSelected, like setFilePicker.
-  /// `default_suffix` is appended when the typed name carries no extension.
+  /// Turn a QPushButton into a native "Save As" file picker. Unlike setFilePicker
+  /// (which opens an existing file), this lets the user navigate to a directory AND
+  /// type a new filename, so a not-yet-existing rule/config file can be created. The
+  /// chosen path is reported through the same onFileSelected(name, path) event — the
+  /// plugin distinguishes save from open by the widget name. `default_suffix` is
+  /// appended when the typed name carries no extension.
   WidgetData& setSaveFilePicker(
       std::string_view name, std::string_view button_text, std::string_view filter, std::string_view title,
       std::string_view default_suffix = "") {
@@ -329,6 +429,14 @@ class WidgetData {
     e["filter"] = filter;
     e["title"] = title;
     e["default_suffix"] = default_suffix;
+    return *this;
+  }
+
+  WidgetData& setFolderPicker(std::string_view name, std::string_view button_text, std::string_view title) {
+    auto& e = entry(name);
+    e["button_text"] = button_text;
+    e["action"] = "folder_picker";
+    e["title"] = title;
     return *this;
   }
 
@@ -377,6 +485,34 @@ class WidgetData {
     auto& e = entry(name);
     e["range_time_min_ns"] = std::to_string(min_ns);
     e["range_time_max_ns"] = std::to_string(max_ns);
+    return *this;
+  }
+
+  // --- MarkerTimeline (editable multi-marker strip) ---
+
+  /// Set the integer [min, max] step domain of a MarkerTimeline (mark positions
+  /// live in these units). Set before the marks, like the RangeSlider bounds.
+  WidgetData& setMarkerTimelineBounds(std::string_view name, int min, int max) {
+    auto& e = entry(name);
+    e["marker_timeline_min"] = min;
+    e["marker_timeline_max"] = max;
+    return *this;
+  }
+
+  /// Replace the whole mark set shown on a MarkerTimeline (last-writer-wins,
+  /// mirroring the producer's republish model). An empty vector clears it.
+  WidgetData& setMarkerTimelineMarks(std::string_view name, const std::vector<TimelineMark>& marks) {
+    entry(name)["marker_timeline_marks"] = timelineMarksToJson(marks);
+    return *this;
+  }
+
+  /// Map the MarkerTimeline's [min,max] step domain onto the absolute time window
+  /// [min_ns, max_ns] for hover/tooltip labels. Nanoseconds are carried as strings
+  /// to avoid double precision loss. Pass min_ns == max_ns == 0 to show raw steps.
+  WidgetData& setMarkerTimelineTimeSpan(std::string_view name, std::int64_t min_ns, std::int64_t max_ns) {
+    auto& e = entry(name);
+    e["marker_timeline_time_min_ns"] = std::to_string(min_ns);
+    e["marker_timeline_time_max_ns"] = std::to_string(max_ns);
     return *this;
   }
 

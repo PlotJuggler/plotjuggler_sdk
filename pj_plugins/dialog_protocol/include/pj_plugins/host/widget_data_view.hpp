@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "pj_base/number_parse.hpp"
+#include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark
 
 namespace PJ {
 
@@ -200,6 +201,49 @@ class WidgetDataView {
     return result;
   }
 
+  /// A marker overlaid on the chart (see PJ::ChartMarker / setChartMarkers).
+  /// Interpret by `kind`: "event" (point at x0,y0 if has_value, else vline at x0),
+  /// "region" (x-span [x0,x1]), "value_band" (y-band [y0,y1]; line when y0==y1), "label".
+  struct ChartMarkerView {
+    std::string kind;
+    double x0 = 0.0;
+    double x1 = 0.0;
+    double y0 = 0.0;
+    double y1 = 0.0;
+    bool has_value = false;
+    std::string color;  // optional hex "#rrggbb"; empty means use a default palette
+    std::string label;
+  };
+
+  [[nodiscard]] std::optional<std::vector<ChartMarkerView>> chartMarkers(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("chart_markers");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<ChartMarkerView> result;
+    result.reserve(it->size());
+    for (const auto& m : *it) {
+      if (!m.is_object()) {
+        continue;
+      }
+      ChartMarkerView mv;
+      mv.kind = m.value("kind", std::string());
+      mv.x0 = m.value("x0", 0.0);
+      mv.x1 = m.value("x1", 0.0);
+      mv.y0 = m.value("y0", 0.0);
+      mv.y1 = m.value("y1", 0.0);
+      mv.has_value = m.value("has_value", false);
+      mv.color = m.value("color", std::string());
+      mv.label = m.value("label", std::string());
+      result.push_back(std::move(mv));
+    }
+    return result;
+  }
+
   /// Returns whether interactive zoom is enabled on this chart widget.
   [[nodiscard]] std::optional<bool> chartZoomEnabled(std::string_view name) const {
     return getBool(name, "chart_zoom_enabled");
@@ -267,6 +311,22 @@ class WidgetDataView {
     return it != w->end() && it->is_string() && it->get<std::string>() == "file_picker";
   }
 
+  /// A "save-as" file picker (navigate + type a new filename), as opposed to the
+  /// open-existing-file picker above. Shares the same filter/title accessors.
+  [[nodiscard]] bool isSaveFilePicker(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return false;
+    }
+    auto it = w->find("action");
+    return it != w->end() && it->is_string() && it->get<std::string>() == "save_file_picker";
+  }
+
+  /// The extension appended to a save-file picker's typed name when it has none.
+  [[nodiscard]] std::optional<std::string> saveFilePickerDefaultSuffix(std::string_view name) const {
+    return getString(name, "default_suffix");
+  }
+
   [[nodiscard]] std::optional<std::string> filePickerFilter(std::string_view name) const {
     return getString(name, "filter");
   }
@@ -286,26 +346,6 @@ class WidgetDataView {
 
   [[nodiscard]] std::optional<std::string> folderPickerTitle(std::string_view name) const {
     return getString(name, "title");
-  }
-
-  // --- Save-file picker ---
-  [[nodiscard]] bool isSaveFilePicker(std::string_view name) const {
-    const nlohmann::json* w = widget(name);
-    if (!w) {
-      return false;
-    }
-    auto it = w->find("action");
-    return it != w->end() && it->is_string() && it->get<std::string>() == "save_file_picker";
-  }
-
-  [[nodiscard]] std::optional<std::string> saveFilePickerFilter(std::string_view name) const {
-    return getString(name, "filter");
-  }
-  [[nodiscard]] std::optional<std::string> saveFilePickerTitle(std::string_view name) const {
-    return getString(name, "title");
-  }
-  [[nodiscard]] std::optional<std::string> saveFilePickerDefaultSuffix(std::string_view name) const {
-    return getString(name, "default_suffix");
   }
 
   // --- RangeSlider ---
@@ -379,6 +419,39 @@ class WidgetDataView {
   }
   [[nodiscard]] std::optional<std::string> dateRangeLatest(std::string_view name) const {
     return getString(name, "date_range_latest");
+  }
+
+  // --- MarkerTimeline ---
+  [[nodiscard]] std::optional<int> markerTimelineMin(std::string_view name) const {
+    return getInt(name, "marker_timeline_min");
+  }
+  [[nodiscard]] std::optional<int> markerTimelineMax(std::string_view name) const {
+    return getInt(name, "marker_timeline_max");
+  }
+  [[nodiscard]] std::optional<std::vector<TimelineMark>> markerTimelineMarks(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("marker_timeline_marks");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    return timelineMarksFromJson(*it);
+  }
+  /// [min_ns, max_ns] time window for hover labels, parsed from string-encoded ns.
+  [[nodiscard]] std::optional<std::pair<std::int64_t, std::int64_t>> markerTimelineTimeSpan(
+      std::string_view name) const {
+    auto mn = getString(name, "marker_timeline_time_min_ns");
+    auto mx = getString(name, "marker_timeline_time_max_ns");
+    if (!mn.has_value() || !mx.has_value()) {
+      return std::nullopt;
+    }
+    try {
+      return std::make_pair(static_cast<std::int64_t>(std::stoll(*mn)), static_cast<std::int64_t>(std::stoll(*mx)));
+    } catch (...) {
+      return std::nullopt;
+    }
   }
 
   // --- Field validity indicator (generic) ---
