@@ -5,13 +5,13 @@
 
 #include <gtest/gtest.h>
 
-#include "pj_plugins/host/plugin_runtime_catalog.hpp"
-
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
+
+#include "pj_plugins/host/plugin_runtime_catalog.hpp"
 
 namespace PJ {
 namespace {
@@ -197,8 +197,12 @@ TEST_F(PluginCatalogTest, RuntimeCatalogDedupsDuplicateIdFirstFolderWins) {
 
   ASSERT_EQ(catalog.dataSources().size(), 1U);
   EXPECT_EQ(catalog.dataSources()[0].id, "mock-data-source");
-  EXPECT_NE(catalog.dataSources()[0].path.find(dir_a.string()), std::string::npos)
-      << "the winner must come from the first folder; got " << catalog.dataSources()[0].path;
+  // The winner must come from the first folder. Compare at the filesystem level
+  // (std::filesystem::equivalent) so it holds regardless of how the stored path
+  // is spelled — Windows back/forward slashes, drive-letter case, canonicalisation.
+  const std::filesystem::path winner(catalog.dataSources()[0].path);
+  EXPECT_TRUE(std::filesystem::equivalent(winner.parent_path(), dir_a))
+      << "winner " << winner << " is not in the first folder " << dir_a;
 }
 
 TEST_F(PluginCatalogTest, RuntimeCatalogLoadsDistinctIdsFromMultipleFolders) {
