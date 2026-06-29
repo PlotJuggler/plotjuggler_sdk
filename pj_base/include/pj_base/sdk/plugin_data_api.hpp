@@ -2,6 +2,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "pj_base/builtin/builtin_object.hpp"
+#include "pj_base/builtin/plot_markers_codec.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/number_parse.hpp"
 #include "pj_base/plugin_data_api.h"
@@ -675,6 +677,21 @@ class ToolboxObjectReadHostView {
     return {lo, hi};
   }
 
+  /// Dataset-scoped topic lookup — disambiguates a topic name that exists on
+  /// several loaded datasets (the name-only lookupTopic cannot). nullopt on miss
+  /// or when the host predates this tail slot.
+  [[nodiscard]] std::optional<ObjectTopicHandle> lookupTopicOnDataset(DatasetId dataset, std::string_view name) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_object_read_host_vtable_t, host_.vtable, lookup_topic_on_dataset)) {
+      return std::nullopt;
+    }
+    ObjectTopicHandle h =
+        host_.vtable->lookup_topic_on_dataset(host_.ctx, static_cast<uint32_t>(dataset), toAbiString(name));
+    if (h.id == 0) {
+      return std::nullopt;
+    }
+    return h;
+  }
+
   [[nodiscard]] const PJ_object_read_host_t& raw() const noexcept {
     return host_;
   }
@@ -1221,6 +1238,50 @@ class ToolboxHostView {
     return okStatus();
   }
 
+  /// Register an object topic on an EXISTING dataset (by DatasetId) — the
+  /// annotation path used to attach objects (e.g. plot markers) to data that
+  /// another source loaded. Idempotent: returns the existing topic's handle if
+  /// one with this name already exists on the dataset, so a producer that
+  /// republishes its whole set just re-resolves the handle each time. Returns
+  /// `unexpected` on older hosts that don't expose the slot.
+  [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopicOnDataset(
+      DatasetId dataset, std::string_view name, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!hasTailSlot(
+            offsetof(PJ_toolbox_host_vtable_t, register_object_topic_on_dataset),
+            host_.vtable->register_object_topic_on_dataset)) {
+      return unexpected("toolbox host does not support object topics on existing datasets (older host)");
+    }
+    ObjectTopicHandle handle{};
+    PJ_error_t err{};
+    if (!host_.vtable->register_object_topic_on_dataset(
+            host_.ctx, static_cast<uint32_t>(dataset), toAbiString(name), toAbiString(metadata_json), &handle, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return handle;
+  }
+
+  /// Bound a topic's retention to the last `max_entries` snapshots (0 = unlimited).
+  /// A producer republishing a whole set under one topic at a sentinel timestamp
+  /// passes 1 so superseded snapshots are evicted instead of accumulating. Returns
+  /// an error on a host that predates this slot.
+  [[nodiscard]] Status setObjectTopicRetention(ObjectTopicHandle topic, uint64_t max_entries) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!hasTailSlot(
+            offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention), host_.vtable->set_object_topic_retention)) {
+      return unexpected("toolbox host does not support object retention (older host)");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_object_topic_retention(host_.ctx, topic, max_entries, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return {};
+  }
+
   [[nodiscard]] const PJ_toolbox_host_t& raw() const noexcept {
     return host_;
   }
@@ -1290,12 +1351,15 @@ class ColorMapRegistryView {
 // DataProcessorsHostView — typed C++ view over PJ_data_processors_host_t
 // ---------------------------------------------------------------------------
 
-/// C++ wrapper around PJ_data_processors_host_t for plugins that create
-/// catalog-resident transform nodes in the host (see the C ABI doc-comment on
-/// PJ_data_processors_host_vtable_t). Empty-constructible; `valid()` tells
-/// whether the host exposed the service. Strings returned by `list()`/
-/// `recipeOf()` are copied into owned values, so they stay valid past the next
-/// vtable call.
+/// C++ wrapper around PJ_data_processors_host_t for plugins that submit WHOLE-SERIES
+/// data processors to the host by data (see the C ABI doc-comment on
+/// PJ_data_processors_host_vtable_t). Empty-constructible; `valid()` tells whether the
+/// host exposed the service. Strings returned by `list()`/`recipeOf()`/`create()` are
+/// copied into owned values, so they stay valid past the next vtable call. One
+/// polymorphic surface serves every `kind` ("transform", "markers"); preview is
+/// `create(..., flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL)` and teardown is `remove(id)`.
+/// `createTransform`/`createEphemeralTransform`/`createMarkers` are thin convenience
+/// shims over `create`.
 class DataProcessorsHostView {
  public:
   DataProcessorsHostView() = default;
@@ -1305,17 +1369,18 @@ class DataProcessorsHostView {
     return host_.vtable != nullptr && host_.ctx != nullptr;
   }
 
-  /// Create or replace (upsert by id) a transform node. `outputs` must be
-  /// non-empty (the host rejects empty output lists). `params_json` is
-  /// forwarded verbatim to the script's create(params).
-  [[nodiscard]] Status createTransform(
-      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
-      std::string_view script, std::string_view params_json) const {
+  /// Create or replace (upsert by id) a data processor of `kind` ("transform" or
+  /// "markers"). `outputs` may be empty for an ephemeral preview (flags &
+  /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s).
+  /// Returns the resolved physical output topic name(s) (owned copies) so the caller
+  /// can read results back through the kind's read surface. `params_json` is forwarded
+  /// verbatim to the script.
+  [[nodiscard]] Expected<std::vector<std::string>> create(
+      std::string_view id, std::string_view kind, std::string_view language, Span<const std::string_view> inputs,
+      Span<const std::string_view> outputs, std::string_view script, std::string_view params_json,
+      uint32_t flags = 0) const {
     if (!valid() || host_.vtable->create_data_processor == nullptr) {
       return unexpected("data processors host is not bound");
-    }
-    if (outputs.empty()) {
-      return unexpected("data processors transform requires at least one output topic");
     }
     std::vector<PJ_string_view_t> in_abi;
     in_abi.reserve(inputs.size());
@@ -1328,15 +1393,79 @@ class DataProcessorsHostView {
       out_abi.push_back(toAbiString(name));
     }
     PJ_error_t err{};
+    // Convert the immutable scalar args once — they are identical across the (rare)
+    // count-then-fill retry below.
+    const PJ_string_view_t id_abi = toAbiString(id);
+    const PJ_string_view_t kind_abi = toAbiString(kind);
+    const PJ_string_view_t language_abi = toAbiString(language);
+    const PJ_string_view_t script_abi = toAbiString(script);
+    const PJ_string_view_t params_abi = toAbiString(params_json);
+    // The resolved sink name(s) are filled on the SAME upsert call. Pre-size to the
+    // caller's output count (the host resolves exactly that many for non-empty
+    // outputs); for an auto-named ephemeral preview reserve headroom and grow once if
+    // the host resolved more than fit — a re-upsert with identical args is idempotent.
+    uint64_t capacity = out_abi.empty() ? 8 : out_abi.size();
+    std::vector<PJ_string_view_t> resolved(capacity);
+    uint64_t count = 0;
     if (!host_.vtable->create_data_processor(
-            host_.ctx, toAbiString(id), in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
-            toAbiString(script), toAbiString(params_json), &err)) {
+            host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
+            script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
       return unexpected(errorToString(err));
+    }
+    if (count > capacity) {
+      resolved.assign(count, PJ_string_view_t{});
+      if (!host_.vtable->create_data_processor(
+              host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
+              script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
+        return unexpected(errorToString(err));
+      }
+    }
+    std::vector<std::string> topics;
+    topics.reserve(count);
+    for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
+      topics.emplace_back(toStringView(resolved[i]));
+    }
+    return topics;
+  }
+
+  /// Convenience: create a kind="transform" node (DerivedEngine timeseries). `outputs`
+  /// must be non-empty. Discards the resolved topic names (the caller supplied them);
+  /// use create() directly if you need them back.
+  [[nodiscard]] Status createTransform(
+      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
+      std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
+    if (outputs.empty()) {
+      return unexpected("data processors transform requires at least one output topic");
+    }
+    auto resolved = create(id, "transform", "luau", inputs, outputs, script, params_json, flags);
+    if (!resolved) {
+      return unexpected(resolved.error());
     }
     return okStatus();
   }
 
-  /// Remove a previously created node by id.
+  /// Convenience: create an EPHEMERAL kind="transform" node for live preview — never
+  /// persisted or catalogued. Call remove() with the same id on cancel/close.
+  [[nodiscard]] Status createEphemeralTransform(
+      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
+      std::string_view script, std::string_view params_json) const {
+    return createTransform(id, inputs, outputs, script, params_json, PJ_DATA_PROCESSOR_FLAG_EPHEMERAL);
+  }
+
+  /// Convenience: create a kind="markers" node writing the single `output_marker_topic`
+  /// key (kGlobalMarkerTopic or markerSeriesKey). Pass
+  /// flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL for a live preview (output may be left empty
+  /// to let the host name the preview topic). Returns the resolved object topic(s).
+  [[nodiscard]] Expected<std::vector<std::string>> createMarkers(
+      std::string_view id, Span<const std::string_view> inputs, std::string_view output_marker_topic,
+      std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
+    std::array<std::string_view, 1> outs{output_marker_topic};
+    Span<const std::string_view> out_span =
+        output_marker_topic.empty() ? Span<const std::string_view>{} : Span<const std::string_view>(outs.data(), 1);
+    return create(id, "markers", "luau", inputs, out_span, script, params_json, flags);
+  }
+
+  /// Remove a previously created node by id (persistent or ephemeral preview).
   [[nodiscard]] Status remove(std::string_view id) const {
     if (!valid() || host_.vtable->remove_data_processor == nullptr) {
       return unexpected("data processors host is not bound");
@@ -1348,7 +1477,7 @@ class DataProcessorsHostView {
     return okStatus();
   }
 
-  /// Enumerate the ids of this plugin's live processors (owned copies).
+  /// Enumerate the ids of this plugin's live (non-ephemeral) nodes (owned copies).
   [[nodiscard]] Expected<std::vector<std::string>> list() const {
     if (!valid() || host_.vtable->list_data_processor_ids == nullptr) {
       return unexpected("data processors host is not bound");
@@ -1385,52 +1514,20 @@ class DataProcessorsHostView {
     return std::string(toStringView(recipe));
   }
 
-  /// Create an EPHEMERAL transform node for live preview. Identical to
-  /// createTransform but the node is never persisted or catalogued.
-  /// Call remove() with the same id on cancel/close to tear it down.
-  /// Returns an error if the host does not support this slot (SDK < 0.12.0).
-  [[nodiscard]] Status createEphemeralTransform(
-      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
-      std::string_view script, std::string_view params_json) const {
-    if (!valid() ||
-        !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_ephemeral)) {
-      return unexpected("host does not support ephemeral transforms (SDK < 0.12.0)");
-    }
-    if (outputs.empty()) {
-      return unexpected("data processors transform requires at least one output topic");
-    }
-    std::vector<PJ_string_view_t> in_abi;
-    in_abi.reserve(inputs.size());
-    for (const auto& name : inputs) {
-      in_abi.push_back(toAbiString(name));
-    }
-    std::vector<PJ_string_view_t> out_abi;
-    out_abi.reserve(outputs.size());
-    for (const auto& name : outputs) {
-      out_abi.push_back(toAbiString(name));
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->create_data_processor_ephemeral(
-            host_.ctx, toAbiString(id), in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
-            toAbiString(script), toAbiString(params_json), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
-
-  /// Validate a transform script without installing anything. `language` selects
-  /// the backend ("luau" today; "python" reserved). Returns ok if the script
-  /// compiles; otherwise the host's error message (ready for a semaphore / error
-  /// box). Compilation-only — it does not run the script over data. Errors if the
-  /// host predates this slot (SDK < 0.12.0) or the language is unknown.
+  /// Validate a script WITHOUT installing anything: compile + module-load only (no
+  /// inputs, no run, no side effects) for the given `kind`. Cheap enough to drive a
+  /// live red/green editor semaphore. Runtime/empty-output errors are NOT caught here —
+  /// use an ephemeral create for that. `language` selects the backend ("luau" today).
+  /// Errors if the host predates this slot or the language/kind is unknown.
   [[nodiscard]] Status validateScript(
-      std::string_view script, std::string_view language, std::string_view params_json = "{}") const {
+      std::string_view kind, std::string_view language, std::string_view script,
+      std::string_view params_json = "{}") const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, validate_data_processor_script)) {
-      return unexpected("host does not support script validation (SDK < 0.12.0)");
+      return unexpected("host does not support script validation");
     }
     PJ_error_t err{};
     if (!host_.vtable->validate_data_processor_script(
-            host_.ctx, toAbiString(script), toAbiString(language), toAbiString(params_json), &err)) {
+            host_.ctx, toAbiString(kind), toAbiString(language), toAbiString(script), toAbiString(params_json), &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();

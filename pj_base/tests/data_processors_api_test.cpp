@@ -15,27 +15,42 @@
 namespace PJ {
 namespace {
 
-// Fake host: records the last create/remove call and serves list/config from
-// host-owned storage (so the borrowed-string lifetime contract can be tested).
+// Fake host for the UNIFIED pj.data_processors.v1 service: records the last
+// create/remove/validate call and serves list/config from host-owned storage (so the
+// borrowed-string lifetime contract can be tested). create_data_processor resolves
+// output sink names — echoing provided outputs, or an auto-named topic when outputs is
+// empty (ephemeral preview).
 struct FakeDataProcessorsHost {
   bool create_called = false;
   bool create_should_fail = false;
   std::string last_id;
+  std::string last_kind;
+  std::string last_language;
   std::vector<std::string> last_inputs;
   std::vector<std::string> last_outputs;
   std::string last_script;
   std::string last_params;
+  uint32_t last_flags = 0;
 
   std::string removed_id;
 
   std::vector<std::string> stored_ids;  // host storage the listed views point into
   std::string recipe_storage;           // host storage the recipe view points into
+
+  std::vector<std::string> resolved_storage;                   // host storage out_topics point into
+  std::string auto_topic = "__markers__/__preview__/anomaly";  // host-named ephemeral sink
+
+  bool validate_called = false;
+  bool validate_should_fail = false;
+  std::string last_validate_kind;
+  std::string last_validate_script;
 };
 
 bool dpCreate(
-    void* ctx, PJ_string_view_t id, const PJ_string_view_t* inputs, uint64_t input_count,
-    const PJ_string_view_t* outputs, uint64_t output_count, PJ_string_view_t script, PJ_string_view_t params_json,
-    PJ_error_t* out_error) noexcept {
+    void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t language, const PJ_string_view_t* inputs,
+    uint64_t input_count, const PJ_string_view_t* outputs, uint64_t output_count, PJ_string_view_t script,
+    PJ_string_view_t params_json, uint32_t flags, PJ_string_view_t* out_topics, uint64_t out_topics_capacity,
+    uint64_t* out_topics_count, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<FakeDataProcessorsHost*>(ctx);
   if (self->create_should_fail) {
     if (out_error != nullptr) {
@@ -45,6 +60,8 @@ bool dpCreate(
   }
   self->create_called = true;
   self->last_id = std::string(sdk::toStringView(id));
+  self->last_kind = std::string(sdk::toStringView(kind));
+  self->last_language = std::string(sdk::toStringView(language));
   self->last_inputs.clear();
   for (uint64_t i = 0; i < input_count; ++i) {
     self->last_inputs.emplace_back(sdk::toStringView(inputs[i]));
@@ -55,6 +72,26 @@ bool dpCreate(
   }
   self->last_script = std::string(sdk::toStringView(script));
   self->last_params = std::string(sdk::toStringView(params_json));
+  self->last_flags = flags;
+
+  // Resolve sink names: echo provided outputs, else host-named (ephemeral preview).
+  self->resolved_storage.clear();
+  if (output_count > 0) {
+    for (uint64_t i = 0; i < output_count; ++i) {
+      self->resolved_storage.emplace_back(sdk::toStringView(outputs[i]));
+    }
+  } else {
+    self->resolved_storage.push_back(self->auto_topic);
+  }
+  if (out_topics_count != nullptr) {
+    *out_topics_count = self->resolved_storage.size();
+  }
+  if (out_topics != nullptr) {
+    const uint64_t n = std::min<uint64_t>(out_topics_capacity, self->resolved_storage.size());
+    for (uint64_t i = 0; i < n; ++i) {
+      out_topics[i] = sdk::toAbiString(self->resolved_storage[i]);
+    }
+  }
   return true;
 }
 
@@ -80,6 +117,22 @@ bool dpConfig(
   return true;
 }
 
+bool dpValidate(
+    void* ctx, PJ_string_view_t kind, PJ_string_view_t /*language*/, PJ_string_view_t script,
+    PJ_string_view_t /*params_json*/, PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<FakeDataProcessorsHost*>(ctx);
+  self->validate_called = true;
+  self->last_validate_kind = std::string(sdk::toStringView(kind));
+  self->last_validate_script = std::string(sdk::toStringView(script));
+  if (self->validate_should_fail) {
+    if (out_error != nullptr) {
+      sdk::fillError(out_error, 1, "data_processors", "syntax boom");
+    }
+    return false;
+  }
+  return true;
+}
+
 PJ_data_processors_host_vtable_t makeVtable() {
   return PJ_data_processors_host_vtable_t{
       .protocol_version = 1,
@@ -88,10 +141,13 @@ PJ_data_processors_host_vtable_t makeVtable() {
       .remove_data_processor = dpRemove,
       .list_data_processor_ids = dpList,
       .data_processor_config = dpConfig,
+      .validate_data_processor_script = dpValidate,
   };
 }
 
-TEST(DataProcessorsApiTest, CreateForwardsAllArgsIntact) {
+// --- Unified create() + kind="transform" shim ------------------------------------
+
+TEST(DataProcessorsApiTest, CreateTransformForwardsAllArgsIntact) {
   FakeDataProcessorsHost host;
   const auto vtable = makeVtable();
   sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
@@ -105,6 +161,9 @@ TEST(DataProcessorsApiTest, CreateForwardsAllArgsIntact) {
   ASSERT_TRUE(status) << status.error();
   EXPECT_TRUE(host.create_called);
   EXPECT_EQ(host.last_id, "quat_rpy");
+  EXPECT_EQ(host.last_kind, "transform");
+  EXPECT_EQ(host.last_language, "luau");
+  EXPECT_EQ(host.last_flags, 0u);
   ASSERT_EQ(host.last_inputs.size(), 2u);
   EXPECT_EQ(host.last_inputs[0], "pose/orientation/x");
   EXPECT_EQ(host.last_inputs[1], "pose/orientation/y");
@@ -115,18 +174,81 @@ TEST(DataProcessorsApiTest, CreateForwardsAllArgsIntact) {
   EXPECT_EQ(host.last_params, R"({"window":10})");
 }
 
+// --- kind="markers" via create() and the createMarkers shim ----------------------
+
+TEST(DataProcessorsApiTest, CreateMarkersForwardsKindAndReturnsResolvedTopics) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  const std::string_view inputs[] = {"imu/accel/x", "imu/accel/y"};
+  const std::string_view outputs[] = {"/anomaly/region"};
+  auto topics = view.create(
+      "vib_detect", "markers", "luau", PJ::Span<const std::string_view>(inputs),
+      PJ::Span<const std::string_view>(outputs), "createPointMarker(0, 1)", R"({"threshold":3.0})");
+
+  ASSERT_TRUE(topics) << topics.error();
+  EXPECT_TRUE(host.create_called);
+  EXPECT_EQ(host.last_id, "vib_detect");
+  EXPECT_EQ(host.last_kind, "markers");
+  EXPECT_EQ(host.last_language, "luau");
+  ASSERT_EQ(host.last_inputs.size(), 2u);
+  EXPECT_EQ(host.last_inputs[0], "imu/accel/x");
+  ASSERT_EQ(host.last_outputs.size(), 1u);
+  EXPECT_EQ(host.last_outputs[0], "/anomaly/region");
+  EXPECT_EQ(host.last_params, R"({"threshold":3.0})");
+  EXPECT_EQ(host.last_flags, 0u);
+  ASSERT_EQ(topics->size(), 1u);
+  EXPECT_EQ((*topics)[0], "/anomaly/region");
+}
+
+// Ephemeral preview: no outputs supplied + EPHEMERAL flag → host auto-names the sink
+// and returns it. The returned name is an owned copy (survives host mutation).
+TEST(DataProcessorsApiTest, EphemeralMarkerPreviewAutoNamesAndReturnsTopic) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  const std::string_view inputs[] = {"in"};
+  auto topics = view.createMarkers(
+      "anomaly/__preview__", PJ::Span<const std::string_view>(inputs), /*output_marker_topic=*/"",
+      "createPointMarker(0.0)", "{}", PJ_DATA_PROCESSOR_FLAG_EPHEMERAL);
+
+  ASSERT_TRUE(topics) << topics.error();
+  EXPECT_EQ(host.last_kind, "markers");
+  EXPECT_EQ(host.last_flags, PJ_DATA_PROCESSOR_FLAG_EPHEMERAL);
+  EXPECT_TRUE(host.last_outputs.empty());
+  ASSERT_EQ(topics->size(), 1u);
+  const std::string expected = host.auto_topic;
+  host.auto_topic = "CLOBBERED";  // owned copy survives
+  EXPECT_EQ((*topics)[0], expected);
+}
+
+// createEphemeralTransform shim sets kind="transform" + the EPHEMERAL flag.
+TEST(DataProcessorsApiTest, EphemeralTransformSetsFlag) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  const std::string_view outputs[] = {"preview/out"};
+  auto status = view.createEphemeralTransform(
+      "preview", PJ::Span<const std::string_view>{}, PJ::Span<const std::string_view>(outputs), "s", "{}");
+
+  ASSERT_TRUE(status) << status.error();
+  EXPECT_EQ(host.last_kind, "transform");
+  EXPECT_EQ(host.last_flags, PJ_DATA_PROCESSOR_FLAG_EPHEMERAL);
+}
+
 TEST(DataProcessorsApiTest, CreateFailureSurfacesError) {
   FakeDataProcessorsHost host;
   host.create_should_fail = true;
   const auto vtable = makeVtable();
   sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
 
-  const std::string_view outputs[] = {"out"};
-  auto status = view.createTransform(
-      "x", PJ::Span<const std::string_view>{}, PJ::Span<const std::string_view>(outputs), "s", "{}");
+  auto topics = view.createMarkers("x", PJ::Span<const std::string_view>{}, "__global__", "s", "{}");
 
-  EXPECT_FALSE(status);
-  EXPECT_NE(status.error().find("create boom"), std::string::npos);
+  EXPECT_FALSE(topics);
+  EXPECT_NE(topics.error().find("create boom"), std::string::npos);
   EXPECT_FALSE(host.create_called);
 }
 
@@ -158,7 +280,7 @@ TEST(DataProcessorsApiTest, ListCountThenFillReturnsOwnedCopies) {
 
 TEST(DataProcessorsApiTest, RecipeOfCopiesBorrowedJson) {
   FakeDataProcessorsHost host;
-  host.recipe_storage = R"({"inputs":["a"],"outputs":["b"],"params":{}})";
+  host.recipe_storage = R"({"kind":"markers","inputs":["a"],"outputs":["__global__"],"params":{}})";
   const auto vtable = makeVtable();
   sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
 
@@ -183,10 +305,10 @@ TEST(DataProcessorsApiTest, UnboundViewReportsNotBound) {
   EXPECT_NE(status.error().find("not bound"), std::string::npos);
 }
 
-// The view fails fast on an empty output list: this service creates NAMED catalog
-// topics (transforms), so >= 1 output is mandatory. The guard lives in the view so
-// a misuse never reaches the vtable (the host enforces it authoritatively too).
-TEST(DataProcessorsApiTest, CreateRejectsEmptyOutputs) {
+// The createTransform shim fails fast on an empty output list: a "transform" creates
+// NAMED catalog topics, so >= 1 output is mandatory. The guard lives in the view so a
+// misuse never reaches the vtable (the host enforces it authoritatively too).
+TEST(DataProcessorsApiTest, CreateTransformRejectsEmptyOutputs) {
   FakeDataProcessorsHost host;
   const auto vtable = makeVtable();
   sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
@@ -215,13 +337,37 @@ TEST(DataProcessorsApiTest, BinarySafePayloadRoundTrips) {
   ASSERT_EQ(blob.size(), 10u);
 
   const std::string_view outputs[] = {"spectrum"};
-  auto status = view.createTransform(
-      "fft", PJ::Span<const std::string_view>{}, PJ::Span<const std::string_view>(outputs),
+  auto topics = view.create(
+      "fft", "transform", "luau", PJ::Span<const std::string_view>{}, PJ::Span<const std::string_view>(outputs),
       std::string_view(blob.data(), blob.size()), "{}");
 
-  ASSERT_TRUE(status) << status.error();
+  ASSERT_TRUE(topics) << topics.error();
   EXPECT_EQ(host.last_script.size(), blob.size());  // not truncated at the first NUL
   EXPECT_EQ(host.last_script, blob);
+}
+
+// validate_data_processor_script forwards kind + script and reports success; a compile
+// failure surfaces the host's error message (drives the editor red/green semaphore).
+TEST(DataProcessorsApiTest, ValidateForwardsKindAndSucceeds) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  ASSERT_TRUE(view.validateScript("markers", "luau", "createPointMarker(0.0)"));
+  EXPECT_TRUE(host.validate_called);
+  EXPECT_EQ(host.last_validate_kind, "markers");
+  EXPECT_EQ(host.last_validate_script, "createPointMarker(0.0)");
+}
+
+TEST(DataProcessorsApiTest, ValidateFailureSurfacesError) {
+  FakeDataProcessorsHost host;
+  host.validate_should_fail = true;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  auto status = view.validateScript("markers", "luau", "this is not lua");
+  EXPECT_FALSE(status);
+  EXPECT_NE(status.error().find("syntax boom"), std::string::npos);
 }
 
 }  // namespace
