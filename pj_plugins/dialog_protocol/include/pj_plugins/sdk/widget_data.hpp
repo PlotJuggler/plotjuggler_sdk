@@ -274,6 +274,18 @@ class WidgetData {
     return *this;
   }
 
+  /// Render column `column` of a QTableWidget as an exclusive radio-button group:
+  /// one QRadioButton per row, only one on at a time. `checked_row` is the row
+  /// whose radio is selected (-1 for none). The cells in `column` carry the radio
+  /// instead of text. Clicking a radio fires onTableRadioSelected(name, row).
+  /// Re-send on every build to keep the checked row in sync.
+  WidgetData& setTableRadioColumn(std::string_view name, int column, int checked_row) {
+    auto& e = entry(name);
+    e["radio_column"] = column;
+    e["radio_checked_row"] = checked_row;
+    return *this;
+  }
+
   // --- Chart (QFrame used as chart container) ---
 
   /// Set chart series data on a QFrame widget. The host creates or updates a Qwt
@@ -610,6 +622,27 @@ class WidgetData {
   /// the main dialog resumes. The sub-dialog is read-only (no plugin events).
   WidgetData& requestSubDialog(std::string_view ui_xml) {
     data_["__request_sub_dialog"] = nlohmann::json{{"ui", ui_xml}};
+    return *this;
+  }
+
+  /// Request that the host open an INTERACTIVE sub-panel with the given UI XML.
+  /// Unlike requestSubDialog (a one-shot modal that only harvests inputs on OK),
+  /// the sub-panel is a live, non-blocking child: its widget events flow back to
+  /// the plugin through the normal handlers (onTextChanged / onSelectionChanged /
+  /// onItemDoubleClicked / onClicked, keyed by the sub-panel widgets' objectNames),
+  /// and the plugin keeps pushing WidgetData to it every tick (so previews/lists
+  /// update live). The host emits a synthetic onClicked("subPanelClosed") when the
+  /// user dismisses it. Send closeSubPanel() to dismiss it programmatically.
+  /// Only one sub-panel is open at a time; re-requesting while one is open is ignored.
+  WidgetData& requestSubPanel(std::string_view ui_xml) {
+    data_["__request_sub_panel"] = nlohmann::json{{"ui", ui_xml}};
+    return *this;
+  }
+
+  /// Request that the host close the interactive sub-panel opened by requestSubPanel
+  /// (e.g. after the user picked an item). No-op if none is open.
+  WidgetData& closeSubPanel() {
+    data_["__request_sub_panel_close"] = true;
     return *this;
   }
 

@@ -75,6 +75,7 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setTableRows(name, vector<vector<string>>)` | Set row data |
 | `setSelectedRows(name, vector<int>)` | Set selected row indices |
 | `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) |
+| `setTableRadioColumn(name, column, checked_row)` | Render `column` as an exclusive radio group; `checked_row` is selected (-1 = none). Fires `onTableRadioSelected`. |
 
 ### QFrame Chart Container
 
@@ -152,8 +153,9 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onClicked(name)` | QPushButton | (no payload) |
 | `onFileSelected(name, path)` | QPushButton (file picker or save-file picker) | Selected file path |
 | `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path |
-| `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts |
+| `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts (table: column-0 text) |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
+| `onTableRadioSelected(name, row)` | QTableWidget radio column | Row whose radio was clicked (see `setTableRadioColumn`) |
 | `onCodeChanged(name, code)` | QPlainTextEdit code editor | Edited code |
 | `onCodeChangedWithCursor(name, code, cursor)` | QPlainTextEdit code editor | Edited code + caret offset (`cursor < 0` when no opt-in / not reported); defaults to `onCodeChanged` |
 | `onItemsDropped(name, items)` | Any widget with `setDropTarget` | Dropped item labels |

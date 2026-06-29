@@ -112,6 +112,15 @@ class WidgetDataView {
     return result;
   }
 
+  /// Column to render as an exclusive radio-button group (see setTableRadioColumn).
+  [[nodiscard]] std::optional<int> tableRadioColumn(std::string_view name) const {
+    return getInt(name, "radio_column");
+  }
+  /// Row whose radio is checked in the radio column (-1 = none).
+  [[nodiscard]] std::optional<int> tableRadioCheckedRow(std::string_view name) const {
+    return getInt(name, "radio_checked_row");
+  }
+
   [[nodiscard]] std::optional<std::vector<int>> selectedRows(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
@@ -532,6 +541,27 @@ class WidgetDataView {
       return std::nullopt;
     }
     return ui_it->get<std::string>();
+  }
+
+  /// Returns the interactive sub-panel UI XML if requestSubPanel was called, or
+  /// nullopt. The sub-panel is live (events flow back to the plugin); see
+  /// WidgetData::requestSubPanel. Observed by PanelEngine.
+  [[nodiscard]] std::optional<std::string> subPanelUi() const {
+    auto it = data_.find("__request_sub_panel");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto ui_it = it->find("ui");
+    if (ui_it == it->end() || !ui_it->is_string()) {
+      return std::nullopt;
+    }
+    return ui_it->get<std::string>();
+  }
+
+  /// True if WidgetData::closeSubPanel was called (dismiss the interactive sub-panel).
+  [[nodiscard]] bool subPanelClose() const {
+    auto it = data_.find("__request_sub_panel_close");
+    return it != data_.end() && it->is_boolean() && it->get<bool>();
   }
 
   /// Returns the close-reason string if WidgetData::requestClose was called, or

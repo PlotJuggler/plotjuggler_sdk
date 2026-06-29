@@ -68,6 +68,12 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// QTableWidget: a radio button in the table's radio column was selected
+  /// (see WidgetData::setTableRadioColumn). `row` is the newly-checked row.
+  virtual bool onTableRadioSelected(std::string_view /*widget_name*/, int /*row*/) {
+    return false;
+  }
+
   virtual bool onCodeChanged(std::string_view /*widget_name*/, std::string_view /*code*/) {
     return false;
   }
@@ -167,6 +173,9 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.headerSection()) {
       return onHeaderClicked(widget_name, *v);
+    }
+    if (auto v = event.tableRadioRow()) {
+      return onTableRadioSelected(widget_name, *v);
     }
     // value: try int first, then double
     if (auto v = event.valueInt()) {

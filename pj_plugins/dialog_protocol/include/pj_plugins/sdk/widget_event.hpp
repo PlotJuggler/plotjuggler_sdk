@@ -102,6 +102,11 @@ class WidgetEvent {
     return getInt("header_section");
   }
 
+  /// QTableWidget: a radio button in the radio column was selected (row index)
+  std::optional<int> tableRadioRow() const {
+    return getInt("table_radio_row");
+  }
+
   /// Code editor: code changed
   std::optional<std::string> codeChanged() const {
     return getString("code_changed");
