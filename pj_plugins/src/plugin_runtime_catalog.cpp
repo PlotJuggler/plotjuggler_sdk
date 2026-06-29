@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 
 #include "pj_base/data_source_protocol.h"
@@ -60,14 +61,52 @@ std::vector<const PluginT*> constPtrs(const std::vector<PluginT>& plugins, uint6
 
 PluginRuntimeCatalog::PluginRuntimeCatalog(
     std::filesystem::path plugin_dir, DiagnosticSink sink, std::string diagnostic_source)
-    : plugin_dir_(std::move(plugin_dir)), sink_(std::move(sink)), diagnostic_source_(std::move(diagnostic_source)) {}
+    : sink_(std::move(sink)), diagnostic_source_(std::move(diagnostic_source)) {
+  if (!plugin_dir.empty()) {
+    plugin_dirs_.push_back(std::move(plugin_dir));
+  }
+}
 
 void PluginRuntimeCatalog::setPluginDir(std::filesystem::path plugin_dir) {
-  plugin_dir_ = std::move(plugin_dir);
+  plugin_dirs_.clear();
+  if (!plugin_dir.empty()) {
+    plugin_dirs_.push_back(std::move(plugin_dir));
+  }
+}
+
+void PluginRuntimeCatalog::setPluginDirs(std::vector<std::filesystem::path> plugin_dirs) {
+  plugin_dirs_ = std::move(plugin_dirs);
 }
 
 void PluginRuntimeCatalog::setDiagnosticSink(DiagnosticSink sink) {
   sink_ = std::move(sink);
+}
+
+std::vector<PluginDescriptor> PluginRuntimeCatalog::collectDeduplicatedPlugins() const {
+  std::vector<PluginDescriptor> winners;
+  std::unordered_set<std::string> seen_ids;
+  for (const std::filesystem::path& dir : plugin_dirs_) {
+    if (dir.empty()) {
+      continue;
+    }
+    auto scan = scanPluginDsos(dir);
+    if (!scan) {
+      report(DiagnosticLevel::kError, {}, scan.error());
+      continue;
+    }
+    reportScanDiagnostics(*scan);
+    for (const PluginDescriptor& descriptor : scan->plugins) {
+      if (!seen_ids.insert(descriptor.id).second) {
+        report(
+            DiagnosticLevel::kInfo, descriptor.id,
+            descriptor.dso_path.string() + ": ignoring duplicate plugin id \"" + descriptor.id +
+                "\" (already provided by a higher-priority folder)");
+        continue;
+      }
+      winners.push_back(descriptor);
+    }
+  }
+  return winners;
 }
 
 void PluginRuntimeCatalog::scanDirectory() {
@@ -75,14 +114,7 @@ void PluginRuntimeCatalog::scanDirectory() {
   message_parsers_.clear();
   toolbox_plugins_.clear();
 
-  auto scan = scanPluginDsos(plugin_dir_);
-  if (!scan) {
-    report(DiagnosticLevel::kError, {}, scan.error());
-    return;
-  }
-  reportScanDiagnostics(*scan);
-
-  for (const PluginDescriptor& descriptor : scan->plugins) {
+  for (const PluginDescriptor& descriptor : collectDeduplicatedPlugins()) {
     if (!loadAndRegister(descriptor)) {
       report(
           DiagnosticLevel::kError, descriptor.id,
@@ -92,16 +124,11 @@ void PluginRuntimeCatalog::scanDirectory() {
 }
 
 bool PluginRuntimeCatalog::reload() {
-  auto scan = scanPluginDsos(plugin_dir_);
-  if (!scan) {
-    report(DiagnosticLevel::kError, {}, scan.error());
-    return false;
-  }
-  reportScanDiagnostics(*scan);
+  const std::vector<PluginDescriptor> plugins = collectDeduplicatedPlugins();
 
   std::vector<std::string> on_disk;
-  on_disk.reserve(scan->plugins.size());
-  for (const PluginDescriptor& descriptor : scan->plugins) {
+  on_disk.reserve(plugins.size());
+  for (const PluginDescriptor& descriptor : plugins) {
     on_disk.push_back(canonicalPath(descriptor.dso_path));
   }
 
@@ -121,7 +148,7 @@ bool PluginRuntimeCatalog::reload() {
   drop_missing(message_parsers_, "MessageParser");
   drop_missing(toolbox_plugins_, "Toolbox");
 
-  for (const PluginDescriptor& descriptor : scan->plugins) {
+  for (const PluginDescriptor& descriptor : plugins) {
     const std::string path = canonicalPath(descriptor.dso_path);
     const auto disk_mtime = safeMtime(descriptor.dso_path);
     if (disk_mtime == std::filesystem::file_time_type{}) {
