@@ -56,7 +56,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setButtonIcon(name, svg_data)` | Set an inline SVG icon (custom/one-off) |
 | `setButtonIconNamed(name, icon_id)` | Set a button icon by id, resolved from the host's themed icon set (consistent tinting; unknown id → no icon) |
 | `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) |
-| `setFilePicker(name, text, filter, title)` | Turn into file picker |
+| `setFilePicker(name, text, filter, title)` | Turn into an **open** file picker (existing file) |
+| `setSaveFilePicker(name, text, filter, title, default_suffix="")` | Turn into a **save-as** file picker (navigate + type a new filename); reports via `onFileSelected`. `default_suffix` is appended when the typed name has none |
 | `setFolderPicker(name, text, title)` | Turn into folder picker |
 
 ### QListWidget
@@ -81,7 +82,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | Method | Description |
 |--------|-------------|
 | `setChartSeries(name, vector<ChartSeries>)` | Create/update chart series inside a QFrame |
-| `clearChart(name)` | Remove chart series |
+| `setChartMarkers(name, vector<ChartMarker>)` | Overlay markers (events/regions/value-bands) on top of the series |
+| `clearChart(name)` | Remove chart series and markers |
 | `setChartZoomEnabled(name, bool)` | Enable chart zoom/pan events |
 
 ### QPlainTextEdit
@@ -106,6 +108,18 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 |--------|-------------|
 | `setOkEnabled(bool)` | Enable/disable OK button (targets `"buttonBox"`) |
 | `setOkEnabled(name, bool)` | Enable/disable OK button (custom name) |
+
+### MarkerTimeline (custom widget, class name `MarkerTimeline`)
+
+Editable multi-marker strip: any number of resizable Region spans + single-point Event marks, each draggable.
+
+| Method | Description |
+|--------|-------------|
+| `setMarkerTimelineBounds(name, min, max)` | Integer step domain marks live in (set before the marks) |
+| `setMarkerTimelineMarks(name, marks)` | Replace the whole `std::vector<TimelineMark>` set (last-writer-wins; empty clears) |
+| `setMarkerTimelineTimeSpan(name, min_ns, max_ns)` | Map the step domain onto `[min_ns, max_ns]` for hover labels (`0,0` → raw steps) |
+
+`TimelineMark{int id; bool region; int start; int end;}` — `region=false` is a point Event (`end` ignored).
 
 ### Generic (any widget)
 
@@ -137,7 +151,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onValueChanged(name, int)` | QSpinBox | New integer value |
 | `onValueChanged(name, double)` | QDoubleSpinBox | New double value |
 | `onClicked(name)` | QPushButton | (no payload) |
-| `onFileSelected(name, path)` | QPushButton (file picker) | Selected file path |
+| `onFileSelected(name, path)` | QPushButton (file picker or save-file picker) | Selected file path |
 | `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path |
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts (table: column-0 text) |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
@@ -146,6 +160,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onCodeChangedWithCursor(name, code, cursor)` | QPlainTextEdit code editor | Edited code + caret offset (`cursor < 0` when no opt-in / not reported); defaults to `onCodeChanged` |
 | `onItemsDropped(name, items)` | Any widget with `setDropTarget` | Dropped item labels |
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
+| `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
 
 ---

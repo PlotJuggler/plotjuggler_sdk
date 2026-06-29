@@ -19,6 +19,7 @@ using PJ::sdk::name;
 using PJ::sdk::OccupancyGrid;
 using PJ::sdk::OccupancyGridUpdate;
 using PJ::sdk::parseBuiltinObjectType;
+using PJ::sdk::PlotMarkers;
 using PJ::sdk::PointCloud;
 using PJ::sdk::PosesInFrame;
 using PJ::sdk::RobotDescription;
@@ -45,6 +46,7 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{Log{}}), BuiltinObjectType::kLog);
   EXPECT_EQ(typeOf(BuiltinObject{PosesInFrame{}}), BuiltinObjectType::kPosesInFrame);
   EXPECT_EQ(typeOf(BuiltinObject{VoxelGrid{}}), BuiltinObjectType::kVoxelGrid);
+  EXPECT_EQ(typeOf(BuiltinObject{PlotMarkers{}}), BuiltinObjectType::kPlotMarkers);
 }
 
 TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
@@ -66,6 +68,7 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kLog,
            BuiltinObjectType::kPosesInFrame,
            BuiltinObjectType::kVoxelGrid,
+           BuiltinObjectType::kPlotMarkers,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);
