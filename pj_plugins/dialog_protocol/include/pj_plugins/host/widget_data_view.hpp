@@ -322,6 +322,11 @@ class WidgetDataView {
     return it != w->end() && it->is_string() && it->get<std::string>() == "save_file_picker";
   }
 
+  /// The extension appended to a save-file picker's typed name when it has none.
+  [[nodiscard]] std::optional<std::string> saveFilePickerDefaultSuffix(std::string_view name) const {
+    return getString(name, "default_suffix");
+  }
+
   [[nodiscard]] std::optional<std::string> filePickerFilter(std::string_view name) const {
     return getString(name, "filter");
   }

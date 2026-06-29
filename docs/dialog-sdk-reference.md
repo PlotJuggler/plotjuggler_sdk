@@ -57,7 +57,7 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setButtonIconNamed(name, icon_id)` | Set a button icon by id, resolved from the host's themed icon set (consistent tinting; unknown id → no icon) |
 | `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) |
 | `setFilePicker(name, text, filter, title)` | Turn into an **open** file picker (existing file) |
-| `setSaveFilePicker(name, text, filter, title)` | Turn into a **save-as** file picker (navigate + type a new filename); reports via `onFileSelected` |
+| `setSaveFilePicker(name, text, filter, title, default_suffix="")` | Turn into a **save-as** file picker (navigate + type a new filename); reports via `onFileSelected`. `default_suffix` is appended when the typed name has none |
 | `setFolderPicker(name, text, title)` | Turn into folder picker |
 
 ### QListWidget
@@ -150,7 +150,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onValueChanged(name, int)` | QSpinBox | New integer value |
 | `onValueChanged(name, double)` | QDoubleSpinBox | New double value |
 | `onClicked(name)` | QPushButton | (no payload) |
-| `onFileSelected(name, path)` | QPushButton (file picker) | Selected file path |
+| `onFileSelected(name, path)` | QPushButton (file picker or save-file picker) | Selected file path |
 | `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path |
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |

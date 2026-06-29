@@ -354,6 +354,7 @@ work like polling a server for available topics.
 | QDoubleSpinBox | `setValue(double)` | `onValueChanged(name, double)` |
 | QPushButton | `setButtonText` | `onClicked(name)` |
 | QPushButton (file picker) | `setFilePicker` | `onFileSelected(name, path)` |
+| QPushButton (save-file picker) | `setSaveFilePicker` | `onFileSelected(name, path)` |
 | QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
@@ -451,6 +452,28 @@ wd.setFilePicker("cert_btn", "Select Certificate...",
 bool onFileSelected(std::string_view name, std::string_view path) override {
   if (name == "cert_btn") {
     cert_path_ = std::string(path);
+    return true;
+  }
+  return false;
+}
+```
+
+### Save-file picker
+
+For an *export* button, use `setSaveFilePicker()` instead. The host shows a
+native save dialog (the user types a name and picks a location) and delivers the
+chosen path through the same `onFileSelected()` handler — distinguish the button
+by its `objectName`. The optional `default_suffix` is appended when the typed
+name carries no extension.
+
+```cpp
+// In widget_data():
+wd.setSaveFilePicker("export_btn", "Export...", "*.json", "Export Library", "json");
+
+// Same handler as the file picker, routed by name:
+bool onFileSelected(std::string_view name, std::string_view path) override {
+  if (name == "export_btn") {
+    writeLibraryTo(path);
     return true;
   }
   return false;

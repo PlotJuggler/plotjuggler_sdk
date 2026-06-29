@@ -418,14 +418,17 @@ class WidgetData {
   /// (which opens an existing file), this lets the user navigate to a directory AND
   /// type a new filename, so a not-yet-existing rule/config file can be created. The
   /// chosen path is reported through the same onFileSelected(name, path) event — the
-  /// plugin distinguishes save from open by the widget name.
+  /// plugin distinguishes save from open by the widget name. `default_suffix` is
+  /// appended when the typed name carries no extension.
   WidgetData& setSaveFilePicker(
-      std::string_view name, std::string_view button_text, std::string_view filter, std::string_view title) {
+      std::string_view name, std::string_view button_text, std::string_view filter, std::string_view title,
+      std::string_view default_suffix = "") {
     auto& e = entry(name);
     e["button_text"] = button_text;
     e["action"] = "save_file_picker";
     e["filter"] = filter;
     e["title"] = title;
+    e["default_suffix"] = default_suffix;
     return *this;
   }
 
