@@ -20,6 +20,10 @@ option(PJ_INSTALL_SDK "Install plotjuggler_sdk CMake package (base/plugin_sdk/pl
 option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
 option(PJ_ENABLE_ABI_CHECK "Enable abidiff-based ABI drift gate (requires libabigail)" OFF)
+# -Werror is on for our own builds/CI, but must be off for third-party
+# packaging (Conan Center, distro builds) where an unpredicted compiler version
+# may emit new warnings that would otherwise fail an otherwise-fine build.
+option(PJ_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (-Werror / /WX)" ON)
 
 # ---------------------------------------------------------------------------
 # Compiler warnings
@@ -29,18 +33,22 @@ if(MSVC)
   # /Zc:preprocessor: conformant preprocessor — required so __VA_ARGS__ inside
   # nested macro calls (e.g. PJ_DIALOG_PLUGIN's overload-by-arg-count idiom)
   # splits on commas instead of being passed as a single token.
-  set(PJ_WARNING_FLAGS /W4 /WX /permissive- /Zc:preprocessor)
+  set(PJ_WARNING_FLAGS /W4 /permissive- /Zc:preprocessor)
+  if(PJ_WARNINGS_AS_ERRORS)
+    list(APPEND PJ_WARNING_FLAGS /WX)
+  endif()
 else()
   set(PJ_WARNING_FLAGS
-    -Wall -Wextra -Werror -Wshadow -Wnon-virtual-dtor -Wold-style-cast
+    -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Wold-style-cast
     -Wcast-qual -Wconversion -Woverloaded-virtual -Wpedantic
   )
-  # On wasm32 size_t is 32-bit, so many uint64_t->size_t conversions trip
-  # -Wshorten-64-to-32 / -Wsign-conversion that never fire on 64-bit desktop
-  # (see SUSTAINABILITY.md T0-3). Keep the warnings visible but don't fail the
-  # build for the WASM prototype. TODO: make the ABI/size types 32-bit-clean.
-  if(EMSCRIPTEN)
-    list(APPEND PJ_WARNING_FLAGS -Wno-error)
+  # -Werror only when explicitly requested (default ON, see option above) and
+  # never on wasm32: there size_t is 32-bit, so many uint64_t->size_t
+  # conversions trip -Wshorten-64-to-32 / -Wsign-conversion that never fire on
+  # 64-bit desktop (see SUSTAINABILITY.md T0-3). TODO: make the ABI/size types
+  # 32-bit-clean, then wasm can opt back into -Werror.
+  if(PJ_WARNINGS_AS_ERRORS AND NOT EMSCRIPTEN)
+    list(APPEND PJ_WARNING_FLAGS -Werror)
   endif()
 endif()
 

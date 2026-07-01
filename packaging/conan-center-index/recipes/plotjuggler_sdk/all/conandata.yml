@@ -1,0 +1,10 @@
+sources:
+  # NOTE: this sha256 is for the v0.14.0 tag *as it exists today*, which does
+  # NOT yet contain the PJ_WARNINGS_AS_ERRORS gate (added on the conan-center
+  # branch). Before submitting to Conan Center, cut a release tag that includes
+  # that CMake change and replace both the version (here + config.yml) and the
+  # sha256 below. Recompute with:
+  #   curl -sL https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/vX.Y.Z.tar.gz | sha256sum
+  "0.14.0":
+    url: "https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.14.0.tar.gz"
+    sha256: "49aecfdc5ddf46930e56a5ee4843a1435c3fb8e47b1a4ab0289fd9646dc1986d"
