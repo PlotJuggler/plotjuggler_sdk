@@ -2,12 +2,11 @@ import os
 
 from conan import ConanFile
 from conan.tools.build import can_run
-from conan.tools.cmake import CMake, cmake_layout
+from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 
 
 class TestPackageConan(ConanFile):
     settings = "os", "arch", "compiler", "build_type"
-    generators = "CMakeDeps", "CMakeToolchain"
     test_type = "explicit"
 
     def requirements(self):
@@ -15,6 +14,16 @@ class TestPackageConan(ConanFile):
 
     def layout(self):
         cmake_layout(self)
+
+    def generate(self):
+        # Mirror the tested package's with_host option: the plugin_host
+        # component only exists when the package was built with it, so the
+        # consumer must only link plotjuggler_sdk::plugin_host in that case.
+        with_host = bool(self.dependencies["plotjuggler_sdk"].options.with_host)
+        tc = CMakeToolchain(self)
+        tc.cache_variables["TEST_WITH_HOST"] = with_host
+        tc.generate()
+        CMakeDeps(self).generate()
 
     def build(self):
         cmake = CMake(self)
