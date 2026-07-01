@@ -5,6 +5,7 @@ from conan.errors import ConanInvalidConfiguration
 from conan.tools.build import check_min_cppstd
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.files import copy, get, rm
+from conan.tools.microsoft import is_msvc
 from conan.tools.scm import Version
 
 required_conan_version = ">=2.1"
@@ -23,16 +24,18 @@ class PlotjugglerSdkConan(ConanFile):
     settings = "os", "arch", "compiler", "build_type"
 
     # The SDK ships as static archives only (host loaders + vocabulary types);
-    # there is intentionally no `shared` option. `with_host` lets consumers that
-    # only author plugins skip the host-side loader libraries. `assert_throws`
-    # switches PJ_ASSERT from assert() to throwing.
+    # there is intentionally no `shared` option. There is deliberately no `fPIC`
+    # option either: PlotJuggler plugins are shared objects and the host loaders
+    # dlopen() them, so every target hardcodes POSITION_INDEPENDENT_CODE ON
+    # upstream. Exposing fPIC would be a no-op knob (CCI requires options to have
+    # an observable effect). `with_host` lets consumers that only author plugins
+    # skip the host-side loader libraries. `assert_throws` switches PJ_ASSERT
+    # from assert() to throwing.
     options = {
-        "fPIC": [True, False],
         "with_host": [True, False],
         "assert_throws": [True, False],
     }
     default_options = {
-        "fPIC": True,
         "with_host": True,
         "assert_throws": False,
     }
@@ -52,10 +55,6 @@ class PlotjugglerSdkConan(ConanFile):
             "msvc": "192",
             "Visual Studio": "16",
         }
-
-    def config_options(self):
-        if self.settings.os == "Windows":
-            del self.options.fPIC
 
     def layout(self):
         cmake_layout(self, src_folder="src")
@@ -154,6 +153,13 @@ class PlotjugglerSdkConan(ConanFile):
         base.set_property("cmake_target_name", "plotjuggler_sdk::base")
         base.libs = ["pj_base"]
         base.includedirs = ["include"]
+        # assert.hpp is a header that branches on PJ_ASSERT_THROWS at the
+        # *consumer's* compile time; upstream exports it PUBLIC on pj_base. The
+        # define must ride along or consumers get assert() while the archive was
+        # built to throw (and vice versa). Propagated to plugin_sdk/plugin_host
+        # via their `requires = ["base", ...]`.
+        if self.options.assert_throws:
+            base.defines = ["PJ_ASSERT_THROWS"]
 
         # --- plugin_sdk (umbrella INTERFACE: pj_base + nlohmann_json) ---
         sdk = self.cpp_info.components["plugin_sdk"]
@@ -161,6 +167,12 @@ class PlotjugglerSdkConan(ConanFile):
         sdk.libs = []  # INTERFACE only
         sdk.includedirs = ["include"]
         sdk.requires = ["base", "nlohmann_json::nlohmann_json"]
+        # PJ_DIALOG_PLUGIN's variadic-overload macro needs conformant __VA_ARGS__
+        # expansion on MSVC. Upstream sets this as an INTERFACE option on the
+        # dialog SDK target, which is dropped when we strip the project's CMake
+        # targets — restore it here so MSVC dialog-plugin authors still compile.
+        if is_msvc(self):
+            sdk.cxxflags = ["/Zc:preprocessor"]
 
         # --- plugin_host (umbrella linking every host-side loader) ---
         if self.options.with_host:
