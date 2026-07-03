@@ -83,6 +83,7 @@ constexpr uint64_t kCapabilityDirectIngest = PJ_DATA_SOURCE_CAPABILITY_DIRECT_IN
 constexpr uint64_t kCapabilityDelegatedIngest = PJ_DATA_SOURCE_CAPABILITY_DELEGATED_INGEST;
 constexpr uint64_t kCapabilitySupportsPause = PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE;
 constexpr uint64_t kCapabilityHasDialog = PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG;
+constexpr uint64_t kCapabilityPerTopicPause = PJ_DATA_SOURCE_CAPABILITY_PER_TOPIC_PAUSE;
 
 using ParserBindingHandle = PJ_parser_binding_handle_t;
 
@@ -93,6 +94,18 @@ struct ParserBindingRequest {
   std::string_view type_name;
   Span<const uint8_t> schema;
   std::string_view parser_config_json;
+};
+
+/// A topic the source can stream but has not (necessarily) subscribed. Handed
+/// to the host via DataSourceRuntimeHostView::notifyAvailableTopics so the host
+/// lists and a-priori classifies it (via classify_schema) with no data flowing.
+/// Mirrors ParserBindingRequest's parser inputs so the host can classify and,
+/// later, bind identically. `schema` may be empty when the encoding needs none.
+struct AvailableTopic {
+  std::string_view topic_name;
+  std::string_view parser_encoding;
+  std::string_view type_name;
+  Span<const uint8_t> schema;
 };
 
 /// Convert a PJ_error_t populated by the ABI into a descriptive std::string.
@@ -211,6 +224,37 @@ class DataSourceRuntimeHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Advertise the full set of topics this source can stream but has not
+  /// (necessarily) subscribed, so the host can list and a-priori classify them
+  /// with no data flowing. Each call replaces the previously-advertised set for
+  /// this source. Returns an error if the host does not expose the tail slot
+  /// (old host) — callers may treat that as "advertisement unsupported" and
+  /// fall back to legacy behavior. Call on the poll/stream thread.
+  [[nodiscard]] Status notifyAvailableTopics(Span<const AvailableTopic> topics) const {
+    if (!valid()) {
+      return unexpected(std::string("runtime host is not bound"));
+    }
+    if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, notify_available_topics)) {
+      return unexpected(std::string("runtime host does not expose notify_available_topics"));
+    }
+    std::vector<PJ_available_topic_t> raw;
+    raw.reserve(topics.size());
+    for (const auto& t : topics) {
+      raw.push_back(
+          PJ_available_topic_t{
+              .topic_name = sdk::toAbiString(t.topic_name),
+              .parser_encoding = sdk::toAbiString(t.parser_encoding),
+              .type_name = sdk::toAbiString(t.type_name),
+              .schema = sdk::toAbiBytes(t.schema),
+          });
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->notify_available_topics(host_.ctx, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
   /// Push a message via a deferred FetchMessageData callable. The DataSource
