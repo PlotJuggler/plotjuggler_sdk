@@ -79,23 +79,7 @@ class FileSourceBase : public DataSourcePluginBase {
   /// writeHost() and runtimeHost() are available.
   virtual Status importData() = 0;
 
-  Status start() final {
-    state_ = DataSourceState::kStarting;
-    runtimeHost().notifyState(state_);
-
-    auto status = importData();
-    runtimeHost().progressFinish();  // safe no-op if no progress was started
-    if (!status) {
-      state_ = DataSourceState::kFailed;
-      runtimeHost().notifyState(state_);
-      return status;
-    }
-
-    state_ = DataSourceState::kStopped;
-    runtimeHost().notifyState(state_);
-    runtimeHost().requestStop(DataSourceState::kStopped, "import complete");
-    return okStatus();
-  }
+  Status start() final;
 
   void stop() final {
     state_ = DataSourceState::kStopped;
@@ -143,31 +127,13 @@ class StreamSourceBase : public DataSourcePluginBase {
   /// Must be idempotent.
   virtual void onStop() = 0;
 
-  Status start() final {
-    state_ = DataSourceState::kStarting;
-    runtimeHost().notifyState(state_);
-
-    auto status = onStart();
-    if (!status) {
-      state_ = DataSourceState::kFailed;
-      runtimeHost().notifyState(state_);
-      return status;
-    }
-
-    state_ = DataSourceState::kRunning;
-    runtimeHost().notifyState(state_);
-    return okStatus();
-  }
+  Status start() final;
 
   Status poll() final {
     return onPoll();
   }
 
-  void stop() final {
-    onStop();
-    state_ = DataSourceState::kStopped;
-    runtimeHost().notifyState(state_);
-  }
+  void stop() final;
 
   DataSourceState currentState() const final {
     return state_;

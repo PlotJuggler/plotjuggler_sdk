@@ -67,26 +67,7 @@ class DataSourcePluginBase {
   /// unused; hosts without an ObjectStore bound simply don't register it.
   /// Override to request additional services (e.g. colormap), or to relax
   /// the default requirement.
-  virtual Status bind(sdk::ServiceRegistry services) {
-    auto write = services.require<sdk::SourceWriteHostService>();
-    if (!write) {
-      return unexpected(std::move(write).error());
-    }
-    write_host_view_ = *write;
-
-    auto runtime = services.require<sdk::DataSourceRuntimeHostService>();
-    if (!runtime) {
-      return unexpected(std::move(runtime).error());
-    }
-    runtime_host_view_ = *runtime;
-
-    if (auto object_write = services.get<sdk::SourceObjectWriteHostService>()) {
-      object_write_host_view_ = *object_write;
-    }
-
-    service_registry_ = services;
-    return okStatus();
-  }
+  virtual Status bind(sdk::ServiceRegistry services);
 
   /// Serialize plugin configuration to JSON. Default returns "{}".
   virtual std::string saveConfig() const {
@@ -223,9 +204,6 @@ class DataSourcePluginBase {
 };
 
 }  // namespace PJ
-
-// Out-of-line trampoline definitions — separated to keep the public API header concise.
-#include "pj_base/sdk/detail/data_source_trampolines.hpp"
 
 /**
  * Export a DataSourcePluginBase subclass as a shared-library plugin.

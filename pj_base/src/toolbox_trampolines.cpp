@@ -1,23 +1,23 @@
 /**
- * @file detail/toolbox_trampolines.hpp
- * @brief Out-of-line C ABI trampolines for ToolboxPluginBase (v4).
+ * @file toolbox_trampolines.cpp
+ * @brief C ABI trampolines for ToolboxPluginBase (v4).
  *
  * Every trampoline is `noexcept` — the v4 vtable requires it.
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
+#include "pj_base/sdk/toolbox_plugin_base.hpp"
 
 namespace PJ {
 
-inline void ToolboxPluginBase::trampoline_destroy(void* ctx) noexcept {
+void ToolboxPluginBase::trampoline_destroy(void* ctx) noexcept {
   try {
     delete static_cast<ToolboxPluginBase*>(ctx);
   } catch (...) {}
 }
 
-inline uint64_t ToolboxPluginBase::trampoline_capabilities(void* ctx) noexcept {
+uint64_t ToolboxPluginBase::trampoline_capabilities(void* ctx) noexcept {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
     return self->capabilities();
@@ -26,8 +26,7 @@ inline uint64_t ToolboxPluginBase::trampoline_capabilities(void* ctx) noexcept {
   }
 }
 
-inline bool ToolboxPluginBase::trampoline_bind(
-    void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept {
+bool ToolboxPluginBase::trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
     auto status = self->bind(sdk::ServiceRegistry(registry));
@@ -45,8 +44,7 @@ inline bool ToolboxPluginBase::trampoline_bind(
   }
 }
 
-inline bool ToolboxPluginBase::trampoline_save_config(
-    void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept {
+bool ToolboxPluginBase::trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   if (out_json == nullptr) {
     self->storeError(out_error, 2, "plugin", "save_config called with null out_json");
@@ -66,7 +64,7 @@ inline bool ToolboxPluginBase::trampoline_save_config(
   }
 }
 
-inline bool ToolboxPluginBase::trampoline_load_config(
+bool ToolboxPluginBase::trampoline_load_config(
     void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
@@ -87,7 +85,7 @@ inline bool ToolboxPluginBase::trampoline_load_config(
   }
 }
 
-inline PJ_borrowed_dialog_t ToolboxPluginBase::trampoline_get_dialog(void* ctx) noexcept {
+PJ_borrowed_dialog_t ToolboxPluginBase::trampoline_get_dialog(void* ctx) noexcept {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
     return self->getDialog();
@@ -96,14 +94,14 @@ inline PJ_borrowed_dialog_t ToolboxPluginBase::trampoline_get_dialog(void* ctx) 
   }
 }
 
-inline void ToolboxPluginBase::trampoline_on_data_changed(void* ctx) noexcept {
+void ToolboxPluginBase::trampoline_on_data_changed(void* ctx) noexcept {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
     self->onDataChanged();
   } catch (...) {}
 }
 
-inline const void* ToolboxPluginBase::trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept {
+const void* ToolboxPluginBase::trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
     std::string_view sv = id.data == nullptr ? std::string_view{} : std::string_view(id.data, id.size);

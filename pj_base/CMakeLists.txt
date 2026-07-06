@@ -21,6 +21,12 @@ add_library(pj_base STATIC
   src/builtin/voxel_grid_codec.cpp
   src/number_parse.cpp
   src/type_tree.cpp
+  src/data_source_host_views.cpp
+  src/data_source_patterns.cpp
+  src/data_source_plugin_base.cpp
+  src/data_source_trampolines.cpp
+  src/toolbox_plugin_base.cpp
+  src/toolbox_trampolines.cpp
 )
 target_include_directories(pj_base PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
