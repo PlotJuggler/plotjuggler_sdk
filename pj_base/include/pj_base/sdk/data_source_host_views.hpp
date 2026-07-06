@@ -97,6 +97,19 @@ struct ParserBindingRequest {
   std::string_view parser_config_json;
 };
 
+/// Marshal a ParserBindingRequest into its ABI counterpart. The returned
+/// struct borrows @p request's string/byte views — valid only as long as
+/// @p request is.
+[[nodiscard]] inline PJ_parser_binding_request_t toAbiParserBindingRequest(const ParserBindingRequest& request) {
+  return PJ_parser_binding_request_t{
+      .topic_name = sdk::toAbiString(request.topic_name),
+      .parser_encoding = sdk::toAbiString(request.parser_encoding),
+      .type_name = sdk::toAbiString(request.type_name),
+      .schema = sdk::toAbiBytes(request.schema),
+      .parser_config_json = sdk::toAbiString(request.parser_config_json),
+  };
+}
+
 /// Convert a PJ_error_t populated by the ABI into a descriptive std::string.
 /// Safe to call on a zero-initialized error (returns "unspecified error").
 [[nodiscard]] inline std::string errorToString(const PJ_error_t& err) {
@@ -199,13 +212,7 @@ class DataSourceRuntimeHostView {
       return unexpected("runtime host is not bound");
     }
 
-    PJ_parser_binding_request_t raw{
-        .topic_name = sdk::toAbiString(request.topic_name),
-        .parser_encoding = sdk::toAbiString(request.parser_encoding),
-        .type_name = sdk::toAbiString(request.type_name),
-        .schema = sdk::toAbiBytes(request.schema),
-        .parser_config_json = sdk::toAbiString(request.parser_config_json),
-    };
+    PJ_parser_binding_request_t raw = toAbiParserBindingRequest(request);
 
     ParserBindingHandle handle{};
     PJ_error_t err{};
@@ -327,14 +334,7 @@ class DataSourceRuntimeHostView {
     std::vector<PJ_parser_binding_request_t> raw;
     raw.reserve(topics.size());
     for (const auto& t : topics) {
-      raw.push_back(
-          PJ_parser_binding_request_t{
-              .topic_name = sdk::toAbiString(t.topic_name),
-              .parser_encoding = sdk::toAbiString(t.parser_encoding),
-              .type_name = sdk::toAbiString(t.type_name),
-              .schema = sdk::toAbiBytes(t.schema),
-              .parser_config_json = sdk::toAbiString(t.parser_config_json),
-          });
+      raw.push_back(toAbiParserBindingRequest(t));
     }
     PJ_error_t err{};
     if (!host_.vtable->set_advertised_topics(host_.ctx, raw.data(), raw.size(), &err)) {
