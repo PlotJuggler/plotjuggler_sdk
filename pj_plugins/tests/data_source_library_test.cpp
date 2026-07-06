@@ -9,6 +9,8 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/service_traits.hpp"
@@ -111,6 +113,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .show_message_box = rhShowMessageBox,
       .list_available_encodings = rhListEncodings,
       .push_message = rhPushMessage,
+      .notify_available_topics = nullptr,
   };
   static const PJ_data_source_runtime_host_vtable_t no_enc_vt = {
       .protocol_version = 1,
@@ -126,6 +129,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .show_message_box = rhShowMessageBox,
       .list_available_encodings = nullptr,
       .push_message = rhPushMessage,
+      .notify_available_topics = nullptr,
   };
   return PJ_data_source_runtime_host_t{
       .ctx = reinterpret_cast<void*>(0x2),
@@ -153,6 +157,19 @@ TEST(DataSourceLibraryTest, LoadsSharedPluginAndDrivesInstance) {
   EXPECT_EQ(handle.currentState(), PJ::DataSourceState::kRunning);
   handle.stop();
   EXPECT_EQ(handle.currentState(), PJ::DataSourceState::kStopped);
+}
+
+TEST(DataSourceLibraryTest, SetActiveTopicsIsNoOpWithoutExtension) {
+  auto library = PJ::DataSourceLibrary::load(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH);
+  ASSERT_TRUE(library) << library.error();
+  auto handle = library->createHandle();
+  ASSERT_TRUE(handle.valid());
+
+  // The stock mock does not expose "pj.topic_subscription.v1"; the host wrapper
+  // must degrade to a successful no-op rather than erroring.
+  const std::vector<std::string_view> names{"/a", "/b"};
+  auto status = handle.setActiveTopics(PJ::Span<const std::string_view>(names.data(), names.size()));
+  EXPECT_TRUE(status) << (status ? "" : status.error());
 }
 
 TEST(DataSourceLibraryTest, RejectsMissingRequiredVtableSlot) {

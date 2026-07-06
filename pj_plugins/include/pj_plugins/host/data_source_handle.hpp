@@ -23,10 +23,12 @@
 #pragma once
 
 #include <cassert>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
@@ -176,6 +178,32 @@ class DataSourceHandle {
     }
     PJ_string_view_t sv{id.data(), id.size()};
     return vt_->get_plugin_extension(ctx_, sv);
+  }
+
+  /// Push the full set of topics the source should keep actively subscribed
+  /// (the "pj.topic_subscription.v1" extension). The plugin diffs this against
+  /// its current subscriptions; topics not in the set are paused. Safe no-op
+  /// (returns success) when the plugin does not expose the extension — i.e. it
+  /// lacks PJ_DATA_SOURCE_CAPABILITY_PER_TOPIC_PAUSE or is an older `.so`.
+  /// The plugin instance ctx is passed (NOT the extension pointer).
+  [[nodiscard]] Status setActiveTopics(Span<const std::string_view> topic_names) const {
+    const auto* ext =
+        static_cast<const PJ_topic_subscription_v1_t*>(getPluginExtension(PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1));
+    if (ext == nullptr ||
+        ext->struct_size < offsetof(PJ_topic_subscription_v1_t, set_active_topics) + sizeof(ext->set_active_topics) ||
+        ext->set_active_topics == nullptr) {
+      return okStatus();
+    }
+    std::vector<PJ_string_view_t> raw;
+    raw.reserve(topic_names.size());
+    for (const std::string_view name : topic_names) {
+      raw.push_back(PJ_string_view_t{name.data(), name.size()});
+    }
+    PJ_error_t err{};
+    if (!ext->set_active_topics(ctx_, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
   [[nodiscard]] const PJ_data_source_vtable_t* vtable() const {

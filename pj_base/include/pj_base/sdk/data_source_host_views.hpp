@@ -83,6 +83,7 @@ constexpr uint64_t kCapabilityDirectIngest = PJ_DATA_SOURCE_CAPABILITY_DIRECT_IN
 constexpr uint64_t kCapabilityDelegatedIngest = PJ_DATA_SOURCE_CAPABILITY_DELEGATED_INGEST;
 constexpr uint64_t kCapabilitySupportsPause = PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE;
 constexpr uint64_t kCapabilityHasDialog = PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG;
+constexpr uint64_t kCapabilityPerTopicPause = PJ_DATA_SOURCE_CAPABILITY_PER_TOPIC_PAUSE;
 
 using ParserBindingHandle = PJ_parser_binding_handle_t;
 
@@ -95,22 +96,21 @@ struct ParserBindingRequest {
   std::string_view parser_config_json;
 };
 
+/// A topic the source can stream but has not (necessarily) subscribed. Handed
+/// to the host via DataSourceRuntimeHostView::notifyAvailableTopics so the host
+/// lists and a-priori classifies it (via classify_schema) with no data flowing.
+/// Mirrors ParserBindingRequest's parser inputs so the host can classify and,
+/// later, bind identically. `schema` may be empty when the encoding needs none.
+struct AvailableTopic {
+  std::string_view topic_name;
+  std::string_view parser_encoding;
+  std::string_view type_name;
+  Span<const uint8_t> schema;
+};
+
 /// Convert a PJ_error_t populated by the ABI into a descriptive std::string.
 /// Safe to call on a zero-initialized error (returns "unspecified error").
-[[nodiscard]] inline std::string errorToString(const PJ_error_t& err) {
-  std::string out;
-  if (err.domain[0] != '\0') {
-    out.append(err.domain);
-    out.append(": ");
-  }
-  if (err.message[0] != '\0') {
-    out.append(err.message);
-  }
-  if (out.empty()) {
-    out = "unspecified error";
-  }
-  return out;
-}
+[[nodiscard]] std::string errorToString(const PJ_error_t& err);
 
 class ParserIngestHostView;
 
@@ -142,16 +142,7 @@ class DataSourceRuntimeHostView {
   }
 
   /// Begin a progress bar. Returns an error if the host refused to start it.
-  [[nodiscard]] Status progressStart(std::string_view label, uint64_t total_steps, bool cancellable) const {
-    if (!valid() || host_.vtable->progress_start == nullptr) {
-      return unexpected("runtime host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->progress_start(host_.ctx, sdk::toAbiString(label), total_steps, cancellable, &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
+  [[nodiscard]] Status progressStart(std::string_view label, uint64_t total_steps, bool cancellable) const;
 
   /// Advance progress. Returns true to continue, false if the user cancelled.
   [[nodiscard]] bool progressUpdate(uint64_t current_step) const {
@@ -192,26 +183,15 @@ class DataSourceRuntimeHostView {
   }
 
   /// Bind (or look up) a parser for delegated ingest.
-  [[nodiscard]] Expected<ParserBindingHandle> ensureParserBinding(const ParserBindingRequest& request) const {
-    if (!valid() || host_.vtable->ensure_parser_binding == nullptr) {
-      return unexpected("runtime host is not bound");
-    }
+  [[nodiscard]] Expected<ParserBindingHandle> ensureParserBinding(const ParserBindingRequest& request) const;
 
-    PJ_parser_binding_request_t raw{
-        .topic_name = sdk::toAbiString(request.topic_name),
-        .parser_encoding = sdk::toAbiString(request.parser_encoding),
-        .type_name = sdk::toAbiString(request.type_name),
-        .schema = sdk::toAbiBytes(request.schema),
-        .parser_config_json = sdk::toAbiString(request.parser_config_json),
-    };
-
-    ParserBindingHandle handle{};
-    PJ_error_t err{};
-    if (!host_.vtable->ensure_parser_binding(host_.ctx, &raw, &handle, &err)) {
-      return unexpected(errorToString(err));
-    }
-    return handle;
-  }
+  /// Advertise the full set of topics this source can stream but has not
+  /// (necessarily) subscribed, so the host can list and a-priori classify them
+  /// with no data flowing. Each call replaces the previously-advertised set for
+  /// this source. Returns an error if the host does not expose the tail slot
+  /// (old host) — callers may treat that as "advertisement unsupported" and
+  /// fall back to legacy behavior. Call on the poll/stream thread.
+  [[nodiscard]] Status notifyAvailableTopics(Span<const AvailableTopic> topics) const;
 
   /// Push a message via a deferred FetchMessageData callable. The DataSource
   /// hands the host a callable that produces the payload bytes when invoked.
@@ -309,21 +289,7 @@ class DataSourceRuntimeHostView {
    * @return The button clicked, or kOk if the host does not support dialogs.
    */
   [[nodiscard]] MessageBoxButton showMessageBox(
-      MessageBoxType type, std::string_view title, std::string_view message, int buttons = 0) const {
-    if (!valid() || host_.vtable->show_message_box == nullptr) {
-      if (buttons & static_cast<int>(MessageBoxButton::kContinue)) {
-        return MessageBoxButton::kContinue;
-      }
-      if (buttons & static_cast<int>(MessageBoxButton::kYes)) {
-        return MessageBoxButton::kYes;
-      }
-      return MessageBoxButton::kOk;
-    }
-    int result = host_.vtable->show_message_box(
-        host_.ctx, static_cast<PJ_message_box_type_t>(type), sdk::toAbiString(title), sdk::toAbiString(message),
-        buttons == 0 ? PJ_MSG_BTN_OK : buttons);
-    return static_cast<MessageBoxButton>(result);
-  }
+      MessageBoxType type, std::string_view title, std::string_view message, int buttons = 0) const;
 
   void showInfo(std::string_view title, std::string_view message) const {
     (void)showMessageBox(MessageBoxType::kInfo, title, message, static_cast<int>(MessageBoxButton::kOk));

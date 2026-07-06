@@ -131,6 +131,8 @@ enum {
   PJ_DATA_SOURCE_CAPABILITY_DELEGATED_INGEST = 1ull << 3,  /**< Plugin pushes raw bytes for host-side parsing. */
   PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE = 1ull << 4,    /**< pause()/resume() are implemented. */
   PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG = 1ull << 5,        /**< Plugin provides a configuration dialog. */
+  PJ_DATA_SOURCE_CAPABILITY_PER_TOPIC_PAUSE =
+      1ull << 6, /**< Host may pause/resume individual topics via the "pj.topic_subscription.v1" extension. */
 };
 
 /** Opaque handle returned by ensure_parser_binding, used with push_message. */
@@ -201,14 +203,30 @@ typedef struct {
 } PJ_parser_binding_request_t;
 
 /**
+ * A topic the source knows it can stream but has not (necessarily)
+ * subscribed. Handed to the host via notify_available_topics so the host can
+ * list it and classify it a priori (via the parser's classify_schema) with no
+ * data flowing. Carries the same parser inputs as PJ_parser_binding_request_t
+ * so the host can classify and, later, bind identically.
+ */
+typedef struct {
+  PJ_string_view_t topic_name;      /**< Canonical topic name (the host/engine key). */
+  PJ_string_view_t parser_encoding; /**< Encoding name, e.g. "protobuf", "ros2msg". */
+  PJ_string_view_t type_name;       /**< Message type name (encoding-specific). */
+  PJ_bytes_view_t schema;           /**< Optional schema bytes for a-priori classify_schema. */
+} PJ_available_topic_t;
+
+/**
  * DataSource runtime host vtable — control-plane callbacks provided by the
  * host and delivered to the plugin via the service registry under the name
  * `"pj.runtime.v1"`.
  *
  * The plugin calls these to report progress, send diagnostic messages,
  * notify state changes, and (for delegated ingest) bind parsers and push
- * raw message payloads. All calls are made on the thread that called
- * start().
+ * raw message payloads. The per-slot thread tag governs: the host may drive
+ * start()/stop() on one thread and poll() (with its [stream-thread]
+ * callbacks) on another, so a host must treat [stream-thread] callbacks as
+ * arriving off its UI thread and marshal accordingly.
  *
  * Fallible calls take a `PJ_error_t* out_error` which the callee populates
  * on failure. Callers may pass NULL if they don't need the detail.
@@ -327,6 +345,19 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
   bool (*push_message)(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns,
       PJ_message_data_fetcher_t fetch_message_data, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /**
+   * [stream-thread] Advertise the set of topics this source can stream but has
+   * not (necessarily) subscribed. The host lists them (e.g. in the curve tree)
+   * and classifies each a priori via classify_schema, WITHOUT any data
+   * flowing; subscription happens separately (see the "pj.topic_subscription.v1"
+   * plugin extension). Call again to update as topics appear/vanish; each call
+   * is the full current set for this source. The plugin calls this on the
+   * poll/stream thread; the host is responsible for marshaling to its own
+   * thread. Tail slot — readers MUST gate access with PJ_HAS_TAIL_SLOT.
+   */
+  bool (*notify_available_topics)(void* ctx, const PJ_available_topic_t* topics, uint64_t count, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */
@@ -453,6 +484,40 @@ typedef struct PJ_data_source_vtable_t {
 } PJ_data_source_vtable_t;
 /* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
  * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_DATA_SOURCE_MIN_VTABLE_SIZE. */
+
+/**
+ * Reverse-DNS id of the per-topic subscription control extension, queried via
+ * get_plugin_extension. A source advertising PJ_DATA_SOURCE_CAPABILITY_PER_TOPIC_PAUSE
+ * returns a pointer to a PJ_topic_subscription_v1_t for this id; every other
+ * source returns NULL.
+ */
+#define PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1 "pj.topic_subscription.v1"
+
+/**
+ * Host→plugin per-topic subscription control ("pj.topic_subscription.v1").
+ *
+ * The host passes the desired ACTIVE topic set — declarative and complete —
+ * and the plugin diffs it against its current subscriptions, subscribing to
+ * newly-active topics and unsubscribing (pausing) the rest, so no data flows
+ * for a topic that is not being displayed. This is a strict superset control:
+ * an empty set pauses everything.
+ *
+ * The plugin owns this struct; it must stay valid for the plugin instance
+ * lifetime. IMPORTANT: the `ctx` passed to set_active_topics is the plugin
+ * INSTANCE (the host's DataSourceHandle::context()), NOT the extension pointer
+ * returned by get_plugin_extension.
+ */
+typedef struct {
+  uint32_t struct_size; /**< sizeof(PJ_topic_subscription_v1_t) — for forward-compatible growth. */
+  /**
+   * [main-thread] Set the full active-topic set. Entered on the host thread;
+   * the plugin marshals to its own stream thread. Returns false + populates
+   * out_error on failure. Names the source does not recognize are ignored
+   * (not an error).
+   */
+  bool (*set_active_topics)(void* ctx, const PJ_string_view_t* topic_names, uint64_t count, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+} PJ_topic_subscription_v1_t;
 
 /** Signature of the exported entry point: `PJ_get_data_source_vtable`. */
 typedef const PJ_data_source_vtable_t* (*PJ_get_data_source_vtable_fn)(void);
