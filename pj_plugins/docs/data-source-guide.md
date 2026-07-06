@@ -614,6 +614,7 @@ Any state --> failed
 | `kCapabilityDelegatedIngest` | `1 << 3` | Plugin pushes raw bytes for host-side parsing |
 | `kCapabilitySupportsPause` | `1 << 4` | pause()/resume() are implemented |
 | `kCapabilityHasDialog` | `1 << 5` | Plugin provides a configuration dialog |
+| `kCapabilityLazySubscription` | `1 << 6` | Source advertises topics unsubscribed and subscribes per topic on host demand (pj.topic_subscription.v1) |
 
 Combine with bitwise OR.
 

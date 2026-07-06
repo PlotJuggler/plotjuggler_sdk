@@ -38,6 +38,16 @@ recompile (`abidiff` additions only):
   `std::vector<sdk::ColumnSpec>` (base serializes the wire JSON),
   `MessageParserHandle::describeSchemaColumns` host-side.
 
+**UNRELEASED BREAK (in-process C++ parser path).** Adding the
+`describeSchemaColumns` virtual (and `columns_json_buf_` member) to
+`MessageParserPluginBase` changes the class's C++ layout/vtable. The host calls
+`classifySchema`/`parseScalars`/`parseObject` directly on the C++ pointer, so
+parser plugins built against ≤0.14.0 MUST be rebuilt against 0.15.0 — loading a
+stale parser `.so` into a 0.15 host segfaults in `parseObject`. Pure C-vtable
+paths are unaffected. As with the 0.13.0 unification: no public tag ever
+shipped 0.14/0.15, so no released plugin breaks; the first PUBLIC release of
+this line must still be tagged 1.0.0.
+
 ## [0.14.0 and earlier] — previously on branch `feature/plot-markers`, not yet publicly tagged
 
 ### Host service: markers + transforms unified into `pj.data_processors.v1` (UNRELEASED BREAK)

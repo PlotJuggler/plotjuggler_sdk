@@ -339,6 +339,15 @@ target_link_libraries(describe_schema_columns_test PRIVATE
 )
 add_test(NAME describe_schema_columns_test COMMAND describe_schema_columns_test)
 
+# Unit test: DataSourceHandle wrapper over the topic_subscription extension
+# (topicSubscriptionExtension() gating, setActiveTopics() marshalling/errors).
+add_executable(data_source_handle_subscription_test tests/data_source_handle_subscription_test.cpp)
+target_compile_options(data_source_handle_subscription_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(data_source_handle_subscription_test PRIVATE
+  pj_data_source_host pj_base GTest::gtest_main
+)
+add_test(NAME DataSourceHandleSubscriptionTest COMMAND data_source_handle_subscription_test)
+
 # Unit test: ObjectIngestPolicyResolver cascade rules.
 add_executable(object_ingest_policy_test tests/object_ingest_policy_test.cpp)
 target_compile_options(object_ingest_policy_test PRIVATE ${PJ_WARNING_FLAGS})
