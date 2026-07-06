@@ -543,7 +543,7 @@ out_array, err)`:
 ## Builtin-object pipeline (PR #86)
 
 The v4 DataSource runtime host adds a tail slot `push_message`
-(offset 96 in `PJ_data_source_runtime_host_vtable_t`) that takes a
+(offset 88 in `PJ_data_source_runtime_host_vtable_t`) that takes a
 deferred byte-fetch callable instead of bytes:
 
 ```c
@@ -586,3 +586,35 @@ forward compatibility is automatic. Concrete builtins live under
 `ImageAnnotations`, `FrameTransforms`); see `docs/builtin_type.md` for the type
 catalog and `docs/image_annotations_format.md` for the canonical annotation
 wire format.
+
+## Per-topic pause (demand-driven subscription)
+
+`kCapabilityPerTopicPause` (`1 << 6`) lets a multi-topic streaming source
+expose its full topic universe cheaply while only transmitting data for
+topics the host is actually displaying, instead of an all-or-nothing
+whole-source pause. Two independent additions, both `struct_size`/
+`PJ_HAS_TAIL_SLOT`-gated so an old plugin or an old host degrades cleanly:
+
+- **Plugin → host advertise.** A second tail slot on the runtime host,
+  `notify_available_topics(ctx, topics, count, out_error)` (offset 96,
+  growing `sizeof(PJ_data_source_runtime_host_vtable_t)` 96 → 104), carrying
+  `PJ_available_topic_t{topic_name, parser_encoding, type_name, schema}` —
+  the same parser-identifying fields as `PJ_parser_binding_request_t` minus
+  `parser_config_json` (not yet known pre-subscription), so the host can
+  a-priori `classify_schema` every topic with no data flowing. Every call
+  carries the **full current set** (declarative, not a delta), entered from
+  the plugin's poll/stream thread. `DataSourceRuntimeHostView::notifyAvailableTopics`
+  returns an error on a host that lacks the slot, so a new plugin can detect
+  an old host and fall back to subscribing its preselected set at `start()`.
+- **Host → plugin control.** The first stable (`pj.<name>.v1`) instance of
+  the §0a CLAP-style `get_plugin_extension` mechanism:
+  `"pj.topic_subscription.v1"` → `PJ_topic_subscription_v1_t::set_active_topics(ctx,
+  names, count, out_error)`. Also declarative-full-set, entered from the
+  host's GUI thread; the plugin's expected implementation is a mutex-protected
+  latest-wins slot drained on its own poll thread (not a command queue — the
+  host may call it faster than the plugin can act, and only the most recent
+  call matters). `DataSourceHandle::setActiveTopics` is a no-op when the
+  plugin does not expose the extension.
+
+See `docs/data-source-guide.md` → "Per-topic pause (demand-driven
+subscription)" for the plugin-author walkthrough.
