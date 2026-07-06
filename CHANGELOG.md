@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [Unreleased] — on branch `feature/plot-markers`, not yet publicly tagged
+## [Unreleased] — not yet publicly tagged
 
 ### DataSource: per-topic pause/resume — advertise-without-subscribe + demand-driven control (ADDITIVE)
 
@@ -29,7 +29,9 @@ working with no recompile, and a new plugin degrades gracefully on an old host.
   `PJ_DATA_SOURCE_MIN_VTABLE_SIZE` (128) unchanged. `abi/baseline.abi` unchanged
   (additions only).
 
-### Host service: markers + transforms unified into `pj.data_processors.v1` (UNRELEASED BREAK)
+## [0.14.0]
+
+### Host service: markers + transforms unified into `pj.data_processors.v1`
 
 The two whole-series host-driven services were collapsed into ONE contract — Pablo's
 `pj.data_processors.v1` — with a string `kind` discriminator, so a plugin chooses
@@ -55,7 +57,6 @@ so a host that IMPLEMENTS the service (e.g. `DataProcessorsRuntimeHost`) must up
 vtable fill; callers using `DataProcessorsHostView::createTransform` keep working via the
 shim, while `validateScript` call-sites gain a leading `kind` argument (`"transform"`).
 
-**Versioning note.** This is an ABI/API change to a service that merged to `main`. It
-ships as `0.13.0` because no PUBLIC tag has carried `pj.data_processors.v1` yet, so no
-released plugin is broken. **The first public release that carries the unified
-`pj.data_processors.v1` must be tagged `1.0.0`** per the pre-1.0 break rule in `CLAUDE.md`.
+**Versioning note.** This was an ABI/API break to a service that had merged to `main`.
+It shipped as `0.14.0` rather than `1.0.0` because no public tag had ever carried
+`pj.data_processors.v1`, so no released plugin was broken by the change.
