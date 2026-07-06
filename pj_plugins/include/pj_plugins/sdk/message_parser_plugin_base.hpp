@@ -17,6 +17,7 @@
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -30,6 +31,7 @@
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
+#include "pj_base/type_tree.hpp"
 
 namespace PJ {
 namespace sdk {
@@ -60,6 +62,63 @@ struct SchemaHandler {
   /// object so its bytes outlive this call.
   std::function<Expected<ObjectRecord>(Timestamp, PayloadView)> parse_object;
 };
+
+/// One flattened scalar column a parser will emit for a schema, used by
+/// describeSchemaColumns to pre-materialize catalog columns before any
+/// sample exists (lazy-subscription sources). `path` is the flattened leaf
+/// path exactly as parse() will emit it (e.g. "pose.position.x").
+struct ColumnSpec {
+  std::string path;
+  PrimitiveType type = PrimitiveType::kFloat64;
+};
+
+/// Wire name for a PrimitiveType in the describe_schema_columns JSON
+/// manifest ("float64", "int32", ...). kUnspecified maps to "float64" —
+/// the manifest describes concrete columns, never untyped ones.
+[[nodiscard]] constexpr std::string_view primitiveTypeJsonName(PrimitiveType type) noexcept {
+  switch (type) {
+    case PrimitiveType::kFloat32:
+      return "float32";
+    case PrimitiveType::kFloat64:
+      return "float64";
+    case PrimitiveType::kInt8:
+      return "int8";
+    case PrimitiveType::kInt16:
+      return "int16";
+    case PrimitiveType::kInt32:
+      return "int32";
+    case PrimitiveType::kInt64:
+      return "int64";
+    case PrimitiveType::kUint8:
+      return "uint8";
+    case PrimitiveType::kUint16:
+      return "uint16";
+    case PrimitiveType::kUint32:
+      return "uint32";
+    case PrimitiveType::kUint64:
+      return "uint64";
+    case PrimitiveType::kBool:
+      return "bool";
+    case PrimitiveType::kString:
+      return "string";
+    case PrimitiveType::kUnspecified:
+      break;
+  }
+  return "float64";
+}
+
+/// Inverse of primitiveTypeJsonName. Unknown names yield std::nullopt.
+[[nodiscard]] inline std::optional<PrimitiveType> primitiveTypeFromJsonName(std::string_view name) noexcept {
+  for (const auto type :
+       {PrimitiveType::kFloat32, PrimitiveType::kFloat64, PrimitiveType::kInt8, PrimitiveType::kInt16,
+        PrimitiveType::kInt32, PrimitiveType::kInt64, PrimitiveType::kUint8, PrimitiveType::kUint16,
+        PrimitiveType::kUint32, PrimitiveType::kUint64, PrimitiveType::kBool, PrimitiveType::kString}) {
+    if (name == primitiveTypeJsonName(type)) {
+      return type;
+    }
+  }
+  return std::nullopt;
+}
 
 }  // namespace sdk
 
@@ -267,6 +326,23 @@ class MessageParserPluginBase {
     return h->parse_object(timestamp_ns, payload);
   }
 
+  /// Describe the flattened scalar-column manifest for @p type_name:
+  /// exactly the leaf columns parse() will emit, in emission order. Hosts
+  /// use it to pre-create catalog columns for topics with no samples yet
+  /// (lazy-subscription sources). Variable-length array fields MAY be
+  /// omitted (their columns appear on first data). MUST stay consistent
+  /// with parse() — same paths, same order, same types.
+  ///
+  /// Default: unsupported. Parsers that can flatten their schema without a
+  /// payload should override; the base serializes the returned specs into
+  /// the describe_schema_columns wire JSON.
+  virtual Expected<std::vector<sdk::ColumnSpec>> describeSchemaColumns(
+      std::string_view type_name, Span<const uint8_t> schema) const {
+    (void)type_name;
+    (void)schema;
+    return unexpected(std::string("parser does not support column manifests"));
+  }
+
   /// Return a pointer to a static plugin-exposed extension for @p id, or
   /// nullptr if unknown. Default returns nullptr.
   virtual const void* pluginExtension(std::string_view id) {
@@ -294,6 +370,7 @@ class MessageParserPluginBase {
         trampoline_parse,
         trampoline_get_plugin_extension,
         trampoline_classify_schema,
+        trampoline_describe_schema_columns,
     };
     return &vt;
   }
@@ -336,6 +413,7 @@ class MessageParserPluginBase {
   sdk::ParserWriteHostView write_host_view_{PJ_parser_write_host_t{}};
   sdk::ParserObjectWriteHostView object_write_host_view_{};
   std::string config_buf_;
+  std::string columns_json_buf_;
 
   // Schema handler table populated by the plugin via registerSchemaHandler().
   std::unordered_map<std::string, sdk::SchemaHandler> handlers_;
@@ -355,6 +433,9 @@ class MessageParserPluginBase {
   static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
   static bool trampoline_classify_schema(
       void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
+      PJ_error_t* out_error) noexcept;
+  static bool trampoline_describe_schema_columns(
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_string_view_t* out_columns_json,
       PJ_error_t* out_error) noexcept;
 };
 

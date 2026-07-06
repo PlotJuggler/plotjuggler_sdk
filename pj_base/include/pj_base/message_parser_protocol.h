@@ -136,6 +136,35 @@ typedef struct PJ_message_parser_vtable_t {
   bool (*classify_schema)(
       void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
       PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /**
+   * [thread-safe, same thread class as bind_schema] OPTIONAL. The flattened
+   * scalar-column manifest for a schema: exactly the leaf columns parse()
+   * will emit for messages of @p type_name, in emission order, as a JSON
+   * array:
+   *
+   *   [{"path":"pose.position.x","type":"float64"}, ...]
+   *
+   * "type" is one of: "float32","float64","int8","int16","int32","int64",
+   * "uint8","uint16","uint32","uint64","bool","string".
+   *
+   * Hosts use this to pre-create catalog columns for topics that have not
+   * yet produced a sample (lazy-subscription sources). Variable-length
+   * array fields MAY be omitted — their columns then appear on first data.
+   *
+   * MUST be consistent with parse(): a later parse() emitting field N with
+   * a different path or type than manifest entry N is a plugin bug (the
+   * host write path fails loudly on the mismatch).
+   *
+   * The returned view points to plugin-owned storage valid until the next
+   * call to this function on the same ctx. NULL slot or false return means
+   * the parser cannot pre-describe columns for this schema (the topic
+   * appears field-less until first data). Pure-functional contract: no
+   * host side-effects.
+   */
+  bool (*describe_schema_columns)(
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_string_view_t* out_columns_json,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_message_parser_vtable_t;
 /* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
  * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE. */

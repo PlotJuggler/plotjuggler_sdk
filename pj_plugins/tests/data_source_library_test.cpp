@@ -111,6 +111,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .show_message_box = rhShowMessageBox,
       .list_available_encodings = rhListEncodings,
       .push_message = rhPushMessage,
+      .set_advertised_topics = nullptr,
   };
   static const PJ_data_source_runtime_host_vtable_t no_enc_vt = {
       .protocol_version = 1,
@@ -126,6 +127,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .show_message_box = rhShowMessageBox,
       .list_available_encodings = nullptr,
       .push_message = rhPushMessage,
+      .set_advertised_topics = nullptr,
   };
   return PJ_data_source_runtime_host_t{
       .ctx = reinterpret_cast<void*>(0x2),

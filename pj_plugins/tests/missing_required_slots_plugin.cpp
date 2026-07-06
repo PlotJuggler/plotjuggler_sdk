@@ -98,6 +98,7 @@ extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_mes
       .parse = nullptr,
       .get_plugin_extension = extension,
       .classify_schema = nullptr,
+      .describe_schema_columns = nullptr,
   };
   return &vt;
 }

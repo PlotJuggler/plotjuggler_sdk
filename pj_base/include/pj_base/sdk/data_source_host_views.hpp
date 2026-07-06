@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <vector>
 
 #include "pj_base/buffer_anchor.hpp"
 #include "pj_base/data_source_protocol.h"
@@ -83,6 +84,7 @@ constexpr uint64_t kCapabilityDirectIngest = PJ_DATA_SOURCE_CAPABILITY_DIRECT_IN
 constexpr uint64_t kCapabilityDelegatedIngest = PJ_DATA_SOURCE_CAPABILITY_DELEGATED_INGEST;
 constexpr uint64_t kCapabilitySupportsPause = PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE;
 constexpr uint64_t kCapabilityHasDialog = PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG;
+constexpr uint64_t kCapabilityLazySubscription = PJ_DATA_SOURCE_CAPABILITY_LAZY_SUBSCRIPTION;
 
 using ParserBindingHandle = PJ_parser_binding_handle_t;
 
@@ -299,6 +301,43 @@ class DataSourceRuntimeHostView {
 
     PJ_error_t err{};
     if (!host_.vtable->push_message(host_.ctx, handle, host_timestamp_ns, abi_fetch_message_data, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /**
+   * Declarative topic advertise for lazy-subscription sources: report the
+   * FULL set of topics currently available (with parser metadata), without
+   * subscribing any of them. Call again with the full set whenever the
+   * source's topic list changes. See `set_advertised_topics` in
+   * data_source_protocol.h for the reconcile semantics.
+   *
+   * Returns the distinct error "host does not support lazy subscription"
+   * when the host predates the tail slot — plugins use this to fall back
+   * to their eager subscribe-selected behavior on old hosts.
+   */
+  [[nodiscard]] Status setAdvertisedTopics(Span<const ParserBindingRequest> topics) const {
+    if (!valid()) {
+      return unexpected(std::string("runtime host is not bound"));
+    }
+    if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, set_advertised_topics)) {
+      return unexpected(std::string("host does not support lazy subscription"));
+    }
+    std::vector<PJ_parser_binding_request_t> raw;
+    raw.reserve(topics.size());
+    for (const auto& t : topics) {
+      raw.push_back(
+          PJ_parser_binding_request_t{
+              .topic_name = sdk::toAbiString(t.topic_name),
+              .parser_encoding = sdk::toAbiString(t.parser_encoding),
+              .type_name = sdk::toAbiString(t.type_name),
+              .schema = sdk::toAbiBytes(t.schema),
+              .parser_config_json = sdk::toAbiString(t.parser_config_json),
+          });
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_advertised_topics(host_.ctx, raw.data(), raw.size(), &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();

@@ -27,8 +27,10 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "pj_base/data_source_protocol.h"
+#include "pj_base/data_source_topic_subscription.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/sdk/data_source_host_views.hpp"
 
@@ -176,6 +178,43 @@ class DataSourceHandle {
     }
     PJ_string_view_t sv{id.data(), id.size()};
     return vt_->get_plugin_extension(ctx_, sv);
+  }
+
+  /// The "pj.topic_subscription.v1" extension, or nullptr when the plugin
+  /// doesn't offer lazy subscription (no capability, older SDK, or a
+  /// malformed extension struct). Valid for the plugin-instance lifetime.
+  [[nodiscard]] const PJ_topic_subscription_extension_t* topicSubscriptionExtension() const {
+    const void* raw = getPluginExtension(PJ_TOPIC_SUBSCRIPTION_EXTENSION_ID);
+    if (raw == nullptr) {
+      return nullptr;
+    }
+    const auto* ext = static_cast<const PJ_topic_subscription_extension_t*>(raw);
+    constexpr size_t kMinSize =
+        offsetof(PJ_topic_subscription_extension_t, set_active_topics) + sizeof(ext->set_active_topics);
+    if (ext->struct_size < kMinSize || ext->set_active_topics == nullptr) {
+      return nullptr;
+    }
+    return ext;
+  }
+
+  /// Send the full desired-active topic set through the subscription
+  /// extension. MUST be called on the same thread as poll(), serialized
+  /// with poll()/start()/stop() — see data_source_topic_subscription.h.
+  [[nodiscard]] Status setActiveTopics(Span<const std::string> topic_names) {
+    const auto* ext = topicSubscriptionExtension();
+    if (ext == nullptr) {
+      return unexpected(std::string("plugin does not support topic subscription"));
+    }
+    std::vector<PJ_string_view_t> raw;
+    raw.reserve(topic_names.size());
+    for (const auto& name : topic_names) {
+      raw.push_back(PJ_string_view_t{name.data(), name.size()});
+    }
+    PJ_error_t err{};
+    if (!ext->set_active_topics(ctx_, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
   [[nodiscard]] const PJ_data_source_vtable_t* vtable() const {

@@ -436,6 +436,33 @@ Key traits of `StreamSourceBase`:
   override `pause()`/`resume()` from `DataSourcePluginBase` directly and
   add `kCapabilitySupportsPause` to `extraCapabilities()`.
 
+### Lazy per-topic subscription (0.15.0)
+
+A streaming source whose transport supports server/broker-side per-topic
+filtering (DDS, MQTT, Foxglove WS, …) can let the host drive which topics
+are actually subscribed, instead of freezing the selection in the config
+dialog before `start()`:
+
+1. Add `kCapabilityLazySubscription` to `extraCapabilities()`.
+2. In `onStart()` (and whenever the transport's topic list changes), call
+   `runtimeHost().setAdvertisedTopics(requests)` with the FULL set of
+   available topics — same `ParserBindingRequest` metadata you would pass
+   to `ensureParserBinding`, but WITHOUT subscribing anything. If this
+   returns the error "host does not support lazy subscription" (a pre-0.15
+   host), fall back to your eager subscribe-selected behavior.
+3. Override `onActiveTopicsChanged(Span<const std::string_view>)` and
+   reconcile: subscribe topics newly present in the desired set,
+   unsubscribe topics absent from it. Your own config-selected topics act
+   as an always-on floor — the effective subscribed set is the union.
+
+Threading contract: `onActiveTopicsChanged` runs on the same thread as
+`poll()`, strictly serialized with `poll()`/`start()`/`stop()` and only
+between start and stop — so it may touch the same state as `onPoll()`
+without extra locking. The verb is declarative and idempotent: always
+reconcile against the full set, never assume incremental pairs. Advertised
+topics the host never activates must cost you (nearly) nothing — that is
+the point of the feature.
+
 ## Host Services Available to Plugins
 
 Two host bindings are provided before `start()` is called:

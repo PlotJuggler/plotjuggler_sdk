@@ -76,6 +76,7 @@ if(PJ_BUILD_TESTS)
     tests/data_processors_api_test.cpp
     tests/settings_store_host_test.cpp
     tests/data_source_protocol_test.cpp
+    tests/topic_subscription_extension_test.cpp
     # TODO: data_source_plugin_base_test.cpp and
     # message_parser_plugin_base_test.cpp exercised old bind_write_host /
     # bind_runtime_host slots that were already removed by the time the

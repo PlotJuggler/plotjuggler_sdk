@@ -586,3 +586,44 @@ forward compatibility is automatic. Concrete builtins live under
 `ImageAnnotations`, `FrameTransforms`); see `docs/builtin_type.md` for the type
 catalog and `docs/image_annotations_format.md` for the canonical annotation
 wire format.
+
+## Lazy per-topic subscription (0.15.0)
+
+Streaming sources that declare `PJ_DATA_SOURCE_CAPABILITY_LAZY_SUBSCRIPTION`
+connect without subscribing to any topic and let the host drive per-topic
+production from actual consumer demand. Three additive pieces cooperate:
+
+1. **Advertise (plugin → host).** The runtime-host tail slot
+   `set_advertised_topics(ctx, PJ_parser_binding_request_t*, count, err)` —
+   the FULL set of currently-available topics with parser metadata,
+   re-sent whenever the source's topic list changes. The host pre-binds
+   parsers so advertised topics appear in its catalog with zero data;
+   topics that disappear are marked unavailable but keep their ingested
+   data. C++: `DataSourceRuntimeHostView::setAdvertisedTopics`, which
+   returns the distinct error "host does not support lazy subscription"
+   on pre-0.15 hosts so plugins can fall back to eager selection.
+
+2. **Subscribe (host → plugin).** The `"pj.topic_subscription.v1"`
+   extension (`pj_base/data_source_topic_subscription.h`), queried via
+   `get_plugin_extension`. Its single verb `set_active_topics` is
+   DECLARATIVE: the host sends the full desired-active set (by advertised
+   topic name) and the plugin reconciles — subscribe what's newly
+   present, unsubscribe what's absent. The plugin may keep its own
+   always-on selection; the effective set is the union. Threading: called
+   on the poll thread, strictly serialized with poll/start/stop, only
+   between start and stop. The C++ SDK wires the extension automatically
+   in `DataSourcePluginBase::pluginExtension` (iff the capability is
+   declared) and routes it to the `onActiveTopicsChanged` virtual;
+   host-side access via `DataSourceHandle::topicSubscriptionExtension()` /
+   `setActiveTopics()`.
+
+3. **Column pre-materialization (parser).** The MessageParser tail slot
+   `describe_schema_columns(ctx, type_name, schema, out_json, err)` returns
+   the flattened scalar-column manifest (`[{"path","type"}]`, in exact
+   parse() emission order) so the host can create catalog columns before
+   the first sample arrives. Optional: parsers that cannot flatten a
+   schema without a payload (e.g. JSON) simply don't implement it and the
+   topic shows no fields until first data. C++:
+   `MessageParserPluginBase::describeSchemaColumns` returns
+   `std::vector<sdk::ColumnSpec>` and the base serializes the wire JSON;
+   host-side `MessageParserHandle::describeSchemaColumns`.

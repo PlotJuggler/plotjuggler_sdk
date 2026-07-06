@@ -131,6 +131,14 @@ enum {
   PJ_DATA_SOURCE_CAPABILITY_DELEGATED_INGEST = 1ull << 3,  /**< Plugin pushes raw bytes for host-side parsing. */
   PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE = 1ull << 4,    /**< pause()/resume() are implemented. */
   PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG = 1ull << 5,        /**< Plugin provides a configuration dialog. */
+  /**
+   * Source supports lazy per-topic subscription: it advertises its full topic
+   * set via the runtime host's `set_advertised_topics` tail slot without
+   * subscribing, and subscribes/unsubscribes individual topics on host demand
+   * through the "pj.topic_subscription.v1" plugin extension (see
+   * pj_base/data_source_topic_subscription.h).
+   */
+  PJ_DATA_SOURCE_CAPABILITY_LAZY_SUBSCRIPTION = 1ull << 6,
 };
 
 /** Opaque handle returned by ensure_parser_binding, used with push_message. */
@@ -327,6 +335,35 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
   bool (*push_message)(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns,
       PJ_message_data_fetcher_t fetch_message_data, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /**
+   * [stream-thread] Declarative topic advertise for lazy-subscription sources.
+   *
+   * The plugin reports the FULL set of topics currently available from the
+   * source, each carrying the same parser metadata as ensure_parser_binding
+   * (topic name, encoding, type name, schema, parser config). The host
+   * reconciles against the previously advertised set:
+   *
+   *   - new entries are pre-bound (parser instantiated, schema registered)
+   *     so the topics appear in the host catalog with zero data;
+   *   - entries that disappeared are marked unavailable — already-ingested
+   *     data and catalog entries persist, and the host stops requesting the
+   *     topic through the "pj.topic_subscription.v1" extension.
+   *
+   * Idempotent: call again with the full set whenever the source's topic
+   * list changes (mid-stream advertise/unadvertise, reconnect). Advertising
+   * a topic does NOT subscribe it; production starts only after the host
+   * requests the topic via the subscription extension (or the plugin's own
+   * always-on selection). All views are valid only for the duration of the
+   * call.
+   *
+   * Only meaningful for plugins declaring
+   * PJ_DATA_SOURCE_CAPABILITY_LAZY_SUBSCRIPTION. Gate reads with
+   * PJ_HAS_TAIL_SLOT; a host without this slot does not support lazy
+   * subscription and the plugin should fall back to its eager behavior.
+   */
+  bool (*set_advertised_topics)(
+      void* ctx, const PJ_parser_binding_request_t* topics, uint64_t count, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

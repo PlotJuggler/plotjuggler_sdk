@@ -206,4 +206,29 @@ inline const void* DataSourcePluginBase::trampoline_get_plugin_extension(void* c
   }
 }
 
+inline bool DataSourcePluginBase::trampoline_set_active_topics(
+    void* ctx, const PJ_string_view_t* topic_names, uint64_t count, PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<DataSourcePluginBase*>(ctx);
+  try {
+    std::vector<std::string_view> names;
+    names.reserve(count);
+    for (uint64_t i = 0; i < count; ++i) {
+      const auto& sv = topic_names[i];
+      names.emplace_back(sv.data == nullptr ? std::string_view{} : std::string_view(sv.data, sv.size));
+    }
+    auto status = self->onActiveTopicsChanged(Span<const std::string_view>(names.data(), names.size()));
+    if (!status) {
+      self->storeError(out_error, 1, "plugin", std::move(status).error());
+      return false;
+    }
+    return true;
+  } catch (const std::exception& e) {
+    self->storeError(out_error, 1, "plugin", std::string("set_active_topics threw: ") + e.what());
+    return false;
+  } catch (...) {
+    self->storeError(out_error, 1, "plugin", "unknown exception in set_active_topics");
+    return false;
+  }
+}
+
 }  // namespace PJ

@@ -3,7 +3,42 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [Unreleased] — on branch `feature/plot-markers`, not yet publicly tagged
+## [Unreleased]
+
+### 0.15.0 — Lazy per-topic subscription for DataSources (MINOR, additive only)
+
+Streaming sources can now connect without subscribing, advertise their full topic
+set to the host, and subscribe/unsubscribe individual topics on host demand (driven
+by which topics actually have consumers — plotted curves, scene layers, transform
+inputs). Three additive pieces; every existing plugin keeps working with no
+recompile (`abidiff` additions only):
+
+- **New capability bit** `PJ_DATA_SOURCE_CAPABILITY_LAZY_SUBSCRIPTION` (1<<6, C++
+  mirror `kCapabilityLazySubscription`) declaring that a source supports the flow.
+- **New runtime-host tail slot** `set_advertised_topics` on
+  `PJ_data_source_runtime_host_vtable_t`: declarative full-set topic advertise with
+  parser metadata (reuses `PJ_parser_binding_request_t`), so advertised topics can
+  appear in the host catalog with zero data. C++ wrapper
+  `DataSourceRuntimeHostView::setAdvertisedTopics` returns the distinct error
+  "host does not support lazy subscription" on old hosts so plugins can fall back
+  to eager mode.
+- **New plugin extension** `"pj.topic_subscription.v1"`
+  (`pj_base/data_source_topic_subscription.h`): `set_active_topics` — the host's
+  declarative desired-active set; the plugin reconciles subscriptions. Invoked on
+  the poll thread, strictly serialized with poll/start/stop.
+  `DataSourcePluginBase` wires it automatically to the new
+  `onActiveTopicsChanged()` virtual when the capability is declared;
+  `DataSourceHandle::topicSubscriptionExtension()` / `setActiveTopics()` on the
+  host side.
+- **New parser tail slot** `describe_schema_columns` on
+  `PJ_message_parser_vtable_t`: the flattened scalar-column manifest for a bound
+  schema (JSON `[{"path","type"}]`, parse()-emission order), letting hosts
+  pre-create catalog columns for topics with no samples yet. C++ helpers:
+  `MessageParserPluginBase::describeSchemaColumns` returning
+  `std::vector<sdk::ColumnSpec>` (base serializes the wire JSON),
+  `MessageParserHandle::describeSchemaColumns` host-side.
+
+## [0.14.0 and earlier] — previously on branch `feature/plot-markers`, not yet publicly tagged
 
 ### Host service: markers + transforms unified into `pj.data_processors.v1` (UNRELEASED BREAK)
 

@@ -254,6 +254,34 @@ The `type_name` is the encoding-specific message type (e.g.
 `schema` bytes are encoding-specific (e.g. ROS `.msg` definition text,
 Protobuf `FileDescriptorSet` binary).
 
+### Column manifests (`describeSchemaColumns`, 0.15.0)
+
+Parsers whose schema fully determines the flattened field layout (ROS CDR,
+Protobuf — anything schema-driven) can pre-describe the scalar columns
+`parse()` will emit, so the host can create catalog columns for a topic
+before its first sample arrives (used by lazy-subscription streaming
+sources: all topics appear in the UI tree, data-less, ready to drag):
+
+```cpp
+PJ::Expected<std::vector<PJ::sdk::ColumnSpec>> describeSchemaColumns(
+    std::string_view type_name, PJ::Span<const uint8_t> schema) const override {
+  std::vector<PJ::sdk::ColumnSpec> cols;
+  cols.push_back({"pose.position.x", PJ::PrimitiveType::kFloat64});
+  // ... one entry per leaf, in EXACTLY parse()'s emission order
+  return cols;
+}
+```
+
+The contract is strict: **same paths, same order, same types as `parse()`**
+— a later `parse()` emitting field N with a different path or type than
+manifest entry N is a plugin bug (the host write path fails loudly on the
+mismatch). Variable-length array fields may be omitted; their columns then
+appear on first data. The base class serializes the specs into the C-ABI
+wire JSON (`[{"path":"...","type":"float64"}, ...]`) behind the
+`describe_schema_columns` tail slot. The default implementation reports
+"unsupported", which is always safe — the topic simply shows no fields
+until it produces a sample.
+
 ### Configuration persistence
 
 Override `saveConfig()` / `loadConfig()` to support layout save/restore:

@@ -33,8 +33,10 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "pj_base/data_source_protocol.h"
+#include "pj_base/data_source_topic_subscription.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_abi_export.hpp"
 #include "pj_base/sdk/data_source_host_views.hpp"
@@ -125,12 +127,35 @@ class DataSourcePluginBase {
     return PJ_borrowed_dialog_t{nullptr, nullptr};
   }
 
+  /// The host's desired-active topic set changed (lazy subscription).
+  /// Called on the poll thread, strictly serialized with poll()/start()/
+  /// stop(), only while the source is started. @p active_topics is the FULL
+  /// desired set by advertised topic name; reconcile subscriptions against
+  /// it (the view contents are valid only for the call). Only invoked when
+  /// the plugin declares kCapabilityLazySubscription. Default is a no-op.
+  virtual Status onActiveTopicsChanged(Span<const std::string_view> active_topics) {
+    (void)active_topics;
+    return okStatus();
+  }
+
   /// Return a pointer to a static plugin-exposed extension for @p id, or
   /// `nullptr` if unknown. CLAP-style reverse-direction capability query.
-  /// Default returns nullptr. The returned pointer must be valid for the
-  /// lifetime of this plugin instance.
+  /// The returned pointer must be valid for the lifetime of this plugin
+  /// instance.
+  ///
+  /// The default answers PJ_TOPIC_SUBSCRIPTION_EXTENSION_ID (routing to
+  /// onActiveTopicsChanged) when the plugin declares
+  /// kCapabilityLazySubscription. Subclasses that override MUST delegate
+  /// unknown ids to DataSourcePluginBase::pluginExtension to keep that
+  /// wiring.
   virtual const void* pluginExtension(std::string_view id) {
-    (void)id;
+    if (id == PJ_TOPIC_SUBSCRIPTION_EXTENSION_ID && (capabilities() & PJ_DATA_SOURCE_CAPABILITY_LAZY_SUBSCRIPTION)) {
+      static const PJ_topic_subscription_extension_t ext = {
+          sizeof(PJ_topic_subscription_extension_t),
+          trampoline_set_active_topics,
+      };
+      return &ext;
+    }
     return nullptr;
   }
 
@@ -220,6 +245,8 @@ class DataSourcePluginBase {
   static PJ_data_source_state_t trampoline_current_state(void* ctx) noexcept;
   static PJ_borrowed_dialog_t trampoline_get_dialog(void* ctx) noexcept;
   static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
+  static bool trampoline_set_active_topics(
+      void* ctx, const PJ_string_view_t* topic_names, uint64_t count, PJ_error_t* out_error) noexcept;
 };
 
 }  // namespace PJ

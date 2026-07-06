@@ -158,4 +158,69 @@ inline bool MessageParserPluginBase::trampoline_classify_schema(
   }
 }
 
+inline bool MessageParserPluginBase::trampoline_describe_schema_columns(
+    void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_string_view_t* out_columns_json,
+    PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<MessageParserPluginBase*>(ctx);
+  if (out_columns_json == nullptr) {
+    self->storeError(out_error, 2, "plugin", "describe_schema_columns called with null out_columns_json");
+    return false;
+  }
+  try {
+    auto name_sv = type_name.data == nullptr ? std::string_view{} : std::string_view(type_name.data, type_name.size);
+    Span<const uint8_t> schema_span(schema.data, schema.size);
+    auto columns = self->describeSchemaColumns(name_sv, schema_span);
+    if (!columns) {
+      self->storeError(out_error, 1, "plugin", std::move(columns).error());
+      return false;
+    }
+    // Hand-rolled serialization: paths are the only free-form strings, so a
+    // minimal JSON string escape keeps pj_plugins' SDK headers dependency-free
+    // for plugin authors.
+    std::string& json = self->columns_json_buf_;
+    json.clear();
+    json.push_back('[');
+    bool first = true;
+    for (const auto& col : *columns) {
+      if (!first) {
+        json.push_back(',');
+      }
+      first = false;
+      json.append("{\"path\":\"");
+      for (const char c : col.path) {
+        switch (c) {
+          case '"':
+            json.append("\\\"");
+            break;
+          case '\\':
+            json.append("\\\\");
+            break;
+          default:
+            if (static_cast<unsigned char>(c) < 0x20) {
+              constexpr char kHex[] = "0123456789abcdef";
+              json.append("\\u00");
+              json.push_back(kHex[(c >> 4) & 0xF]);
+              json.push_back(kHex[c & 0xF]);
+            } else {
+              json.push_back(c);
+            }
+        }
+      }
+      json.append("\",\"type\":\"");
+      json.append(sdk::primitiveTypeJsonName(col.type));
+      json.append("\"}");
+    }
+    json.push_back(']');
+    out_columns_json->data = json.data();
+    out_columns_json->size = json.size();
+    return true;
+  } catch (const std::exception& e) {
+    self->storeError(out_error, 1, "plugin", std::string("describe_schema_columns threw: ") + e.what());
+    return false;
+  } catch (...) {
+    self->storeError(out_error, 1, "plugin", "unknown exception in describe_schema_columns");
+    return false;
+  }
+}
+
 }  // namespace PJ

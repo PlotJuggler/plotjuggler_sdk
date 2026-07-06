@@ -139,6 +139,28 @@ class MessageParserHandle {
     return vt_->get_plugin_extension(ctx_, sv);
   }
 
+  /// Flattened scalar-column manifest for @p type_name as wire JSON (see
+  /// describe_schema_columns in message_parser_protocol.h). Tail-slot
+  /// gated: an older plugin (or one that cannot pre-describe this schema)
+  /// yields an error — the host then simply skips column pre-creation.
+  /// Out-param instead of Expected<std::string> for the same degenerate-
+  /// variant reason as saveConfig. @p out_json is only touched on success.
+  [[nodiscard]] Status describeSchemaColumns(
+      std::string_view type_name, Span<const uint8_t> schema, std::string& out_json) const {
+    if (!PJ_HAS_TAIL_SLOT(PJ_message_parser_vtable_t, vt_, describe_schema_columns)) {
+      return unexpected(std::string("parser does not expose describe_schema_columns"));
+    }
+    PJ_string_view_t tn{type_name.data(), type_name.size()};
+    PJ_bytes_view_t sc{schema.data(), schema.size()};
+    PJ_string_view_t out{};
+    PJ_error_t err{};
+    if (!vt_->describe_schema_columns(ctx_, tn, sc, &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    out_json.assign(out.data == nullptr ? "" : out.data, out.size);
+    return okStatus();
+  }
+
   [[nodiscard]] const PJ_message_parser_vtable_t* vtable() const {
     return vt_;
   }

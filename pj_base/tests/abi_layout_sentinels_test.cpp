@@ -30,6 +30,7 @@
 #include <cstdint>
 
 #include "pj_base/data_source_protocol.h"
+#include "pj_base/data_source_topic_subscription.h"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/toolbox_protocol.h"
@@ -86,8 +87,11 @@ static_assert(offsetof(PJ_message_parser_vtable_t, struct_size) == 4, "v4 prefix
 static_assert(offsetof(PJ_message_parser_vtable_t, bind) == 32, "v4 bind slot pinned");
 static_assert(offsetof(PJ_message_parser_vtable_t, parse) == 64, "v4 parse slot pinned");
 static_assert(offsetof(PJ_message_parser_vtable_t, get_plugin_extension) == 72, "v4 last baseline slot pinned");
-// 80 baseline (v4.0) + 1 tail slot × 8 bytes = 88.
-static_assert(sizeof(PJ_message_parser_vtable_t) == 88, "MessageParser vtable size (update deliberately on append)");
+static_assert(offsetof(PJ_message_parser_vtable_t, classify_schema) == 80, "classify_schema tail slot pinned");
+static_assert(
+    offsetof(PJ_message_parser_vtable_t, describe_schema_columns) == 88, "describe_schema_columns tail slot pinned");
+// 80 baseline (v4.0) + 2 tail slots × 8 bytes = 96.
+static_assert(sizeof(PJ_message_parser_vtable_t) == 96, "MessageParser vtable size (update deliberately on append)");
 static_assert(PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE == 80, "MIN vtable size is pinned at v4.0 — NEVER INCREASE");
 static_assert(PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE <= sizeof(PJ_message_parser_vtable_t), "MIN must never exceed current");
 
@@ -153,7 +157,18 @@ static_assert(
     "list_available_encodings slot pinned");
 static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, push_message) == 88, "push_message tail slot pinned");
 static_assert(
-    sizeof(PJ_data_source_runtime_host_vtable_t) == 96, "Runtime host vtable size (update deliberately on append)");
+    offsetof(PJ_data_source_runtime_host_vtable_t, set_advertised_topics) == 96,
+    "set_advertised_topics tail slot pinned");
+static_assert(
+    sizeof(PJ_data_source_runtime_host_vtable_t) == 104, "Runtime host vtable size (update deliberately on append)");
+
+// --- Topic subscription extension ("pj.topic_subscription.v1") ---------------
+// Plugin-owned extension POD returned by get_plugin_extension. Appendable via
+// struct_size; existing offsets pinned.
+static_assert(offsetof(PJ_topic_subscription_extension_t, struct_size) == 0, "struct_size at offset 0");
+static_assert(offsetof(PJ_topic_subscription_extension_t, set_active_topics) == 8, "set_active_topics slot pinned");
+static_assert(
+    sizeof(PJ_topic_subscription_extension_t) == 16, "Topic subscription extension size (update deliberately)");
 
 // --- Write-host vtables (ABI-APPENDABLE within v4) --------------------------
 static_assert(offsetof(PJ_source_write_host_vtable_t, abi_version) == 0, "source write host prefix pinned");

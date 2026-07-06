@@ -330,6 +330,15 @@ target_link_libraries(message_parser_library_test PRIVATE
 )
 add_test(NAME message_parser_library_test COMMAND message_parser_library_test)
 
+# Unit test: describe_schema_columns tail slot (ColumnSpec serialization,
+# base-class default, host-side handle gating).
+add_executable(describe_schema_columns_test tests/describe_schema_columns_test.cpp)
+target_compile_options(describe_schema_columns_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(describe_schema_columns_test PRIVATE
+  pj_message_parser_host pj_base GTest::gtest_main
+)
+add_test(NAME describe_schema_columns_test COMMAND describe_schema_columns_test)
+
 # Unit test: ObjectIngestPolicyResolver cascade rules.
 add_executable(object_ingest_policy_test tests/object_ingest_policy_test.cpp)
 target_compile_options(object_ingest_policy_test PRIVATE ${PJ_WARNING_FLAGS})
