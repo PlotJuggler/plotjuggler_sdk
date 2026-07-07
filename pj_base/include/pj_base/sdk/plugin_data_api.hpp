@@ -1538,6 +1538,164 @@ class DataProcessorsHostView {
 };
 
 // ---------------------------------------------------------------------------
+// PlaybackHostView — typed C++ view over PJ_playback_host_t
+// ---------------------------------------------------------------------------
+
+/// Snapshot of the host's playback state. All times are display-axis seconds
+/// (the numbers on the plot X axes and the playback slider).
+struct PlaybackState {
+  bool is_playing = false;
+  double current_time_s = 0.0;
+  double range_min_s = 0.0;
+  double range_max_s = 0.0;
+  double playback_rate = 1.0;
+};
+
+/// C++ wrapper around PJ_playback_host_t — optional programmatic control of
+/// the host's playback cursor (service "pj.playback.v1"). Empty-constructible;
+/// `valid()` tells whether the host exposed the service. All calls are
+/// main-thread. Times are display-axis seconds; conversions from absolute
+/// nanoseconds (`toDisplayTime`) hold for the current frame only — display
+/// offsets are per-dataset and user-editable (see the C ABI doc-comment).
+class PlaybackHostView {
+ public:
+  PlaybackHostView() = default;
+  explicit PlaybackHostView(PJ_playback_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Start advancing the playback cursor. Idempotent.
+  [[nodiscard]] Status play() const {
+    if (!valid() || host_.vtable->play == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->play(host_.ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Stop advancing the playback cursor. Idempotent.
+  [[nodiscard]] Status pause() const {
+    if (!valid() || host_.vtable->pause == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->pause(host_.ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Move the cursor to `time_s` (display-axis seconds); the host clamps into
+  /// the playback range. Play/pause state is unchanged.
+  [[nodiscard]] Status seek(double time_s) const {
+    if (!valid() || host_.vtable->seek == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->seek(host_.ctx, time_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Set the playback-speed multiplier (> 0; the host may clamp).
+  [[nodiscard]] Status setPlaybackRate(double rate) const {
+    if (!valid() || host_.vtable->set_playback_rate == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_playback_rate(host_.ctx, rate, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Snapshot the current playback state. During live streaming the range
+  /// (and a cursor glued to its tip) advances on every ingest tick.
+  [[nodiscard]] Expected<PlaybackState> state() const {
+    if (!valid() || host_.vtable->get_state == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_playback_state_t raw{};
+    PJ_error_t err{};
+    if (!host_.vtable->get_state(host_.ctx, &raw, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return PlaybackState{raw.is_playing, raw.current_time_s, raw.range_min_s, raw.range_max_s, raw.playback_rate};
+  }
+
+  /// Convert an ABSOLUTE nanosecond timestamp into display-axis seconds using
+  /// the display offset of the dataset owning `topic` (empty topic = the
+  /// host's representative dataset). Current-frame semantics.
+  [[nodiscard]] Expected<double> toDisplayTime(std::string_view topic, int64_t absolute_ns) const {
+    if (!valid() || host_.vtable->to_display_time == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    double display_s = 0.0;
+    PJ_error_t err{};
+    if (!host_.vtable->to_display_time(host_.ctx, toAbiString(topic), absolute_ns, &display_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return display_s;
+  }
+
+ private:
+  PJ_playback_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
+// ViewportHostView — typed C++ view over PJ_viewport_host_t
+// ---------------------------------------------------------------------------
+
+/// C++ wrapper around PJ_viewport_host_t — optional zoom control over the
+/// host's open time-series plots (service "pj.viewport.v1").
+/// Empty-constructible; `valid()` tells whether the host exposed the service.
+/// All calls are main-thread; times are display-axis seconds.
+class ViewportHostView {
+ public:
+  ViewportHostView() = default;
+  explicit ViewportHostView(PJ_viewport_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Set every open time-series plot's visible X window to [t0_s, t1_s].
+  /// Each plot keeps its own Y range; XY and empty plots are untouched.
+  /// Requires finite t0_s < t1_s.
+  [[nodiscard]] Status zoomToTimeRange(double t0_s, double t1_s) const {
+    if (!valid() || host_.vtable->zoom_to_time_range == nullptr) {
+      return unexpected("viewport host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->zoom_to_time_range(host_.ctx, t0_s, t1_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Reset every open plot to fit its data (the host's "zoom out all").
+  [[nodiscard]] Status zoomReset() const {
+    if (!valid() || host_.vtable->zoom_reset == nullptr) {
+      return unexpected("viewport host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->zoom_reset(host_.ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+ private:
+  PJ_viewport_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
 // SettingsView — typed C++ view over PJ_settings_store_t
 // ---------------------------------------------------------------------------
 

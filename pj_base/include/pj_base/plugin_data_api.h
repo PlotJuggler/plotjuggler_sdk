@@ -943,6 +943,96 @@ typedef struct {
   const PJ_settings_store_vtable_t* vtable;
 } PJ_settings_store_t;
 
+/**
+ * Playback host service ("pj.playback.v1", protocol_version 1).
+ *
+ * Optional programmatic control of the host's playback cursor (the vertical
+ * time tracker the playback slider drives). All slots are [main-thread].
+ *
+ * TIME UNIT: every time in this service is DISPLAY-AXIS SECONDS — the numbers
+ * the plot X axes and the playback slider show — NOT absolute nanoseconds.
+ * Display time is derived from absolute time via per-dataset, user-editable
+ * offsets, so any converted value is valid for the CURRENT frame only:
+ * re-query after the user edits a source offset or the time reference.
+ *
+ * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ */
+
+/* ABI-FROZEN: layout permanent; changes = ABI break (add a get_state_v2 slot instead). */
+typedef struct {
+  bool is_playing;
+  double current_time_s; /* display-axis seconds */
+  double range_min_s;    /* playback range in display-axis seconds */
+  double range_max_s;
+  double playback_rate; /* speed multiplier; 1.0 = real time */
+} PJ_playback_state_t;
+
+typedef struct PJ_playback_host_vtable_t {
+  uint32_t protocol_version; /* = 1 */
+  uint32_t struct_size;      /* = sizeof(PJ_playback_host_vtable_t) */
+
+  /* [main-thread] Start advancing the playback cursor. Idempotent. */
+  bool (*play)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Stop advancing the playback cursor. Idempotent. */
+  bool (*pause)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Move the cursor to `time_s` (display-axis seconds); the host
+   * clamps into [range_min_s, range_max_s]. Play/pause state is unchanged.
+   * Non-finite time is an error. */
+  bool (*seek)(void* ctx, double time_s, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Set the playback-speed multiplier (> 0; the host may clamp).
+   * Non-finite or non-positive rate is an error. */
+  bool (*set_playback_rate)(void* ctx, double rate, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Snapshot the current playback state. During live streaming
+   * the range (and a cursor glued to its tip) advances on every ingest tick. */
+  bool (*get_state)(void* ctx, PJ_playback_state_t* out_state, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Convert an ABSOLUTE nanosecond timestamp (the unit the data
+   * read/write surfaces speak) into display-axis seconds, using the display
+   * offset of the dataset that owns `topic`. An empty topic uses the host's
+   * representative dataset. Current-frame semantics (see the service
+   * doc-comment). An unknown topic is an error. */
+  bool (*to_display_time)(
+      void* ctx, PJ_string_view_t topic, int64_t absolute_ns, double* out_display_s, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+} PJ_playback_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_playback_host_vtable_t* vtable;
+} PJ_playback_host_t;
+
+/**
+ * Viewport host service ("pj.viewport.v1", protocol_version 1).
+ *
+ * Optional zoom control over the host's open time-series plots. All slots are
+ * [main-thread]. Times are display-axis seconds (same convention as
+ * "pj.playback.v1"). ABI-APPENDABLE: new slots may be added at the tail;
+ * struct_size gates read.
+ */
+typedef struct PJ_viewport_host_vtable_t {
+  uint32_t protocol_version; /* = 1 */
+  uint32_t struct_size;      /* = sizeof(PJ_viewport_host_vtable_t) */
+
+  /* [main-thread] Set every open time-series plot's visible X window to
+   * [t0_s, t1_s] (display-axis seconds). Each plot keeps its own Y range;
+   * XY plots and empty plots are untouched. Requires finite t0_s < t1_s;
+   * no open time plot to act on is an error. */
+  bool (*zoom_to_time_range)(void* ctx, double t0_s, double t1_s, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Reset every open plot to fit its data (the host's
+   * "zoom out all" action). */
+  bool (*zoom_reset)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_viewport_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_viewport_host_vtable_t* vtable;
+} PJ_viewport_host_t;
+
 #ifdef __cplusplus
 }
 #endif

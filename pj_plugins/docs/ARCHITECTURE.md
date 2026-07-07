@@ -160,6 +160,16 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   backend fault surfaces instead of silently masquerading as a missing key); the
   host backs it (QSettings in the GUI app, JSON in a headless host) and
   namespaces keys per plugin.
+  `"pj.playback.v1"` (optional) gives a plugin programmatic control of the
+  host's playback cursor — play/pause/seek/rate plus a state snapshot and an
+  absolute-ns → display-seconds conversion — via a Qt-free
+  `sdk::PlaybackHostView`; every time in the service is display-axis seconds
+  (the numbers the plot X axes and the playback slider show), valid for the
+  current frame only because display offsets are per-dataset and user-editable.
+  `"pj.viewport.v1"` (optional) zooms every open time-series plot to a
+  display-seconds X window or resets all plots to fit
+  (`sdk::ViewportHostView`); hosts without plots (headless) simply do not
+  register it.
 - **Structured errors everywhere.** All fallible ABI calls take a
   `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
   slot is gone.

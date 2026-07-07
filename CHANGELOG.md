@@ -3,6 +3,30 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.16.0] — Unreleased, on branch `feature/playback-viewport-services`
+
+> Version number is provisional: 0.15.0 is taken by the in-flight lazy-subscription
+> work; renumber at release if the two land in a different order.
+
+### Added — host services `pj.playback.v1` and `pj.viewport.v1` (MINOR, additions only)
+
+Two new optional host services so a plugin (first consumer: the Assistant Agent
+toolbox) can drive the app like a user — transport and zoom — without any new
+executable surface crossing the ABI:
+
+- **`pj.playback.v1`** (`PJ_playback_host_vtable_t`, `sdk::PlaybackHostView`,
+  `sdk::PlaybackHostService`): `play` / `pause` / `seek` / `set_playback_rate` /
+  `get_state` (ABI-frozen `PJ_playback_state_t` snapshot) / `to_display_time`
+  (absolute int64 ns → display-axis seconds, per-topic dataset offset;
+  current-frame semantics). All times are display-axis seconds.
+- **`pj.viewport.v1`** (`PJ_viewport_host_vtable_t`, `sdk::ViewportHostView`,
+  `sdk::ViewportHostService`): `zoom_to_time_range` (every open time plot's X
+  window; per-plot Y preserved; XY/empty plots untouched) and `zoom_reset`
+  (fit all).
+
+No existing struct or vtable slot was touched — every already-built plugin keeps
+working with no recompile (`abidiff`: additions only).
+
 ## [Unreleased] — on branch `feature/plot-markers`, not yet publicly tagged
 
 ### Host service: markers + transforms unified into `pj.data_processors.v1` (UNRELEASED BREAK)

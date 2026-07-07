@@ -6,7 +6,7 @@ Exposes three CMake components under the `plotjuggler_sdk::` namespace:
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.14.0` and then:
+A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.16.0` and then:
 
     find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
@@ -38,7 +38,7 @@ class PlotjugglerSdkConan(ConanFile):
     # sub-panel). All pre-1.0 unreleased — no PUBLIC tag ever shipped
     # `pj.data_processors.v1`, so no released plugin breaks. The FIRST public release
     # that carries the unified `pj.data_processors.v1` MUST be tagged 1.0.0. See CHANGELOG.md.
-    version = "0.14.0"
+    version = "0.16.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"
