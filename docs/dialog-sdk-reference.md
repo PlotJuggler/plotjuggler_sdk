@@ -259,3 +259,12 @@ public:
   }
 };
 ```
+
+## Conditional field enabling (`pj_enable_when`)
+
+Declarative, host-driven enable/disable: give any widget the string dynamic
+property `pj_enable_when` = `"<comboObjectName>:<index>[,<index>...]"` and it
+stays enabled only while that combo sits on one of the listed indices. Works
+inside modal sub-dialogs (where the plugin cannot push widget data); rules
+re-assert after every widget-data apply. Malformed/unresolvable rules are
+ignored. See dialog-plugin-guide.md → "Optional: conditional field enabling".

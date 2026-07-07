@@ -225,6 +225,15 @@ typedef struct {
  * Every populator (see sdk::fillError) MUST clear both new slots when
  * writing to avoid stale pointers in reused error structs.
  */
+/* Shared host-service error-code convention. Codes are domain-specific in
+ * general, but every PJ host service distinguishes at least these two classes,
+ * and aggregators (e.g. a kind router probing multiple backends) rely on the
+ * distinction: REJECTED means "this request is not mine / not valid" (safe to
+ * try another backend), INTERNAL means a real failure on a request the backend
+ * owns (must be surfaced, never masked by a fallback). */
+#define PJ_ERROR_CODE_REJECTED 1
+#define PJ_ERROR_CODE_INTERNAL 2
+
 typedef struct {
   int32_t code;                          /* 0 = success; otherwise domain-specific */
   char domain[PJ_ERROR_DOMAIN_MAX];      /* null-terminated; truncated if too long */
