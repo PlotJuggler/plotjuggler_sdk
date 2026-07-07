@@ -273,8 +273,14 @@ std::vector<uint8_t> serializePlotMarkers(const sdk::PlotMarkers& markers) {
 }
 
 Expected<sdk::PlotMarkers> deserializePlotMarkers(const uint8_t* data, size_t size) {
-  if (data == nullptr || size == 0) {
-    return unexpected(std::string("PlotMarkers wire: empty buffer"));
+  // An empty buffer IS the canonical encoding of an empty set (proto semantics:
+  // empty message = all defaults) — the "clear my markers" tombstone a producer
+  // publishes, since the store is replace-only and markers are never deleted.
+  if (size == 0) {
+    return sdk::PlotMarkers{};
+  }
+  if (data == nullptr) {
+    return unexpected(std::string("PlotMarkers wire: null buffer"));
   }
 
   Reader reader(data, size);

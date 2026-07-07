@@ -46,10 +46,20 @@ TEST(PlotMarkersCodecTest, EmptySetProducesEmptyBytes) {
   EXPECT_TRUE(serializePlotMarkers(markers).empty());
 }
 
-TEST(PlotMarkersCodecTest, NullOrEmptyBufferIsError) {
-  EXPECT_FALSE(deserializePlotMarkers(nullptr, 0).has_value());
+// An empty buffer is the canonical encoding of an empty set (the replace-only
+// store's "clear" tombstone), so it round-trips instead of erroring.
+TEST(PlotMarkersCodecTest, EmptyBufferDecodesToEmptySet) {
+  const Expected<PlotMarkers> null_empty = deserializePlotMarkers(nullptr, 0);
+  ASSERT_TRUE(null_empty.has_value());
+  EXPECT_TRUE(null_empty->markers.empty());
   const uint8_t byte = 0;
-  EXPECT_FALSE(deserializePlotMarkers(&byte, 0).has_value());
+  const Expected<PlotMarkers> ptr_empty = deserializePlotMarkers(&byte, 0);
+  ASSERT_TRUE(ptr_empty.has_value());
+  EXPECT_TRUE(ptr_empty->markers.empty());
+}
+
+TEST(PlotMarkersCodecTest, NullBufferWithSizeIsError) {
+  EXPECT_FALSE(deserializePlotMarkers(nullptr, 4).has_value());
 }
 
 // -----------------------------------------------------------------------------

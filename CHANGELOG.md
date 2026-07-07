@@ -27,6 +27,15 @@ executable surface crossing the ABI:
 No existing struct or vtable slot was touched — every already-built plugin keeps
 working with no recompile (`abidiff`: additions only).
 
+### Fixed — `deserializePlotMarkers` accepts the empty buffer as an empty set
+
+An empty buffer is the canonical proto encoding of an empty `PlotMarkers` set —
+the "clear my markers" tombstone a producer publishes to a replace-only store —
+but the decoder rejected `size == 0` as an error, making the tombstone
+unrepresentable on the wire. It now decodes to an empty set; null-with-size,
+truncated, and malformed payloads still error. (Logically part of the
+plot-markers feature line; riding this branch until the PRs are re-sorted.)
+
 ## [Unreleased] — on branch `feature/plot-markers`, not yet publicly tagged
 
 ### Host service: markers + transforms unified into `pj.data_processors.v1` (UNRELEASED BREAK)
