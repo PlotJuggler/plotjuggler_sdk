@@ -91,6 +91,14 @@ as `PJ.Vector2` on the wire). The `PointField` wire helpers shared by the PointC
 VoxelGrid and GridMap codecs now live in one private header. Additive: no existing struct,
 slot, or wire format changes.
 
+### Fixed — `deserializePlotMarkers` accepts the empty buffer as an empty set
+
+An empty buffer is the canonical proto encoding of an empty `PlotMarkers` set —
+the "clear my markers" tombstone a producer publishes to a replace-only store —
+but the decoder rejected `size == 0` as an error, making the tombstone
+unrepresentable on the wire. It now decodes to an empty set; null-with-size,
+truncated, and malformed payloads still error.
+
 ## [0.25.0]
 
 ### Feature: plugin-authoring CMake helpers ship with the SDK (MINOR)
