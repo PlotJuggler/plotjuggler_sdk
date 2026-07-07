@@ -25,6 +25,25 @@ compile-time error.
 | The `QDialogButtonBox` MUST set the `standardButtons` property in the XML | Without it, the box instantiates with no buttons even when found by name. |
 | Every interactive widget MUST have a unique `objectName` | All `WidgetData` setters and event handlers address widgets by name. |
 
+### Optional: conditional field enabling (`pj_enable_when`)
+
+Any widget may carry a string **dynamic property** `pj_enable_when` with the
+value `"<comboObjectName>:<index>[,<index>...]"`. The host keeps the widget
+enabled only while the named `QComboBox` (looked up in the same widget tree)
+sits on one of those indices, applying the initial state at load and tracking
+index changes live — including inside modal sub-dialogs, whose nested event
+loop blocks the plugin from pushing `setEnabled` updates itself. Rules
+re-assert after every widget-data apply, so a rule always wins over a
+plugin-pushed `enabled` on the same widget. Malformed values or unknown combo
+names are ignored (the widget stays as authored). Typical use: a backend
+selector combo greying out the fields of the non-selected backend.
+
+```xml
+<widget class="QLineEdit" name="ollamaUrlEdit">
+ <property name="pj_enable_when" stdset="0"><string>backendCombo:0</string></property>
+</widget>
+```
+
 ## What is a Dialog Plugin?
 
 A dialog plugin is a shared library (`.so` / `.dylib` / `.dll`) that drives a
