@@ -179,7 +179,6 @@ class PlotjugglerSdkConan(ConanFile):
             host = self.cpp_info.components["plugin_host"]
             host.set_property("cmake_target_name", "plotjuggler_sdk::plugin_host")
             host.libs = [
-                "pj_plugin_runtime_catalog",
                 "pj_data_source_host",
                 "pj_message_parser_host",
                 "pj_toolbox_host",

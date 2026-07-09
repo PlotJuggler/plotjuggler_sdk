@@ -1,10 +1,14 @@
 sources:
-  # NOTE: this sha256 is for the v0.14.0 tag *as it exists today*, which does
-  # NOT yet contain the PJ_WARNINGS_AS_ERRORS gate (added on the conan-center
-  # branch). Before submitting to Conan Center, cut a release tag that includes
-  # that CMake change and replace both the version (here + config.yml) and the
-  # sha256 below. Recompute with:
+  # sha256 of the GitHub-generated tag tarball. GitHub commits to the stability
+  # of these archive-by-tag tarballs, so this digest is fixed for the tag.
+  # Recompute for a new release with:
   #   curl -sL https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/vX.Y.Z.tar.gz | sha256sum
-  "0.14.0":
-    url: "https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.14.0.tar.gz"
-    sha256: "49aecfdc5ddf46930e56a5ee4843a1435c3fb8e47b1a4ab0289fd9646dc1986d"
+  # v0.16.0 is the seed version: the first tag with the PJ_WARNINGS_AS_ERRORS
+  # gate the recipe relies on AND without the host-side PluginRuntimeCatalog
+  # (removed in #144) — so CCI never publishes API a later 0.x removes. Older
+  # tags are intentionally not listed here.
+  "0.16.0":
+    url: "https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.16.0.tar.gz"
+    # PLACEHOLDER — v0.16.0 is not tagged yet. After tagging, recompute with the
+    # curl command above and replace before copying this tree into the CCI fork.
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"

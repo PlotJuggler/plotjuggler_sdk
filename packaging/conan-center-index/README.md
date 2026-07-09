@@ -22,18 +22,33 @@ tree for local dev/consume. The CCI recipe instead downloads the released
 
 ## Prerequisites before submitting
 
-1. **Ship the `-Werror` gate in a released tag.** The recipe sets
+The recipe is seeded with **`0.16.0`** — the first tag that satisfies these:
+
+1. **The `-Werror` gate ships in the consumed tag.** The recipe sets
    `-DPJ_WARNINGS_AS_ERRORS=OFF` so a not-yet-pinned compiler on CCI's build
-   matrix cannot fail the build on a new warning. That option was added on this
-   branch (`CMakeLists.txt`). It must be present in the tag CCI consumes:
-   merge this branch, cut a new release tag, then update `config.yml` +
-   `conandata.yml` (new version + new sha256). The sha256 currently pinned is
-   for the *pre-gate* `v0.14.0` tag and is only good for local smoke testing.
-2. **Pick the entry version.** Per the SDK's own versioning note, the first
-   public release carrying the unified `pj.data_processors.v1` service must be
-   `1.0.0`. Decide whether CCI is seeded with `0.14.x` or `1.0.0`.
+   matrix cannot fail the build on a new warning. That option landed in
+   `CMakeLists.txt` via #139 (first present in `v0.15.0`).
+2. **The tag no longer ships `PluginRuntimeCatalog`.** #144 removed the
+   host-side duplicate-resolution catalog (moved to the app). Whatever CCI
+   accepts first becomes the floor consumers pin against — seeding with
+   `0.15.0` would publish API that `0.16.0` removes, breaking the repo's
+   "no breaking changes within 0.x" promise for CCI consumers. `0.16.0` is the
+   first tag with the final thin-SDK surface.
 3. **Confirm dependencies exist in CCI** (verified 2026-07-01, all present):
    `nlohmann_json/3.12.0`, `fmt/12.1.0`, `fast_float/8.1.0`.
+
+## After tagging `v0.16.0`
+
+The `sha256` in `conandata.yml` is a **placeholder** until the release tag
+exists (the digest of a tag tarball cannot be known before the tag is cut).
+Once `v0.16.0` is tagged and pushed:
+
+```bash
+curl -sL https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.16.0.tar.gz | sha256sum
+```
+
+and replace the placeholder in `conandata.yml` before copying this tree into
+the conan-center-index fork.
 
 ## Test locally before opening the PR
 
@@ -41,12 +56,13 @@ From inside a checkout of the conan-center-index fork:
 
 ```bash
 cd recipes/plotjuggler_sdk
-# Build + run the test_package for the default profile:
-conan create all --version=0.14.0 --build=missing
+# Build + run the test_package. The recipe validate()s C++20, so a profile
+# whose compiler.cppstd is < 20 (e.g. the common gnu17 default) is correctly
+# rejected — pass an explicit C++20 std:
+conan create all --version=0.16.0 -s compiler.cppstd=20 --build=missing
 # Exercise the option matrix CCI will build:
-conan create all --version=0.14.0 -o "&:with_host=False" --build=missing
-conan create all --version=0.14.0 -o "&:assert_throws=True" --build=missing
-conan create all --version=0.14.0 -s compiler.cppstd=20 --build=missing
+conan create all --version=0.16.0 -s compiler.cppstd=20 -o "&:with_host=False" --build=missing
+conan create all --version=0.16.0 -s compiler.cppstd=20 -o "&:assert_throws=True" --build=missing
 ```
 
 Then run the Conan Center hooks locally (catches KB-Hxxx violations the reviewer
@@ -55,13 +71,13 @@ bot will flag):
 ```bash
 conan config install https://github.com/conan-io/conan-center-index.git \
   -sf .c3i/hooks -tf .conan2/extensions/hooks   # one-time
-conan create all --version=0.14.0 --build=missing               # hooks run inline
+conan create all --version=0.16.0 -s compiler.cppstd=20 --build=missing   # hooks run inline
 ```
 
 ## Open the PR
 
 Fork `conan-io/conan-center-index`, drop this tree under `recipes/`, commit, and
-open a PR titled `plotjuggler_sdk/0.14.0`. Expect one or more review rounds —
+open a PR titled `plotjuggler_sdk/0.16.0`. Expect one or more review rounds —
 the usual notes are around option count (`with_host`, `assert_throws`), license
 packaging, and the compiler-minimum map. Acceptance is at CCI maintainer
 discretion.
