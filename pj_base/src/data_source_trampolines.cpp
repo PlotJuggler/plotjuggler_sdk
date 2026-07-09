@@ -1,8 +1,7 @@
 /**
- * @file detail/data_source_trampolines.hpp
- * @brief Out-of-line definitions for DataSourcePluginBase C ABI trampolines (v4).
+ * @file data_source_trampolines.cpp
+ * @brief C ABI trampolines for DataSourcePluginBase (v4).
  *
- * Included automatically by data_source_plugin_base.hpp — do not include directly.
  * Each trampoline wraps a virtual call with try-catch for full exception
  * safety across the C ABI boundary and populates `PJ_error_t*` out-params
  * via the plugin's per-instance error buffer. Every trampoline is `noexcept`
@@ -11,17 +10,17 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
+#include "pj_base/sdk/data_source_plugin_base.hpp"
 
 namespace PJ {
 
-inline void DataSourcePluginBase::trampoline_destroy(void* ctx) noexcept {
+void DataSourcePluginBase::trampoline_destroy(void* ctx) noexcept {
   try {
     delete static_cast<DataSourcePluginBase*>(ctx);
   } catch (...) {}
 }
 
-inline uint64_t DataSourcePluginBase::trampoline_capabilities(void* ctx) noexcept {
+uint64_t DataSourcePluginBase::trampoline_capabilities(void* ctx) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     return self->capabilities();
@@ -34,8 +33,7 @@ inline uint64_t DataSourcePluginBase::trampoline_capabilities(void* ctx) noexcep
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_bind(
-    void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept {
+bool DataSourcePluginBase::trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     auto status = self->bind(sdk::ServiceRegistry(registry));
@@ -53,7 +51,7 @@ inline bool DataSourcePluginBase::trampoline_bind(
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_save_config(
+bool DataSourcePluginBase::trampoline_save_config(
     void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   if (out_json == nullptr) {
@@ -74,7 +72,7 @@ inline bool DataSourcePluginBase::trampoline_save_config(
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_load_config(
+bool DataSourcePluginBase::trampoline_load_config(
     void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
@@ -95,7 +93,7 @@ inline bool DataSourcePluginBase::trampoline_load_config(
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_start(void* ctx, PJ_error_t* out_error) noexcept {
+bool DataSourcePluginBase::trampoline_start(void* ctx, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     auto status = self->start();
@@ -113,7 +111,7 @@ inline bool DataSourcePluginBase::trampoline_start(void* ctx, PJ_error_t* out_er
   }
 }
 
-inline void DataSourcePluginBase::trampoline_stop(void* ctx) noexcept {
+void DataSourcePluginBase::trampoline_stop(void* ctx) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     self->stop();
@@ -124,7 +122,7 @@ inline void DataSourcePluginBase::trampoline_stop(void* ctx) noexcept {
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_pause(void* ctx, PJ_error_t* out_error) noexcept {
+bool DataSourcePluginBase::trampoline_pause(void* ctx, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     auto status = self->pause();
@@ -142,7 +140,7 @@ inline bool DataSourcePluginBase::trampoline_pause(void* ctx, PJ_error_t* out_er
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_resume(void* ctx, PJ_error_t* out_error) noexcept {
+bool DataSourcePluginBase::trampoline_resume(void* ctx, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     auto status = self->resume();
@@ -160,7 +158,7 @@ inline bool DataSourcePluginBase::trampoline_resume(void* ctx, PJ_error_t* out_e
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_poll(void* ctx, PJ_error_t* out_error) noexcept {
+bool DataSourcePluginBase::trampoline_poll(void* ctx, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     auto status = self->poll();
@@ -178,7 +176,7 @@ inline bool DataSourcePluginBase::trampoline_poll(void* ctx, PJ_error_t* out_err
   }
 }
 
-inline PJ_data_source_state_t DataSourcePluginBase::trampoline_current_state(void* ctx) noexcept {
+PJ_data_source_state_t DataSourcePluginBase::trampoline_current_state(void* ctx) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     return static_cast<PJ_data_source_state_t>(self->currentState());
@@ -187,7 +185,7 @@ inline PJ_data_source_state_t DataSourcePluginBase::trampoline_current_state(voi
   }
 }
 
-inline PJ_borrowed_dialog_t DataSourcePluginBase::trampoline_get_dialog(void* ctx) noexcept {
+PJ_borrowed_dialog_t DataSourcePluginBase::trampoline_get_dialog(void* ctx) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     return self->getDialog();
@@ -196,7 +194,7 @@ inline PJ_borrowed_dialog_t DataSourcePluginBase::trampoline_get_dialog(void* ct
   }
 }
 
-inline const void* DataSourcePluginBase::trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept {
+const void* DataSourcePluginBase::trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     std::string_view sv = id.data == nullptr ? std::string_view{} : std::string_view(id.data, id.size);

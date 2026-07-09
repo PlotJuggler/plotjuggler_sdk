@@ -468,6 +468,7 @@ Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
 | `isStopRequested()` | Check if the host wants you to stop. |
 | `ensureParserBinding(request)` | Bind a parser for delegated ingest (see below). |
 | `pushMessage(handle, timestamp, fetch_message_data)` | Push a message through a parser binding via a deferred fetcher callable; the host invokes it per the active ObjectIngestPolicy (eager/lazy). |
+| `notifyAvailableTopics(topics)` | Advertise the full set of topics you *can* stream but have not subscribed, so the host lists and a-priori classifies them with no data flowing. See *Per-topic pause* below. |
 
 ## Optional Features
 
@@ -490,6 +491,55 @@ PJ::Status resume() override {
   // Resume your data source...
   return PJ::okStatus();
 }
+```
+
+### Per-topic pause (demand-driven subscription)
+
+For a multi-topic transport (a ROS/foxglove bridge, DDS, etc.) the pause above
+is *whole-source*. A source that can subscribe/unsubscribe individual topics on
+its live connection should instead let the host drive subscription per topic:
+advertise everything cheaply, but only pull data for topics the host is actually
+displaying. Declare it and the host will subscribe on demand:
+
+```cpp
+uint64_t extraCapabilities() const override {
+  return PJ::kCapabilityDelegatedIngest | PJ::kCapabilityPerTopicPause;
+}
+```
+
+Two halves:
+
+**1. Advertise (plugin → host).** From your poll/stream thread, tell the host
+every topic you *could* stream (not just the subscribed ones). The host lists
+them and classifies each a priori via `classify_schema` — no data flows yet.
+Call again whenever the available set changes.
+
+```cpp
+std::vector<PJ::AvailableTopic> topics;   // {topic_name, parser_encoding, type_name, schema}
+for (const auto& ch : advertised_channels_) topics.push_back(toAvailableTopic(ch));
+runtimeHost().notifyAvailableTopics(topics);
+```
+
+`notifyAvailableTopics` returns an **error on an old host** that lacks the tail
+slot — treat that as "advertisement unsupported" and fall back to your legacy
+(subscribe-a-preselected-set-on-start) behavior, so a new plugin never strands
+on an old host.
+
+**2. Subscribe on demand (host → plugin).** Expose the
+`"pj.topic_subscription.v1"` extension. The host hands you the **full** desired
+active-topic set (declarative); you diff it against your current subscriptions
+and subscribe/unsubscribe on your connection. An empty set pauses everything.
+
+```cpp
+const void* pluginExtension(std::string_view id) override {
+  if (id == PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1) return &topic_subscription_ext_;
+  return nullptr;
+}
+// topic_subscription_ext_ is a PJ_topic_subscription_v1_t{sizeof(...), &setActiveTopicsThunk};
+// setActiveTopicsThunk receives the PLUGIN INSTANCE as ctx (not the extension
+// pointer). It is entered on the host thread — marshal the desired set to your
+// stream thread (e.g. a command queue drained in onPoll), do not touch your
+// subscription state directly here.
 ```
 
 ### Periodic polling
@@ -587,6 +637,7 @@ Any state --> failed
 | `kCapabilityDelegatedIngest` | `1 << 3` | Plugin pushes raw bytes for host-side parsing |
 | `kCapabilitySupportsPause` | `1 << 4` | pause()/resume() are implemented |
 | `kCapabilityHasDialog` | `1 << 5` | Plugin provides a configuration dialog |
+| `kCapabilityPerTopicPause` | `1 << 6` | Host may pause/resume individual topics (advertise + `pj.topic_subscription.v1`) |
 
 Combine with bitwise OR.
 

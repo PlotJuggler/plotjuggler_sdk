@@ -176,6 +176,7 @@ synchronize and call host methods only from callback context.
 | `kCapabilityDelegatedIngest` | Plugin pushes raw bytes for host-side parsing |
 | `kCapabilitySupportsPause` | pause()/resume() are implemented |
 | `kCapabilityHasDialog` | Plugin provides a configuration dialog |
+| `kCapabilityPerTopicPause` | Host may pause/resume individual topics on a live connection (advertise via `notifyAvailableTopics` + `pj.topic_subscription.v1`) — see `docs/ARCHITECTURE.md` → "Per-topic pause" and `docs/data-source-guide.md` |
 
 ### Toolbox Capabilities
 

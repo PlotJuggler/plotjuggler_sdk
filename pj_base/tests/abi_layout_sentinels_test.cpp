@@ -164,7 +164,10 @@ static_assert(
     "list_available_encodings slot pinned");
 static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, push_message) == 88, "push_message tail slot pinned");
 static_assert(
-    sizeof(PJ_data_source_runtime_host_vtable_t) == 96, "Runtime host vtable size (update deliberately on append)");
+    offsetof(PJ_data_source_runtime_host_vtable_t, notify_available_topics) == 96,
+    "notify_available_topics tail slot pinned");
+static_assert(
+    sizeof(PJ_data_source_runtime_host_vtable_t) == 104, "Runtime host vtable size (update deliberately on append)");
 
 // --- Write-host vtables (ABI-APPENDABLE within v4) --------------------------
 static_assert(offsetof(PJ_source_write_host_vtable_t, abi_version) == 0, "source write host prefix pinned");

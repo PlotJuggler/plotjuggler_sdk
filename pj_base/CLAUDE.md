@@ -15,7 +15,7 @@ pj_base is the **Level 0** foundation and the **SDK boundary** for plugin author
 - ABI numbering is **frozen**: `BuiltinObjectType` (builtin_object.hpp) and `PJ_builtin_object_type_t` (builtin_object_abi.h) share stable numeric values — never renumber; types 2 and 12 are permanently reserved. Append-only.
 - Every vtable slot is `PJ_NOEXCEPT`; a throw across the ABI boundary calls `std::terminate`. See the header block in `plugin_data_api.h`.
 - `BuiltinObject` is `std::any`, deliberately not `std::variant`, for forward-compat — recover via `std::any_cast<T>` / `sdk::typeOf`. See `builtin/builtin_object.hpp`.
-- ABI/struct-layout or signature changes require a Conan **MINOR** bump and a refreshed `abi/baseline.abi`; tail-appended slots are a PATCH (see submodule CLAUDE.md → Release Versioning).
+- Versioning follows the authoritative submodule CLAUDE.md → Release Versioning: a **tail-appended slot / new capability** (backward-compatible ABI *addition*, `abidiff` shows additions-only) is a **MINOR** and does **not** touch `abi/baseline.abi`; a **struct-layout reorder or signature change** (an ABI *break*) is a **MAJOR** — that is what refreshes `abi/baseline.abi` and bumps `PJ_*_PROTOCOL_VERSION`/`PJ_ABI_VERSION`.
 
 ## Read deeper
 | For | Read |

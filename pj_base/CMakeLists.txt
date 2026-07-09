@@ -21,6 +21,12 @@ add_library(pj_base STATIC
   src/builtin/voxel_grid_codec.cpp
   src/number_parse.cpp
   src/type_tree.cpp
+  src/data_source_host_views.cpp
+  src/data_source_patterns.cpp
+  src/data_source_plugin_base.cpp
+  src/data_source_trampolines.cpp
+  src/toolbox_plugin_base.cpp
+  src/toolbox_trampolines.cpp
 )
 target_include_directories(pj_base PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -93,6 +99,7 @@ if(PJ_BUILD_TESTS)
     tests/image_annotations_decoder_test.cpp
     tests/media_metadata_test.cpp
     tests/push_message_test.cpp
+    tests/notify_available_topics_test.cpp
     tests/image_codec_test.cpp
     tests/depth_image_codec_test.cpp
     tests/point_cloud_codec_test.cpp

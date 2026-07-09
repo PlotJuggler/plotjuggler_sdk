@@ -30,14 +30,18 @@ import os
 
 class PlotjugglerSdkConan(ConanFile):
     name = "plotjuggler_sdk"
-    # UNRELEASED BREAK: 0.13.0 unified markers + transforms into the single host
-    # service `pj.data_processors.v1` via a `kind` discriminator (removed the old
+    # 0.14.0 unified markers + transforms into the single host service
+    # `pj.data_processors.v1` via a `kind` discriminator (removed the old
     # `pj.markers.v1` and the interim `pj.generators.v1`; generalized
-    # `create_data_processor`/`validate_data_processor_script` with kind/language/flags).
-    # 0.14.0 then adds the dialog-protocol additions (radio column + interactive
-    # sub-panel). All pre-1.0 unreleased — no PUBLIC tag ever shipped
-    # `pj.data_processors.v1`, so no released plugin breaks. The FIRST public release
-    # that carries the unified `pj.data_processors.v1` MUST be tagged 1.0.0. See CHANGELOG.md.
+    # `create_data_processor`/`validate_data_processor_script` with
+    # kind/language/flags) and added the dialog-protocol additions (radio
+    # column + interactive sub-panel). Shipped as a MINOR bump rather than
+    # 1.0.0 because no public tag had ever carried `pj.data_processors.v1`,
+    # so no released plugin broke.
+    # 0.15.0 adds DataSource per-topic pause (advertise + demand-driven
+    # subscription) — strictly additive. See CHANGELOG.md.
+    # 0.16.0 adds the pj.playback.v1 + pj.viewport.v1 host services —
+    # strictly additive. See CHANGELOG.md.
     version = "0.16.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
