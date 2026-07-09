@@ -127,6 +127,16 @@ target_compile_features(mock_data_source_v2_plugin PRIVATE cxx_std_20)
 target_compile_options(mock_data_source_v2_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_data_source_v2_plugin PRIVATE pj_base)
 
+add_library(mock_data_source_incompatible_plugin SHARED tests/mock_data_source_incompatible_plugin.cpp)
+target_compile_features(mock_data_source_incompatible_plugin PRIVATE cxx_std_20)
+target_compile_options(mock_data_source_incompatible_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(mock_data_source_incompatible_plugin PRIVATE pj_base)
+
+add_library(mock_data_source_incompatible_low_plugin SHARED tests/mock_data_source_incompatible_low_plugin.cpp)
+target_compile_features(mock_data_source_incompatible_low_plugin PRIVATE cxx_std_20)
+target_compile_options(mock_data_source_incompatible_low_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(mock_data_source_incompatible_low_plugin PRIVATE pj_base)
+
 add_library(invalid_optional_manifest_data_source_plugin SHARED tests/invalid_optional_manifest_data_source_plugin.cpp)
 target_compile_features(invalid_optional_manifest_data_source_plugin PRIVATE cxx_std_20)
 target_compile_options(invalid_optional_manifest_data_source_plugin PRIVATE ${PJ_WARNING_FLAGS})
@@ -374,6 +384,9 @@ add_test(NAME toolbox_plugin_test COMMAND toolbox_plugin_test)
 add_executable(plugin_catalog_test tests/plugin_catalog_test.cpp)
 target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
+  PJ_MOCK_DATA_SOURCE_V2_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_v2_plugin>"
+  PJ_MOCK_DATA_SOURCE_INCOMPATIBLE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_incompatible_plugin>"
+  PJ_MOCK_DATA_SOURCE_INCOMPATIBLE_LOW_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_incompatible_low_plugin>"
   PJ_MOCK_JSON_PARSER_PLUGIN_PATH="$<TARGET_FILE:mock_json_parser_plugin>"
   PJ_MOCK_TOOLBOX_PLUGIN_PATH="$<TARGET_FILE:mock_toolbox_plugin>"
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
@@ -388,7 +401,9 @@ target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(plugin_catalog_test PRIVATE
   pj_plugin_catalog pj_plugin_runtime_catalog GTest::gtest_main
 )
-add_dependencies(plugin_catalog_test mock_data_source_plugin mock_json_parser_plugin
+add_dependencies(plugin_catalog_test mock_data_source_plugin mock_data_source_v2_plugin
+                 mock_data_source_incompatible_plugin mock_data_source_incompatible_low_plugin
+                 mock_json_parser_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
                  static_manifest_dialog_plugin legacy_macro_dialog_plugin

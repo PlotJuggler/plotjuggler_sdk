@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <nlohmann/json.hpp>
+#include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -59,6 +61,53 @@ std::vector<const PluginT*> constPtrs(const std::vector<PluginT>& plugins, uint6
 
 }  // namespace
 
+namespace detail {
+
+// Compares two dotted numeric version strings (e.g. "4.1.0" vs "4.0.2"). Only the
+// leading numeric components matter: each component's digits are read until the
+// first non-digit. A '.' continues to the next component; any other separator
+// ('-', '+', …) ends the numeric part, so a pre-release/build suffix is ignored
+// *in full* even when it contains dots ("1-rc2", "1-rc.2", "3+meta" all compare as
+// "1"/"1"/"3"). A missing trailing component counts as 0 (so "4.1" == "4.1.0").
+// Components are compared as unsigned decimals *without* converting to an integer
+// type — leading zeros are stripped, then the longer digit run is the larger value,
+// else they compare lexicographically. This is overflow-proof: an absurdly long
+// component like "999999999999999999999.0.0" is handled correctly, not wrapped.
+// Returns <0, 0, or >0 like strcmp.
+int compareSemver(std::string_view lhs, std::string_view rhs) {
+  // Consume the leading digit run of the current component; returns it with leading
+  // zeros stripped ("" == numeric 0). Advance to the next component only across a '.'
+  // that immediately follows the digits — any other separator begins a suffix the
+  // comparison ignores, so the numeric part ends there. (Scanning for the next '.'
+  // instead would wrongly step over a suffix like "-rc.2" and read its digits.)
+  auto takeComponent = [](std::string_view& v) -> std::string_view {
+    size_t len = 0;
+    while (len < v.size() && v[len] >= '0' && v[len] <= '9') {
+      ++len;
+    }
+    const std::string_view run = v.substr(0, len);
+    v = (len < v.size() && v[len] == '.') ? v.substr(len + 1) : std::string_view{};
+    size_t first_significant = 0;
+    while (first_significant < run.size() && run[first_significant] == '0') {
+      ++first_significant;
+    }
+    return run.substr(first_significant);
+  };
+  while (!lhs.empty() || !rhs.empty()) {
+    const std::string_view l = takeComponent(lhs);
+    const std::string_view r = takeComponent(rhs);
+    if (l.size() != r.size()) {
+      return l.size() < r.size() ? -1 : 1;
+    }
+    if (const int cmp = l.compare(r); cmp != 0) {
+      return cmp < 0 ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+}  // namespace detail
+
 PluginRuntimeCatalog::PluginRuntimeCatalog(
     std::filesystem::path plugin_dir, DiagnosticSink sink, std::string diagnostic_source)
     : sink_(std::move(sink)), diagnostic_source_(std::move(diagnostic_source)) {
@@ -82,13 +131,77 @@ void PluginRuntimeCatalog::setDiagnosticSink(DiagnosticSink sink) {
   sink_ = std::move(sink);
 }
 
+void PluginRuntimeCatalog::setHostVersion(std::string host_version) {
+  host_version_ = std::move(host_version);
+}
+
+void PluginRuntimeCatalog::setAuthoritativeFolders(std::vector<std::filesystem::path> folders) {
+  authoritative_folders_.clear();
+  for (const std::filesystem::path& folder : folders) {
+    if (folder.empty()) {
+      continue;
+    }
+    // Lock the working directory *now*: std::filesystem::absolute prepends the
+    // current path without touching the filesystem (symlinks stay unresolved, the
+    // folder need not exist yet), so a later CWD change cannot repoint a relative
+    // entry. Filesystem identity is resolved lazily at scan time by
+    // isAuthoritativeDir(), which is stable where a set-time canonicalization is not.
+    std::error_code ec;
+    std::filesystem::path absolute = std::filesystem::absolute(folder, ec);
+    authoritative_folders_.push_back(ec ? folder : std::move(absolute));
+  }
+}
+
+bool PluginRuntimeCatalog::isAuthoritativeDir(const std::filesystem::path& dir) const {
+  return std::ranges::any_of(authoritative_folders_, [&](const std::filesystem::path& folder) {
+    // Prefer filesystem identity: it resolves symlinks, '.'/'..', and
+    // case-insensitive filesystems that a compare of two independent
+    // canonicalizations would miss. equivalent() needs both paths to exist; when
+    // one does not (e.g. an authoritative folder registered before it is created)
+    // it sets ec and returns false, so we fall back to a normalized string compare.
+    std::error_code ec;
+    return (std::filesystem::equivalent(dir, folder, ec) && !ec) || canonicalPath(dir) == canonicalPath(folder);
+  });
+}
+
 std::vector<PluginDescriptor> PluginRuntimeCatalog::collectDeduplicatedPlugins() const {
+  // Winner selection when the same plugin id appears in more than one folder:
+  //
+  //   1. Authoritative folders (custom folders + --plugin-dir; see
+  //      setAuthoritativeFolders) are a HARD override. Once an id is claimed by an
+  //      authoritative folder, the highest-priority authoritative copy wins outright
+  //      — ignoring the version and compatibility of any lower-priority folder.
+  //   2. Among the remaining (managed) folders — marketplace + bundled — the winner
+  //      is by compatibility, then version, then folder priority: a compatible build
+  //      beats an incompatible one (min_plotjuggler_version > host_version_) at any
+  //      version; among equally compatible candidates the higher version wins; a tie
+  //      keeps the higher-priority folder.
+  //
+  // Compatibility only breaks ties between managed candidates — it never excludes a
+  // plugin (a lone incompatible plugin still loads; if every managed candidate is
+  // incompatible the highest version wins). min_plotjuggler_version is an advisory
+  // floor, not a hard gate (the ABI gate runs earlier in scanPluginDsos). An empty
+  // host_version_ disables the compatibility check entirely.
+  const auto compatible = [this](const PluginDescriptor& d) {
+    return host_version_.empty() || d.min_plotjuggler_version.empty() ||
+           detail::compareSemver(d.min_plotjuggler_version, host_version_) <= 0;
+  };
+
   std::vector<PluginDescriptor> winners;
-  std::unordered_set<std::string> seen_ids;
+  std::unordered_map<std::string, size_t> winner_index;  // id -> position in `winners`
+  std::unordered_set<std::string> authoritative_win;     // ids whose current winner is authoritative (locked)
+  std::unordered_set<std::string> scanned_dirs;          // canonical paths already scanned (dedup the list itself)
   for (const std::filesystem::path& dir : plugin_dirs_) {
     if (dir.empty()) {
       continue;
     }
+    // Skip a folder already scanned in a higher-priority slot: without this, the
+    // same folder listed twice compares every plugin against itself and emits a
+    // confusing "ignoring duplicate id … already loaded from <same path>".
+    if (!scanned_dirs.insert(canonicalPath(dir)).second) {
+      continue;
+    }
+    const bool dir_authoritative = isAuthoritativeDir(dir);
     auto scan = scanPluginDsos(dir);
     if (!scan) {
       report(DiagnosticLevel::kError, {}, scan.error());
@@ -96,14 +209,67 @@ std::vector<PluginDescriptor> PluginRuntimeCatalog::collectDeduplicatedPlugins()
     }
     reportScanDiagnostics(*scan);
     for (const PluginDescriptor& descriptor : scan->plugins) {
-      if (!seen_ids.insert(descriptor.id).second) {
-        report(
-            DiagnosticLevel::kInfo, descriptor.id,
-            descriptor.dso_path.string() + ": ignoring duplicate plugin id \"" + descriptor.id +
-                "\" (already provided by a higher-priority folder)");
+      const auto it = winner_index.find(descriptor.id);
+      if (it == winner_index.end()) {
+        winner_index.emplace(descriptor.id, winners.size());
+        winners.push_back(descriptor);
+        if (dir_authoritative) {
+          authoritative_win.insert(descriptor.id);
+        }
         continue;
       }
-      winners.push_back(descriptor);
+      PluginDescriptor& incumbent = winners[it->second];
+      const std::string incumbent_path = incumbent.dso_path.string();
+
+      // (1) A locked authoritative winner is a hard override — nothing displaces it.
+      if (authoritative_win.count(descriptor.id) != 0) {
+        // Note when the loser is itself authoritative (just lower priority), so the
+        // diagnostic does not read as if a managed copy lost to an authoritative one.
+        const std::string candidate_note =
+            dir_authoritative ? "; candidate is also from an authoritative folder (lower priority)" : "";
+        report(
+            DiagnosticLevel::kInfo, descriptor.id,
+            descriptor.dso_path.string() + ": ignoring duplicate plugin id \"" + descriptor.id + "\" v" +
+                descriptor.version + " (authoritative v" + incumbent.version + " already loaded from " +
+                incumbent_path + candidate_note + ")");
+        continue;
+      }
+      // (1) An authoritative candidate overrides a managed incumbent, regardless of
+      //     version or compatibility.
+      if (dir_authoritative) {
+        report(
+            DiagnosticLevel::kInfo, descriptor.id,
+            descriptor.dso_path.string() + ": plugin id \"" + descriptor.id + "\" v" + descriptor.version +
+                " from an authoritative folder supersedes v" + incumbent.version + " from " + incumbent_path);
+        incumbent = descriptor;
+        authoritative_win.insert(descriptor.id);
+        continue;
+      }
+      // (2) Both managed: compatibility, then version, then folder priority.
+      const bool cand_ok = compatible(descriptor);
+      const bool inc_ok = compatible(incumbent);
+      const bool replace =
+          (cand_ok != inc_ok) ? cand_ok : detail::compareSemver(descriptor.version, incumbent.version) > 0;
+      if (replace) {
+        const std::string reason = (cand_ok && !inc_ok)
+                                       ? " supersedes incompatible v" + incumbent.version +
+                                             " (needs PlotJuggler >= " + incumbent.min_plotjuggler_version + ")"
+                                       : " supersedes v" + incumbent.version;
+        report(
+            DiagnosticLevel::kInfo, descriptor.id,
+            descriptor.dso_path.string() + ": plugin id \"" + descriptor.id + "\" v" + descriptor.version + reason +
+                " from " + incumbent_path);
+        incumbent = descriptor;
+      } else {
+        const std::string reason =
+            (!cand_ok && inc_ok)
+                ? "ignoring incompatible plugin id \"" + descriptor.id + "\" v" + descriptor.version +
+                      " (needs PlotJuggler >= " + descriptor.min_plotjuggler_version + "; compatible v" +
+                      incumbent.version + " already loaded from " + incumbent_path + ")"
+                : "ignoring duplicate plugin id \"" + descriptor.id + "\" v" + descriptor.version + " (v" +
+                      incumbent.version + " already loaded from " + incumbent_path + ")";
+        report(DiagnosticLevel::kInfo, descriptor.id, descriptor.dso_path.string() + ": " + reason);
+      }
     }
   }
   return winners;
