@@ -37,19 +37,6 @@ The recipe is seeded with **`0.16.0`** — the first tag that satisfies these:
 3. **Confirm dependencies exist in CCI** (verified 2026-07-01, all present):
    `nlohmann_json/3.12.0`, `fmt/12.1.0`, `fast_float/8.1.0`.
 
-## After tagging `v0.16.0`
-
-The `sha256` in `conandata.yml` is a **placeholder** until the release tag
-exists (the digest of a tag tarball cannot be known before the tag is cut).
-Once `v0.16.0` is tagged and pushed:
-
-```bash
-curl -sL https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.16.0.tar.gz | sha256sum
-```
-
-and replace the placeholder in `conandata.yml` before copying this tree into
-the conan-center-index fork.
-
 ## Test locally before opening the PR
 
 From inside a checkout of the conan-center-index fork:
