@@ -22,7 +22,7 @@ tree for local dev/consume. The CCI recipe instead downloads the released
 
 ## Prerequisites before submitting
 
-The recipe is seeded with **`0.16.1`** — the first tag that satisfies these:
+The recipe is seeded with **`0.16.2`** — the first tag that satisfies these:
 
 1. **The `-Werror` gate ships in the consumed tag.** The recipe sets
    `-DPJ_WARNINGS_AS_ERRORS=OFF` so a not-yet-pinned compiler on CCI's build
@@ -35,8 +35,9 @@ The recipe is seeded with **`0.16.1`** — the first tag that satisfies these:
    "no breaking changes within 0.x" promise for CCI consumers.
 3. **The tag builds on CCI's macOS deployment target.** CCI's macOS builders
    target below 13.3, where libc++ marks the floating-point `std::to_chars`
-   overloads unavailable — `v0.16.0` failed there (`plugin_data_api.hpp`).
-   `0.16.1` adds the `snprintf` fallback.
+   overloads unavailable — `v0.16.0` failed there (`plugin_data_api.hpp`), and
+   `v0.16.1`'s fallback guard misspelled the availability macro and never
+   engaged. `0.16.2` carries the working `snprintf` fallback.
 4. **Confirm dependencies exist in CCI** (verified 2026-07-01, all present):
    `nlohmann_json/3.12.0`, `fmt/12.1.0`, `fast_float/8.1.0`.
 
@@ -57,10 +58,10 @@ cd recipes/plotjuggler_sdk
 # Build + run the test_package. The recipe validate()s C++20, so a profile
 # whose compiler.cppstd is < 20 (e.g. the common gnu17 default) is correctly
 # rejected — pass an explicit C++20 std:
-conan create all --version=0.16.1 -s compiler.cppstd=20 --build=missing
+conan create all --version=0.16.2 -s compiler.cppstd=20 --build=missing
 # Exercise the option matrix CCI will build:
-conan create all --version=0.16.1 -s compiler.cppstd=20 -o "&:with_host=False" --build=missing
-conan create all --version=0.16.1 -s compiler.cppstd=20 -o "&:assert_throws=True" --build=missing
+conan create all --version=0.16.2 -s compiler.cppstd=20 -o "&:with_host=False" --build=missing
+conan create all --version=0.16.2 -s compiler.cppstd=20 -o "&:assert_throws=True" --build=missing
 ```
 
 Then run the Conan Center hooks locally (catches KB-Hxxx violations the reviewer
@@ -69,13 +70,13 @@ bot will flag):
 ```bash
 conan config install https://github.com/conan-io/conan-center-index.git \
   -sf .c3i/hooks -tf .conan2/extensions/hooks   # one-time
-conan create all --version=0.16.1 -s compiler.cppstd=20 --build=missing   # hooks run inline
+conan create all --version=0.16.2 -s compiler.cppstd=20 --build=missing   # hooks run inline
 ```
 
 ## Open the PR
 
 Fork `conan-io/conan-center-index`, drop this tree under `recipes/`, commit, and
-open a PR titled `plotjuggler_sdk/0.16.1`. Expect one or more review rounds —
+open a PR titled `plotjuggler_sdk/0.16.2`. Expect one or more review rounds —
 the usual notes are around option count (`with_host`, `assert_throws`), license
 packaging, and the compiler-minimum map. Acceptance is at CCI maintainer
 discretion.

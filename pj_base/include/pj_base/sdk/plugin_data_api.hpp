@@ -1636,10 +1636,13 @@ class SettingsView {
 
   [[nodiscard]] Status setValue(std::string_view key, double value) const {
     char buf[40];
-#if defined(__APPLE__) && defined(__ENVIRONMENT_MACOS_VERSION_MIN_REQUIRED__) && \
-    __ENVIRONMENT_MACOS_VERSION_MIN_REQUIRED__ < 130300
+#if defined(__APPLE__) && (!defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || \
+                           __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 130300)
     // libc++ marks the floating-point std::to_chars overloads unavailable below
-    // a macOS 13.3 deployment target; %.17g round-trips any IEEE double.
+    // a macOS 13.3 deployment target; %.17g round-trips any IEEE double. The
+    // guard is fail-safe: any Apple target that is not provably macOS >= 13.3
+    // (including non-macOS Apple platforms, which spell the macro differently
+    // and have their own availability floors) takes the snprintf path.
     const int n = std::snprintf(buf, sizeof(buf), "%.17g", value);
     if (n <= 0 || static_cast<std::size_t>(n) >= sizeof(buf)) {
       return unexpected("settings: failed to format double value");
