@@ -10,6 +10,4 @@ sources:
   # Older tags are intentionally not listed here.
   "0.16.2":
     url: "https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.16.2.tar.gz"
-    # PLACEHOLDER — v0.16.2 is not tagged yet. After tagging, recompute with the
-    # curl command above and replace before copying this tree into the CCI fork.
-    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256: "7aeec69df940764a628375e9b51ee79a5a986154ad43c8c2e2ce9d8656a8e064"
