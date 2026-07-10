@@ -44,6 +44,7 @@ struct PluginDescriptor {
   std::string id;
   std::string name;
   std::string version;
+  std::string min_plotjuggler_version;  ///< optional; "" means no declared minimum (always compatible)
   std::string description;
   std::string category;
   std::vector<std::string> encoding;         ///< for message parsers (one or more)

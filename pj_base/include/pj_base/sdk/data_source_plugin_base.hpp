@@ -233,8 +233,8 @@ class DataSourcePluginBase {
 // With PJ_STATIC_PLUGINS the plugin is linked into the host binary. The fixed
 // `extern "C" PJ_get_data_source_vtable` symbol would collide across plugins in
 // one binary, so emit a uniquely-named (class-keyed) C++ function instead. The
-// host's static registry declares these extern and passes them to
-// PluginRuntimeCatalog::registerStaticDataSource().
+// host's static registry declares these extern and passes them to its
+// runtime catalog's registerStaticDataSource() (host-side, in the app).
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_DATA_SOURCE_PLUGIN
 #define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                         \

@@ -244,6 +244,10 @@ Expected<PluginDescriptor> decodeManifest(
   if (!category) {
     return unexpected(category.error());
   }
+  auto min_plotjuggler_version = optional_string("min_plotjuggler_version");
+  if (!min_plotjuggler_version) {
+    return unexpected(min_plotjuggler_version.error());
+  }
   auto file_extensions = readStringArray(j, "file_extensions");
   if (!file_extensions) {
     return unexpected(file_extensions.error());
@@ -255,6 +259,7 @@ Expected<PluginDescriptor> decodeManifest(
 
   d.description = *description;
   d.category = *category;
+  d.min_plotjuggler_version = *min_plotjuggler_version;
   d.file_extensions = *file_extensions;
   d.capabilities = *capabilities;
 
