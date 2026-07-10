@@ -3,7 +3,26 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [Unreleased] — not yet publicly tagged
+## [0.16.0]
+
+### SDK slimming: duplicate-resolution catalog moved to the host (HOST-FACING REMOVAL)
+
+`PluginRuntimeCatalog` — the layer that resolved duplicate plugin ids across scan
+folders by authoritative → compatibility → version → folder priority — is host
+*policy*, not a plugin-facing mechanism, so it moved to the PlotJuggler app
+(`pj_runtime`). The SDK stays a thin discovery + loader layer: `scanPluginDsos`,
+`inspectPluginDso`, the RAII loaders, and the C ABI are unchanged. (#144)
+
+- **Removed** `pj_plugins/host/plugin_runtime_catalog.hpp` and the installed
+  `pj_plugin_runtime_catalog` library (dropped from the `pj_plugin_host`
+  umbrella and the install set).
+
+**Versioning note.** No plugin links `PluginRuntimeCatalog` (it was host-side
+only) and `abi/baseline.abi` is unchanged, so by the plugin-impact rule this is
+a MINOR, not a MAJOR. It does remove host-facing public API: a *host* built
+against 0.15.0's catalog must adopt the app-side implementation (`pj_runtime`).
+
+## [0.15.0]
 
 ### DataSource: per-topic pause/resume — advertise-without-subscribe + demand-driven control (ADDITIVE)
 
