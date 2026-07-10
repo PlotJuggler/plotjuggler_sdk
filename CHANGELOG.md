@@ -3,6 +3,21 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.16.2]
+
+### Fix: 0.16.1's Apple `to_chars` guard tested a misspelled macro and never engaged (PATCH)
+
+The 0.16.1 fallback guard checked `__ENVIRONMENT_MACOS_VERSION_MIN_REQUIRED__`,
+which does not exist — the compiler defines
+`__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__` (verified against clang's
+`OSTargets.cpp`) — so `defined(...)` was always false and every Apple build
+still compiled the floating-point `std::to_chars` path. The guard now uses the
+correct macro and is fail-safe: any Apple target not provably macOS ≥ 13.3
+(including non-macOS Apple platforms, which spell the macro differently) takes
+the `snprintf` fallback. Guard behavior verified by preprocessing the header's
+exact `#if` line under deployment targets 13.0 / 13.3 / 26.0 / undefined /
+non-Apple.
+
 ## [0.16.1]
 
 ### Fix: double formatting in `plugin_data_api.hpp` on older Apple deployment targets (PATCH)
