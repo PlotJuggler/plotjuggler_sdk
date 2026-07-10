@@ -3,6 +3,24 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.16.1]
+
+### Fix: double formatting in `plugin_data_api.hpp` on older Apple deployment targets (PATCH)
+
+`SettingsStoreView::setValue(key, double)` — an inline method in an installed
+public header — used the floating-point `std::to_chars` overload, which libc++
+marks *unavailable* below a macOS 13.3 deployment target. Any macOS build with
+an older target (Conan Center's build farm, or a consumer setting
+`CMAKE_OSX_DEPLOYMENT_TARGET`) failed to compile. On such targets the method
+now falls back to `snprintf("%.17g")`, which round-trips any IEEE double; all
+other platforms keep the shortest-round-trip `std::to_chars` path. Behavioral
+difference on the fallback path only: non-minimal digit strings (e.g. `0.1` →
+`0.10000000000000001`) — values are preserved exactly.
+
+Also seeds the Conan Center recipe at `0.16.1` (its `tool_requires
+cmake/[>=3.22]` fix from `618b92e` plus this header fix are both required for
+CCI's macOS builders).
+
 ## [0.16.0]
 
 ### SDK slimming: duplicate-resolution catalog moved to the host (HOST-FACING REMOVAL)

@@ -3,10 +3,13 @@ sources:
   # of these archive-by-tag tarballs, so this digest is fixed for the tag.
   # Recompute for a new release with:
   #   curl -sL https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/vX.Y.Z.tar.gz | sha256sum
-  # v0.16.0 is the seed version: the first tag with the PJ_WARNINGS_AS_ERRORS
-  # gate the recipe relies on AND without the host-side PluginRuntimeCatalog
-  # (removed in #144) — so CCI never publishes API a later 0.x removes. Older
-  # tags are intentionally not listed here.
-  "0.16.0":
-    url: "https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.16.0.tar.gz"
-    sha256: "9f1cd9c619c7137068c91160514879de9d5c35b53b54b645a30ab447419c5b52"
+  # v0.16.1 is the seed version: the first tag that builds on CCI's macOS
+  # deployment target (FP std::to_chars fallback), carries the
+  # PJ_WARNINGS_AS_ERRORS gate, and has the thin post-#144 SDK surface — so CCI
+  # never publishes API a later 0.x removes. Older tags are intentionally not
+  # listed here.
+  "0.16.1":
+    url: "https://github.com/PlotJuggler/plotjuggler_sdk/archive/refs/tags/v0.16.1.tar.gz"
+    # PLACEHOLDER — v0.16.1 is not tagged yet. After tagging, recompute with the
+    # curl command above and replace before copying this tree into the CCI fork.
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"

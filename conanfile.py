@@ -6,7 +6,7 @@ Exposes three CMake components under the `plotjuggler_sdk::` namespace:
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.16.0` and then:
+A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.16.1` and then:
 
     find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
@@ -44,7 +44,10 @@ class PlotjugglerSdkConan(ConanFile):
     # policy moved to the app, pj_runtime). No plugin links it and
     # abi/baseline.abi is unchanged, so per the plugin-impact rule this is a
     # MINOR, not a MAJOR. See CHANGELOG.md.
-    version = "0.16.0"
+    # 0.16.1 fixes plugin_data_api.hpp double formatting on Apple deployment
+    # targets older than macOS 13.3 (FP std::to_chars unavailable there) —
+    # PATCH, installed-header bug fix. See CHANGELOG.md.
+    version = "0.16.1"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"
