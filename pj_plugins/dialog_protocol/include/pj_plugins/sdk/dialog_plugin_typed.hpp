@@ -61,6 +61,12 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// A row's trailing delete (trash) button was clicked in a QListWidget marked
+  /// deletable via WidgetData::setListItemsDeletable. `index` is the row.
+  virtual bool onItemDeleteRequested(std::string_view /*widget_name*/, int /*index*/) {
+    return false;
+  }
+
   /// QTableWidget: a horizontal-header section (column) was clicked. Plugins
   /// that drive their own column sorting override this, re-order their row
   /// model, and re-emit — index-based selection/visibility stays consistent.
@@ -170,6 +176,9 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.itemDoubleClickedIndex()) {
       return onItemDoubleClicked(widget_name, *v);
+    }
+    if (auto v = event.itemDeleteRequestedIndex()) {
+      return onItemDeleteRequested(widget_name, *v);
     }
     if (auto v = event.headerSection()) {
       return onHeaderClicked(widget_name, *v);
