@@ -14,8 +14,11 @@ submodule-internal modules; `pj_base` carries none).
 
 ## Layout
 - `include/pj_plugins/host/` — host loaders + RAII handles for DataSource /
-  MessageParser / Toolbox, the `PluginRuntimeCatalog`, embedded-manifest
-  `plugin_catalog` scanner, `ServiceRegistryBuilder`, `ConfigEnvelope`.
+  MessageParser / Toolbox, the embedded-manifest `plugin_catalog` scanner
+  (`scanPluginDsos` / `inspectPluginDso`), `ServiceRegistryBuilder`,
+  `ConfigEnvelope`. The duplicate-resolution catalog that composes these into a
+  loaded set is **host policy** and lives in the app (`pj_runtime`,
+  `PluginRuntimeCatalog`), not here.
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:
   `MessageParserPluginBase`, `ObjectIngestPolicyResolver`, parser trampolines.
 - `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host for tests).
@@ -48,6 +51,6 @@ submodule-internal modules; `pj_base` carries none).
 | ABI rules, three-level design, loaders, RAII, data-host bridge | `docs/ARCHITECTURE.md` |
 | Writing each family | `docs/data-source-guide.md`, `docs/message-parser-guide.md`, `docs/toolbox-guide.md`, `docs/dialog-plugin-guide.md` |
 | Host loader + factory pattern | `include/pj_plugins/host/data_source_library.hpp`, `…/data_source_handle.hpp` |
-| Discovery from embedded manifests | `include/pj_plugins/host/plugin_catalog.hpp`, `…/plugin_runtime_catalog.hpp` |
+| Discovery from embedded manifests | `include/pj_plugins/host/plugin_catalog.hpp` (the duplicate-resolution catalog is host-side in `pj_runtime`) |
 | Service wiring into `bind()` | `include/pj_plugins/host/service_registry_builder.hpp` |
 | Builtin-object ingest policy | `include/pj_plugins/sdk/object_ingest_policy.hpp` |

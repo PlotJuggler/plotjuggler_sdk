@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <array>
+#include <charconv>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <initializer_list>
@@ -1792,11 +1794,25 @@ class SettingsView {
 
   [[nodiscard]] Status setValue(std::string_view key, double value) const {
     char buf[40];
+#if defined(__APPLE__) && (!defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || \
+                           __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 130300)
+    // libc++ marks the floating-point std::to_chars overloads unavailable below
+    // a macOS 13.3 deployment target; %.17g round-trips any IEEE double. The
+    // guard is fail-safe: any Apple target that is not provably macOS >= 13.3
+    // (including non-macOS Apple platforms, which spell the macro differently
+    // and have their own availability floors) takes the snprintf path.
+    const int n = std::snprintf(buf, sizeof(buf), "%.17g", value);
+    if (n <= 0 || static_cast<std::size_t>(n) >= sizeof(buf)) {
+      return unexpected("settings: failed to format double value");
+    }
+    return setValue(key, std::string_view(buf, static_cast<std::size_t>(n)));
+#else
     auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), value);
     if (ec != std::errc{}) {
       return unexpected("settings: failed to format double value");
     }
     return setValue(key, std::string_view(buf, static_cast<std::size_t>(ptr - buf)));
+#endif
   }
 
   [[nodiscard]] Status setValue(std::string_view key, bool value) const {

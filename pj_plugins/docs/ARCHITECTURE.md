@@ -255,8 +255,7 @@ pj_plugins/
     message_parser_handle.hpp
     toolbox_library.hpp
     toolbox_handle.hpp
-    plugin_catalog.hpp              ← embedded-manifest DSO scanner
-    plugin_runtime_catalog.hpp      ← shared host catalog (all families)
+    plugin_catalog.hpp              ← embedded-manifest DSO scanner (scanPluginDsos / inspectPluginDso)
     service_registry_builder.hpp    ← service wiring into bind()
     config_envelope.hpp             ← versioned config wrapper
   include/pj_plugins/sdk/

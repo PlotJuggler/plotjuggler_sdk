@@ -122,11 +122,6 @@ target_compile_features(missing_id_data_source_plugin PRIVATE cxx_std_20)
 target_compile_options(missing_id_data_source_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(missing_id_data_source_plugin PRIVATE pj_base)
 
-add_library(mock_data_source_v2_plugin SHARED tests/mock_data_source_v2_plugin.cpp)
-target_compile_features(mock_data_source_v2_plugin PRIVATE cxx_std_20)
-target_compile_options(mock_data_source_v2_plugin PRIVATE ${PJ_WARNING_FLAGS})
-target_link_libraries(mock_data_source_v2_plugin PRIVATE pj_base)
-
 add_library(invalid_optional_manifest_data_source_plugin SHARED tests/invalid_optional_manifest_data_source_plugin.cpp)
 target_compile_features(invalid_optional_manifest_data_source_plugin PRIVATE cxx_std_20)
 target_compile_options(invalid_optional_manifest_data_source_plugin PRIVATE ${PJ_WARNING_FLAGS})
@@ -214,42 +209,14 @@ target_link_libraries(pj_toolbox_host
 )
 
 # ---------------------------------------------------------------------------
-# pj_plugin_runtime_catalog — shared host-side plugin loading catalog
-# ---------------------------------------------------------------------------
-
-add_library(pj_plugin_runtime_catalog STATIC
-  src/plugin_runtime_catalog.cpp
-)
-target_include_directories(pj_plugin_runtime_catalog PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_compile_features(pj_plugin_runtime_catalog PUBLIC cxx_std_20)
-target_compile_options(pj_plugin_runtime_catalog PRIVATE ${PJ_WARNING_FLAGS})
-set_target_properties(pj_plugin_runtime_catalog PROPERTIES
-  POSITION_INDEPENDENT_CODE ON
-  EXPORT_NAME plugin_runtime_catalog
-)
-target_link_libraries(pj_plugin_runtime_catalog
-  PUBLIC
-    pj_data_source_host
-    pj_message_parser_host
-    pj_toolbox_host
-    pj_plugin_catalog
-    pj_base
-  PRIVATE
-    nlohmann_json::nlohmann_json
-)
-
-# ---------------------------------------------------------------------------
 # pj_plugin_host — umbrella INTERFACE that bundles every host-side loader.
 # Hosts (the PlotJuggler app, test rigs) link this single target to get
-# discovery + all four plugin-family loaders + the runtime catalog.
+# discovery + all four plugin-family loaders. The duplicate-resolution catalog
+# is host policy and lives in the app (pj_runtime), built on these primitives.
 # ---------------------------------------------------------------------------
 
 add_library(pj_plugin_host INTERFACE)
 target_link_libraries(pj_plugin_host INTERFACE
-  pj_plugin_runtime_catalog
   pj_data_source_host
   pj_message_parser_host
   pj_toolbox_host
@@ -386,9 +353,10 @@ target_compile_definitions(plugin_catalog_test PRIVATE
 )
 target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(plugin_catalog_test PRIVATE
-  pj_plugin_catalog pj_plugin_runtime_catalog GTest::gtest_main
+  pj_plugin_catalog GTest::gtest_main
 )
-add_dependencies(plugin_catalog_test mock_data_source_plugin mock_json_parser_plugin
+add_dependencies(plugin_catalog_test mock_data_source_plugin
+                 mock_json_parser_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
                  static_manifest_dialog_plugin legacy_macro_dialog_plugin
@@ -409,7 +377,6 @@ if(PJ_INSTALL_SDK)
       pj_data_source_host
       pj_message_parser_host
       pj_toolbox_host
-      pj_plugin_runtime_catalog
       pj_plugin_host
     EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

@@ -3,10 +3,10 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.16.0] — Unreleased, on branch `feature/playback-viewport-services`
+## [0.17.0] — Unreleased, on branch `feature/playback-viewport-services`
 
-> Version number is provisional: 0.15.0 is taken by the in-flight lazy-subscription
-> work; renumber at release if the two land in a different order.
+> Version number is provisional: 0.16.0–0.16.2 were released upstream while this
+> branch was in flight (without these services); renumber at release if needed.
 
 ### Added — host services `pj.playback.v1` and `pj.viewport.v1` (MINOR, additions only)
 
@@ -36,7 +36,59 @@ unrepresentable on the wire. It now decodes to an empty set; null-with-size,
 truncated, and malformed payloads still error. (Logically part of the
 plot-markers feature line; riding this branch until the PRs are re-sorted.)
 
-## [Unreleased] — not yet publicly tagged
+## [0.16.2]
+
+### Fix: 0.16.1's Apple `to_chars` guard tested a misspelled macro and never engaged (PATCH)
+
+The 0.16.1 fallback guard checked `__ENVIRONMENT_MACOS_VERSION_MIN_REQUIRED__`,
+which does not exist — the compiler defines
+`__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__` (verified against clang's
+`OSTargets.cpp`) — so `defined(...)` was always false and every Apple build
+still compiled the floating-point `std::to_chars` path. The guard now uses the
+correct macro and is fail-safe: any Apple target not provably macOS ≥ 13.3
+(including non-macOS Apple platforms, which spell the macro differently) takes
+the `snprintf` fallback. Guard behavior verified by preprocessing the header's
+exact `#if` line under deployment targets 13.0 / 13.3 / 26.0 / undefined /
+non-Apple.
+
+## [0.16.1]
+
+### Fix: double formatting in `plugin_data_api.hpp` on older Apple deployment targets (PATCH)
+
+`SettingsStoreView::setValue(key, double)` — an inline method in an installed
+public header — used the floating-point `std::to_chars` overload, which libc++
+marks *unavailable* below a macOS 13.3 deployment target. Any macOS build with
+an older target (Conan Center's build farm, or a consumer setting
+`CMAKE_OSX_DEPLOYMENT_TARGET`) failed to compile. On such targets the method
+now falls back to `snprintf("%.17g")`, which round-trips any IEEE double; all
+other platforms keep the shortest-round-trip `std::to_chars` path. Behavioral
+difference on the fallback path only: non-minimal digit strings (e.g. `0.1` →
+`0.10000000000000001`) — values are preserved exactly.
+
+Also seeds the Conan Center recipe at `0.16.1` (its `tool_requires
+cmake/[>=3.22]` fix from `618b92e` plus this header fix are both required for
+CCI's macOS builders).
+
+## [0.16.0]
+
+### SDK slimming: duplicate-resolution catalog moved to the host (HOST-FACING REMOVAL)
+
+`PluginRuntimeCatalog` — the layer that resolved duplicate plugin ids across scan
+folders by authoritative → compatibility → version → folder priority — is host
+*policy*, not a plugin-facing mechanism, so it moved to the PlotJuggler app
+(`pj_runtime`). The SDK stays a thin discovery + loader layer: `scanPluginDsos`,
+`inspectPluginDso`, the RAII loaders, and the C ABI are unchanged. (#144)
+
+- **Removed** `pj_plugins/host/plugin_runtime_catalog.hpp` and the installed
+  `pj_plugin_runtime_catalog` library (dropped from the `pj_plugin_host`
+  umbrella and the install set).
+
+**Versioning note.** No plugin links `PluginRuntimeCatalog` (it was host-side
+only) and `abi/baseline.abi` is unchanged, so by the plugin-impact rule this is
+a MINOR, not a MAJOR. It does remove host-facing public API: a *host* built
+against 0.15.0's catalog must adopt the app-side implementation (`pj_runtime`).
+
+## [0.15.0]
 
 ### DataSource: per-topic pause/resume — advertise-without-subscribe + demand-driven control (ADDITIVE)
 

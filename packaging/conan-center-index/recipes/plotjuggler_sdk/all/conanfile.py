@@ -86,6 +86,11 @@ class PlotjugglerSdkConan(ConanFile):
             transitive_libs=False,
         )
 
+    def build_requirements(self):
+        # The SDK's CMakeLists requires CMake >= 3.22; some CCI build images
+        # (notably macOS) ship an older one.
+        self.tool_requires("cmake/[>=3.22]")
+
     def validate(self):
         if self.settings.compiler.cppstd:
             check_min_cppstd(self, self._min_cppstd)
@@ -179,7 +184,6 @@ class PlotjugglerSdkConan(ConanFile):
             host = self.cpp_info.components["plugin_host"]
             host.set_property("cmake_target_name", "plotjuggler_sdk::plugin_host")
             host.libs = [
-                "pj_plugin_runtime_catalog",
                 "pj_data_source_host",
                 "pj_message_parser_host",
                 "pj_toolbox_host",

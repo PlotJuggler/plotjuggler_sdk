@@ -12,3 +12,8 @@ pj_media/testdata/
 /.pixi/
 /output/
 /build-test/
+# Local `conan create` artifacts from testing the staged Conan Center recipe
+# (see packaging/conan-center-index/README.md). Anchored here so they never
+# leak into the recipe tree that gets copied into the conan-center-index fork.
+/packaging/conan-center-index/recipes/plotjuggler_sdk/all/test_package/build/
+/packaging/conan-center-index/recipes/plotjuggler_sdk/all/test_package/CMakeUserPresets.json

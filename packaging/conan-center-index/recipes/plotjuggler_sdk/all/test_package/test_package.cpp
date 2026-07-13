@@ -2,7 +2,7 @@
 #include <pj_base/number_parse.hpp>
 
 #ifdef PJ_TEST_WITH_HOST
-#include <pj_plugins/host/plugin_runtime_catalog.hpp>
+#include <pj_plugins/host/plugin_catalog.hpp>
 #endif
 
 // parseNumber<double> dispatches to PJ::detail::parseDoubleImpl, which is
@@ -16,11 +16,11 @@ int main() {
   }
 
 #ifdef PJ_TEST_WITH_HOST
-  // Constructing an empty catalog (default, disk-less) forces the plugin_host
-  // archives — and the dlopen-backed loader, hence libdl — onto the link line,
-  // validating the plugin_host component's lib list and system_libs wiring.
-  const PJ::PluginRuntimeCatalog catalog;
-  (void)catalog;
+  // Scanning a (non-existent) directory forces the plugin_host archives — and the
+  // dlopen-backed loader, hence libdl — onto the link line, validating the
+  // plugin_host component's lib list and system_libs wiring.
+  const auto scan = PJ::scanPluginDsos("/nonexistent/plotjuggler_sdk_test_package");
+  (void)scan;
 #endif
 
   return EXIT_SUCCESS;
