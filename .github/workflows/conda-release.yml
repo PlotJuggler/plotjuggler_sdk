@@ -69,7 +69,7 @@ jobs:
         shell: bash
         env:
           # Belt-and-braces with the variant config below (see that file's comment).
-          MACOSX_DEPLOYMENT_TARGET: "10.15"
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
         run: |
           extra=()
           if [[ "$RUNNER_OS" == "macOS" ]]; then
