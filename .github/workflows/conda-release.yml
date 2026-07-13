@@ -27,8 +27,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # linux-64, osx-64 (macos-13 is Intel), win-64.
-        os: [ubuntu-22.04, macos-13, windows-2022]
+        # linux-64, osx-64 (macos-15-intel is the Intel runner — macos-13 was
+        # retired by GitHub and jobs targeting it queue forever), win-64.
+        os: [ubuntu-22.04, macos-15-intel, windows-2022]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
