@@ -76,6 +76,12 @@ class WidgetDataView {
   [[nodiscard]] std::optional<std::vector<std::string>> selectedItems(std::string_view name) const {
     return getStringArray(name, "selected_items");
   }
+  [[nodiscard]] std::optional<bool> listDeletable(std::string_view name) const {
+    return getBool(name, "list_deletable");
+  }
+  [[nodiscard]] std::optional<std::string> listPlaceholder(std::string_view name) const {
+    return getString(name, "list_placeholder");
+  }
   [[nodiscard]] std::optional<std::vector<std::string>> listItemColors(std::string_view name) const {
     return getStringArray(name, "list_item_colors");
   }
@@ -261,6 +267,11 @@ class WidgetDataView {
   /// Returns whether the chart should auto-fit on every series update.
   [[nodiscard]] std::optional<bool> chartAutoZoom(std::string_view name) const {
     return getBool(name, "chart_auto_zoom");
+  }
+
+  /// Placeholder overlay text for the named chart (see WidgetData::setChartPlaceholder).
+  [[nodiscard]] std::optional<std::string> chartPlaceholder(std::string_view name) const {
+    return getString(name, "chart_placeholder");
   }
 
   // --- QPlainTextEdit ---

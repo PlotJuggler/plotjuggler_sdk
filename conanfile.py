@@ -47,10 +47,10 @@ class PlotjugglerSdkConan(ConanFile):
     # 0.16.1 fixes plugin_data_api.hpp double formatting on Apple deployment
     # targets older than macOS 13.3 (FP std::to_chars unavailable there) —
     # PATCH, installed-header bug fix. See CHANGELOG.md.
-    # 0.16.2 fixes 0.16.1's guard, which tested a misspelled macro
-    # (__ENVIRONMENT_MACOS_... instead of __ENVIRONMENT_MAC_OS_X_...) and
-    # never engaged — PATCH. See CHANGELOG.md.
-    version = "0.16.2"
+    # 0.17.0 extends the dialog protocol with backward-compatible additions
+    # (list_deletable / list_placeholder / chart_placeholder keys and the
+    # item_delete_index event) — MINOR. See CHANGELOG.md.
+    version = "0.17.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"

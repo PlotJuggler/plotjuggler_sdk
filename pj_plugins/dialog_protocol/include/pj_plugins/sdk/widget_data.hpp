@@ -210,6 +210,23 @@ class WidgetData {
     return *this;
   }
 
+  /// Render a QListWidget with a per-row delete (trash) button pinned to the
+  /// trailing edge of every item. Clicking a row's button fires
+  /// onItemDeleteRequested(name, row). Opt-in and off by default; re-send on
+  /// every build (it is a per-widget flag, like the radio column).
+  WidgetData& setListItemsDeletable(std::string_view name, bool deletable) {
+    entry(name)["list_deletable"] = deletable;
+    return *this;
+  }
+
+  /// Centered empty-state hint drawn over a QListWidget while it holds no items;
+  /// the host hides it the moment items appear and restores it when the list is
+  /// empty again. Mirrors setChartPlaceholder for lists.
+  WidgetData& setListPlaceholder(std::string_view name, std::string_view text) {
+    entry(name)["list_placeholder"] = std::string(text);
+    return *this;
+  }
+
   // --- QTableWidget ---
   WidgetData& setTableHeaders(std::string_view name, const std::vector<std::string>& headers) {
     entry(name)["headers"] = headers;
@@ -338,6 +355,14 @@ class WidgetData {
   /// Mirrors the Transform/Filter editor "AutoZoom" checkbox.
   WidgetData& setChartAutoZoom(std::string_view name, bool enabled) {
     entry(name)["chart_auto_zoom"] = enabled;
+    return *this;
+  }
+
+  /// Placeholder text shown as a floating overlay banner centered on the named
+  /// chart QFrame while it has no series (e.g. a drag-and-drop hint). The host
+  /// hides it automatically once the chart receives data.
+  WidgetData& setChartPlaceholder(std::string_view name, std::string_view text) {
+    entry(name)["chart_placeholder"] = std::string(text);
     return *this;
   }
 

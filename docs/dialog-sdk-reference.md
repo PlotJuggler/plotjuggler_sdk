@@ -66,6 +66,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 |--------|-------------|
 | `setListItems(name, vector<string>)` | Set list items |
 | `setSelectedItems(name, vector<string>)` | Set selected items by text |
+| `setListItemsDeletable(name, bool)` | Draw a trailing trash button on every row; a click fires `onItemDeleteRequested`. |
+| `setListPlaceholder(name, text)` | Centered empty-state hint over the list while it has no items; hidden once items appear. |
 
 ### QTableWidget
 
@@ -155,6 +157,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path |
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts (table: column-0 text) |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
+| `onItemDeleteRequested(name, index)` | QListWidget (deletable) | Row whose trash button was clicked (see `setListItemsDeletable`) |
 | `onTableRadioSelected(name, row)` | QTableWidget radio column | Row whose radio was clicked (see `setTableRadioColumn`) |
 | `onCodeChanged(name, code)` | QPlainTextEdit code editor | Edited code |
 | `onCodeChangedWithCursor(name, code, cursor)` | QPlainTextEdit code editor | Edited code + caret offset (`cursor < 0` when no opt-in / not reported); defaults to `onCodeChanged` |

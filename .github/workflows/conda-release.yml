@@ -27,8 +27,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # linux-64, osx-64 (macos-13 is Intel), win-64.
-        os: [ubuntu-22.04, macos-13, windows-2022]
+        # linux-64, osx-64 (macos-15-intel is the Intel runner — macos-13 was
+        # retired by GitHub and jobs targeting it queue forever), win-64.
+        os: [ubuntu-22.04, macos-15-intel, windows-2022]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,10 +67,18 @@ jobs:
       # identically under Git Bash on the Windows runner.
       - name: Build conda package
         shell: bash
+        env:
+          # Belt-and-braces with the variant config below (see that file's comment).
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
         run: |
+          extra=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            extra+=(--variant-config .github/conda_variants_osx.yaml)
+          fi
           rattler-build build \
             --recipe recipe.yaml \
             --channel conda-forge \
+            "${extra[@]}" \
             --output-dir conda-output
 
       # Upload only on a release tag or manual dispatch — never on pull_request

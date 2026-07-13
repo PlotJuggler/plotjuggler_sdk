@@ -96,6 +96,9 @@ class WidgetEvent {
   std::optional<int> itemDoubleClickedIndex() const {
     return getInt("item_double_clicked_index");
   }
+  std::optional<int> itemDeleteRequestedIndex() const {
+    return getInt("item_delete_index");
+  }
 
   /// QTableWidget: horizontal-header section clicked (returns column index)
   std::optional<int> headerSection() const {

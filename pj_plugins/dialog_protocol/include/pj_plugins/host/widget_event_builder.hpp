@@ -98,6 +98,13 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// QListWidget (deletable): a row's trailing delete (trash) button was clicked.
+  [[nodiscard]] static std::string itemDeleteRequested(int index) {
+    nlohmann::json j;
+    j["item_delete_index"] = index;
+    return j.dump();
+  }
+
   /// QTableWidget: a horizontal-header section was clicked (column index).
   /// Lets a plugin own column sorting — it re-sorts its row model and re-emits
   /// rows, keeping index-based selection/visibility consistent.

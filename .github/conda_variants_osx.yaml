@@ -1,0 +1,5 @@
+# osx-64 deployment target. Xcode 16's libc++ hard-errors ("platform no longer
+# supported by libc++", fatal under -Werror) on targets below 10.13; the conda
+# default is 10.9. 13.0 clears the floor of the 2026 conda-forge libc++ (LLVM keeps raising the minimum; 10.15 still tripped it) and covers every Intel Mac that runs Ventura.
+MACOSX_DEPLOYMENT_TARGET:
+  - "13.0"
