@@ -50,7 +50,7 @@ class PlotjugglerSdkConan(ConanFile):
     # 0.16.2 fixes 0.16.1's guard, which tested a misspelled macro
     # (__ENVIRONMENT_MACOS_... instead of __ENVIRONMENT_MAC_OS_X_...) and
     # never engaged — PATCH. See CHANGELOG.md.
-    version = "0.16.2"
+    version = "0.16.3"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"
