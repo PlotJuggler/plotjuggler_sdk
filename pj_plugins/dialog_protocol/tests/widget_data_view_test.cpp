@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <pj_plugins/host/widget_data_view.hpp>
+#include <pj_plugins/sdk/widget_data.hpp>
 
 // --- QLineEdit ---
 
@@ -270,4 +271,36 @@ TEST(WidgetDataViewTest, CodeCaretTracking) {
 TEST(WidgetDataViewTest, CodeCaretTrackingAbsent) {
   PJ::WidgetDataView v(R"({"editor": {"code_content": "x"}})");
   EXPECT_FALSE(v.codeCaretTracking("editor").has_value());
+}
+
+// WidgetData -> toJson -> WidgetDataView round trips for the dialog-protocol
+// additions in 0.17.0. A key-name mismatch between the setter and the view
+// accessor would silently suppress the feature at the plugin boundary.
+TEST(WidgetDataViewTest, ListDeletableRoundTrip) {
+  PJ::WidgetData wd;
+  wd.setListItemsDeletable("lst", true);
+  PJ::WidgetDataView v(wd.toJson());
+  ASSERT_TRUE(v.listDeletable("lst").has_value());
+  EXPECT_TRUE(*v.listDeletable("lst"));
+}
+
+TEST(WidgetDataViewTest, ListDeletableAbsent) {
+  PJ::WidgetDataView v(R"({"lst": {"items": []}})");
+  EXPECT_FALSE(v.listDeletable("lst").has_value());
+}
+
+TEST(WidgetDataViewTest, ListPlaceholderRoundTrip) {
+  PJ::WidgetData wd;
+  wd.setListPlaceholder("lst", "Drop a series here");
+  PJ::WidgetDataView v(wd.toJson());
+  ASSERT_TRUE(v.listPlaceholder("lst").has_value());
+  EXPECT_EQ(*v.listPlaceholder("lst"), "Drop a series here");
+}
+
+TEST(WidgetDataViewTest, ChartPlaceholderRoundTrip) {
+  PJ::WidgetData wd;
+  wd.setChartPlaceholder("chart", "No data yet");
+  PJ::WidgetDataView v(wd.toJson());
+  ASSERT_TRUE(v.chartPlaceholder("chart").has_value());
+  EXPECT_EQ(*v.chartPlaceholder("chart"), "No data yet");
 }

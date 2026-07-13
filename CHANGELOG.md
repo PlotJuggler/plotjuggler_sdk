@@ -3,6 +3,23 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.17.0]
+
+### Feature: dialog-protocol additions for deletable lists and chart/list placeholders (MINOR)
+
+Backward-compatible JSON protocol additions (unknown keys are ignored by old
+hosts/plugins; no C ABI change, `PJ_DIALOG_PROTOCOL_VERSION` unchanged):
+
+- `WidgetData` per-widget keys via `setListItemsDeletable` / `setListPlaceholder` /
+  `setChartPlaceholder`: `list_deletable` (bool — rows grow a delete affordance), `list_placeholder` / `chart_placeholder` (string — centered
+  hint shown while the list/chart is empty).
+- `WidgetEvent` key: `item_delete_index` (int — row whose delete affordance
+  was clicked), with `WidgetEventBuilder::itemDeleteRequested()` on the host
+  side, `WidgetEvent::itemDeleteRequestedIndex()` on the plugin side, and
+  typed dispatch via `DialogPluginTyped::onItemDeleteRequested()`.
+- `WidgetDataView` accessors (`listDeletable` / `listPlaceholder` /
+  `chartPlaceholder`) for host implementations.
+
 ## [0.16.2]
 
 ### Fix: 0.16.1's Apple `to_chars` guard tested a misspelled macro and never engaged (PATCH)

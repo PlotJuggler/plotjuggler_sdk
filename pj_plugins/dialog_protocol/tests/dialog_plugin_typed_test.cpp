@@ -103,6 +103,13 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     return true;
   }
 
+  bool onItemDeleteRequested(std::string_view widget_name, int index) override {
+    last_handler = "item_delete_requested";
+    last_widget = std::string(widget_name);
+    last_int = index;
+    return true;
+  }
+
   // Recorded state
   std::string last_handler;
   std::string last_widget;
@@ -261,4 +268,11 @@ TEST_F(TypedDispatchTest, CodeChangedWithoutCursorPassesNegativeOne) {
   EXPECT_TRUE(dispatch(plugin_, "editor", R"({"code_changed": "x"})"));
   EXPECT_EQ(plugin_.last_handler, "code_changed");
   EXPECT_EQ(plugin_.last_int, -1);
+}
+
+TEST_F(TypedDispatchTest, ItemDeleteRequestedReachesTypedHandler) {
+  EXPECT_TRUE(dispatch(plugin_, "lst", R"({"item_delete_index": 2})"));
+  EXPECT_EQ(plugin_.last_handler, "item_delete_requested");
+  EXPECT_EQ(plugin_.last_widget, "lst");
+  EXPECT_EQ(plugin_.last_int, 2);
 }

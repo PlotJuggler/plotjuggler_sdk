@@ -172,3 +172,16 @@ TEST(WidgetEventBuilderTest, CodeChangedWithoutCursorOmitsField) {
   EXPECT_EQ(*ev.codeChanged(), "x");
   EXPECT_FALSE(ev.codeCursor().has_value());
 }
+
+TEST(WidgetEventBuilderTest, ItemDeleteRequestedRoundTrip) {
+  std::string json = PJ::WidgetEventBuilder::itemDeleteRequested(3);
+  PJ::WidgetEvent ev(json);
+  ASSERT_TRUE(ev.itemDeleteRequestedIndex().has_value());
+  EXPECT_EQ(*ev.itemDeleteRequestedIndex(), 3);
+}
+
+TEST(WidgetEventBuilderTest, ItemDeleteRequestedAbsentOnOtherEvents) {
+  std::string json = PJ::WidgetEventBuilder::textChanged("x");
+  PJ::WidgetEvent ev(json);
+  EXPECT_FALSE(ev.itemDeleteRequestedIndex().has_value());
+}
