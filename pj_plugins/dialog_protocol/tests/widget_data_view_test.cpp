@@ -3,8 +3,12 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <limits>
 #include <pj_plugins/host/widget_data_view.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
+#include <utility>
+#include <variant>
 
 // --- QLineEdit ---
 
@@ -114,6 +118,122 @@ TEST(WidgetDataViewTest, TableRows) {
   EXPECT_EQ(rows->size(), 2u);
   EXPECT_EQ((*rows)[0][0], "a");
   EXPECT_EQ((*rows)[1][1], "2");
+}
+
+// A cell the reader cannot render as text still owns a column. Skipping it would
+// pull every later cell one column left and mis-align the row against its headers.
+TEST(WidgetDataViewTest, TableRowsNonStringCellKeepsRowShape) {
+  PJ::WidgetDataView v(R"({"tbl": {"rows": [["a", 1234, "z"], ["b", "2", "y"]]}})");
+  auto rows = v.tableRows("tbl");
+  ASSERT_TRUE(rows.has_value());
+  ASSERT_EQ(rows->size(), 2u);
+  ASSERT_EQ((*rows)[0].size(), 3u);
+  EXPECT_EQ((*rows)[0][0], "a");
+  EXPECT_EQ((*rows)[0][1], "");
+  EXPECT_EQ((*rows)[0][2], "z");
+}
+
+// --- QTableWidget: typed sort keys ---
+
+TEST(WidgetDataViewTest, TableColumnValuesRoundTrip) {
+  constexpr std::int64_t kNanos = 1780000000000000123;
+  constexpr std::uint64_t kMax = std::numeric_limits<std::uint64_t>::max();
+
+  PJ::WidgetData wd;
+  wd.setTableRows(
+      "tbl", {{PJ::TableItem("a"), PJ::TableItem(kNanos, "2026-07-17 10:23"), PJ::TableItem(1.5)},
+              {PJ::TableItem("b"), PJ::TableItem(kMax, "lots"), PJ::TableItem(-2.5)}});
+  PJ::WidgetDataView v(wd.toJson());
+
+  auto cols = v.tableColumnValues("tbl");
+  ASSERT_EQ(cols.size(), 2u);  // column 0 is text-only and carries no key
+  EXPECT_EQ(cols.count(0), 0u);
+
+  const auto& keys = cols.at(1);
+  ASSERT_EQ(keys.size(), 2u);
+  ASSERT_TRUE(keys[0].has_value());
+  ASSERT_TRUE(keys[1].has_value());
+  EXPECT_EQ(std::get<std::uint64_t>(*keys[0]), static_cast<std::uint64_t>(kNanos));
+  EXPECT_EQ(std::get<std::uint64_t>(*keys[1]), kMax);
+
+  const auto& floats = cols.at(2);
+  ASSERT_EQ(floats.size(), 2u);
+  EXPECT_EQ(std::get<double>(*floats[0]), 1.5);
+  EXPECT_EQ(std::get<double>(*floats[1]), -2.5);
+}
+
+// JSON has one integer syntax, so the *sign of the value* — not the plugin's C++
+// type — decides which alternative survives the wire. A column that straddles zero
+// therefore arrives as a mix of int64 and uint64 and any consumer comparing them
+// must handle that, not assume one alternative per column.
+TEST(WidgetDataViewTest, TableColumnValuesSignednessFollowsTheValue) {
+  PJ::WidgetData wd;
+  wd.setTableRows("tbl", {{PJ::TableItem(std::int32_t{-5})}, {PJ::TableItem(std::int32_t{10})}});
+  PJ::WidgetDataView v(wd.toJson());
+
+  const auto cols = v.tableColumnValues("tbl");
+  const auto& keys = cols.at(0);
+  ASSERT_EQ(keys.size(), 2u);
+  EXPECT_EQ(std::get<std::int64_t>(*keys[0]), -5);
+  EXPECT_EQ(std::get<std::uint64_t>(*keys[1]), 10u);
+}
+
+TEST(WidgetDataViewTest, TableColumnValuesNullEntryIsNullopt) {
+  PJ::WidgetDataView v(R"({"tbl": {"rows": [["3.5"], ["N/A"]], "column_values": {"0": [3.5, null]}}})");
+  const auto cols = v.tableColumnValues("tbl");
+  const auto& keys = cols.at(0);
+  ASSERT_EQ(keys.size(), 2u);
+  EXPECT_TRUE(keys[0].has_value());
+  EXPECT_FALSE(keys[1].has_value());
+}
+
+TEST(WidgetDataViewTest, TableColumnValuesAbsentIsEmpty) {
+  PJ::WidgetDataView v(R"({"tbl": {"rows": [["a", "1"], ["b", "2"]]}})");
+  EXPECT_TRUE(v.tableColumnValues("tbl").empty());
+  EXPECT_TRUE(v.tableColumnValues("missing").empty());
+}
+
+// A short column cannot be zipped against the rows, and guessing an alignment would
+// sort some rows by number and the rest by text.
+TEST(WidgetDataViewTest, TableColumnValuesCountMismatchIsDropped) {
+  PJ::WidgetDataView v(
+      R"({"tbl": {"rows": [["a", "1"], ["b", "2"], ["c", "3"]],
+                  "column_values": {"0": [1, 2, 3], "1": [1, 2]}}})");
+  auto cols = v.tableColumnValues("tbl");
+  EXPECT_EQ(cols.size(), 1u);
+  EXPECT_EQ(cols.count(1), 0u);
+  EXPECT_EQ(cols.at(0).size(), 3u);
+}
+
+TEST(WidgetDataViewTest, TableColumnValuesBadKeyIsDropped) {
+  PJ::WidgetDataView v(R"({"tbl": {"rows": [["a"]], "column_values": {"abc": [1], "-1": [2], "1.5": [3], "0": [4]}}})");
+  auto cols = v.tableColumnValues("tbl");
+  ASSERT_EQ(cols.size(), 1u);
+  EXPECT_EQ(std::get<std::uint64_t>(*cols.at(0)[0]), 4u);
+}
+
+TEST(WidgetDataViewTest, TableSortIndicatorRoundTrip) {
+  PJ::WidgetData wd;
+  wd.setTableSortIndicator("tbl", 2, false);
+  PJ::WidgetDataView v(wd.toJson());
+  ASSERT_TRUE(v.tableSortIndicator("tbl").has_value());
+  EXPECT_EQ(*v.tableSortIndicator("tbl"), std::make_pair(2, false));
+}
+
+TEST(WidgetDataViewTest, TableSortIndicatorAbsent) {
+  PJ::WidgetDataView v(R"({"tbl": {"rows": [["a"]]}})");
+  EXPECT_FALSE(v.tableSortIndicator("tbl").has_value());
+  EXPECT_FALSE(v.tableSortIndicator("missing").has_value());
+}
+
+TEST(WidgetDataViewTest, TableSortIndicatorMalformed) {
+  EXPECT_FALSE(PJ::WidgetDataView(R"({"tbl": {"sort_indicator": {"asc": true}}})").tableSortIndicator("tbl"));
+  EXPECT_FALSE(PJ::WidgetDataView(R"({"tbl": {"sort_indicator": {"col": 1}}})").tableSortIndicator("tbl"));
+  EXPECT_FALSE(
+      PJ::WidgetDataView(R"({"tbl": {"sort_indicator": {"col": 1, "asc": "yes"}}})").tableSortIndicator("tbl"));
+  EXPECT_FALSE(
+      PJ::WidgetDataView(R"({"tbl": {"sort_indicator": {"col": "1", "asc": true}}})").tableSortIndicator("tbl"));
+  EXPECT_FALSE(PJ::WidgetDataView(R"({"tbl": {"sort_indicator": 2}})").tableSortIndicator("tbl"));
 }
 
 // --- QLabel ---

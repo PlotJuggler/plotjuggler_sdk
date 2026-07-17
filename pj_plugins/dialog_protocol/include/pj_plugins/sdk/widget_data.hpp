@@ -5,9 +5,15 @@
 #include <cstdint>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
+#include <variant>
 #include <vector>
+
+#include "pj_base/types.hpp"
 
 namespace PJ {
 
@@ -15,6 +21,49 @@ namespace PJ {
 struct ChartPoint {
   double x;
   double y;
+};
+
+/// A table cell carrying both what it displays and what it sorts by.
+///
+/// `text` is rendered verbatim — the plugin owns formatting (`%g`, `%.2f`, units,
+/// "N/A"). `value` is the ordering truth. Without it the host can only compare the
+/// rendered string, so a numeric column sorts lexicographically ("9" lands after
+/// "10"); supplying it makes the host sort on the number instead.
+///
+/// `value` need not resemble `text`: `TableItem(ns_since_epoch, "2026-07-17 10:23")`
+/// displays a date and sorts on int64 nanoseconds. Leave it unset (the string
+/// constructors do) for text columns — those sort by `text`.
+///
+/// Pass the native type: `NumericValue` keeps each width exactly, so a uint64 count
+/// or an int64 nanosecond timestamp never round-trips through a double (which is
+/// only exact to 2^53).
+///
+/// Non-finite doubles (NaN, ±infinity) do not survive the JSON wire — dump()
+/// serializes them as null — so such a cell arrives at the host keyless and
+/// sorts in the text rank with the other keyless cells, not at the numeric
+/// extremes. Map infinities to a finite sentinel first if their ordering
+/// matters.
+struct TableItem {
+  std::string text;
+  std::optional<NumericValue> value;
+
+  TableItem() = default;
+  TableItem(std::string display) : text(std::move(display)) {}
+  TableItem(const char* display) : text(display) {}
+
+  /// Numeric cell rendered with the default representation of `v`. long double
+  /// is excluded up front — NumericValue has no alternative for it, and letting
+  /// it past the constraint would fail with an incomprehensible variant error.
+  template <
+      typename T, typename = std::enable_if_t<
+                      std::is_arithmetic_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, long double>>>
+  TableItem(T v) : text(std::to_string(v)), value(NumericValue(v)) {}
+
+  /// Numeric cell with plugin-controlled rendering — `display` is shown, `v` is sorted on.
+  template <
+      typename T, typename = std::enable_if_t<
+                      std::is_arithmetic_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, long double>>>
+  TableItem(T v, std::string display) : text(std::move(display)), value(NumericValue(v)) {}
 };
 
 /// A named series of XY points for chart display (used by setChartSeries).
@@ -234,7 +283,75 @@ class WidgetData {
   }
 
   WidgetData& setTableRows(std::string_view name, const std::vector<std::vector<std::string>>& rows) {
-    entry(name)["rows"] = rows;
+    auto& e = entry(name);
+    e["rows"] = rows;
+    // Plain rows carry no sort keys: drop any keys a previous TableItem delivery
+    // left behind, or — when the row count happens to match — the host would pair
+    // these rows with the STALE keys and silently sort them wrong.
+    e.erase("column_values");
+    return *this;
+  }
+
+  /// Rows that carry a sort key per cell (see TableItem). Emits the display text as
+  /// the usual `rows`, plus the keys as a sparse per-column map — so a host that
+  /// predates this overload still reads `rows` and behaves exactly as before.
+  /// Columns where no cell has a value are omitted entirely and sort by text.
+  WidgetData& setTableRows(std::string_view name, const std::vector<std::vector<TableItem>>& rows) {
+    auto& e = entry(name);
+
+    nlohmann::json text_rows = nlohmann::json::array();
+    std::size_t max_cols = 0;
+    for (const auto& row : rows) {
+      nlohmann::json cells = nlohmann::json::array();
+      for (const auto& item : row) {
+        cells.push_back(item.text);
+      }
+      text_rows.push_back(std::move(cells));
+      if (row.size() > max_cols) {
+        max_cols = row.size();
+      }
+    }
+    e["rows"] = std::move(text_rows);
+
+    nlohmann::json columns = nlohmann::json::object();
+    for (std::size_t c = 0; c < max_cols; ++c) {
+      bool any_value = false;
+      for (const auto& row : rows) {
+        if (c < row.size() && row[c].value.has_value()) {
+          any_value = true;
+          break;
+        }
+      }
+      if (!any_value) {
+        continue;
+      }
+      nlohmann::json values = nlohmann::json::array();
+      for (const auto& row : rows) {
+        if (c < row.size() && row[c].value.has_value()) {
+          // Push the native alternative: nlohmann stores int64/uint64 natively, so a
+          // large count or a nanosecond timestamp survives the round-trip exactly.
+          std::visit([&values](auto v) { values.push_back(v); }, *row[c].value);
+        } else {
+          values.push_back(nlohmann::json::value_t::null);
+        }
+      }
+      columns[std::to_string(c)] = std::move(values);
+    }
+    if (columns.empty()) {
+      e.erase("column_values");
+    } else {
+      e["column_values"] = std::move(columns);
+    }
+    return *this;
+  }
+
+  /// Draw the sort arrow on `column` WITHOUT enabling Qt's built-in sorting.
+  /// For tables that sort themselves via onHeaderClicked: Qt paints the indicator
+  /// only when its own sorting is on, so a plugin-sorted table shows no arrow
+  /// unless it declares one here. Re-send whenever the sort state changes.
+  WidgetData& setTableSortIndicator(std::string_view name, int column, bool ascending) {
+    auto& e = entry(name);
+    e["sort_indicator"] = {{"col", column}, {"asc", ascending}};
     return *this;
   }
 
