@@ -24,7 +24,7 @@ JSON addition; no C ABI change, `PJ_DIALOG_PROTOCOL_VERSION` unchanged):
   omit-unchanged-fields pattern (with measured costs) and the delta ops.
 - SDK-side only: hosts apply `table_delta` from the companion PlotJuggler
   change onward; older hosts ignore the key (harmless no-op).
-  
+
 ### Feature: QDateTimeEdit event surface (MINOR)
 
 The dialog protocol's QDateTimeEdit setters (`setDateTime` / `setDateTimeRange`,
@@ -41,6 +41,28 @@ input, not just a display (backward-compatible JSON addition; no C ABI change,
   section; the setter contract is clarified (empty/unparsable strings are
   ignored — the widget keeps its current value; `QDateEdit`/`QTimeEdit`
   subclasses share the binding).
+
+### Fix: PJ_DIALOG_PLUGIN two-arg form broke under the MSVC legacy preprocessor (PATCH-level)
+
+The overload-by-arg-count dispatch behind `PJ_DIALOG_PLUGIN(Class, kManifest)`
+mis-expanded under MSVC's traditional preprocessor (the default without
+`/Zc:preprocessor`): `__VA_ARGS__` was forwarded into the selector as a single
+glued argument, so the two-arg call silently picked the one-arg legacy branch
+with `"Class, kManifest"` as the class name (C2064/C2912 at the call site —
+found via pj-official-plugins#230's Windows CI).
+
+- `PJ_DIALOG_PLUGIN_EXPAND` rescan added to the dispatch — the macro now
+  expands identically under both MSVC preprocessors and GCC/Clang. No ABI or
+  call-site change; purely a header fix.
+- `pj_dialog_sdk` no longer injects `INTERFACE /Zc:preprocessor` into
+  consumers — the flag is unnecessary now, and it never reached Conan
+  consumers anyway (CMakeDeps regenerates targets from `package_info()` and
+  drops upstream `INTERFACE_COMPILE_OPTIONS`, which is how the breakage
+  shipped unnoticed). Consumers that want the conformant preprocessor set it
+  themselves.
+- New compile-only regression target `mock_dialog_legacy_pp_plugin` builds the
+  mock dialog with `/Zc:preprocessor-` on MSVC, so Windows CI now exercises
+  the legacy-preprocessor path the SDK's conformant-only build never covered.
 
 ## [0.17.0]
 

@@ -277,8 +277,16 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 ///      the vtable pointer type-safely via `PJ::borrowDialog(member)` —
 ///      no `extern "C"` forward declaration required in the plugin source.
 #define PJ_DIALOG_PLUGIN_SELECT(_1, _2, NAME, ...) NAME
+// The extra PJ_DIALOG_PLUGIN_EXPAND pass makes the overload-by-arg-count
+// dispatch correct under BOTH MSVC preprocessors. The traditional MSVC
+// preprocessor (the default without /Zc:preprocessor) forwards __VA_ARGS__
+// into a nested macro call as a single argument, so without this rescan a
+// two-argument PJ_DIALOG_PLUGIN(Class, kManifest) selects the one-arg LEGACY
+// branch with the glued pair as ClassName (C2064/C2912 at the call site).
+#define PJ_DIALOG_PLUGIN_EXPAND(x) x
 #define PJ_DIALOG_PLUGIN(...) \
-  PJ_DIALOG_PLUGIN_SELECT(__VA_ARGS__, PJ_DIALOG_PLUGIN_WITH_MANIFEST, PJ_DIALOG_PLUGIN_LEGACY)(__VA_ARGS__)
+  PJ_DIALOG_PLUGIN_EXPAND(    \
+      PJ_DIALOG_PLUGIN_SELECT(__VA_ARGS__, PJ_DIALOG_PLUGIN_WITH_MANIFEST, PJ_DIALOG_PLUGIN_LEGACY)(__VA_ARGS__))
 #define PJ_DIALOG_PLUGIN_LEGACY(ClassName) PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, nullptr)
 #define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson)                             \
   PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_DIALOG_EXPORT)                                            \

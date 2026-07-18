@@ -30,9 +30,11 @@ option(PJ_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (-Werror / /WX)"
 # ---------------------------------------------------------------------------
 
 if(MSVC)
-  # /Zc:preprocessor: conformant preprocessor — required so __VA_ARGS__ inside
-  # nested macro calls (e.g. PJ_DIALOG_PLUGIN's overload-by-arg-count idiom)
-  # splits on commas instead of being passed as a single token.
+  # /Zc:preprocessor: conformant preprocessor. A strictness choice for the
+  # SDK's own build — no installed header requires it anymore
+  # (PJ_DIALOG_PLUGIN's overload-by-arg-count idiom is legacy-PP-safe via
+  # PJ_DIALOG_PLUGIN_EXPAND; a dedicated /Zc:preprocessor- target in
+  # dialog_protocol guards that).
   set(PJ_WARNING_FLAGS /W4 /permissive- /Zc:preprocessor)
   if(PJ_WARNINGS_AS_ERRORS)
     list(APPEND PJ_WARNING_FLAGS /WX)
