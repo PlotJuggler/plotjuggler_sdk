@@ -309,12 +309,13 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 // `extern "C" PJ_get_dialog_vtable` symbol (and the ABI-version export) would
 // collide at link. The static registry never resolves a dialog via dlsym (the
 // host short-circuits the dialog path on WASM), so emit only a uniquely
-// class-keyed getter — kept so dialogVtableFor<ClassName>() still resolves for
-// any in-binary caller.
+// class-keyed getter. The host's static composition point passes this getter's
+// result alongside the owning source/parser/toolbox vtable, and
+// dialogVtableFor<ClassName>() also uses it inside the plugin.
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_DIALOG_PLUGIN_WITH_MANIFEST
 #define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson)                             \
-  inline const PJ_dialog_vtable_t* pj_static_get_dialog_vtable_##ClassName() noexcept {     \
+  const PJ_dialog_vtable_t* pj_static_get_dialog_vtable_##ClassName() noexcept {            \
     static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate(           \
         []() noexcept -> void* {                                                            \
           try {                                                                             \

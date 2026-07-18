@@ -41,6 +41,43 @@ display text. Backward-compatible JSON additions — no C ABI change,
 - The plain-string `setTableRows` overload now erases any `column_values` a
   previous typed delivery left on the same table, so alternating overloads can
   never pair fresh rows with stale sort keys.
+  
+### Feature: batch table deltas for large QTableWidgets (MINOR)
+
+Mutate a table without resending the whole `rows` array (backward-compatible
+JSON addition; no C ABI change, `PJ_DIALOG_PROTOCOL_VERSION` unchanged):
+
+- `WidgetData::appendTableRows` / `updateTableCells` / `removeTableRows` write
+  a per-widget `table_delta` object (`seq`, `append`, `update_cells`,
+  `remove_rows`). `seq` is plugin-owned; hosts apply a delta only when its seq
+  differs from the last one applied to that widget, in the order update_cells
+  → remove_rows → append, with all indexes addressing the pre-delta table.
+  New `TableCellUpdate` struct.
+- `WidgetDataView::tableDelta()` returns the decoded `TableDeltaView` for host
+  implementations (strict: a malformed op rejects the whole delta;
+  `remove_rows` arrives descending and duplicate-free), with
+  `tableDeltaSeq()` as the cheap staleness pre-check.
+- `dialog-plugin-guide.md` gains a "Large tables" section documenting the
+  omit-unchanged-fields pattern (with measured costs) and the delta ops.
+- SDK-side only: hosts apply `table_delta` from the companion PlotJuggler
+  change onward; older hosts ignore the key (harmless no-op).
+  
+### Feature: QDateTimeEdit event surface (MINOR)
+
+The dialog protocol's QDateTimeEdit setters (`setDateTime` / `setDateTimeRange`,
+shipped earlier) gain their missing event direction, so the widget becomes an
+input, not just a display (backward-compatible JSON addition; no C ABI change,
+`PJ_DIALOG_PROTOCOL_VERSION` unchanged):
+
+- `WidgetEvent` key: `datetime_iso` (string — the edited datetime, wall-clock
+  local ISO-8601; fractional seconds only for ms-precision editors), with
+  `WidgetEventBuilder::dateTimeChanged()` on the host side,
+  `WidgetEvent::dateTimeChanged()` on the plugin side, and typed dispatch via
+  `DialogPluginTyped::onDateTimeChanged()`.
+- Docs: `dialog-sdk-reference.md` gains the previously missing QDateTimeEdit
+  section; the setter contract is clarified (empty/unparsable strings are
+  ignored — the widget keeps its current value; `QDateEdit`/`QTimeEdit`
+  subclasses share the binding).
 
 ## [0.17.0]
 

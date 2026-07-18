@@ -440,3 +440,32 @@ TEST(WidgetDataTest, SetCodeCaretTrackingExplicitFalse) {
   auto j = parse(wd);
   EXPECT_EQ(j["editor"]["code_caret_tracking"], false);
 }
+
+TEST(WidgetDataTest, TableDeltaOpsSerializeUnderOneKey) {
+  WidgetData wd;
+  wd.appendTableRows("tbl", 7, {{"a", "b"}, {"c", "d"}});
+  wd.updateTableCells("tbl", 7, {{0, 1, "x"}});
+  wd.removeTableRows("tbl", 7, {3, 5});
+  auto j = parse(wd);
+  const auto& delta = j["tbl"]["table_delta"];
+  EXPECT_EQ(delta["seq"], 7);
+  ASSERT_EQ(delta["append"].size(), 2U);
+  EXPECT_EQ(delta["append"][1][0], "c");
+  ASSERT_EQ(delta["update_cells"].size(), 1U);
+  EXPECT_EQ(delta["update_cells"][0][0], 0);
+  EXPECT_EQ(delta["update_cells"][0][1], 1);
+  EXPECT_EQ(delta["update_cells"][0][2], "x");
+  EXPECT_EQ(delta["remove_rows"], nlohmann::json({3, 5}));
+}
+
+TEST(WidgetDataTest, TableDeltaDifferingSeqStartsFreshDelta) {
+  WidgetData wd;
+  wd.appendTableRows("tbl", 1, {{"old"}});
+  wd.updateTableCells("tbl", 2, {{0, 0, "new"}});
+  auto j = parse(wd);
+  const auto& delta = j["tbl"]["table_delta"];
+  // The seq-1 append must not survive relabeled under seq 2.
+  EXPECT_EQ(delta["seq"], 2);
+  EXPECT_FALSE(delta.contains("append"));
+  ASSERT_EQ(delta["update_cells"].size(), 1U);
+}

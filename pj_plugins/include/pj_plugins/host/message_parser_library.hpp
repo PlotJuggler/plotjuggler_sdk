@@ -53,7 +53,8 @@ class MessageParserLibrary {
 
   /// Wrap a statically-linked plugin vtable (no dlopen; for WASM/static builds).
   /// @p vtable must have static storage duration (valid for the program lifetime).
-  [[nodiscard]] static Expected<MessageParserLibrary> loadStatic(const PJ_message_parser_vtable_t* vtable);
+  [[nodiscard]] static Expected<MessageParserLibrary> loadStatic(
+      const PJ_message_parser_vtable_t* vtable, const PJ_dialog_vtable_t* dialog_vtable = nullptr);
 
   /// True if the library was loaded and the vtable resolved successfully.
   [[nodiscard]] bool valid() const {
@@ -79,12 +80,15 @@ class MessageParserLibrary {
   }
 
  private:
-  MessageParserLibrary(std::shared_ptr<void> handle, const PJ_message_parser_vtable_t* vtable, std::string path);
+  MessageParserLibrary(
+      std::shared_ptr<void> handle, const PJ_message_parser_vtable_t* vtable, std::string path,
+      const PJ_dialog_vtable_t* static_dialog_vtable = nullptr);
 
   void reset();
 
   std::shared_ptr<void> handle_;
   const PJ_message_parser_vtable_t* vtable_ = nullptr;
+  const PJ_dialog_vtable_t* static_dialog_vtable_ = nullptr;
   std::string path_;
 };
 

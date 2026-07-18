@@ -134,6 +134,15 @@ struct ChartMarker {
   return marks;
 }
 
+/// One cell write of a table delta (see WidgetData::updateTableCells).
+/// `row`/`col` are in the plugin's own row space — the same space
+/// setTableRows / setSelectedRows use, regardless of any user sorting.
+struct TableCellUpdate {
+  int row = 0;
+  int col = 0;
+  std::string text;
+};
+
 /// One mark on a MarkerTimeline. `region` true → a resizable [start,end] span;
 /// false → a single-point event at `start` (end ignored). Positions are in the
 /// timeline's integer step domain (see setMarkerTimelineBounds). `id` is a stable
@@ -408,6 +417,43 @@ class WidgetData {
     return *this;
   }
 
+  // --- Table deltas: mutate a large table without resending `rows` ---
+  //
+  // `seq` is plugin-owned; give every new delta a fresh value (a counter).
+  // The host applies a delta only when its seq DIFFERS from the last one it
+  // applied to that widget, so a full-state rebuild that still carries an
+  // already-applied delta is harmless (even with diffing disabled), and a
+  // restarted counter self-heals. All ops sent in one refresh must share one
+  // seq — a differing seq starts a fresh delta, discarding prior ops. The
+  // host applies: update_cells, then remove_rows, then append. All indexes
+  // address the table as it was BEFORE this delta (plugin row space, the same
+  // space setTableRows / setSelectedRows use) — ops cannot target rows this
+  // same delta appends. A `rows` field in the same refresh wins: the host
+  // applies the full replace and the delta counts as consumed.
+
+  /// Append rows to the end of the table.
+  WidgetData& appendTableRows(
+      std::string_view name, std::uint64_t seq, const std::vector<std::vector<std::string>>& rows) {
+    tableDeltaEntry(name, seq)["append"] = rows;
+    return *this;
+  }
+
+  /// Rewrite individual cells in place.
+  WidgetData& updateTableCells(std::string_view name, std::uint64_t seq, const std::vector<TableCellUpdate>& cells) {
+    auto arr = nlohmann::json::array();
+    for (const auto& cell : cells) {
+      arr.push_back({cell.row, cell.col, cell.text});
+    }
+    tableDeltaEntry(name, seq)["update_cells"] = std::move(arr);
+    return *this;
+  }
+
+  /// Remove the given plugin-space row indexes.
+  WidgetData& removeTableRows(std::string_view name, std::uint64_t seq, const std::vector<int>& rows) {
+    tableDeltaEntry(name, seq)["remove_rows"] = rows;
+    return *this;
+  }
+
   /// Render column `column` of a QTableWidget as an exclusive radio-button group:
   /// one QRadioButton per row, only one on at a time. `checked_row` is the row
   /// whose radio is selected (-1 for none). The cells in `column` carry the radio
@@ -596,7 +642,10 @@ class WidgetData {
 
   // --- QDateTimeEdit ---
   /// Set the displayed date+time as an ISO-8601 string (e.g. "2026-05-21T13:45:00").
-  /// Empty string clears any prior value (widget falls back to its default).
+  /// Datetimes are exchanged verbatim as wall-clock values: a suffixless string is
+  /// host-local time; an explicit UTC offset is honored on parse. Empty or
+  /// unparsable strings are ignored — the widget keeps its current value (a
+  /// QDateTimeEdit always displays one).
   WidgetData& setDateTime(std::string_view name, std::string_view iso8601) {
     entry(name)["datetime"] = std::string(iso8601);
     return *this;
@@ -818,6 +867,18 @@ class WidgetData {
       data_[key] = nlohmann::json::object();
     }
     return data_[key];
+  }
+
+  /// The widget's table_delta object. All ops of one refresh must share one
+  /// seq: a differing seq starts a fresh delta, discarding prior ops, so
+  /// mixing seqs can never relabel an old op with a new sequence number.
+  nlohmann::json& tableDeltaEntry(std::string_view name, std::uint64_t seq) {
+    auto& delta = entry(name)["table_delta"];
+    if (!delta.is_object() || !delta.contains("seq") || delta["seq"] != seq) {
+      delta = nlohmann::json::object();
+      delta["seq"] = seq;
+    }
+    return delta;
   }
 };
 

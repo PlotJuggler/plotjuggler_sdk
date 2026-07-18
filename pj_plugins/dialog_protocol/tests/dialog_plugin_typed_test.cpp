@@ -95,6 +95,13 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     return true;
   }
 
+  bool onDateTimeChanged(std::string_view widget_name, std::string_view iso8601) override {
+    last_handler = "date_time_changed";
+    last_widget = std::string(widget_name);
+    last_text = std::string(iso8601);
+    return true;
+  }
+
   bool onCodeChangedWithCursor(std::string_view widget_name, std::string_view code, int cursor) override {
     last_handler = "code_changed";
     last_widget = std::string(widget_name);
@@ -218,6 +225,13 @@ TEST_F(TypedDispatchTest, DateRangeChanged) {
   EXPECT_EQ(plugin_.last_widget, "picker");
   EXPECT_EQ(plugin_.last_date_from, "2016-04-29T00:00:00");
   EXPECT_EQ(plugin_.last_date_to, "");
+}
+
+TEST_F(TypedDispatchTest, DateTimeChanged) {
+  EXPECT_TRUE(dispatch(plugin_, "startTime", R"({"datetime_iso": "2026-01-02T03:04:05"})"));
+  EXPECT_EQ(plugin_.last_handler, "date_time_changed");
+  EXPECT_EQ(plugin_.last_widget, "startTime");
+  EXPECT_EQ(plugin_.last_text, "2026-01-02T03:04:05");
 }
 
 // --- Edge cases ---

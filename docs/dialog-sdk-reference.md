@@ -80,6 +80,9 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setSelectedRows(name, vector<int>)` | Set selected row indices |
 | `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) |
 | `setTableRadioColumn(name, column, checked_row)` | Render `column` as an exclusive radio group; `checked_row` is selected (-1 = none). Fires `onTableRadioSelected`. |
+| `appendTableRows(name, seq, rows)` | Delta: append rows without resending `rows` (see guide → "Table deltas") |
+| `updateTableCells(name, seq, vector<TableCellUpdate>)` | Delta: rewrite individual cells (`{row, col, text}`, plugin row space) |
+| `removeTableRows(name, seq, vector<int>)` | Delta: remove plugin-space row indexes |
 
 > A table must not combine `sortingEnabled=true` in its `.ui` with
 > `onHeaderClicked` — Qt would sort the view while the plugin reorders the model,
@@ -110,6 +113,17 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | Method | Description |
 |--------|-------------|
 | `setTabIndex(name, int)` | Set active tab index |
+
+### QDateTimeEdit
+
+Also binds the `QDateEdit` / `QTimeEdit` subclasses. Datetimes are wall-clock
+local time exchanged verbatim; events always carry a full ISO datetime, with
+fractional seconds only when the editor's display format includes them.
+
+| Method | Description |
+|--------|-------------|
+| `setDateTime(name, iso8601)` | Set the displayed datetime (ISO-8601, e.g. `"2026-05-21T13:45:00"`); empty/unparsable strings are ignored |
+| `setDateTimeRange(name, min_iso, max_iso)` | Set the allowed [min, max] datetime range |
 
 ### QDialogButtonBox
 
@@ -172,6 +186,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
+| `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
 
 ---
 
