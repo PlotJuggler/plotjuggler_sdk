@@ -150,17 +150,7 @@ class WidgetDataView {
       std::vector<std::optional<NumericValue>> decoded;
       decoded.reserve(values.size());
       for (const auto& v : values) {
-        // The wire collapses every integer width to a JSON integer, so decode to the
-        // widest lossless alternative rather than guessing the plugin's original type.
-        if (v.is_number_unsigned()) {
-          decoded.emplace_back(NumericValue(v.get<uint64_t>()));
-        } else if (v.is_number_integer()) {
-          decoded.emplace_back(NumericValue(v.get<int64_t>()));
-        } else if (v.is_number_float()) {
-          decoded.emplace_back(NumericValue(v.get<double>()));
-        } else {
-          decoded.emplace_back(std::nullopt);
-        }
+        decoded.emplace_back(numericFromJson(v));
       }
       result.emplace(*col, std::move(decoded));
     }
@@ -203,10 +193,17 @@ class WidgetDataView {
   struct TableDeltaView {
     std::uint64_t seq = 0;
     std::vector<std::vector<std::string>> append;
+    /// Sort keys for the appended rows: column index -> one entry per appended
+    /// row, in `append` order (same sparse shape as tableColumnValues). A
+    /// column absent here, or a nullopt entry, appends a keyless cell.
+    std::map<int, std::vector<std::optional<NumericValue>>> append_values;
     struct CellUpdate {
       int row = 0;
       int col = 0;
       std::string text;
+      /// The cell's new sort key; nullopt CLEARS any previous key (an update
+      /// replaces the whole cell, so display and ordering cannot desync).
+      std::optional<NumericValue> value;
     };
     std::vector<CellUpdate> update_cells;
     std::vector<int> remove_rows;
@@ -261,17 +258,53 @@ class WidgetDataView {
         delta.append.push_back(std::move(cells));
       }
     }
+    if (auto values_it = it->find("append_values"); values_it != it->end()) {
+      if (!values_it->is_object()) {
+        return std::nullopt;
+      }
+      for (auto kv = values_it->begin(); kv != values_it->end(); ++kv) {
+        const auto col = parseNumber<int>(kv.key());
+        const nlohmann::json& values = kv.value();
+        if (!col.has_value() || *col < 0 || !values.is_array() || values.size() != delta.append.size()) {
+          return std::nullopt;
+        }
+        std::vector<std::optional<NumericValue>> decoded;
+        decoded.reserve(values.size());
+        for (const auto& v : values) {
+          if (v.is_null()) {
+            decoded.emplace_back(std::nullopt);
+            continue;
+          }
+          auto num = numericFromJson(v);
+          if (!num.has_value()) {
+            return std::nullopt;
+          }
+          decoded.emplace_back(*num);
+        }
+        delta.append_values.emplace(*col, std::move(decoded));
+      }
+    }
     if (auto cells_it = it->find("update_cells"); cells_it != it->end()) {
       if (!cells_it->is_array()) {
         return std::nullopt;
       }
       for (const auto& update : *cells_it) {
-        if (!update.is_array() || update.size() != 3 || !update[0].is_number_integer() ||
+        if (!update.is_array() || update.size() < 3 || update.size() > 4 || !update[0].is_number_integer() ||
             !update[1].is_number_integer() || !update[2].is_string() || update[0].get<int>() < 0 ||
             update[1].get<int>() < 0) {
           return std::nullopt;
         }
-        delta.update_cells.push_back({update[0].get<int>(), update[1].get<int>(), update[2].get<std::string>()});
+        TableDeltaView::CellUpdate cell{
+            update[0].get<int>(), update[1].get<int>(), update[2].get<std::string>(), std::nullopt};
+        // A null key means keyless (NaN/Inf serialize as null), matching the
+        // column_values convention; any other non-number is malformed.
+        if (update.size() == 4 && !update[3].is_null()) {
+          cell.value = numericFromJson(update[3]);
+          if (!cell.value.has_value()) {
+            return std::nullopt;
+          }
+        }
+        delta.update_cells.push_back(std::move(cell));
       }
     }
     if (auto remove_it = it->find("remove_rows"); remove_it != it->end()) {
@@ -852,6 +885,22 @@ class WidgetDataView {
 
  private:
   nlohmann::json data_;
+
+  /// Decode a JSON number into the widest lossless NumericValue alternative
+  /// (the wire collapses every integer width, so no guessing the original
+  /// type). Non-numbers yield nullopt.
+  static std::optional<NumericValue> numericFromJson(const nlohmann::json& v) {
+    if (v.is_number_unsigned()) {
+      return NumericValue(v.get<uint64_t>());
+    }
+    if (v.is_number_integer()) {
+      return NumericValue(v.get<int64_t>());
+    }
+    if (v.is_number_float()) {
+      return NumericValue(v.get<double>());
+    }
+    return std::nullopt;
+  }
 
   const nlohmann::json* widget(std::string_view name) const {
     auto it = data_.find(std::string(name));

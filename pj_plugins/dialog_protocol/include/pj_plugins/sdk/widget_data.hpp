@@ -137,10 +137,13 @@ struct ChartMarker {
 /// One cell write of a table delta (see WidgetData::updateTableCells).
 /// `row`/`col` are in the plugin's own row space — the same space
 /// setTableRows / setSelectedRows use, regardless of any user sorting.
+/// The update replaces the WHOLE cell: `item` carries both the display text
+/// and the optional sort key, so a keyless item clears any previous key
+/// rather than preserving it — display and ordering truth cannot desync.
 struct TableCellUpdate {
   int row = 0;
   int col = 0;
-  std::string text;
+  TableItem item;
 };
 
 /// One mark on a MarkerTimeline. `region` true → a resizable [start,end] span;
@@ -307,45 +310,10 @@ class WidgetData {
   /// Columns where no cell has a value are omitted entirely and sort by text.
   WidgetData& setTableRows(std::string_view name, const std::vector<std::vector<TableItem>>& rows) {
     auto& e = entry(name);
-
-    nlohmann::json text_rows = nlohmann::json::array();
-    std::size_t max_cols = 0;
-    for (const auto& row : rows) {
-      nlohmann::json cells = nlohmann::json::array();
-      for (const auto& item : row) {
-        cells.push_back(item.text);
-      }
-      text_rows.push_back(std::move(cells));
-      if (row.size() > max_cols) {
-        max_cols = row.size();
-      }
-    }
+    nlohmann::json text_rows;
+    nlohmann::json columns;
+    encodeTypedRows(rows, text_rows, columns);
     e["rows"] = std::move(text_rows);
-
-    nlohmann::json columns = nlohmann::json::object();
-    for (std::size_t c = 0; c < max_cols; ++c) {
-      bool any_value = false;
-      for (const auto& row : rows) {
-        if (c < row.size() && row[c].value.has_value()) {
-          any_value = true;
-          break;
-        }
-      }
-      if (!any_value) {
-        continue;
-      }
-      nlohmann::json values = nlohmann::json::array();
-      for (const auto& row : rows) {
-        if (c < row.size() && row[c].value.has_value()) {
-          // Push the native alternative: nlohmann stores int64/uint64 natively, so a
-          // large count or a nanosecond timestamp survives the round-trip exactly.
-          std::visit([&values](auto v) { values.push_back(v); }, *row[c].value);
-        } else {
-          values.push_back(nlohmann::json::value_t::null);
-        }
-      }
-      columns[std::to_string(c)] = std::move(values);
-    }
     if (columns.empty()) {
       e.erase("column_values");
     } else {
@@ -431,18 +399,47 @@ class WidgetData {
   // same delta appends. A `rows` field in the same refresh wins: the host
   // applies the full replace and the delta counts as consumed.
 
-  /// Append rows to the end of the table.
+  /// Append plain-text rows to the end of the table (cells sort by text).
   WidgetData& appendTableRows(
       std::string_view name, std::uint64_t seq, const std::vector<std::vector<std::string>>& rows) {
-    tableDeltaEntry(name, seq)["append"] = rows;
+    auto& delta = tableDeltaEntry(name, seq);
+    delta["append"] = rows;
+    // Same stale-key protection as the plain setTableRows overload: a typed
+    // append written earlier under this seq must not leave keys behind.
+    delta.erase("append_values");
     return *this;
   }
 
-  /// Rewrite individual cells in place.
+  /// Typed append: rows that carry sort keys (see TableItem). Emits display
+  /// text as `append` plus the keys as a sparse `append_values` column map
+  /// aligned to the appended rows — the delta-side mirror of `column_values`,
+  /// so appended cells keep sorting numerically in typed columns.
+  WidgetData& appendTableRows(
+      std::string_view name, std::uint64_t seq, const std::vector<std::vector<TableItem>>& rows) {
+    auto& delta = tableDeltaEntry(name, seq);
+    nlohmann::json text_rows;
+    nlohmann::json columns;
+    encodeTypedRows(rows, text_rows, columns);
+    delta["append"] = std::move(text_rows);
+    if (columns.empty()) {
+      delta.erase("append_values");
+    } else {
+      delta["append_values"] = std::move(columns);
+    }
+    return *this;
+  }
+
+  /// Rewrite individual cells in place. Each update replaces the WHOLE cell —
+  /// display text plus optional sort key (see TableCellUpdate); a keyless item
+  /// clears the cell's key. Wire: [row, col, text] or [row, col, text, value].
   WidgetData& updateTableCells(std::string_view name, std::uint64_t seq, const std::vector<TableCellUpdate>& cells) {
     auto arr = nlohmann::json::array();
     for (const auto& cell : cells) {
-      arr.push_back({cell.row, cell.col, cell.text});
+      nlohmann::json update = {cell.row, cell.col, cell.item.text};
+      if (cell.item.value.has_value()) {
+        std::visit([&update](auto v) { update.push_back(v); }, *cell.item.value);
+      }
+      arr.push_back(std::move(update));
     }
     tableDeltaEntry(name, seq)["update_cells"] = std::move(arr);
     return *this;
@@ -879,6 +876,49 @@ class WidgetData {
       delta["seq"] = seq;
     }
     return delta;
+  }
+
+  /// Encode TableItem rows into display-text rows plus the sparse per-column
+  /// key map shared by `column_values` and `append_values`: only columns where
+  /// some cell has a value, keyless cells as null, omitted entirely otherwise.
+  static void encodeTypedRows(
+      const std::vector<std::vector<TableItem>>& rows, nlohmann::json& out_text_rows, nlohmann::json& out_columns) {
+    out_text_rows = nlohmann::json::array();
+    std::size_t max_cols = 0;
+    for (const auto& row : rows) {
+      nlohmann::json cells = nlohmann::json::array();
+      for (const auto& item : row) {
+        cells.push_back(item.text);
+      }
+      out_text_rows.push_back(std::move(cells));
+      if (row.size() > max_cols) {
+        max_cols = row.size();
+      }
+    }
+    out_columns = nlohmann::json::object();
+    for (std::size_t c = 0; c < max_cols; ++c) {
+      bool any_value = false;
+      for (const auto& row : rows) {
+        if (c < row.size() && row[c].value.has_value()) {
+          any_value = true;
+          break;
+        }
+      }
+      if (!any_value) {
+        continue;
+      }
+      nlohmann::json values = nlohmann::json::array();
+      for (const auto& row : rows) {
+        if (c < row.size() && row[c].value.has_value()) {
+          // Push the native alternative: nlohmann stores int64/uint64 natively, so a
+          // large count or a nanosecond timestamp survives the round-trip exactly.
+          std::visit([&values](auto v) { values.push_back(v); }, *row[c].value);
+        } else {
+          values.push_back(nlohmann::json::value_t::null);
+        }
+      }
+      out_columns[std::to_string(c)] = std::move(values);
+    }
   }
 };
 

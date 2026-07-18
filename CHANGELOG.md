@@ -41,6 +41,14 @@ display text. Backward-compatible JSON additions — no C ABI change,
 - The plain-string `setTableRows` overload now erases any `column_values` a
   previous typed delivery left on the same table, so alternating overloads can
   never pair fresh rows with stale sort keys.
+- The batch table deltas (below) are sort-key aware: `appendTableRows` gains a
+  `TableItem` overload emitting a sparse `append_values` column map aligned to
+  the appended rows, and `TableCellUpdate` becomes `{row, col, TableItem}` —
+  an update replaces the whole cell (text + optional key; a keyless item
+  clears the key), serialized as `[row, col, text]` or
+  `[row, col, text, value]`. `TableDeltaView` decodes both (strict: a
+  malformed key or a misaligned `append_values` column rejects the whole
+  delta), so a typed table stays typed while it streams.
 
 ### Feature: batch table deltas for large QTableWidgets (MINOR)
 
@@ -48,8 +56,8 @@ Mutate a table without resending the whole `rows` array (backward-compatible
 JSON addition; no C ABI change, `PJ_DIALOG_PROTOCOL_VERSION` unchanged):
 
 - `WidgetData::appendTableRows` / `updateTableCells` / `removeTableRows` write
-  a per-widget `table_delta` object (`seq`, `append`, `update_cells`,
-  `remove_rows`). `seq` is plugin-owned; hosts apply a delta only when its seq
+  a per-widget `table_delta` object (`seq`, `append`, `append_values`,
+  `update_cells`, `remove_rows`). `seq` is plugin-owned; hosts apply a delta only when its seq
   differs from the last one applied to that widget, in the order update_cells
   → remove_rows → append, with all indexes addressing the pre-delta table.
   New `TableCellUpdate` struct.

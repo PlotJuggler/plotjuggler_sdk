@@ -418,11 +418,12 @@ plain-string one) and the host sorts on the numbers. Rows are heterogeneous, as
 real tables are — strings and numbers side by side:
 
 > One overload-resolution edge: a braced literal such as
-> `setTableRows("t", {{"a", "b"}})` is ambiguous between the string and
-> `TableItem` overloads (a compile error, never a silent behavior change). Name
-> the vector — `std::vector<std::vector<std::string>> rows = …` — or wrap the
-> cells in `PJ::TableItem(...)` to pick a side. Already-compiled plugins are
-> unaffected.
+> `setTableRows("t", {{"a", "b"}})` — and likewise
+> `appendTableRows("t", seq, {{"a", "b"}})` — is ambiguous between the string
+> and `TableItem` overloads (a compile error, never a silent behavior change).
+> Name the vector — `std::vector<std::vector<std::string>> rows = …` — or wrap
+> the cells in `PJ::TableItem(...)` to pick a side. Already-compiled plugins
+> are unaffected.
 
 ```cpp
 std::string widget_data() override {
@@ -797,6 +798,24 @@ use, unaffected by user sorting; ops cannot target rows the same delta
 appends. A delta with any malformed op is rejected whole (never partially
 applied). Sending `rows` in the same refresh wins: the host applies the full
 replace and the delta counts as consumed.
+
+Deltas are sort-key aware, so a typed table stays typed while it streams:
+
+- `appendTableRows` has a `TableItem` overload — appended rows emit their keys
+  as a sparse `append_values` column map (the delta-side mirror of
+  `column_values`), so new rows keep sorting numerically. Appending plain
+  strings to a typed table demotes those cells to the keyless text rank.
+- `updateTableCells` takes `TableCellUpdate{row, col, TableItem}` — each update
+  replaces the **whole cell**, display text and key together. A keyless item
+  clears the cell's key; to change text while keeping a numeric key, resend
+  the key: `{row, col, {value, "new text"}}`.
+
+```cpp
+++delta_seq_;
+wd.appendTableRows("faultTable", delta_seq_,
+                   std::vector<std::vector<PJ::TableItem>>{{PJ::TableItem(now_ns, "10:23:07"), "sensor timeout"}});
+wd.updateTableCells("faultTable", delta_seq_, {{2, 1, {duration_ms, "1.2 s"}}});
+```
 
 > **Host support:** this SDK release ships the protocol (setters + the
 > `WidgetDataView::tableDelta` decoder); the PlotJuggler host applies deltas
