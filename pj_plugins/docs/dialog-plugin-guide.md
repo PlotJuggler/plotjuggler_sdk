@@ -257,12 +257,15 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 
 All handlers default to returning `false`. Override only the ones you need.
 
-> **Column sorting.** The host does not enable `QTableWidget`'s built-in sort
-> (it would reorder items and desync the index-based `setVisibleRows` /
-> `setSelectedRows` model). Instead, header clicks arrive as
-> `onHeaderClicked(name, section)`; a plugin that wants sortable columns
-> re-orders its own row model (numeric for numeric columns) and re-emits the
-> rows. The host shows a sort indicator on the clicked column.
+> **Column sorting.** Two mechanisms, and they must not be mixed on one table —
+> see [Sortable tables](#sortable-tables). Either give the cells sort keys
+> (`setTableRows` with `TableItem`) and let the host sort, or take
+> `onHeaderClicked(name, section)` and re-order your own row model. Never both.
+> Also keep item drag/drop (`dragEnabled`, `InternalMove`) OFF on any sortable
+> table: Qt rebuilds dropped cells from serialized display roles, which strips
+> the typed sort key — the column ends up mixing keyed and keyless cells, and a
+> row moved under the host scrambles the plugin-row mapping every index-keyed
+> aspect (selection, visibility) relies on.
 
 ### 5. Export the plugin
 
@@ -358,7 +361,7 @@ work like polling a server for available topics.
 | QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
-| QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows`, `setVisibleRows`, `setRowColor`, `setCellTooltip` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
+| QTableWidget | `setTableHeaders`, `setTableRows` (strings, or `TableItem` for sortable columns), `setTableSortIndicator`, `setSelectedRows`, `setVisibleRows`, `setRowColor`, `setCellTooltip` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
 | QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage`, `setCodeCursor`, `setCodeCaretTracking` | `onCodeChanged(name, code)`, or `onCodeChangedWithCursor(name, code, cursor)` when the editor opts into caret tracking |
 | QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | `setDateTime`, `setDateTimeRange` | `onDateTimeChanged(name, iso8601)` |
@@ -372,12 +375,11 @@ All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
 inline valid/invalid indicator the plugin drives). Drop targets receive
 `onItemsDropped(name, items)`.
 
-`onHeaderClicked(name, section)` reports the clicked column index for plugins
-that drive their own sorting. The `QTableWidget` styling setters layer over the
-row data: `setVisibleRows` live-filters by index (an empty set hides every row;
-to re-show all rows pass the full index list — clearing the field makes *no*
-change), `setRowColor` tints a row (`"#rrggbb"`, or `""` to clear), and
-`setCellTooltip` annotates a single cell.
+The `QTableWidget` styling setters layer over the row data: `setVisibleRows`
+live-filters by index (an empty set hides every row; to re-show all rows pass the
+full index list — clearing the field makes *no* change), `setRowColor` tints a row
+(`"#rrggbb"`, or `""` to clear), and `setCellTooltip` annotates a single cell.
+Sorting has its own section below.
 
 For `DateRangePicker`, the `from_iso` / `to_iso` strings are ISO-8601 datetimes
 and are empty when that side of the range is unbounded.
@@ -390,6 +392,120 @@ and are empty when that side of the range is unbounded.
 > widget classes, not stock Qt. Use them as *promoted* widgets in your `.ui`
 > (promote a placeholder `QWidget` to the class name); the host binds them by
 > object name exactly like the stock widgets above.
+
+## Sortable Tables
+
+The guiding rule: **never sort on presentation strings; sort on the value and
+format for display.** A cell reaches the host as text, so without a sort key the
+host can only compare what it renders — and text compares lexicographically:
+`"9"` lands *after* `"10"`, `"720"` after `"7"`. The column looks sorted and is
+wrong.
+
+### Give the cells a sort key (preferred)
+
+`PJ::TableItem` carries both halves of a cell — what it displays and what it
+orders by:
+
+```cpp
+struct TableItem {
+  std::string text;                    // display — you own the formatting
+  std::optional<NumericValue> value;   // ordering truth; unset ⇒ sort by text
+};
+```
+
+Pass a `vector<vector<TableItem>>` to `setTableRows` (an overload beside the
+plain-string one) and the host sorts on the numbers. Rows are heterogeneous, as
+real tables are — strings and numbers side by side:
+
+> One overload-resolution edge: a braced literal such as
+> `setTableRows("t", {{"a", "b"}})` is ambiguous between the string and
+> `TableItem` overloads (a compile error, never a silent behavior change). Name
+> the vector — `std::vector<std::vector<std::string>> rows = …` — or wrap the
+> cells in `PJ::TableItem(...)` to pick a side. Already-compiled plugins are
+> unaffected.
+
+```cpp
+std::string widget_data() override {
+  PJ::WidgetData wd;
+  std::vector<std::vector<PJ::TableItem>> rows;
+  for (const auto& ch : channels_) {
+    rows.push_back({
+        PJ::TableItem(ch.topic),                        // text: sorts by text
+        PJ::TableItem(ch.encoding),                     // text: sorts by text
+        PJ::TableItem(ch.message_count),                // uint64: sorts numerically
+        PJ::TableItem(ch.rate_hz, formatRate(ch.rate_hz)),  // shows "12.5 Hz", sorts on the double
+    });
+  }
+  wd.setTableRows("tableWidget", rows);
+  return wd.toJson();
+}
+```
+
+Notes on the constructors above:
+
+- `TableItem("text")` / `TableItem(std::string)` leaves `value` unset — the cell
+  sorts by its text. That is the right answer for a genuinely textual column.
+- `TableItem(v)` for any arithmetic `v` renders it with `std::to_string` and sorts
+  on it.
+- `TableItem(v, "display")` sorts on `v` and shows `display` — use it whenever the
+  rendering is lossy or decorated (`"5.60536e+08"`, `"1.2 MB"`, `"12 Hz"`).
+- **Pass the native type.** `NumericValue` keeps each width exactly, so a `uint64`
+  count or an `int64` nanosecond timestamp is never squeezed through a `double`
+  (exact only to 2⁵³ — beyond it, distinct values collapse into ties and "which is
+  largest" gets a wrong answer). Don't pre-cast to `double`.
+- A cell with no value in an otherwise numeric column (ulog's `"N/A"`) is fine:
+  it keeps its slot and the host orders it deterministically against the numbers.
+
+### Hidden sort keys
+
+`text` and `value` need not resemble each other. A column can display a date and
+sort on nanoseconds:
+
+```cpp
+PJ::TableItem(entry.max_ts_ns, formatDate(entry.max_ts_ns))  // shows "2026-07-17 10:23"
+```
+
+This is why one mechanism covers every column in practice — the key does not have
+to be visible.
+
+### On the wire
+
+The SDK derives both keys from the one `TableItem` matrix, so display and value
+**cannot** desync:
+
+```json
+"rows":          [["chan_a","mcap","1234"], ["chan_b","mcap","720"]],
+"column_values": {"2": [1234, 720]}
+```
+
+`column_values` is **sparse** — only columns where some cell has a value appear
+(text-only columns cost nothing), and a valueless cell serializes as `null` in its
+column's array. A host that predates the overload never looks for the key and
+reads `rows` exactly as before, so adopting `TableItem` cannot break an old host.
+
+### Or sort it yourself
+
+If the ordering isn't numeric — or the sort has side effects — override
+`onHeaderClicked(name, section)`, re-order your own row model, and re-emit the
+rows. Then tell the host which arrow to paint:
+
+```cpp
+wd.setTableSortIndicator("seqTable", sort_column_, sort_ascending_);
+```
+
+`setTableSortIndicator` exists because Qt paints a header arrow **only when its
+own sorting is enabled**. A table you sort yourself would otherwise show no
+indicator at all — the rows reorder and the header never says why. It is purely
+cosmetic: it never reorders anything. Re-send it whenever the sort state changes.
+
+> **Trap: never combine `sortingEnabled=true` with `onHeaderClicked`.** A table
+> that sets `sortingEnabled` in its `.ui` XML gets Qt's built-in sorting (that
+> property is raw Qt reaching the widget through `QUiLoader`, not an SDK feature).
+> Add `onHeaderClicked` on top and both sides act on the same click: Qt re-sorts
+> the *view* by rendered text while your handler re-orders the *model*, and your
+> order is the one that gets clobbered. Pick one mechanism per table. If you want
+> Qt's sorting to be correct, don't intercept the header — supply `TableItem`
+> values and let it sort on those.
 
 ## Optional Features
 

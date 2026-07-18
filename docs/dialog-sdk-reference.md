@@ -74,13 +74,20 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | Method | Description |
 |--------|-------------|
 | `setTableHeaders(name, vector<string>)` | Set column headers |
-| `setTableRows(name, vector<vector<string>>)` | Set row data |
+| `setTableRows(name, vector<vector<string>>)` | Set row data as plain text. Every column sorts **lexicographically** — `"9"` after `"10"`. |
+| `setTableRows(name, vector<vector<TableItem>>)` | Set row data with a per-cell sort key, so numeric columns sort numerically. `TableItem{text, optional<NumericValue>}`: `TableItem("x")` sorts by text, `TableItem(v)` renders and sorts on `v`, `TableItem(v, "display")` sorts on `v` but shows `display` (lossy or decorated rendering, or a hidden key such as a date over `int64` ns). Pass the native type — `NumericValue` keeps `int64`/`uint64` exact past 2⁵³. |
+| `setTableSortIndicator(name, column, ascending)` | Draw the header arrow **without** enabling Qt's sorting — for tables that sort themselves via `onHeaderClicked` (Qt paints an arrow only for its own sorting). Cosmetic; never reorders rows. |
 | `setSelectedRows(name, vector<int>)` | Set selected row indices |
 | `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) |
 | `setTableRadioColumn(name, column, checked_row)` | Render `column` as an exclusive radio group; `checked_row` is selected (-1 = none). Fires `onTableRadioSelected`. |
 | `appendTableRows(name, seq, rows)` | Delta: append rows without resending `rows` (see guide → "Table deltas") |
 | `updateTableCells(name, seq, vector<TableCellUpdate>)` | Delta: rewrite individual cells (`{row, col, text}`, plugin row space) |
 | `removeTableRows(name, seq, vector<int>)` | Delta: remove plugin-space row indexes |
+
+> A table must not combine `sortingEnabled=true` in its `.ui` with
+> `onHeaderClicked` — Qt would sort the view while the plugin reorders the model,
+> and the plugin's order loses. See `pj_plugins/docs/dialog-plugin-guide.md` →
+> "Sortable Tables".
 
 ### QFrame Chart Container
 

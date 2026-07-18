@@ -113,11 +113,77 @@ class WidgetDataView {
       for (const auto& cell : row) {
         if (cell.is_string()) {
           cells.push_back(cell.get<std::string>());
+        } else {
+          // Keep the row's shape. Dropping an unrecognized cell would shift every
+          // column after it and silently mis-align the whole row.
+          cells.emplace_back();
         }
       }
       result.push_back(std::move(cells));
     }
     return result;
+  }
+
+  /// Sparse per-column sort keys (see WidgetData::setTableRows for TableItem rows).
+  /// Maps column index -> one entry per row, in the same order as tableRows(). A
+  /// nullopt entry, or a column absent from the map, sorts by the cell's text.
+  /// Columns whose value count disagrees with `rows` are dropped: a partial key
+  /// column would sort some rows by number and others by text.
+  [[nodiscard]] std::map<int, std::vector<std::optional<NumericValue>>> tableColumnValues(std::string_view name) const {
+    std::map<int, std::vector<std::optional<NumericValue>>> result;
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return result;
+    }
+    auto rows_it = w->find("rows");
+    const std::size_t row_count = (rows_it != w->end() && rows_it->is_array()) ? rows_it->size() : 0;
+    auto it = w->find("column_values");
+    if (it == w->end() || !it->is_object()) {
+      return result;
+    }
+    for (auto kv = it->begin(); kv != it->end(); ++kv) {
+      const nlohmann::json& values = kv.value();
+      const auto col = parseNumber<int>(kv.key());
+      if (!col.has_value() || *col < 0 || !values.is_array() || values.size() != row_count) {
+        continue;
+      }
+      std::vector<std::optional<NumericValue>> decoded;
+      decoded.reserve(values.size());
+      for (const auto& v : values) {
+        // The wire collapses every integer width to a JSON integer, so decode to the
+        // widest lossless alternative rather than guessing the plugin's original type.
+        if (v.is_number_unsigned()) {
+          decoded.emplace_back(NumericValue(v.get<uint64_t>()));
+        } else if (v.is_number_integer()) {
+          decoded.emplace_back(NumericValue(v.get<int64_t>()));
+        } else if (v.is_number_float()) {
+          decoded.emplace_back(NumericValue(v.get<double>()));
+        } else {
+          decoded.emplace_back(std::nullopt);
+        }
+      }
+      result.emplace(*col, std::move(decoded));
+    }
+    return result;
+  }
+
+  /// Sort arrow a plugin-sorted table asked the host to draw: {column, ascending}.
+  /// Purely cosmetic — it never changes row order (see setTableSortIndicator).
+  [[nodiscard]] std::optional<std::pair<int, bool>> tableSortIndicator(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("sort_indicator");
+    if (it == w->end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto col = it->find("col");
+    auto asc = it->find("asc");
+    if (col == it->end() || !col->is_number_integer() || asc == it->end() || !asc->is_boolean()) {
+      return std::nullopt;
+    }
+    return std::make_pair(col->get<int>(), asc->get<bool>());
   }
 
   /// Column to render as an exclusive radio-button group (see setTableRadioColumn).

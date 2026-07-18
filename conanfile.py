@@ -6,7 +6,7 @@ Exposes three CMake components under the `plotjuggler_sdk::` namespace:
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.16.2` and then:
+A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.18.0` and then:
 
     find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
@@ -30,29 +30,6 @@ import os
 
 class PlotjugglerSdkConan(ConanFile):
     name = "plotjuggler_sdk"
-    # 0.14.0 unified markers + transforms into the single host service
-    # `pj.data_processors.v1` via a `kind` discriminator (removed the old
-    # `pj.markers.v1` and the interim `pj.generators.v1`; generalized
-    # `create_data_processor`/`validate_data_processor_script` with
-    # kind/language/flags) and added the dialog-protocol additions (radio
-    # column + interactive sub-panel). Shipped as a MINOR bump rather than
-    # 1.0.0 because no public tag had ever carried `pj.data_processors.v1`,
-    # so no released plugin broke.
-    # 0.15.0 adds DataSource per-topic pause (advertise + demand-driven
-    # subscription) — strictly additive. See CHANGELOG.md.
-    # 0.16.0 removes the host-side PluginRuntimeCatalog (duplicate-resolution
-    # policy moved to the app, pj_runtime). No plugin links it and
-    # abi/baseline.abi is unchanged, so per the plugin-impact rule this is a
-    # MINOR, not a MAJOR. See CHANGELOG.md.
-    # 0.16.1 fixes plugin_data_api.hpp double formatting on Apple deployment
-    # targets older than macOS 13.3 (FP std::to_chars unavailable there) —
-    # PATCH, installed-header bug fix. See CHANGELOG.md.
-    # 0.17.0 extends the dialog protocol with backward-compatible additions
-    # (list_deletable / list_placeholder / chart_placeholder keys and the
-    # item_delete_index event) — MINOR. See CHANGELOG.md.
-    # 0.18.0 adds the QDateTimeEdit event surface (datetime_iso event,
-    # WidgetEvent::dateTimeChanged, DialogPluginTyped::onDateTimeChanged) —
-    # MINOR, header-only additions. See CHANGELOG.md.
     version = "0.18.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
