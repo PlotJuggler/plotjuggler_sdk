@@ -345,6 +345,19 @@ TEST(WidgetDataViewTest, TableDeltaNegativeIndexRejectsWholeDelta) {
   EXPECT_FALSE(view.tableDelta("tbl").has_value());
 }
 
+TEST(WidgetDataViewTest, TableDeltaOversizedIndexRejectsWholeDelta) {
+  // 2^32 passes is_number_integer() but would wrap to 0 through a narrowing
+  // get<int>() — it must reject, not silently target a valid-looking row.
+  PJ::WidgetDataView remove_view(R"({"tbl": {"table_delta": {"seq": 3, "remove_rows": [4294967296]}}})");
+  EXPECT_FALSE(remove_view.tableDelta("tbl").has_value());
+
+  PJ::WidgetDataView row_view(R"({"tbl": {"table_delta": {"seq": 3, "update_cells": [[4294967296, 0, "x"]]}}})");
+  EXPECT_FALSE(row_view.tableDelta("tbl").has_value());
+
+  PJ::WidgetDataView col_view(R"({"tbl": {"table_delta": {"seq": 3, "update_cells": [[0, 4294967296, "x"]]}}})");
+  EXPECT_FALSE(col_view.tableDelta("tbl").has_value());
+}
+
 TEST(WidgetDataViewTest, TableDeltaRemoveRowsNormalizedDescendingUnique) {
   PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"seq": 4, "remove_rows": [2, 7, 2, 5]}}})");
   auto delta = view.tableDelta("tbl");

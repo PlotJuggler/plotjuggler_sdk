@@ -678,9 +678,12 @@ discarding prior ops) and apply as: `update_cells`, then `remove_rows`, then
 `append`. **All indexes address the table as it was before the delta** — the
 plugin's own row space, the same space `setTableRows` and `setSelectedRows`
 use, unaffected by user sorting; ops cannot target rows the same delta
-appends. A delta with any malformed op is rejected whole (never partially
-applied). Sending `rows` in the same refresh wins: the host applies the full
-replace and the delta counts as consumed.
+appends. A delta with any malformed op — or any op the host cannot resolve
+against the live table (e.g. an out-of-range row) — is rejected whole (never
+partially applied) and its seq stays unconsumed, so a corrected retransmission
+of the same seq applies. Sending `rows` in the same refresh wins: the host
+applies the full replace and the delta counts as consumed; a `rows` resync also
+resets the host's seq gate, so a restarted counter self-heals.
 
 > **Host support:** this SDK release ships the protocol (setters + the
 > `WidgetDataView::tableDelta` decoder); the PlotJuggler host applies deltas

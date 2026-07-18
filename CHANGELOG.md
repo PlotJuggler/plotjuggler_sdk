@@ -3,6 +3,17 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.18.1]
+
+### Fix: strict index bounds in `WidgetDataView::tableDelta()` (PATCH)
+
+`table_delta` row/column indexes were validated with `is_number_integer()` but
+then narrowed with an unchecked `get<int>()`, so an oversized value (e.g.
+`4294967296`) silently wrapped into a valid-looking index instead of rejecting.
+Indexes are now range-checked against `int` before narrowing; any out-of-range
+value rejects the whole delta, matching the documented strict-decode contract.
+Header-only fix, no ABI change.
+
 ## [0.18.0]
 
 ### Feature: batch table deltas for large QTableWidgets (MINOR)
@@ -24,7 +35,7 @@ JSON addition; no C ABI change, `PJ_DIALOG_PROTOCOL_VERSION` unchanged):
   omit-unchanged-fields pattern (with measured costs) and the delta ops.
 - SDK-side only: hosts apply `table_delta` from the companion PlotJuggler
   change onward; older hosts ignore the key (harmless no-op).
-  
+
 ### Feature: QDateTimeEdit event surface (MINOR)
 
 The dialog protocol's QDateTimeEdit setters (`setDateTime` / `setDateTimeRange`,

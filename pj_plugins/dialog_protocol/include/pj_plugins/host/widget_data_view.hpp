@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -174,6 +175,16 @@ class WidgetDataView {
     // Strict decode: one malformed op rejects the whole delta. Partially
     // applying and then treating the seq as consumed would leave the table
     // diverged from the plugin's model with no way to repair it.
+    // is_number_integer() accepts the full 64-bit range, so indexes are
+    // range-checked before the narrowing get<int>() — otherwise an oversized
+    // value (e.g. 2^32) would silently wrap into a valid-looking row.
+    const auto is_row_index = [](const nlohmann::json& v) {
+      if (!v.is_number_integer()) {
+        return false;
+      }
+      const auto value = v.get<std::int64_t>();
+      return value >= 0 && value <= std::numeric_limits<int>::max();
+    };
     TableDeltaView delta;
     delta.seq = *seq;
     if (auto append_it = it->find("append"); append_it != it->end()) {
@@ -200,12 +211,13 @@ class WidgetDataView {
         return std::nullopt;
       }
       for (const auto& update : *cells_it) {
-        if (!update.is_array() || update.size() != 3 || !update[0].is_number_integer() ||
-            !update[1].is_number_integer() || !update[2].is_string() || update[0].get<int>() < 0 ||
-            update[1].get<int>() < 0) {
+        if (!update.is_array() || update.size() != 3 || !is_row_index(update[0]) || !is_row_index(update[1]) ||
+            !update[2].is_string()) {
           return std::nullopt;
         }
-        delta.update_cells.push_back({update[0].get<int>(), update[1].get<int>(), update[2].get<std::string>()});
+        delta.update_cells.push_back(
+            {static_cast<int>(update[0].get<std::int64_t>()), static_cast<int>(update[1].get<std::int64_t>()),
+             update[2].get<std::string>()});
       }
     }
     if (auto remove_it = it->find("remove_rows"); remove_it != it->end()) {
@@ -213,10 +225,10 @@ class WidgetDataView {
         return std::nullopt;
       }
       for (const auto& row : *remove_it) {
-        if (!row.is_number_integer() || row.get<int>() < 0) {
+        if (!is_row_index(row)) {
           return std::nullopt;
         }
-        delta.remove_rows.push_back(row.get<int>());
+        delta.remove_rows.push_back(static_cast<int>(row.get<std::int64_t>()));
       }
       // Normalized for direct application: descending and duplicate-free, so a
       // host removing in vector order can never hit index shift.
