@@ -5,6 +5,43 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.18.0]
 
+### Feature: typed table sort keys — numeric columns sort numerically (MINOR)
+
+A table cell crossed the dialog protocol as text only, so the host could compare
+nothing but the rendered string and every numeric column sorted
+lexicographically (`720` before `7` before `65`). Sort keys now travel beside the
+display text. Backward-compatible JSON additions — no C ABI change,
+`PJ_DIALOG_PROTOCOL_VERSION` unchanged, `abi/baseline.abi` unchanged:
+
+- `PJ::TableItem { std::string text; std::optional<NumericValue> value; }` — the
+  display string and the ordering truth. Constructors cover a text cell, a
+  numeric cell (`std::to_string` rendering), and a numeric cell with plugin-owned
+  rendering (`TableItem(v, "5.60536e+08")`), which also expresses a *hidden* key:
+  display a date, sort on `int64` nanoseconds. `NumericValue` keeps the native
+  width, so `int64`/`uint64` values past 2⁵³ round-trip exactly rather than
+  degrading through a `double`.
+- `WidgetData::setTableRows(name, vector<vector<TableItem>>)` — an overload beside
+  the string one. Emits display text as the usual `rows` plus a **sparse**
+  `column_values` map (`{"<col>": [v0, v1, …]}`): only columns where some cell has
+  a value, with valueless cells as `null`, and the key omitted entirely when no
+  cell has one. Old hosts never look for it and read `rows` exactly as before.
+  Deriving both keys from one `TableItem` matrix means display and value cannot
+  desync.
+- `WidgetData::setTableSortIndicator(name, column, ascending)` → `sort_indicator`
+  — draws the header arrow for a table that sorts itself via `onHeaderClicked`,
+  which Qt otherwise leaves unpainted because its own sorting is off. Cosmetic
+  only.
+- `WidgetDataView::tableColumnValues(name)` / `tableSortIndicator(name)` for host
+  implementations. `tableColumnValues` drops a column whose value count disagrees
+  with `rows` or whose key is not a non-negative integer, rather than sorting some
+  rows by number and the rest by text.
+- `WidgetDataView::tableRows()` hardening: a non-string cell now yields an empty
+  string instead of being skipped. Skipping shifted every later cell one column
+  left and mis-aligned the row against its headers.
+- The plain-string `setTableRows` overload now erases any `column_values` a
+  previous typed delivery left on the same table, so alternating overloads can
+  never pair fresh rows with stale sort keys.
+
 ### Feature: batch table deltas for large QTableWidgets (MINOR)
 
 Mutate a table without resending the whole `rows` array (backward-compatible

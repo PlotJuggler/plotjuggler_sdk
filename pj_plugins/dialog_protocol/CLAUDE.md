@@ -11,6 +11,13 @@ Local traps not visible from the headers:
   the XML, or the dialog renders with no OK/Cancel and no compile error.
 - `QTextEdit` / model-based `QTableView` are unsupported by the widget binding —
   use `QPlainTextEdit` / `QTableWidget`. See `../docs/dialog-plugin-guide.md`.
+- A table must not combine `sortingEnabled=true` in its `.ui` XML with
+  `onHeaderClicked`: Qt sorts the view while the plugin reorders the model and the
+  plugin's order loses. Sort keys (`setTableRows` with `TableItem`) or
+  `onHeaderClicked` — one per table, never both.
+- Sortable tables must also leave item drag/drop (`dragEnabled`, `InternalMove`)
+  OFF: Qt reconstructs dropped cells from serialized display roles, which strips
+  the typed sort key and leaves a column mixing keyed and keyless cells.
 - Headers here install into the SAME `pj_plugins/` include tree as the parent
   module (merged at install); keep names distinct.
 - `DialogHandle::borrowed()` / `fromBorrowed()` wrap a source/toolbox-owned
