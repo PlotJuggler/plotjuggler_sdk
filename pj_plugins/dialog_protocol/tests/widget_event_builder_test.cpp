@@ -135,6 +135,25 @@ TEST(WidgetEventTest_DateRange, MissingFieldYieldsNullopt) {
   EXPECT_FALSE(ev.dateRangeChanged().has_value());
 }
 
+TEST(WidgetEventBuilderTest, DateTimeChanged) {
+  std::string json = PJ::WidgetEventBuilder::dateTimeChanged("2026-05-21T13:45:00");
+  PJ::WidgetEvent ev(json);
+  ASSERT_TRUE(ev.dateTimeChanged().has_value());
+  EXPECT_EQ(*ev.dateTimeChanged(), "2026-05-21T13:45:00");
+  // A datetime event must not be routed as plain text.
+  EXPECT_FALSE(ev.text().has_value());
+}
+
+TEST(WidgetEventTest_DateTime, MissingFieldYieldsNullopt) {
+  PJ::WidgetEvent ev("{}");
+  EXPECT_FALSE(ev.dateTimeChanged().has_value());
+}
+
+TEST(WidgetEventTest_DateTime, WrongTypeYieldsNullopt) {
+  PJ::WidgetEvent ev(R"({"datetime_iso": 42})");
+  EXPECT_FALSE(ev.dateTimeChanged().has_value());
+}
+
 // --- Verify JSON is parseable and contains only expected fields ---
 
 TEST(WidgetEventBuilderTest, ClickedHasNoExtraFields) {

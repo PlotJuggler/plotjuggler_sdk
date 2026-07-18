@@ -127,6 +127,13 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// QDateTimeEdit (and its QDateEdit/QTimeEdit subclasses): the displayed
+  /// datetime was edited. `iso8601` is wall-clock local time, always a full
+  /// datetime; fractional seconds appear only for ms-precision editors.
+  virtual bool onDateTimeChanged(std::string_view /*widget_name*/, std::string_view /*iso8601*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
@@ -143,6 +150,9 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.dateRangeChanged()) {
       return onDateRangeChanged(widget_name, v->from_iso, v->to_iso);
+    }
+    if (auto v = event.dateTimeChanged()) {
+      return onDateTimeChanged(widget_name, *v);
     }
     if (auto v = event.itemsDropped()) {
       return onItemsDropped(widget_name, *v);

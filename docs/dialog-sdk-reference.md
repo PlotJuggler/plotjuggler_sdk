@@ -107,6 +107,17 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 |--------|-------------|
 | `setTabIndex(name, int)` | Set active tab index |
 
+### QDateTimeEdit
+
+Also binds the `QDateEdit` / `QTimeEdit` subclasses. Datetimes are wall-clock
+local time exchanged verbatim; events always carry a full ISO datetime, with
+fractional seconds only when the editor's display format includes them.
+
+| Method | Description |
+|--------|-------------|
+| `setDateTime(name, iso8601)` | Set the displayed datetime (ISO-8601, e.g. `"2026-05-21T13:45:00"`); empty/unparsable strings are ignored |
+| `setDateTimeRange(name, min_iso, max_iso)` | Set the allowed [min, max] datetime range |
+
 ### QDialogButtonBox
 
 | Method | Description |
@@ -168,6 +179,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
+| `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
 
 ---
 

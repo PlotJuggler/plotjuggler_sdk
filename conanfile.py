@@ -50,7 +50,10 @@ class PlotjugglerSdkConan(ConanFile):
     # 0.17.0 extends the dialog protocol with backward-compatible additions
     # (list_deletable / list_placeholder / chart_placeholder keys and the
     # item_delete_index event) — MINOR. See CHANGELOG.md.
-    version = "0.17.0"
+    # 0.18.0 adds the QDateTimeEdit event surface (datetime_iso event,
+    # WidgetEvent::dateTimeChanged, DialogPluginTyped::onDateTimeChanged) —
+    # MINOR, header-only additions. See CHANGELOG.md.
+    version = "0.18.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"
