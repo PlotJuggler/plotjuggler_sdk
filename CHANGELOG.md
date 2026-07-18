@@ -5,6 +5,26 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.18.0]
 
+### Feature: batch table deltas for large QTableWidgets (MINOR)
+
+Mutate a table without resending the whole `rows` array (backward-compatible
+JSON addition; no C ABI change, `PJ_DIALOG_PROTOCOL_VERSION` unchanged):
+
+- `WidgetData::appendTableRows` / `updateTableCells` / `removeTableRows` write
+  a per-widget `table_delta` object (`seq`, `append`, `update_cells`,
+  `remove_rows`). `seq` is plugin-owned; hosts apply a delta only when its seq
+  differs from the last one applied to that widget, in the order update_cells
+  → remove_rows → append, with all indexes addressing the pre-delta table.
+  New `TableCellUpdate` struct.
+- `WidgetDataView::tableDelta()` returns the decoded `TableDeltaView` for host
+  implementations (strict: a malformed op rejects the whole delta;
+  `remove_rows` arrives descending and duplicate-free), with
+  `tableDeltaSeq()` as the cheap staleness pre-check.
+- `dialog-plugin-guide.md` gains a "Large tables" section documenting the
+  omit-unchanged-fields pattern (with measured costs) and the delta ops.
+- SDK-side only: hosts apply `table_delta` from the companion PlotJuggler
+  change onward; older hosts ignore the key (harmless no-op).
+  
 ### Feature: QDateTimeEdit event surface (MINOR)
 
 The dialog protocol's QDateTimeEdit setters (`setDateTime` / `setDateTimeRange`,

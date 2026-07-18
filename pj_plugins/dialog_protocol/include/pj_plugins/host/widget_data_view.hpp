@@ -2,7 +2,9 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -125,6 +127,103 @@ class WidgetDataView {
   /// Row whose radio is checked in the radio column (-1 = none).
   [[nodiscard]] std::optional<int> tableRadioCheckedRow(std::string_view name) const {
     return getInt(name, "radio_checked_row");
+  }
+
+  /// Decoded batch table delta (see WidgetData::appendTableRows et al.).
+  /// Apply only when `seq` differs from the last seq applied to that widget,
+  /// in the order: update_cells, then remove_rows, then append. All indexes
+  /// address the table before the delta; `remove_rows` comes pre-normalized
+  /// (descending, duplicate-free) so it can be applied in vector order.
+  struct TableDeltaView {
+    std::uint64_t seq = 0;
+    std::vector<std::vector<std::string>> append;
+    struct CellUpdate {
+      int row = 0;
+      int col = 0;
+      std::string text;
+    };
+    std::vector<CellUpdate> update_cells;
+    std::vector<int> remove_rows;
+  };
+
+  /// The delta's seq alone, without decoding the (possibly large) ops — check
+  /// this against the last seq you applied before paying for tableDelta().
+  [[nodiscard]] std::optional<std::uint64_t> tableDeltaSeq(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("table_delta");
+    if (it == w->end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto seq_it = it->find("seq");
+    if (seq_it == it->end() || !seq_it->is_number_unsigned()) {
+      return std::nullopt;
+    }
+    return seq_it->get<std::uint64_t>();
+  }
+
+  [[nodiscard]] std::optional<TableDeltaView> tableDelta(std::string_view name) const {
+    auto seq = tableDeltaSeq(name);
+    if (!seq.has_value()) {
+      return std::nullopt;
+    }
+    const nlohmann::json* w = widget(name);
+    auto it = w->find("table_delta");
+    // Strict decode: one malformed op rejects the whole delta. Partially
+    // applying and then treating the seq as consumed would leave the table
+    // diverged from the plugin's model with no way to repair it.
+    TableDeltaView delta;
+    delta.seq = *seq;
+    if (auto append_it = it->find("append"); append_it != it->end()) {
+      if (!append_it->is_array()) {
+        return std::nullopt;
+      }
+      for (const auto& row : *append_it) {
+        if (!row.is_array()) {
+          return std::nullopt;
+        }
+        std::vector<std::string> cells;
+        cells.reserve(row.size());
+        for (const auto& cell : row) {
+          if (!cell.is_string()) {
+            return std::nullopt;
+          }
+          cells.push_back(cell.get<std::string>());
+        }
+        delta.append.push_back(std::move(cells));
+      }
+    }
+    if (auto cells_it = it->find("update_cells"); cells_it != it->end()) {
+      if (!cells_it->is_array()) {
+        return std::nullopt;
+      }
+      for (const auto& update : *cells_it) {
+        if (!update.is_array() || update.size() != 3 || !update[0].is_number_integer() ||
+            !update[1].is_number_integer() || !update[2].is_string() || update[0].get<int>() < 0 ||
+            update[1].get<int>() < 0) {
+          return std::nullopt;
+        }
+        delta.update_cells.push_back({update[0].get<int>(), update[1].get<int>(), update[2].get<std::string>()});
+      }
+    }
+    if (auto remove_it = it->find("remove_rows"); remove_it != it->end()) {
+      if (!remove_it->is_array()) {
+        return std::nullopt;
+      }
+      for (const auto& row : *remove_it) {
+        if (!row.is_number_integer() || row.get<int>() < 0) {
+          return std::nullopt;
+        }
+        delta.remove_rows.push_back(row.get<int>());
+      }
+      // Normalized for direct application: descending and duplicate-free, so a
+      // host removing in vector order can never hit index shift.
+      std::sort(delta.remove_rows.begin(), delta.remove_rows.end(), std::greater<>());
+      delta.remove_rows.erase(std::unique(delta.remove_rows.begin(), delta.remove_rows.end()), delta.remove_rows.end());
+    }
+    return delta;
   }
 
   [[nodiscard]] std::optional<std::vector<int>> selectedRows(std::string_view name) const {

@@ -78,6 +78,9 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setSelectedRows(name, vector<int>)` | Set selected row indices |
 | `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) |
 | `setTableRadioColumn(name, column, checked_row)` | Render `column` as an exclusive radio group; `checked_row` is selected (-1 = none). Fires `onTableRadioSelected`. |
+| `appendTableRows(name, seq, rows)` | Delta: append rows without resending `rows` (see guide → "Table deltas") |
+| `updateTableCells(name, seq, vector<TableCellUpdate>)` | Delta: rewrite individual cells (`{row, col, text}`, plugin row space) |
+| `removeTableRows(name, seq, vector<int>)` | Delta: remove plugin-space row indexes |
 
 ### QFrame Chart Container
 

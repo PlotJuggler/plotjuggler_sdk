@@ -626,6 +626,69 @@ and runs it modally. The sub-dialog supports standard `QDialogButtonBox`
 accept/reject wiring. This is a one-shot command — the request is consumed
 after opening the sub-dialog.
 
+### Large tables — send only what changed
+
+Every field in the widget-data JSON is **optional**: a field the payload omits
+applies no change. The naive pattern of rebuilding the full table in every
+`widget_data()` call works, but it re-serializes and re-parses everything on
+every refresh — order of magnitude, measured on a desktop Linux build at the
+time of writing: a 10,000×6 table is ~1 MB of JSON and costs ~25 ms per full
+refresh even when nothing changed, growing roughly linearly with row count
+(~10× at 100k rows — visible jank). The host defends itself (per-key diffing
+skips unchanged widgets, and byte-identical payloads are dropped after a cheap
+string compare), but the plugin-side serialization can only be avoided by the
+plugin.
+
+The efficient ladder, in order:
+
+1. **Send `rows` only when the data actually changed.** Track a dirty flag and
+   omit `setTableRows` otherwise — selection, colors, and visibility can be
+   sent alone. This alone removes the steady-state cost entirely.
+2. **Filter with `setVisibleRows`** instead of resending a reduced `rows`
+   array — the host hides rows in place.
+3. **Mutate with table deltas** for live feeds (see below) — append, update,
+   or remove rows without resending the array.
+4. **Rethink beyond ~100k rows** — an item-based table with hundreds of
+   thousands of rows is the wrong UI; aggregate or page in the plugin.
+
+### Table deltas — `appendTableRows` / `updateTableCells` / `removeTableRows`
+
+Batch mutations for tables that change incrementally (streaming fault lists,
+live status boards):
+
+```cpp
+std::string widget_data() override {
+  PJ::WidgetData wd;
+  if (!pending_rows_.empty()) {
+    ++delta_seq_;
+    wd.appendTableRows("faultTable", delta_seq_, pending_rows_);
+    wd.updateTableCells("faultTable", delta_seq_, {{2, 1, "RESOLVED"}});
+    pending_rows_.clear();
+  }
+  return wd.toJson();
+}
+```
+
+`seq` is plugin-owned; give every new delta a fresh value (a simple counter).
+The host applies a delta only when its seq **differs from the last one it
+applied** to that widget, so a full-state rebuild that still carries an
+already-applied delta is harmless, and a restarted counter self-heals. All ops
+sharing one refresh share one seq (a differing seq starts a fresh delta,
+discarding prior ops) and apply as: `update_cells`, then `remove_rows`, then
+`append`. **All indexes address the table as it was before the delta** — the
+plugin's own row space, the same space `setTableRows` and `setSelectedRows`
+use, unaffected by user sorting; ops cannot target rows the same delta
+appends. A delta with any malformed op is rejected whole (never partially
+applied). Sending `rows` in the same refresh wins: the host applies the full
+replace and the delta counts as consumed.
+
+> **Host support:** this SDK release ships the protocol (setters + the
+> `WidgetDataView::tableDelta` decoder); the PlotJuggler host applies deltas
+> from its companion release onward. Older hosts ignore the `table_delta` key
+> entirely (unknown keys are skipped by design), so emitting deltas against
+> one is a harmless no-op — keep a full `setTableRows` fallback if you must
+> support them.
+
 ## Choosing a Base Class
 
 | Class | Use when |

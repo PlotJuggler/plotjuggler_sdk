@@ -304,3 +304,50 @@ TEST(WidgetDataViewTest, ChartPlaceholderRoundTrip) {
   ASSERT_TRUE(v.chartPlaceholder("chart").has_value());
   EXPECT_EQ(*v.chartPlaceholder("chart"), "No data yet");
 }
+
+TEST(WidgetDataViewTest, TableDeltaRoundTrip) {
+  PJ::WidgetData wd;
+  wd.appendTableRows("tbl", 9, {{"r1c1", "r1c2"}});
+  wd.updateTableCells("tbl", 9, {{2, 0, "upd"}});
+  wd.removeTableRows("tbl", 9, {1});
+  PJ::WidgetDataView view(wd.toJson());
+  auto delta = view.tableDelta("tbl");
+  ASSERT_TRUE(delta.has_value());
+  EXPECT_EQ(delta->seq, 9U);
+  ASSERT_EQ(delta->append.size(), 1U);
+  EXPECT_EQ(delta->append[0][1], "r1c2");
+  ASSERT_EQ(delta->update_cells.size(), 1U);
+  EXPECT_EQ(delta->update_cells[0].row, 2);
+  EXPECT_EQ(delta->update_cells[0].col, 0);
+  EXPECT_EQ(delta->update_cells[0].text, "upd");
+  EXPECT_EQ(delta->remove_rows, std::vector<int>{1});
+}
+
+TEST(WidgetDataViewTest, TableDeltaAbsentYieldsNullopt) {
+  PJ::WidgetDataView view(R"({"tbl": {"rows": [["a"]]}})");
+  EXPECT_FALSE(view.tableDelta("tbl").has_value());
+}
+
+TEST(WidgetDataViewTest, TableDeltaWithoutSeqYieldsNullopt) {
+  PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"append": [["a"]]}}})");
+  EXPECT_FALSE(view.tableDelta("tbl").has_value());
+}
+
+TEST(WidgetDataViewTest, TableDeltaMalformedCellRejectsWholeDelta) {
+  // One malformed op poisons the delta: partial application would consume the
+  // seq while diverging from the plugin's model.
+  PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"seq": 3, "update_cells": [[0, "not-int", "x"]]}}})");
+  EXPECT_FALSE(view.tableDelta("tbl").has_value());
+}
+
+TEST(WidgetDataViewTest, TableDeltaNegativeIndexRejectsWholeDelta) {
+  PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"seq": 3, "remove_rows": [1, -2]}}})");
+  EXPECT_FALSE(view.tableDelta("tbl").has_value());
+}
+
+TEST(WidgetDataViewTest, TableDeltaRemoveRowsNormalizedDescendingUnique) {
+  PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"seq": 4, "remove_rows": [2, 7, 2, 5]}}})");
+  auto delta = view.tableDelta("tbl");
+  ASSERT_TRUE(delta.has_value());
+  EXPECT_EQ(delta->remove_rows, (std::vector<int>{7, 5, 2}));
+}
