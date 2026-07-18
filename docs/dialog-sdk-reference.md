@@ -80,8 +80,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setSelectedRows(name, vector<int>)` | Set selected row indices |
 | `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) |
 | `setTableRadioColumn(name, column, checked_row)` | Render `column` as an exclusive radio group; `checked_row` is selected (-1 = none). Fires `onTableRadioSelected`. |
-| `appendTableRows(name, seq, rows)` | Delta: append rows without resending `rows` (see guide → "Table deltas") |
-| `updateTableCells(name, seq, vector<TableCellUpdate>)` | Delta: rewrite individual cells (`{row, col, text}`, plugin row space) |
+| `appendTableRows(name, seq, rows)` | Delta: append rows without resending `rows` — string or `TableItem` rows (typed rows keep their sort keys via a sparse `append_values` map). See guide → "Table deltas". |
+| `updateTableCells(name, seq, vector<TableCellUpdate>)` | Delta: rewrite individual cells (`{row, col, TableItem}`, plugin row space). Replaces the whole cell — a keyless item clears the sort key. |
 | `removeTableRows(name, seq, vector<int>)` | Delta: remove plugin-space row indexes |
 
 > A table must not combine `sortingEnabled=true` in its `.ui` with

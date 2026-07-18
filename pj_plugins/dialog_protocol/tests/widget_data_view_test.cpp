@@ -394,7 +394,7 @@ TEST(WidgetDataViewTest, CodeCaretTrackingAbsent) {
 }
 
 // WidgetData -> toJson -> WidgetDataView round trips for the dialog-protocol
-// additions in 0.17.0. A key-name mismatch between the setter and the view
+// additions (deletable lists, placeholders). A key-name mismatch between the setter and the view
 // accessor would silently suppress the feature at the plugin boundary.
 TEST(WidgetDataViewTest, ListDeletableRoundTrip) {
   PJ::WidgetData wd;
@@ -427,7 +427,7 @@ TEST(WidgetDataViewTest, ChartPlaceholderRoundTrip) {
 
 TEST(WidgetDataViewTest, TableDeltaRoundTrip) {
   PJ::WidgetData wd;
-  wd.appendTableRows("tbl", 9, {{"r1c1", "r1c2"}});
+  wd.appendTableRows("tbl", 9, std::vector<std::vector<std::string>>{{"r1c1", "r1c2"}});
   wd.updateTableCells("tbl", 9, {{2, 0, "upd"}});
   wd.removeTableRows("tbl", 9, {1});
   PJ::WidgetDataView view(wd.toJson());
@@ -470,4 +470,43 @@ TEST(WidgetDataViewTest, TableDeltaRemoveRowsNormalizedDescendingUnique) {
   auto delta = view.tableDelta("tbl");
   ASSERT_TRUE(delta.has_value());
   EXPECT_EQ(delta->remove_rows, (std::vector<int>{7, 5, 2}));
+}
+
+TEST(WidgetDataViewTest, TableDeltaTypedRoundTrip) {
+  PJ::WidgetData wd;
+  wd.appendTableRows(
+      "tbl", 6, std::vector<std::vector<PJ::TableItem>>{{PJ::TableItem(uint64_t{1} << 60, "big"), PJ::TableItem("x")}});
+  wd.updateTableCells("tbl", 6, {{1, 0, {2.5, "2.5"}}});
+  PJ::WidgetDataView view(wd.toJson());
+  auto delta = view.tableDelta("tbl");
+  ASSERT_TRUE(delta.has_value());
+  ASSERT_EQ(delta->append.size(), 1U);
+  EXPECT_EQ(delta->append[0][0], "big");
+  ASSERT_TRUE(delta->append_values.contains(0));
+  ASSERT_TRUE(delta->append_values.at(0)[0].has_value());
+  EXPECT_EQ(std::get<uint64_t>(*delta->append_values.at(0)[0]), uint64_t{1} << 60);
+  EXPECT_FALSE(delta->append_values.contains(1));
+  ASSERT_EQ(delta->update_cells.size(), 1U);
+  ASSERT_TRUE(delta->update_cells[0].value.has_value());
+  EXPECT_EQ(std::get<double>(*delta->update_cells[0].value), 2.5);
+}
+
+TEST(WidgetDataViewTest, TableDeltaMisalignedAppendValuesRejectsWholeDelta) {
+  PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"seq": 2, "append": [["a"]], "append_values": {"0": [1, 2]}}}})");
+  EXPECT_FALSE(view.tableDelta("tbl").has_value());
+}
+
+TEST(WidgetDataViewTest, TableDeltaBadUpdateValueTypeRejectsWholeDelta) {
+  PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"seq": 2, "update_cells": [[0, 0, "x", "not-num"]]}}})");
+  EXPECT_FALSE(view.tableDelta("tbl").has_value());
+}
+
+TEST(WidgetDataViewTest, TableDeltaNullUpdateValueMeansKeyless) {
+  // NaN/Inf keys serialize as JSON null (nlohmann's dump); per TableItem's
+  // documented semantics such a cell arrives keyless — not a fatal delta.
+  PJ::WidgetDataView view(R"({"tbl": {"table_delta": {"seq": 2, "update_cells": [[0, 0, "N/A", null]]}}})");
+  auto delta = view.tableDelta("tbl");
+  ASSERT_TRUE(delta.has_value());
+  ASSERT_EQ(delta->update_cells.size(), 1U);
+  EXPECT_FALSE(delta->update_cells[0].value.has_value());
 }

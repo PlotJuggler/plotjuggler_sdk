@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+using PJ::TableItem;
 using PJ::WidgetData;
 using json = nlohmann::json;
 
@@ -443,7 +444,7 @@ TEST(WidgetDataTest, SetCodeCaretTrackingExplicitFalse) {
 
 TEST(WidgetDataTest, TableDeltaOpsSerializeUnderOneKey) {
   WidgetData wd;
-  wd.appendTableRows("tbl", 7, {{"a", "b"}, {"c", "d"}});
+  wd.appendTableRows("tbl", 7, std::vector<std::vector<std::string>>{{"a", "b"}, {"c", "d"}});
   wd.updateTableCells("tbl", 7, {{0, 1, "x"}});
   wd.removeTableRows("tbl", 7, {3, 5});
   auto j = parse(wd);
@@ -460,7 +461,7 @@ TEST(WidgetDataTest, TableDeltaOpsSerializeUnderOneKey) {
 
 TEST(WidgetDataTest, TableDeltaDifferingSeqStartsFreshDelta) {
   WidgetData wd;
-  wd.appendTableRows("tbl", 1, {{"old"}});
+  wd.appendTableRows("tbl", 1, std::vector<std::vector<std::string>>{{"old"}});
   wd.updateTableCells("tbl", 2, {{0, 0, "new"}});
   auto j = parse(wd);
   const auto& delta = j["tbl"]["table_delta"];
@@ -468,4 +469,38 @@ TEST(WidgetDataTest, TableDeltaDifferingSeqStartsFreshDelta) {
   EXPECT_EQ(delta["seq"], 2);
   EXPECT_FALSE(delta.contains("append"));
   ASSERT_EQ(delta["update_cells"].size(), 1U);
+}
+
+TEST(WidgetDataTest, TypedAppendEmitsSparseAppendValues) {
+  WidgetData wd;
+  wd.appendTableRows(
+      "tbl", 3,
+      std::vector<std::vector<TableItem>>{
+          {TableItem("plain"), TableItem(int64_t{42}, "42 ms")}, {TableItem("other"), TableItem("keyless")}});
+  auto j = parse(wd);
+  const auto& delta = j["tbl"]["table_delta"];
+  EXPECT_EQ(delta["seq"], 3);
+  ASSERT_EQ(delta["append"].size(), 2U);
+  EXPECT_EQ(delta["append"][0][1], "42 ms");
+  // Sparse, mirroring column_values: only column 1 carries any key; the
+  // keyless cell is null there; column 0 is absent entirely.
+  ASSERT_TRUE(delta.contains("append_values"));
+  EXPECT_FALSE(delta["append_values"].contains("0"));
+  ASSERT_EQ(delta["append_values"]["1"].size(), 2U);
+  EXPECT_EQ(delta["append_values"]["1"][0], 42);
+  EXPECT_TRUE(delta["append_values"]["1"][1].is_null());
+}
+
+TEST(WidgetDataTest, TypedUpdateCellCarriesValue) {
+  WidgetData wd;
+  wd.updateTableCells("tbl", 4, {{0, 1, {int64_t{7}, "7 s"}}, {2, 0, "text-only"}});
+  auto j = parse(wd);
+  const auto& cells = j["tbl"]["table_delta"]["update_cells"];
+  ASSERT_EQ(cells.size(), 2U);
+  ASSERT_EQ(cells[0].size(), 4U);
+  EXPECT_EQ(cells[0][2], "7 s");
+  EXPECT_EQ(cells[0][3], 7);
+  // A keyless cell stays 3-element: update is a full cell replacement, so no
+  // fourth element means the cell's sort key is cleared, not preserved.
+  EXPECT_EQ(cells[1].size(), 3U);
 }
