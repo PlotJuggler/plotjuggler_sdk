@@ -479,7 +479,10 @@ class WidgetData {
 
   // --- QDateTimeEdit ---
   /// Set the displayed date+time as an ISO-8601 string (e.g. "2026-05-21T13:45:00").
-  /// Empty string clears any prior value (widget falls back to its default).
+  /// Datetimes are exchanged verbatim as wall-clock values: a suffixless string is
+  /// host-local time; an explicit UTC offset is honored on parse. Empty or
+  /// unparsable strings are ignored — the widget keeps its current value (a
+  /// QDateTimeEdit always displays one).
   WidgetData& setDateTime(std::string_view name, std::string_view iso8601) {
     entry(name)["datetime"] = std::string(iso8601);
     return *this;

@@ -149,6 +149,14 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// QDateTimeEdit: displayed datetime edited (ISO-8601, e.g. "2026-05-21T13:45:00").
+  /// Wall-clock local time; include fractional seconds only when meaningful.
+  [[nodiscard]] static std::string dateTimeChanged(std::string_view iso8601) {
+    nlohmann::json j;
+    j["datetime_iso"] = iso8601;
+    return j.dump();
+  }
+
   /// RangeSlider: lower/upper handle position changed (slider units).
   [[nodiscard]] static std::string rangeChanged(int lower, int upper) {
     nlohmann::json j;

@@ -3,6 +3,25 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.18.0]
+
+### Feature: QDateTimeEdit event surface (MINOR)
+
+The dialog protocol's QDateTimeEdit setters (`setDateTime` / `setDateTimeRange`,
+shipped earlier) gain their missing event direction, so the widget becomes an
+input, not just a display (backward-compatible JSON addition; no C ABI change,
+`PJ_DIALOG_PROTOCOL_VERSION` unchanged):
+
+- `WidgetEvent` key: `datetime_iso` (string — the edited datetime, wall-clock
+  local ISO-8601; fractional seconds only for ms-precision editors), with
+  `WidgetEventBuilder::dateTimeChanged()` on the host side,
+  `WidgetEvent::dateTimeChanged()` on the plugin side, and typed dispatch via
+  `DialogPluginTyped::onDateTimeChanged()`.
+- Docs: `dialog-sdk-reference.md` gains the previously missing QDateTimeEdit
+  section; the setter contract is clarified (empty/unparsable strings are
+  ignored — the widget keeps its current value; `QDateEdit`/`QTimeEdit`
+  subclasses share the binding).
+
 ## [0.17.0]
 
 ### Feature: dialog-protocol additions for deletable lists and chart/list placeholders (MINOR)
