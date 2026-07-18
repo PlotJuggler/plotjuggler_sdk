@@ -41,7 +41,7 @@ display text. Backward-compatible JSON additions — no C ABI change,
 - The plain-string `setTableRows` overload now erases any `column_values` a
   previous typed delivery left on the same table, so alternating overloads can
   never pair fresh rows with stale sort keys.
-  
+
 ### Feature: batch table deltas for large QTableWidgets (MINOR)
 
 Mutate a table without resending the whole `rows` array (backward-compatible
@@ -61,7 +61,7 @@ JSON addition; no C ABI change, `PJ_DIALOG_PROTOCOL_VERSION` unchanged):
   omit-unchanged-fields pattern (with measured costs) and the delta ops.
 - SDK-side only: hosts apply `table_delta` from the companion PlotJuggler
   change onward; older hosts ignore the key (harmless no-op).
-  
+
 ### Feature: QDateTimeEdit event surface (MINOR)
 
 The dialog protocol's QDateTimeEdit setters (`setDateTime` / `setDateTimeRange`,
