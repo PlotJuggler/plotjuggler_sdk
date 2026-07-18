@@ -157,6 +157,11 @@ class WidgetEvent {
     return DateRangeFilter{from->get<std::string>(), to->get<std::string>()};
   }
 
+  /// QDateTimeEdit: edited datetime as an ISO-8601 string.
+  std::optional<std::string> dateTimeChanged() const {
+    return getString("datetime_iso");
+  }
+
   /// RangeSlider: lower/upper handle positions (slider units).
   struct RangeValues {
     int lower;
