@@ -252,6 +252,7 @@ target_link_libraries(legacy_macro_dialog_plugin PRIVATE pj_dialog_protocol)
 # ---------------------------------------------------------------------------
 
 add_executable(data_source_library_test tests/data_source_library_test.cpp)
+add_dependencies(data_source_library_test mock_data_source_plugin missing_required_slots_plugin)
 target_compile_definitions(data_source_library_test PRIVATE
   PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
   PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
@@ -264,6 +265,7 @@ add_test(NAME data_source_library_test COMMAND data_source_library_test)
 
 # Integration test: DataSource + Dialog
 add_executable(source_dialog_integration_test tests/source_dialog_integration_test.cpp)
+add_dependencies(source_dialog_integration_test mock_source_with_dialog_plugin mock_data_source_plugin)
 target_compile_definitions(source_dialog_integration_test PRIVATE
   PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_source_with_dialog_plugin>"
   PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"

@@ -11,16 +11,24 @@
 namespace PJ {
 
 MessageParserLibrary::MessageParserLibrary(
-    std::shared_ptr<void> handle, const PJ_message_parser_vtable_t* vtable, std::string path)
-    : handle_(std::move(handle)), vtable_(vtable), path_(std::move(path)) {}
+    std::shared_ptr<void> handle, const PJ_message_parser_vtable_t* vtable, std::string path,
+    const PJ_dialog_vtable_t* static_dialog_vtable)
+    : handle_(std::move(handle)),
+      vtable_(vtable),
+      static_dialog_vtable_(static_dialog_vtable),
+      path_(std::move(path)) {}
 
 MessageParserLibrary::~MessageParserLibrary() {
   reset();
 }
 
 MessageParserLibrary::MessageParserLibrary(MessageParserLibrary&& other) noexcept
-    : handle_(std::move(other.handle_)), vtable_(other.vtable_), path_(std::move(other.path_)) {
+    : handle_(std::move(other.handle_)),
+      vtable_(other.vtable_),
+      static_dialog_vtable_(other.static_dialog_vtable_),
+      path_(std::move(other.path_)) {
   other.vtable_ = nullptr;
+  other.static_dialog_vtable_ = nullptr;
 }
 
 MessageParserLibrary& MessageParserLibrary::operator=(MessageParserLibrary&& other) noexcept {
@@ -28,8 +36,10 @@ MessageParserLibrary& MessageParserLibrary::operator=(MessageParserLibrary&& oth
     reset();
     handle_ = std::move(other.handle_);
     vtable_ = other.vtable_;
+    static_dialog_vtable_ = other.static_dialog_vtable_;
     path_ = std::move(other.path_);
     other.vtable_ = nullptr;
+    other.static_dialog_vtable_ = nullptr;
   }
   return *this;
 }
@@ -68,7 +78,8 @@ Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path)
   return MessageParserLibrary(std::move(handle), vtable, std::string(path));
 }
 
-Expected<MessageParserLibrary> MessageParserLibrary::loadStatic(const PJ_message_parser_vtable_t* vtable) {
+Expected<MessageParserLibrary> MessageParserLibrary::loadStatic(
+    const PJ_message_parser_vtable_t* vtable, const PJ_dialog_vtable_t* dialog_vtable) {
   if (vtable == nullptr) {
     return unexpected("static MessageParser vtable is null");
   }
@@ -81,12 +92,29 @@ Expected<MessageParserLibrary> MessageParserLibrary::loadStatic(const PJ_message
   if (auto status = detail::validateRequiredSlots(vtable); !status) {
     return unexpected(status.error());
   }
+  if (dialog_vtable != nullptr) {
+    if (dialog_vtable->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
+      return unexpected("Dialog protocol version mismatch");
+    }
+    if (dialog_vtable->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
+      return unexpected("Dialog vtable smaller than v4.0 baseline");
+    }
+    if (auto status = detail::validateRequiredSlots(dialog_vtable); !status) {
+      return unexpected(status.error());
+    }
+  }
   static char anchor = 0;
   std::shared_ptr<void> handle(&anchor, [](void*) {});
-  return MessageParserLibrary(std::move(handle), vtable, "static://");
+  return MessageParserLibrary(std::move(handle), vtable, "static://", dialog_vtable);
 }
 
 Expected<const PJ_dialog_vtable_t*> MessageParserLibrary::resolveDialogVtable() const {
+  if (static_dialog_vtable_ != nullptr) {
+    return static_dialog_vtable_;
+  }
+  if (path_ == "static://") {
+    return unexpected("static MessageParser has no registered dialog vtable");
+  }
   auto sym = detail::resolveSymbol(handle_.get(), "PJ_get_dialog_vtable");
   if (!sym) {
     return unexpected(sym.error());
@@ -112,6 +140,7 @@ void MessageParserLibrary::reset() {
   if (handle_ != nullptr) {
     handle_.reset();
     vtable_ = nullptr;
+    static_dialog_vtable_ = nullptr;
     path_.clear();
   }
 }

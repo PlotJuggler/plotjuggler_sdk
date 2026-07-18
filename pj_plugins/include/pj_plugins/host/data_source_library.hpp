@@ -53,7 +53,8 @@ class DataSourceLibrary {
 
   /// Wrap a statically-linked plugin vtable (no dlopen; for WASM/static builds).
   /// @p vtable must have static storage duration (valid for the program lifetime).
-  [[nodiscard]] static Expected<DataSourceLibrary> loadStatic(const PJ_data_source_vtable_t* vtable);
+  [[nodiscard]] static Expected<DataSourceLibrary> loadStatic(
+      const PJ_data_source_vtable_t* vtable, const PJ_dialog_vtable_t* dialog_vtable = nullptr);
 
   /// True if the library was loaded and the vtable resolved successfully.
   [[nodiscard]] bool valid() const {
@@ -79,12 +80,15 @@ class DataSourceLibrary {
   }
 
  private:
-  DataSourceLibrary(std::shared_ptr<void> handle, const PJ_data_source_vtable_t* vtable, std::string path);
+  DataSourceLibrary(
+      std::shared_ptr<void> handle, const PJ_data_source_vtable_t* vtable, std::string path,
+      const PJ_dialog_vtable_t* static_dialog_vtable = nullptr);
 
   void reset();
 
   std::shared_ptr<void> handle_;
   const PJ_data_source_vtable_t* vtable_ = nullptr;
+  const PJ_dialog_vtable_t* static_dialog_vtable_ = nullptr;
   std::string path_;
 };
 
