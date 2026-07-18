@@ -16,10 +16,12 @@ find_package(nlohmann_json REQUIRED)
 
 add_library(pj_dialog_sdk INTERFACE)
 target_compile_features(pj_dialog_sdk INTERFACE cxx_std_17)
-# PJ_DIALOG_PLUGIN's variadic overload needs conformant __VA_ARGS__ expansion on MSVC.
-target_compile_options(pj_dialog_sdk INTERFACE
-  $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:preprocessor>
-)
+# NOTE: no INTERFACE /Zc:preprocessor here. PJ_DIALOG_PLUGIN's arg-count
+# dispatch is legacy-preprocessor-safe via PJ_DIALOG_PLUGIN_EXPAND (see
+# dialog_plugin_base.hpp), so the SDK no longer imposes a preprocessor mode
+# on consumers. (The old INTERFACE flag never reached Conan consumers anyway:
+# CMakeDeps regenerates targets from package_info(), which drops upstream
+# INTERFACE_COMPILE_OPTIONS.)
 target_link_libraries(pj_dialog_sdk INTERFACE pj_dialog_protocol nlohmann_json::nlohmann_json)
 target_include_directories(pj_dialog_sdk INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -70,6 +72,20 @@ if(PJ_BUILD_TESTS)
 add_library(mock_dialog_plugin SHARED examples/mock_dialog.cpp)
 target_compile_options(mock_dialog_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_dialog_plugin PRIVATE pj_dialog_sdk)
+
+# Regression guard for the PJ_DIALOG_PLUGIN arg-count dispatch: compile the
+# same example under MSVC's TRADITIONAL preprocessor (/Zc:preprocessor- undoes
+# the conformant-mode flag PJ_WARNING_FLAGS adds). The SDK's own CI otherwise
+# builds everything conformant-only, which is exactly how the legacy-PP
+# breakage of the two-arg macro form shipped unnoticed (pj-official-plugins
+# PR #230). On non-MSVC compilers the flag is a no-op and this is just a
+# second compile of the example.
+add_library(mock_dialog_legacy_pp_plugin SHARED examples/mock_dialog.cpp)
+target_compile_options(mock_dialog_legacy_pp_plugin PRIVATE
+  ${PJ_WARNING_FLAGS}
+  $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:preprocessor->
+)
+target_link_libraries(mock_dialog_legacy_pp_plugin PRIVATE pj_dialog_sdk)
 
 add_library(missing_dialog_abi_plugin SHARED tests/missing_dialog_abi_plugin.cpp)
 target_compile_options(missing_dialog_abi_plugin PRIVATE ${PJ_WARNING_FLAGS})
