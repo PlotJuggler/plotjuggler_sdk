@@ -3,6 +3,18 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.19.0]
+
+### Feature: exported manifest decoder — one validation policy for DSO and static plugins (MINOR)
+
+`decodeManifest(source_path, family, manifest_json)` is now part of the
+`pj_plugins/host/plugin_catalog.hpp` API instead of being private to DSO
+discovery. A host that registers statically linked plugins (no DSO scan) can
+decode their embedded manifests through the exact validation the DSO path
+applies — required non-empty `id`/`name`/`version`, typed-field rejection, and
+the message-parser `encoding` requirement — instead of re-implementing a
+second, weaker decoder. Additive; no ABI or protocol change.
+
 ## [0.18.0]
 
 ### Feature: typed table sort keys — numeric columns sort numerically (MINOR)

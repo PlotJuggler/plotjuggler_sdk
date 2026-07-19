@@ -179,8 +179,10 @@ Expected<std::vector<std::string>> readStringArray(const nlohmann::json& j, std:
   return values;
 }
 
+}  // namespace
+
 Expected<PluginDescriptor> decodeManifest(
-    const std::filesystem::path& dso_path, PluginFamily family, std::string_view manifest_json) {
+    const std::filesystem::path& source_path, PluginFamily family, std::string_view manifest_json) {
   if (manifest_json.empty()) {
     return unexpected("plugin embedded manifest is empty");
   }
@@ -215,7 +217,7 @@ Expected<PluginDescriptor> decodeManifest(
   };
 
   PluginDescriptor d;
-  d.dso_path = dso_path;
+  d.dso_path = source_path;
   d.abi_major = PJ_ABI_VERSION;
   d.family = family;
 
@@ -274,8 +276,6 @@ Expected<PluginDescriptor> decodeManifest(
 
   return d;
 }
-
-}  // namespace
 
 std::string_view toString(PluginFamily family) noexcept {
   switch (family) {
