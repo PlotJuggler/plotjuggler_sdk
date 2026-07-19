@@ -172,6 +172,11 @@ interaction in the DataSource's dialog ABI, whose callbacks are explicitly
 main-thread-only. Keep finite import work in `importData()` and continuous data
 work in `onPoll()` or in plugin-owned workers feeding `onPoll()`.
 
+A finite source must not rely on `stop()` being invoked after its import
+returns: the host may tear the instance down straight through `destroy()`. Any
+cleanup a finite import needs belongs at the end of `importData()` or in the
+destructor, not in `stop()`.
+
 ### File importer — CSV file loader
 
 Subclass `FileSourceBase` and implement `importData()`. The base class handles
@@ -752,10 +757,14 @@ is the documented default.
 
 ## Threading Model
 
-All plugin callbacks — `start()`, `stop()`, `poll()`, `pause()`, `resume()`,
-`loadConfig()`, `saveConfig()` — are called **on the host's thread**. The host
-guarantees single-threaded access per plugin instance: no two callbacks will
-overlap for the same instance.
+The host guarantees single-threaded access per plugin instance: no two
+callbacks will overlap for the same instance. Thread affinity differs by slot
+(the authoritative `[...]` tags live in `data_source_protocol.h`):
+`loadConfig()`, `saveConfig()`, `pause()`, `resume()` are `[main-thread]`;
+`poll()` is `[stream-thread]`; `start()` and `stop()` are
+`[host-lifecycle-thread]` — serialized with the other lifecycle calls but with
+**no GUI affinity**, and the physical thread may differ between the two (see
+"Lifecycle threading" above).
 
 Write host and runtime host methods (`appendRecord()`, `ensureParserBinding()`,
 etc.) must be called from the same thread that invoked the callback. Do not

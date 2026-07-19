@@ -3,6 +3,22 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [Unreleased]
+
+### Docs: `start()`/`stop()` thread tag corrected to `[host-lifecycle-thread]` (no bump)
+
+The two slots were tagged `[main-thread]`, but hosts run them on a host-chosen
+lifecycle thread: PJ4 runs a finite import's `start()` on a worker, and a
+continuous source may be started on the host control thread and stopped from its
+polling worker. The tags in `data_source_protocol.h`, the tag legend in
+`plugin_data_api.h`, and the data-source guide now state the real contract:
+lifecycle calls stay serialized per instance, but have no GUI affinity and may
+use different physical threads per phase; a finite source must not rely on
+`stop()` ever firing. A plugin that touched GUI-affine objects in
+`start()`/`stop()` relied on an undocumented accident of earlier hosts and must
+move that work to its dialog callbacks (still `[main-thread]`). Documentation
+only — no ABI, protocol-version, or `abi/baseline.abi` change.
+
 ## [0.18.0]
 
 ### Feature: typed table sort keys — numeric columns sort numerically (MINOR)
