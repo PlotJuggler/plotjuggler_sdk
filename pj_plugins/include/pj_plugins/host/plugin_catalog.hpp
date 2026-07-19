@@ -64,6 +64,16 @@ struct PluginScanResult {
   std::vector<PluginDiagnostic> diagnostics;
 };
 
+/// Decode a plugin's embedded manifest JSON into a descriptor, applying the
+/// canonical validation both discovery paths share: `id`/`name`/`version` are
+/// required non-empty strings, typed fields reject mismatched JSON types, and
+/// a message parser must declare a non-empty `encoding` array. `source_path`
+/// is recorded as the descriptor's dso_path (for a DSO the file path; a host
+/// registering a statically linked plugin passes a synthetic label instead);
+/// error strings do not embed it — callers prefix their own source context.
+[[nodiscard]] Expected<PluginDescriptor> decodeManifest(
+    const std::filesystem::path& source_path, PluginFamily family, std::string_view manifest_json);
+
 /// Inspect one DSO and return its embedded plugin descriptor.
 [[nodiscard]] Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path);
 
