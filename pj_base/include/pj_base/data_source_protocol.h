@@ -437,9 +437,17 @@ typedef struct PJ_data_source_vtable_t {
   /** [main-thread] Restore plugin configuration from JSON. */
   bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** [main-thread] Begin data acquisition. May spawn stream threads internally. */
+  /**
+   * [host-lifecycle-thread] Begin data acquisition. Serialized with the other
+   * lifecycle calls for this instance, but not guaranteed to run on the GUI
+   * thread. A finite source may perform its complete blocking import here.
+   */
   bool (*start)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /** [main-thread] Stop data acquisition. Must be idempotent. Failures are not reportable. */
+  /**
+   * [host-lifecycle-thread] Stop data acquisition. Serialized with the other
+   * lifecycle calls for this instance, but not guaranteed to use the same
+   * physical thread as start(). Must be idempotent; failures are not reportable.
+   */
   void (*stop)(void* ctx) PJ_NOEXCEPT;
   /** [main-thread] Pause a running source. Returns false + error if unsupported. */
   bool (*pause)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;

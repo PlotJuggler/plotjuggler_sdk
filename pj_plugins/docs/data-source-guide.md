@@ -158,6 +158,20 @@ machine for you: `FileSourceBase` and `StreamSourceBase`. Both live in
 `<pj_base/sdk/data_source_patterns.hpp>`. For full manual control, subclass
 `DataSourcePluginBase` directly (see `pj_plugins/examples/mock_data_source.cpp`).
 
+### Lifecycle threading
+
+The host serializes lifecycle callbacks for each source instance, but
+`start()` and `stop()` run on a host-chosen lifecycle thread and have no GUI
+affinity. A finite source normally performs its complete blocking import inside
+`start()` on a worker; a continuous source may be started on the host control
+thread and stopped by its polling worker. The physical thread can therefore
+differ between lifecycle phases even though those calls never overlap.
+
+Do not create or touch GUI-affine objects in `start()` or `stop()`. Put user
+interaction in the DataSource's dialog ABI, whose callbacks are explicitly
+main-thread-only. Keep finite import work in `importData()` and continuous data
+work in `onPoll()` or in plugin-owned workers feeding `onPoll()`.
+
 ### File importer — CSV file loader
 
 Subclass `FileSourceBase` and implement `importData()`. The base class handles

@@ -118,8 +118,10 @@ previously-circulated pre-v4 design included):
   are UB; the noexcept specifier is part of the C++17 function type and
   enforced at compile time. Trampolines catch and translate internally.
 - **Thread-class tags on every slot.** Every function-pointer field in
-  the ABI headers carries a `[main-thread]` / `[stream-thread]` /
-  `[thread-safe]` comment. Host-side runtime checking is optional
+  the ABI headers carries a `[main-thread]`, `[host-lifecycle-thread]`,
+  `[stream-thread]`, or `[thread-safe]` comment. Lifecycle calls are
+  serialized per source instance but do not imply GUI affinity. Host-side
+  runtime checking is optional
   (reserved for a future `"pj.thread_check.v1"` service).
 - **Embedded-manifest plugin discovery.** Each DSO exports a
   family-specific protocol vtable with embedded metadata (`manifest_json`

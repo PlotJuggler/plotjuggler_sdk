@@ -346,9 +346,11 @@ typedef struct {
  * Arrow C Data Interface is the canonical bulk-ingest path
  * (append_arrow_stream). Per-record slots remain for streaming producers
  * and simple plugins where batching does not fit naturally. Thread tags:
- *   [main-thread]    GUI thread. Dialog callbacks, initial config.
- *   [stream-thread]  Host's background ingest thread. Most appends.
- *   [thread-safe]    Any thread.
+ *   [main-thread]            GUI thread. Dialog callbacks, initial config.
+ *   [host-lifecycle-thread]  Host-chosen, serialized per source instance;
+ *                            no GUI affinity is guaranteed.
+ *   [stream-thread]          Host's background ingest thread. Most appends.
+ *   [thread-safe]            Any thread.
  * ========================================================================== */
 
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
