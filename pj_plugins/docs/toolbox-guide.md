@@ -45,6 +45,11 @@ editor, custom data transforms.
 5. Build as a shared library linking `pj_base` (+ `pj_dialog_sdk` if
    you have a dialog)
 
+For namespaced classes in a static build, provide each getter-symbol token
+separately: `PJ_TOOLBOX_PLUGIN_NAMED(my::Toolbox, MyToolbox, kManifest)` and
+`PJ_DIALOG_PLUGIN_NAMED(my::Dialog, MyDialog, kManifest)`. Dynamic builds may
+use either form.
+
 A complete example lives at `pj_plugins/examples/mock_toolbox.cpp`.
 
 ## Plugin Contract

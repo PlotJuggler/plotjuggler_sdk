@@ -312,6 +312,11 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
   }                                                                                         \
   }
 
+// Variant for namespaced plugin classes. SymbolName must be an unqualified
+// identifier and is used only to form the unique static getter name.
+#define PJ_DIALOG_PLUGIN_NAMED(ClassName, SymbolName, ManifestJson) \
+  PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson)
+
 // --- Static-link variant (WASM / no dlopen) ---  see data_source_plugin_base.hpp.
 // Many statically-linked plugins each carry a PJ_DIALOG_PLUGIN, so the fixed
 // `extern "C" PJ_get_dialog_vtable` symbol (and the ABI-version export) would
@@ -322,8 +327,9 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 // dialogVtableFor<ClassName>() also uses it inside the plugin.
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_DIALOG_PLUGIN_WITH_MANIFEST
-#define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson)                             \
-  const PJ_dialog_vtable_t* pj_static_get_dialog_vtable_##ClassName() noexcept {            \
+#undef PJ_DIALOG_PLUGIN_NAMED
+#define PJ_DIALOG_PLUGIN_NAMED(ClassName, SymbolName, ManifestJson)                         \
+  const PJ_dialog_vtable_t* pj_static_get_dialog_vtable_##SymbolName() noexcept {           \
     static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate(           \
         []() noexcept -> void* {                                                            \
           try {                                                                             \
@@ -338,7 +344,9 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
   namespace PJ {                                                                            \
   template <>                                                                               \
   [[maybe_unused]] inline const PJ_dialog_vtable_t* dialogVtableFor<ClassName>() noexcept { \
-    return pj_static_get_dialog_vtable_##ClassName();                                       \
+    return pj_static_get_dialog_vtable_##SymbolName();                                      \
   }                                                                                         \
   }
+#define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson) \
+  PJ_DIALOG_PLUGIN_NAMED(ClassName, ClassName, ManifestJson)
 #endif  // PJ_STATIC_PLUGINS

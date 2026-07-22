@@ -52,6 +52,10 @@ the host, which routes them to the appropriate parser based on encoding name.
 3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"...","encoding":["..."]})")`
 4. Build as a shared library linking `pj_base`
 
+For a namespaced class in a static build, provide the getter-symbol token
+separately: `PJ_MESSAGE_PARSER_PLUGIN_NAMED(my::Parser, MyParser, kManifest)`.
+Dynamic builds may use either form.
+
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
 
 ## Plugin Contract
