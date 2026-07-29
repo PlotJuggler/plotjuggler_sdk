@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <semaphore>
 #include <stdexcept>
 #include <string>
@@ -90,13 +91,14 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
   }
 
   // Release the most recently created job's start gate. No-op if no job has
-  // been created yet, or if that job has since been destroyed (jobDestroy
-  // CASes itself out of last_job_ before freeing — see JobState below — so
-  // this can never dereference a dangling pointer).
+  // been created yet, or if that job has since been destroyed. last_job_mu_
+  // covers BOTH this lookup+use AND jobDestroy's unlink (which happens before
+  // the delete), so the pointer cannot dangle mid-use: atomics alone would
+  // pin the pointer value but not the pointee's lifetime.
   void releaseStart() {
-    JobState* job = last_job_.load(std::memory_order_acquire);
-    if (job != nullptr) {
-      job->releaseStartOnce();
+    const std::lock_guard<std::mutex> lock(last_job_mu_);
+    if (last_job_ != nullptr) {
+      last_job_->releaseStartOnce();
     }
   }
 
@@ -109,11 +111,11 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
     std::atomic<bool> cancelled{false};
     std::binary_semaphore start_gate{0};
     std::atomic<bool> start_released{false};
-    // Back-pointer to the owning FakeReplayToolbox's last_job_, so
-    // jobDestroy can null it out before this JobState is freed (see
-    // releaseStart's doc-comment). Null if this job was created via a
+    // Back-pointer to the owning FakeReplayToolbox, so jobDestroy can unlink
+    // this JobState from last_job_ (under last_job_mu_) before freeing it
+    // (see releaseStart's doc-comment). Null if this job was created via a
     // plugin_ctx the fake couldn't identify itself with.
-    std::atomic<JobState*>* owner_last_job = nullptr;
+    FakeReplayToolbox* owner = nullptr;
 
     // At-most-once release: safe to call both from the test (via
     // releaseStart()) and unconditionally from jobDestroy (so a job whose
@@ -177,8 +179,9 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
     out_job->ctx = state;
     out_job->vtable = &kJobVtable;
     if (self != nullptr) {
-      state->owner_last_job = &self->last_job_;
-      self->last_job_.store(state, std::memory_order_release);
+      state->owner = self;
+      const std::lock_guard<std::mutex> lock(self->last_job_mu_);
+      self->last_job_ = state;
     }
     state->worker = std::thread([state, on_dataset, on_terminal, callback_ctx, force_unknown_outcome] {
       // FIRST action: block until the test explicitly releases us. This
@@ -220,12 +223,15 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
     // here so join() below can't deadlock destroy().
     state->releaseStartOnce();
     jobJoin(ctx);
-    if (state->owner_last_job != nullptr) {
-      // CAS ourselves out (only if last_job_ still points at THIS state) so
-      // releaseStart() can never observe a dangling pointer after the delete
-      // below.
-      JobState* expected = state;
-      state->owner_last_job->compare_exchange_strong(expected, nullptr);
+    if (state->owner != nullptr) {
+      // Unlink under last_job_mu_ (only if last_job_ still points at THIS
+      // state) BEFORE the delete: any releaseStart() holding the mutex has
+      // finished its use before we can take it, and any later one observes
+      // null — so the delete below can never race a dereference.
+      const std::lock_guard<std::mutex> lock(state->owner->last_job_mu_);
+      if (state->owner->last_job_ == state) {
+        state->owner->last_job_ = nullptr;
+      }
     }
     delete state;
   }
@@ -236,7 +242,8 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
 
   PJ_descriptor_replay_provider_v1_t ext_{
       sizeof(PJ_descriptor_replay_provider_v1_t), 0, &FakeReplayToolbox::queryThunk, &FakeReplayToolbox::startThunk};
-  std::atomic<JobState*> last_job_{nullptr};  // non-owning; owned by the returned out_job->ctx
+  std::mutex last_job_mu_;        // covers last_job_ lookup+use AND unlink+delete
+  JobState* last_job_ = nullptr;  // non-owning; owned by the returned out_job->ctx
 };
 
 // A provider whose start_replay hands back a job with a deliberately
