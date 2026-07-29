@@ -44,6 +44,10 @@ directly only when the supplied state machines genuinely don't fit.
 3. Export with `PJ_DATA_SOURCE_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. Build as a shared library linking `pj_base`
 
+For a namespaced class in a static build, provide the getter-symbol token
+separately: `PJ_DATA_SOURCE_PLUGIN_NAMED(my::Source, MySource, kManifest)`.
+Dynamic builds may use either form.
+
 A complete example lives at `pj_plugins/examples/mock_data_source.cpp`.
 
 ## Plugin Contract

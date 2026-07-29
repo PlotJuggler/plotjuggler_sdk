@@ -377,20 +377,26 @@ class MessageParserPluginBase {
     return vt;                                                                                                    \
   }
 
+// Variant for namespaced plugin classes. SymbolName must be an unqualified
+// identifier and is used only to form the unique static getter name.
+#define PJ_MESSAGE_PARSER_PLUGIN_NAMED(ClassName, SymbolName, manifest) PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)
+
 // --- Static-link variant (WASM / no dlopen) ---  see data_source_plugin_base.hpp
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_MESSAGE_PARSER_PLUGIN
-#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                            \
-  const PJ_message_parser_vtable_t* pj_static_get_message_parser_vtable_##ClassName() noexcept { \
-    static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate( \
-        []() noexcept -> void* {                                                                 \
-          try {                                                                                  \
-            return new ClassName();                                                              \
-          } catch (...) {                                                                        \
-            return nullptr;                                                                      \
-          }                                                                                      \
-        },                                                                                       \
-        manifest);                                                                               \
-    return vt;                                                                                   \
+#undef PJ_MESSAGE_PARSER_PLUGIN_NAMED
+#define PJ_MESSAGE_PARSER_PLUGIN_NAMED(ClassName, SymbolName, manifest)                           \
+  const PJ_message_parser_vtable_t* pj_static_get_message_parser_vtable_##SymbolName() noexcept { \
+    static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(  \
+        []() noexcept -> void* {                                                                  \
+          try {                                                                                   \
+            return new ClassName();                                                               \
+          } catch (...) {                                                                         \
+            return nullptr;                                                                       \
+          }                                                                                       \
+        },                                                                                        \
+        manifest);                                                                                \
+    return vt;                                                                                    \
   }
+#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest) PJ_MESSAGE_PARSER_PLUGIN_NAMED(ClassName, ClassName, manifest)
 #endif

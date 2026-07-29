@@ -5,6 +5,16 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.19.0]
 
+### Fix: static plugin exports support namespaced classes (PATCH-level)
+
+The static variants of the plugin export macros formed their getter symbol by
+token-pasting the C++ class argument. Qualified names such as
+`mosaico::MosaicoToolbox` therefore compiled as dynamic plugins but failed when
+`PJ_STATIC_PLUGINS` was enabled. Each plugin family now has a backward-compatible
+`*_PLUGIN_NAMED(ClassName, SymbolName, manifest)` form: `ClassName` may be
+qualified, while `SymbolName` is the unqualified token used for the static getter.
+Existing macros and getter names are unchanged for unqualified classes.
+
 ### Feature: exported manifest decoder — one validation policy for DSO and static plugins (MINOR)
 
 `decodeManifest(source_path, family, manifest_json)` is now part of the

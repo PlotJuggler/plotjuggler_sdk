@@ -229,6 +229,10 @@ class DataSourcePluginBase {
     return vt;                                                                                           \
   }
 
+// Variant for namespaced plugin classes. SymbolName must be an unqualified
+// identifier and is used only to form the unique static getter name.
+#define PJ_DATA_SOURCE_PLUGIN_NAMED(ClassName, SymbolName, manifest) PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)
+
 // --- Static-link variant (WASM / no dlopen) ----------------------------------
 // With PJ_STATIC_PLUGINS the plugin is linked into the host binary. The fixed
 // `extern "C" PJ_get_data_source_vtable` symbol would collide across plugins in
@@ -237,17 +241,19 @@ class DataSourcePluginBase {
 // runtime catalog's registerStaticDataSource() (host-side, in the app).
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_DATA_SOURCE_PLUGIN
-#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                         \
-  const PJ_data_source_vtable_t* pj_static_get_data_source_vtable_##ClassName() noexcept { \
-    static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate( \
-        []() noexcept -> void* {                                                           \
-          try {                                                                            \
-            return new ClassName();                                                        \
-          } catch (...) {                                                                  \
-            return nullptr;                                                                \
-          }                                                                                \
-        },                                                                                 \
-        manifest);                                                                         \
-    return vt;                                                                             \
+#undef PJ_DATA_SOURCE_PLUGIN_NAMED
+#define PJ_DATA_SOURCE_PLUGIN_NAMED(ClassName, SymbolName, manifest)                        \
+  const PJ_data_source_vtable_t* pj_static_get_data_source_vtable_##SymbolName() noexcept { \
+    static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate(  \
+        []() noexcept -> void* {                                                            \
+          try {                                                                             \
+            return new ClassName();                                                         \
+          } catch (...) {                                                                   \
+            return nullptr;                                                                 \
+          }                                                                                 \
+        },                                                                                  \
+        manifest);                                                                          \
+    return vt;                                                                              \
   }
+#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest) PJ_DATA_SOURCE_PLUGIN_NAMED(ClassName, ClassName, manifest)
 #endif

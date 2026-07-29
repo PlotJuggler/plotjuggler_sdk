@@ -337,6 +337,16 @@ target_link_libraries(toolbox_plugin_test PRIVATE
 )
 add_test(NAME toolbox_plugin_test COMMAND toolbox_plugin_test)
 
+# Static export macros need an explicit symbol token when the C++ class is
+# namespaced; compile and call every plugin family's named variant together.
+add_executable(static_namespaced_plugin_macros_test tests/static_namespaced_plugin_macros_test.cpp)
+target_compile_definitions(static_namespaced_plugin_macros_test PRIVATE PJ_STATIC_PLUGINS)
+target_compile_options(static_namespaced_plugin_macros_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(static_namespaced_plugin_macros_test PRIVATE
+  pj_plugin_sdk GTest::gtest_main
+)
+add_test(NAME static_namespaced_plugin_macros_test COMMAND static_namespaced_plugin_macros_test)
+
 # ---------------------------------------------------------------------------
 # Plugin catalog DSO scanner test.
 # ---------------------------------------------------------------------------

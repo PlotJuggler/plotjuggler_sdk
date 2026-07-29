@@ -44,6 +44,10 @@ renders the widgets, and relays events to the plugin over the C vtable.
 6. Export with `PJ_DIALOG_PLUGIN(YourClass, kManifestJson)`.
 7. Build as a shared library linking `pj_dialog_sdk`.
 
+For a namespaced class in a static build, provide the getter-symbol token
+separately: `PJ_DIALOG_PLUGIN_NAMED(my::Dialog, MyDialog, kManifestJson)`.
+Dynamic builds may use either form.
+
 A complete example lives at
 `pj_plugins/dialog_protocol/examples/mock_dialog.cpp`.
 
