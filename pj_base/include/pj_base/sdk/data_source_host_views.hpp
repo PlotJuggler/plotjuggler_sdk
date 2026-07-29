@@ -113,6 +113,7 @@ struct AvailableTopic {
 [[nodiscard]] std::string errorToString(const PJ_error_t& err);
 
 class ParserIngestHostView;
+class DatasetIngestHostView;
 
 /**
  * Type-safe view over the runtime host vtable.
@@ -132,6 +133,10 @@ class DataSourceRuntimeHostView {
   }
 
   [[nodiscard]] ParserIngestHostView parserIngest() const noexcept;
+
+  /// Canonical dataset-scoped ingest lifecycle facade — the wider sibling of
+  /// parserIngest() that also exposes progress/stop. See DatasetIngestHostView.
+  [[nodiscard]] DatasetIngestHostView datasetIngest() const noexcept;
 
   /// Send a diagnostic message to the host UI log. Never fails.
   void reportMessage(DataSourceMessageLevel level, std::string_view message) const {
@@ -358,6 +363,81 @@ class ParserIngestHostView {
 
 inline ParserIngestHostView DataSourceRuntimeHostView::parserIngest() const noexcept {
   return ParserIngestHostView{host_};
+}
+
+/// Canonical dataset-scoped ingest lifecycle facade — the ONE surface for
+/// both delegated parsing and direct toolbox writes. Wraps the same runtime
+/// host that ParserIngestHostView wraps, but also exposes the lifecycle verbs
+/// the parser-only facade hides: progress start/update/finish and cooperative
+/// stop. A toolbox that writes directly (e.g. Arrow batches through
+/// ToolboxHostView) acquires this view for its dataset purely for lifecycle,
+/// and never binds a parser. Obtain via
+/// ToolboxRuntimeHostView::createDatasetIngest() (toolboxes) or
+/// DataSourceRuntimeHostView::datasetIngest() (data sources).
+///
+/// Deliberately excludes notifyDataChanged(): a direct-writing toolbox still
+/// signals the host through its already-held ToolboxRuntimeHostView (the
+/// dataset ingest context and the toolbox instance's runtime host are
+/// distinct handles). progressFinish() ends the progress sequence only — it
+/// does not imply a host UI refresh.
+class DatasetIngestHostView {
+ public:
+  DatasetIngestHostView() = default;
+  explicit DatasetIngestHostView(PJ_data_source_runtime_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.valid();
+  }
+
+  /// Send a diagnostic message to the host UI log. Never fails.
+  void reportMessage(DataSourceMessageLevel level, std::string_view message) const {
+    host_.reportMessage(level, message);
+  }
+
+  /// Begin a progress bar. Returns an error if the host refused to start it.
+  [[nodiscard]] Status progressStart(std::string_view label, uint64_t total_steps, bool cancellable) const {
+    return host_.progressStart(label, total_steps, cancellable);
+  }
+
+  /// Advance progress. Returns true to continue, false if the user cancelled.
+  [[nodiscard]] bool progressUpdate(uint64_t current_step) const {
+    return host_.progressUpdate(current_step);
+  }
+
+  /// End the current progress sequence.
+  void progressFinish() const {
+    host_.progressFinish();
+  }
+
+  /// Returns true if the host has requested the plugin to stop.
+  [[nodiscard]] bool isStopRequested() const {
+    return host_.isStopRequested();
+  }
+
+  /// Bind (or look up) a parser for delegated ingest.
+  [[nodiscard]] Expected<ParserBindingHandle> ensureParserBinding(const ParserBindingRequest& request) const {
+    return host_.ensureParserBinding(request);
+  }
+
+  /// Push a message via a deferred FetchMessageData callable. See
+  /// DataSourceRuntimeHostView::pushMessage for the full contract.
+  template <typename FetchMessageData>
+  [[nodiscard]] Status pushMessage(
+      ParserBindingHandle handle, Timestamp host_timestamp_ns, FetchMessageData&& fetch_message_data) const {
+    return host_.pushMessage(handle, host_timestamp_ns, std::forward<FetchMessageData>(fetch_message_data));
+  }
+
+  /// Narrow parser-only facade over the same underlying context.
+  [[nodiscard]] ParserIngestHostView parserIngest() const noexcept {
+    return host_.parserIngest();
+  }
+
+ private:
+  DataSourceRuntimeHostView host_{};
+};
+
+inline DatasetIngestHostView DataSourceRuntimeHostView::datasetIngest() const noexcept {
+  return DatasetIngestHostView{host_};
 }
 
 }  // namespace PJ

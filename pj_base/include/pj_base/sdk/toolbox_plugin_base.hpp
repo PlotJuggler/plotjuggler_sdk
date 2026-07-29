@@ -69,11 +69,27 @@ class ToolboxRuntimeHostView {
   /// createParserIngest must not be used afterwards.
   [[nodiscard]] Status releaseParserIngest(uint32_t data_source_id) const;
 
+  /// Generic alias over the same context as createParserIngest: the canonical
+  /// dataset-scoped ingest lifecycle for BOTH delegated parsing and direct
+  /// toolbox writes (progress/stop + optional parser access). Same threading
+  /// rule: drive the returned view from a single worker thread.
+  [[nodiscard]] Expected<DatasetIngestHostView> createDatasetIngest(uint32_t data_source_id) const;
+
+  /// Flush + destroy the context (same slot as releaseParserIngest).
+  /// Idempotent. The view returned by createDatasetIngest must not be used
+  /// afterwards.
+  [[nodiscard]] Status releaseDatasetIngest(uint32_t data_source_id) const;
+
   [[nodiscard]] const PJ_toolbox_runtime_host_t& raw() const {
     return host_;
   }
 
  private:
+  /// Shared validity/tail-slot-gate/ABI-call/error-mapping body for
+  /// createParserIngest and createDatasetIngest — both wrap the same
+  /// create_parser_ingest slot in different view types.
+  [[nodiscard]] Expected<PJ_data_source_runtime_host_t> acquireParserIngestContext(uint32_t data_source_id) const;
+
   PJ_toolbox_runtime_host_t host_{};
 };
 
