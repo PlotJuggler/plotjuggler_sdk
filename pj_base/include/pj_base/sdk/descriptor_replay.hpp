@@ -19,12 +19,14 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 #include "pj_base/descriptor_replay_protocol.h"
@@ -130,8 +132,7 @@ class JoinableJob {
   /// [thread-safe] Non-blocking, idempotent, best-effort cancellation. See
   /// the class doc-comment for the synchronization contract on this handle.
   void cancel() const noexcept {
-    if (valid() && hasSlot(job_.vtable, offsetof(PJ_joinable_job_vtable_t, cancel), sizeof(job_.vtable->cancel)) &&
-        job_.vtable->cancel != nullptr) {
+    if (valid() && hasCancel(job_.vtable)) {
       job_.vtable->cancel(job_.ctx);
     }
   }
@@ -139,8 +140,7 @@ class JoinableJob {
   /// [blocking, not-callback-thread] Idempotent. Returns after on_terminal
   /// has returned.
   void join() const noexcept {
-    if (valid() && hasSlot(job_.vtable, offsetof(PJ_joinable_job_vtable_t, join), sizeof(job_.vtable->join)) &&
-        job_.vtable->join != nullptr) {
+    if (valid() && hasJoin(job_.vtable)) {
       job_.vtable->join(job_.ctx);
     }
   }
@@ -148,9 +148,19 @@ class JoinableJob {
  private:
   friend class DescriptorReplayProviderView;
 
+  /// Callback closures plus a dispatch guard that lets a caller who has
+  /// decided this context can never be safely freed (an ABI-violating job —
+  /// see DescriptorReplayProviderView::startReplay) permanently disable
+  /// dispatch through it instead. Both ABI thunks increment in_flight FIRST
+  /// and only then check disabled — closing the check/increment race — so
+  /// quiesce() below, once it observes in_flight back at 0, has a
+  /// happens-before relationship with every dispatch that could still touch
+  /// the user's closures.
   struct CallbackContext {
     std::function<void(DatasetId)> on_dataset;
     std::function<void(ReplayOutcome, std::string)> on_terminal;
+    std::atomic<int> in_flight{0};
+    std::atomic<bool> disabled{false};
   };
 
   JoinableJob(PJ_joinable_job_t job, std::unique_ptr<CallbackContext> callback_ctx)
@@ -162,8 +172,30 @@ class JoinableJob {
     return vt->struct_size >= offset + size;
   }
 
+  static bool hasCancel(const PJ_joinable_job_vtable_t* vt) noexcept {
+    return hasSlot(vt, offsetof(PJ_joinable_job_vtable_t, cancel), sizeof(vt->cancel)) && vt->cancel != nullptr;
+  }
+
+  static bool hasJoin(const PJ_joinable_job_vtable_t* vt) noexcept {
+    return hasSlot(vt, offsetof(PJ_joinable_job_vtable_t, join), sizeof(vt->join)) && vt->join != nullptr;
+  }
+
   static bool hasDestroy(const PJ_joinable_job_vtable_t* vt) noexcept {
     return hasSlot(vt, offsetof(PJ_joinable_job_vtable_t, destroy), sizeof(vt->destroy)) && vt->destroy != nullptr;
+  }
+
+  /// Permanently disables ctx's thunks, then blocks until any dispatch
+  /// already past the increment-then-check race window has finished. Once
+  /// this returns, ctx's on_dataset/on_terminal are guaranteed to never run
+  /// again — safe to free the closures (or leak the allocation) afterwards.
+  /// Only ever called from startReplay's ABI-violation path or reset()'s
+  /// defensive leak branch below; NEVER call it from inside one of ctx's own
+  /// callbacks (that thread would be waiting on itself).
+  static void quiesce(CallbackContext& ctx) noexcept {
+    ctx.disabled.store(true, std::memory_order_release);
+    while (ctx.in_flight.load(std::memory_order_acquire) != 0) {
+      std::this_thread::yield();
+    }
   }
 
   /// Destroy the job (cancel+join if necessary) BEFORE releasing the
@@ -175,9 +207,16 @@ class JoinableJob {
       } else {
         // A job with no usable destroy slot can't be safely stopped: its
         // callback thread may still call into callback_ctx_ at any future
-        // time, and we have no way to join it. Leak the context rather than
-        // risk a use-after-free — this only happens when a provider violates
-        // the ABI (see DescriptorReplayProviderView::startReplay).
+        // time, and we have no way to join it. Quiesce (permanently disable
+        // dispatch, waiting out anything already in flight) so the closures
+        // can never run again, THEN leak the allocation rather than risk a
+        // use-after-free — this only happens when a provider violates the
+        // ABI (see DescriptorReplayProviderView::startReplay, which handles
+        // the common case of this directly; this branch is defense in depth
+        // for any other path that might construct a JoinableJob).
+        if (callback_ctx_) {
+          quiesce(*callback_ctx_);
+        }
         (void)callback_ctx_.release();
       }
     }
@@ -252,6 +291,14 @@ class DescriptorReplayProviderView {
   /// exception is swallowed at the ABI boundary (see onTerminalThunk), and
   /// for on_terminal specifically this means the completion notification is
   /// lost — the caller will never observe that replay's outcome.
+  ///
+  /// On an ERROR return, @p on_dataset and @p on_terminal are guaranteed to
+  /// never be invoked — including when the error comes from a provider that
+  /// returned true from the underlying ABI call but handed back a job this
+  /// wrapper cannot safely stop: such a job's callback context is quiesced
+  /// (permanently disabled, waiting out anything already in flight) before
+  /// this function returns, so the caller may safely tear down whatever its
+  /// closures captured by reference as soon as it sees the error.
   [[nodiscard]] Expected<JoinableJob> startReplay(
       const ReplayStartRequest& request, std::function<void(DatasetId)> on_dataset,
       std::function<void(ReplayOutcome, std::string)> on_terminal) const {
@@ -270,8 +317,12 @@ class DescriptorReplayProviderView {
     raw_callbacks.on_dataset = &DescriptorReplayProviderView::onDatasetThunk;
     raw_callbacks.on_terminal = &DescriptorReplayProviderView::onTerminalThunk;
 
-    auto callback_ctx = std::make_unique<JoinableJob::CallbackContext>(
-        JoinableJob::CallbackContext{std::move(on_dataset), std::move(on_terminal)});
+    // CallbackContext is not movable (it holds atomics — see the class
+    // doc-comment), so construct it in place and assign the closures rather
+    // than move a temporary into make_unique.
+    auto callback_ctx = std::make_unique<JoinableJob::CallbackContext>();
+    callback_ctx->on_dataset = std::move(on_dataset);
+    callback_ctx->on_terminal = std::move(on_terminal);
 
     PJ_joinable_job_t raw_job{};
     PJ_error_t err{};
@@ -279,19 +330,42 @@ class DescriptorReplayProviderView {
       return unexpected(sdk::errorToString(err));
     }
     // Contract check (PJ_descriptor_replay_provider_v1_t::start_replay):
-    // "On true: out_job is valid". A provider that returns true but hands
-    // back a job we cannot destroy would otherwise leave callback_ctx freed
-    // out from under a callback thread that may still be running — a
-    // use-after-free. We cannot safely reclaim callback_ctx in that case
-    // (there is no way to join a job we were never validly handed), so leak
-    // it deliberately rather than risk the UAF; this only happens when a
-    // provider violates the ABI.
-    if (raw_job.vtable == nullptr || !JoinableJob::hasDestroy(raw_job.vtable)) {
-      (void)callback_ctx.release();
-      return unexpected(
-          "descriptor replay provider returned true from start_replay with an unusable job (violates ABI contract)");
+    // "On true: out_job is valid". Validate ALL THREE vtable slots the ABI
+    // promises, not just destroy: a job with a usable destroy but a missing
+    // cancel/join would otherwise construct successfully and then break
+    // join()'s "returns after on_terminal has returned" contract silently.
+    const bool has_vtable = raw_job.vtable != nullptr;
+    const bool destroy_ok = has_vtable && JoinableJob::hasDestroy(raw_job.vtable);
+    const bool cancel_ok = has_vtable && JoinableJob::hasCancel(raw_job.vtable);
+    const bool join_ok = has_vtable && JoinableJob::hasJoin(raw_job.vtable);
+
+    if (destroy_ok && cancel_ok && join_ok) {
+      return JoinableJob(raw_job, std::move(callback_ctx));
     }
-    return JoinableJob(raw_job, std::move(callback_ctx));
+
+    if (destroy_ok) {
+      // destroy() itself cancels+joins per the ABI, so calling it here fully
+      // quiesces the callback stream before we return — the context can then
+      // free normally when callback_ctx goes out of scope, no leak needed.
+      raw_job.vtable->destroy(raw_job.ctx);
+      const std::string missing = !cancel_ok && !join_ok ? "cancel and join" : (!cancel_ok ? "cancel" : "join");
+      return unexpected(
+          "descriptor replay provider returned a job missing a usable " + missing + " slot (violates ABI contract)");
+    }
+
+    // destroy itself is unusable: there is no way to safely stop the job, so
+    // callback_ctx can never be freed normally — a late callback could still
+    // fire against freed user state (not just a freed allocation: the
+    // caller, having seen this error, is free to destroy whatever its
+    // closures captured by reference). Quiesce (permanently disable
+    // dispatch, waiting out anything already in flight) so the closures are
+    // guaranteed inert, THEN release (deliberately leak) the allocation
+    // rather than risk a use-after-free. This only happens when a provider
+    // violates the ABI.
+    JoinableJob::quiesce(*callback_ctx);
+    (void)callback_ctx.release();
+    return unexpected(
+        "descriptor replay provider returned true from start_replay with an unusable job (violates ABI contract)");
   }
 
  private:
@@ -314,6 +388,17 @@ class DescriptorReplayProviderView {
       return;
     }
     auto* ctx = static_cast<JoinableJob::CallbackContext*>(callback_ctx);
+    // Dispatch guard: increment FIRST, then check disabled (see
+    // CallbackContext's doc-comment) — if a JoinableJob::quiesce() call has
+    // (or races to) disable this context, back out without touching the
+    // user's closure at all. This is what makes it safe to leak an
+    // ABI-violating job's context instead of freeing it: the context becomes
+    // permanently inert rather than merely unreachable.
+    ctx->in_flight.fetch_add(1, std::memory_order_acq_rel);
+    if (ctx->disabled.load(std::memory_order_acquire)) {
+      ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
+      return;
+    }
     try {
       if (ctx->on_dataset) {
         ctx->on_dataset(dataset.id);
@@ -322,6 +407,7 @@ class DescriptorReplayProviderView {
       // Job-callback thread crossing the ABI boundary: never let an
       // exception from the host's closure unwind into the plugin.
     }
+    ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
   }
 
   static void onTerminalThunk(
@@ -330,6 +416,12 @@ class DescriptorReplayProviderView {
       return;
     }
     auto* ctx = static_cast<JoinableJob::CallbackContext*>(callback_ctx);
+    // Dispatch guard — see onDatasetThunk's comment.
+    ctx->in_flight.fetch_add(1, std::memory_order_acq_rel);
+    if (ctx->disabled.load(std::memory_order_acquire)) {
+      ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
+      return;
+    }
     try {
       if (ctx->on_terminal) {
         ctx->on_terminal(mapOutcome(outcome), std::string(sdk::toStringView(message)));
@@ -342,6 +434,7 @@ class DescriptorReplayProviderView {
       // completion notification is lost; the caller's on_terminal callable
       // will never observe this replay's outcome.
     }
+    ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
   }
 
   const PJ_descriptor_replay_provider_v1_t* ext_ = nullptr;
