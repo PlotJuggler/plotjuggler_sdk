@@ -3,8 +3,8 @@
  * @brief Descriptor import v1 — a FAMILY-NEUTRAL plugin extension + host
  * service pair for importing a persisted "source descriptor" (an opaque,
  * provider-defined JSON document, typically stored in a layout file) back
- * into a loaded dataset, and for adopting the provider's materialized
- * artifact as a stock file-backed source.
+ * into a loaded dataset, and for promoting the provider's materialized
+ * artifact to a stock file-backed source.
  *
  *  - Plugin side: "pj.descriptor_import.v1" (PJ_descriptor_import_provider_v1_t),
  *    returned from ANY plugin family's get_plugin_extension hook (see
@@ -12,11 +12,12 @@
  *    plugin_ctx is the originating plugin-family instance context — the same
  *    ctx get_plugin_extension was called with, never the extension-table
  *    pointer.
- *  - Host side: "pj.materialized_source.v1" (PJ_materialized_source_host_t),
+ *  - Host side: "pj.source_promotion.v1" (PJ_source_promotion_host_t),
  *    an optional service acquired from the bind() registry. Absence means the
- *    host has no adoption support. The host registers it PER PLUGIN INSTANCE
- *    and derives the provider's manifest id from that binding itself — the
- *    plugin never supplies its own identity, so it cannot be spoofed.
+ *    host has no source-promotion support. The host registers it PER PLUGIN
+ *    INSTANCE and derives the provider's manifest id from that binding
+ *    itself — the plugin never supplies its own identity, so it cannot be
+ *    spoofed.
  *
  * Thread tags used below, beyond plugin_data_api.h's [main-thread] /
  * [thread-safe] set:
@@ -24,8 +25,9 @@
  *                                      thread; serialized, not necessarily main.
  *   [blocking, not-callback-thread]    May block; never call from a job or
  *                                      host callback.
- *   [host-callback-thread]             The host's adopt() result-callback
- *                                      thread; serialized per request.
+ *   [host-callback-thread]             The host's promote_to_file_source()
+ *                                      result-callback thread; serialized
+ *                                      per request.
  *   [thread-safe, asynchronous]        Any thread; the call returns before
  *                                      the operation completes.
  *
@@ -49,7 +51,7 @@
  *    true.
  *  - Job callbacks are serialized but may arrive off the main thread; the
  *    host marshals. on_dataset is zero-or-one and precedes the dataset's
- *    progress_start, first publication, adoption, and on_terminal.
+ *    progress_start, first publication, promotion, and on_terminal.
  *    on_terminal is exactly-once and last.
  *  - join returns only after the terminal callback has returned. destroy
  *    cancels and joins when necessary. Never call join/destroy from a job
@@ -81,7 +83,7 @@ extern "C" {
  * ========================================================================== */
 
 #define PJ_DESCRIPTOR_IMPORT_EXTENSION_V1 "pj.descriptor_import.v1"
-#define PJ_MATERIALIZED_SOURCE_HOST_SERVICE_V1 "pj.materialized_source.v1"
+#define PJ_SOURCE_PROMOTION_HOST_SERVICE_V1 "pj.source_promotion.v1"
 
 /** Unknown/future trust values fail closed: treat as REFUSED. */
 typedef enum PJ_descriptor_trust_t {
@@ -96,9 +98,15 @@ typedef enum PJ_descriptor_trust_t {
 typedef enum PJ_descriptor_import_outcome_t {
   PJ_DESCRIPTOR_IMPORT_FAILED = 0,
   PJ_DESCRIPTOR_IMPORT_CANCELLED = 1,
-  /* Import produced a usable eager dataset but no adoptable artifact. */
-  PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED = 2,
-  PJ_DESCRIPTOR_IMPORT_SUCCEEDED_MATERIALIZED = 3,
+  /*
+   * A usable eager dataset exists but no source-promotion transaction
+   * completed successfully. An artifact may nevertheless exist on disk — a
+   * synchronous promotion rejection, or an asynchronous promotion failure
+   * with the eager dataset still usable, both report EAGER_ONLY, not FAILED.
+   */
+  PJ_DESCRIPTOR_IMPORT_SUCCEEDED_EAGER_ONLY = 2,
+  /* promote_to_file_source reached its result callback with ok=true. */
+  PJ_DESCRIPTOR_IMPORT_SUCCEEDED_PROMOTED = 3,
   /* Forces a stable 4-byte width across compilers. Not a real state. */
   PJ_DESCRIPTOR_IMPORT_OUTCOME_FORCE_INT32 = 0x7FFFFFFF
 } PJ_descriptor_import_outcome_t;
@@ -197,7 +205,7 @@ typedef struct PJ_descriptor_import_callbacks_v1_t {
 
   /**
    * [job-callback-thread, serialized] Zero or one call. Must precede the
-   * dataset's progress_start, first publication, adoption, and on_terminal.
+   * dataset's progress_start, first publication, promotion, and on_terminal.
    */
   void (*on_dataset)(void* callback_ctx, PJ_data_source_handle_t dataset) PJ_NOEXCEPT;
 
@@ -242,22 +250,23 @@ typedef struct PJ_descriptor_import_provider_v1_t {
 } PJ_descriptor_import_provider_v1_t;
 
 /* ==========================================================================
- * Host service: "pj.materialized_source.v1" (protocol_version 1)
+ * Host service: "pj.source_promotion.v1" (protocol_version 1)
  *
  * Acquired from the bind() service registry, bound per plugin instance.
  * Lets a descriptor-import provider hand its materialized artifact to the
- * host to be adopted as a stock file-backed source. Absence means the host
- * has no adoption support. See the file doc-block above for the full
- * contract.
+ * host to be promoted to a stock file-backed source. Absence means the host
+ * has no source-promotion support. See the file doc-block above for the
+ * full contract.
  * ========================================================================== */
 
 /*
- * Adoption request. All views are valid for the duration of the adopt() call;
- * the host copies before returning. loader_plugin_id + loader_config_json are
- * provider-supplied because a non-MCAP artifact needs its own companion
- * loader; dataset is the provisional dataset announced via on_dataset.
+ * Promotion request. All views are valid for the duration of the
+ * promote_to_file_source() call; the host copies before returning.
+ * loader_plugin_id + loader_config_json are provider-supplied because a
+ * non-MCAP artifact needs its own companion loader; dataset is the
+ * provisional dataset announced via on_dataset.
  */
-typedef struct PJ_materialized_source_adopt_request_v1_t {
+typedef struct PJ_source_promotion_request_v1_t {
   uint32_t struct_size;
   PJ_data_source_handle_t dataset;
 
@@ -266,22 +275,21 @@ typedef struct PJ_materialized_source_adopt_request_v1_t {
   PJ_string_view_t loader_plugin_id;
   PJ_string_view_t loader_config_json;
   PJ_string_view_t descriptor_json;
-} PJ_materialized_source_adopt_request_v1_t;
+} PJ_source_promotion_request_v1_t;
 
 /**
- * [host-callback-thread] Runs exactly once after an ACCEPTED adopt() call
- * (i.e. adopt() returned true) — distinct from success: ok reports whether
- * the transaction itself succeeded. message is valid only for the duration
- * of the callback.
+ * [host-callback-thread] Runs exactly once after an ACCEPTED
+ * promote_to_file_source() call (i.e. promote_to_file_source() returned
+ * true) — distinct from success: ok reports whether the transaction itself
+ * succeeded. message is valid only for the duration of the callback.
  */
-typedef void (*PJ_materialized_source_adopt_result_fn)(void* callback_ctx, bool ok, PJ_string_view_t message)
-    PJ_NOEXCEPT;
+typedef void (*PJ_source_promotion_result_fn)(void* callback_ctx, bool ok, PJ_string_view_t message) PJ_NOEXCEPT;
 
 /**
- * Host adoption service ("pj.materialized_source.v1", protocol_version 1).
+ * Host source-promotion service ("pj.source_promotion.v1", protocol_version 1).
  * Bound per plugin instance — the service ctx identifies the provider.
  */
-typedef struct PJ_materialized_source_host_vtable_t {
+typedef struct PJ_source_promotion_host_vtable_t {
   uint32_t protocol_version; /* = 1 */
   uint32_t struct_size;
 
@@ -292,22 +300,23 @@ typedef struct PJ_materialized_source_host_vtable_t {
    * false: request rejected synchronously; result_cb will not run.
    * true: request accepted; result_cb will run exactly once. This does NOT
    * mean the dataset swap has happened yet — only that it has been queued.
-   * result_cb MAY be invoked re-entrantly, before adopt() returns.
+   * result_cb MAY be invoked re-entrantly, before promote_to_file_source()
+   * returns.
    *
    * By the time result_cb reports ok=true, the host has transactionally
    * replaced the named dataset, captured the loader's accepted configuration,
    * and attached {provider manifest id, source_identity, descriptor_json}.
    */
-  bool (*adopt)(
-      void* ctx, const PJ_materialized_source_adopt_request_v1_t* request,
-      PJ_materialized_source_adopt_result_fn result_cb, void* callback_ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_materialized_source_host_vtable_t;
+  bool (*promote_to_file_source)(
+      void* ctx, const PJ_source_promotion_request_v1_t* request, PJ_source_promotion_result_fn result_cb,
+      void* callback_ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_source_promotion_host_vtable_t;
 
 /* ABI-FROZEN: fat pointer layout permanent. */
-typedef struct PJ_materialized_source_host_t {
+typedef struct PJ_source_promotion_host_t {
   void* ctx;
-  const PJ_materialized_source_host_vtable_t* vtable;
-} PJ_materialized_source_host_t;
+  const PJ_source_promotion_host_vtable_t* vtable;
+} PJ_source_promotion_host_t;
 
 #ifdef __cplusplus
 }

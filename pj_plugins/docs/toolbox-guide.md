@@ -405,7 +405,7 @@ row-of-fields shape. See
   using `PJ::testing::ToolboxTestStore` (in `pj_plugins/include/pj_plugins/testing/`)
   to drive a toolbox plugin through ingest, transform, and config scenarios.
 
-## Descriptor import and materialized-source adoption (0.20.0)
+## Descriptor import and source promotion (0.20.0)
 
 A toolbox (or any plugin family) that can re-create a dataset from a persisted
 descriptor — a cloud session, a database query — advertises
@@ -421,7 +421,7 @@ descriptor — a cloud session, a database query — advertises
 - `start_import` launches the asynchronous import job (caller-sized request:
   descriptor + flags + `max_transfer_bytes` ceiling). Exactly two serialized
   callbacks: `on_dataset` (zero-or-one — announce the provisional dataset
-  BEFORE any progress/publication/adoption) and `on_terminal` (exactly-once,
+  BEFORE any progress/publication/promotion) and `on_terminal` (exactly-once,
   last). Progress, publish ticks and cooperative stop do NOT ride the job:
   they ride the dataset-scoped ingest lifecycle below.
 
@@ -431,19 +431,19 @@ dataset-scoped surface for BOTH delegated parsing (`ensureParserBinding` /
 `pushMessage`) and direct writes (Arrow or scalar appends through
 `ToolboxHostView`, using the view only for progress/stop; the host refresh
 still travels through `notifyDataChanged()`). When the artifact
-file is complete, the provider asks the host to adopt it as a stock
+file is complete, the provider asks the host to promote it to a stock
 file-backed source through the optional per-instance
-`pj.materialized_source.v1` service
-(`PJ::sdk::MaterializedSourceHostService`): the request names the dataset,
-the artifact path, the provider's `source_identity`, the descriptor, and the
-loader (`loader_plugin_id` + `loader_config_json`) that can re-ingest the
-artifact with eager-path-identical semantics. Adoption is asynchronous —
-an accepted `adopt()` only means queued; success arrives via the result
-callback. A provider that cannot yet produce such an artifact reports
-`SUCCEEDED_UNMATERIALIZED` instead.
+`pj.source_promotion.v1` service
+(`PJ::sdk::SourcePromotionHostService::promoteToFileSource()`): the request
+names the dataset, the artifact path, the provider's `source_identity`, the
+descriptor, and the loader (`loader_plugin_id` + `loader_config_json`) that
+can re-ingest the artifact with eager-path-identical semantics. Promotion is
+asynchronous — an accepted `promoteToFileSource()` only means queued; success
+arrives via the result callback. A provider that cannot yet produce such an
+artifact reports `SUCCEEDED_EAGER_ONLY` instead.
 
 C++ consumers: `PJ::DescriptorImportProviderView`, `PJ::JoinableJob`,
-`PJ::MaterializedSourceHostView` in `pj_base/sdk/descriptor_import.hpp`.
+`PJ::SourcePromotionHostView` in `pj_base/sdk/descriptor_import.hpp`.
 
 ## Common Mistakes
 

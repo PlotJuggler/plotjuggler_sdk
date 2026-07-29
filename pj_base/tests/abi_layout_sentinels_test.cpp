@@ -307,43 +307,42 @@ static_assert(
     "PJ_descriptor_import_provider_v1_t size (update deliberately on append)");
 
 static_assert(
-    offsetof(PJ_materialized_source_adopt_request_v1_t, struct_size) == 0,
-    "PJ_materialized_source_adopt_request_v1_t.struct_size offset frozen");
+    offsetof(PJ_source_promotion_request_v1_t, struct_size) == 0,
+    "PJ_source_promotion_request_v1_t.struct_size offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_adopt_request_v1_t, dataset) == 4,
-    "PJ_materialized_source_adopt_request_v1_t.dataset offset frozen");
+    offsetof(PJ_source_promotion_request_v1_t, dataset) == 4, "PJ_source_promotion_request_v1_t.dataset offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_adopt_request_v1_t, source_identity) == 8,
-    "PJ_materialized_source_adopt_request_v1_t.source_identity offset frozen");
+    offsetof(PJ_source_promotion_request_v1_t, source_identity) == 8,
+    "PJ_source_promotion_request_v1_t.source_identity offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_adopt_request_v1_t, local_path_utf8) == 24,
-    "PJ_materialized_source_adopt_request_v1_t.local_path_utf8 offset frozen");
+    offsetof(PJ_source_promotion_request_v1_t, local_path_utf8) == 24,
+    "PJ_source_promotion_request_v1_t.local_path_utf8 offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_adopt_request_v1_t, loader_plugin_id) == 40,
-    "PJ_materialized_source_adopt_request_v1_t.loader_plugin_id offset frozen");
+    offsetof(PJ_source_promotion_request_v1_t, loader_plugin_id) == 40,
+    "PJ_source_promotion_request_v1_t.loader_plugin_id offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_adopt_request_v1_t, loader_config_json) == 56,
-    "PJ_materialized_source_adopt_request_v1_t.loader_config_json offset frozen");
+    offsetof(PJ_source_promotion_request_v1_t, loader_config_json) == 56,
+    "PJ_source_promotion_request_v1_t.loader_config_json offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_adopt_request_v1_t, descriptor_json) == 72,
-    "PJ_materialized_source_adopt_request_v1_t.descriptor_json offset frozen");
+    offsetof(PJ_source_promotion_request_v1_t, descriptor_json) == 72,
+    "PJ_source_promotion_request_v1_t.descriptor_json offset frozen");
 static_assert(
-    sizeof(PJ_materialized_source_adopt_request_v1_t) == 88,
-    "PJ_materialized_source_adopt_request_v1_t size (update deliberately on append)");
+    sizeof(PJ_source_promotion_request_v1_t) == 88,
+    "PJ_source_promotion_request_v1_t size (update deliberately on append)");
 
 static_assert(
-    offsetof(PJ_materialized_source_host_vtable_t, protocol_version) == 0,
-    "PJ_materialized_source_host_vtable_t.protocol_version offset frozen");
+    offsetof(PJ_source_promotion_host_vtable_t, protocol_version) == 0,
+    "PJ_source_promotion_host_vtable_t.protocol_version offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_host_vtable_t, struct_size) == 4,
-    "PJ_materialized_source_host_vtable_t.struct_size offset frozen");
+    offsetof(PJ_source_promotion_host_vtable_t, struct_size) == 4,
+    "PJ_source_promotion_host_vtable_t.struct_size offset frozen");
 static_assert(
-    offsetof(PJ_materialized_source_host_vtable_t, adopt) == 8,
-    "PJ_materialized_source_host_vtable_t.adopt offset frozen");
+    offsetof(PJ_source_promotion_host_vtable_t, promote_to_file_source) == 8,
+    "PJ_source_promotion_host_vtable_t.promote_to_file_source offset frozen");
 static_assert(
-    sizeof(PJ_materialized_source_host_vtable_t) == 16,
-    "PJ_materialized_source_host_vtable_t size (update deliberately on append)");
-static_assert(sizeof(PJ_materialized_source_host_t) == 16, "PJ_materialized_source_host_t fat pointer pinned");
+    sizeof(PJ_source_promotion_host_vtable_t) == 16,
+    "PJ_source_promotion_host_vtable_t size (update deliberately on append)");
+static_assert(sizeof(PJ_source_promotion_host_t) == 16, "PJ_source_promotion_host_t fat pointer pinned");
 
 // This translation unit has no runtime behavior; the above are all
 // compile-time assertions. Linking only confirms the TU compiled.

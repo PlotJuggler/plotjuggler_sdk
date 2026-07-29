@@ -1,8 +1,8 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-// Tests for the "pj.materialized_source.v1" host service consumer-side C++
-// wrapper: MaterializedSourceHostView and the PJ::sdk::MaterializedSourceHostService
+// Tests for the "pj.source_promotion.v1" host service consumer-side C++
+// wrapper: SourcePromotionHostView and the PJ::sdk::SourcePromotionHostService
 // trait. Modeled on data_processors_api_test.cpp's fake-host pattern.
 //
 // pj_base's test target links only pj_base + GTest::gtest_main (see the
@@ -31,9 +31,9 @@
 
 namespace {
 
-// Fake host for the pj.materialized_source.v1 service, modeled on
+// Fake host for the pj.source_promotion.v1 service, modeled on
 // data_processors_api_test.cpp's fake host.
-struct FakeAdoptionHost {
+struct FakePromotionHost {
   struct Captured {
     uint32_t dataset = 0;
     std::string source_identity;
@@ -46,12 +46,12 @@ struct FakeAdoptionHost {
   bool accept = true;   // false => synchronous rejection, callback must not run
   bool succeed = true;  // outcome delivered through the callback
 
-  static bool adoptThunk(
-      void* ctx, const PJ_materialized_source_adopt_request_v1_t* request,
-      PJ_materialized_source_adopt_result_fn result_cb, void* callback_ctx, PJ_error_t* err) noexcept {
-    auto* self = static_cast<FakeAdoptionHost*>(ctx);
+  static bool promoteThunk(
+      void* ctx, const PJ_source_promotion_request_v1_t* request, PJ_source_promotion_result_fn result_cb,
+      void* callback_ctx, PJ_error_t* err) noexcept {
+    auto* self = static_cast<FakePromotionHost*>(ctx);
     if (!self->accept) {
-      PJ::sdk::fillError(err, 1, "materialized_source", "rejected");
+      PJ::sdk::fillError(err, 1, "source_promotion", "rejected");
       return false;
     }
     Captured c;
@@ -62,37 +62,38 @@ struct FakeAdoptionHost {
     c.loader_config_json = std::string(PJ::sdk::toStringView(request->loader_config_json));
     c.descriptor_json = std::string(PJ::sdk::toStringView(request->descriptor_json));
     self->requests.push_back(std::move(c));
-    const char* msg = self->succeed ? "adopted" : "generation mismatch";
+    const char* msg = self->succeed ? "promoted" : "generation mismatch";
     result_cb(callback_ctx, self->succeed, PJ_string_view_t{msg, std::char_traits<char>::length(msg)});
     return true;
   }
 
-  [[nodiscard]] PJ_materialized_source_host_t view() {
-    static constexpr PJ_materialized_source_host_vtable_t kVtable{
-        1, sizeof(PJ_materialized_source_host_vtable_t), &FakeAdoptionHost::adoptThunk};
-    return PJ_materialized_source_host_t{this, &kVtable};
+  [[nodiscard]] PJ_source_promotion_host_t view() {
+    static constexpr PJ_source_promotion_host_vtable_t kVtable{
+        1, sizeof(PJ_source_promotion_host_vtable_t), &FakePromotionHost::promoteThunk};
+    return PJ_source_promotion_host_t{this, &kVtable};
   }
 };
 
-// A host whose adopt() is genuinely asynchronous — the ABI's documented
-// NORMAL mode ("the call returns before the operation completes"), unlike
-// FakeAdoptionHost above which delivers result_cb re-entrantly. adoptThunk
-// stores {result_cb, callback_ctx} and returns true immediately; a separate
-// worker thread delivers the result later, gated on an explicit release()
-// so the test can deterministically observe "adopt() returned before the
-// callback ran" without sleeps-as-synchronization.
-struct DeferredAdoptionHost {
+// A host whose promote_to_file_source() is genuinely asynchronous — the
+// ABI's documented NORMAL mode ("the call returns before the operation
+// completes"), unlike FakePromotionHost above which delivers result_cb
+// re-entrantly. promoteThunk stores {result_cb, callback_ctx} and returns
+// true immediately; a separate worker thread delivers the result later,
+// gated on an explicit release() so the test can deterministically observe
+// "promoteToFileSource() returned before the callback ran" without
+// sleeps-as-synchronization.
+struct DeferredPromotionHost {
   std::mutex mu;
   std::condition_variable cv;
   bool release_requested = false;
-  PJ_materialized_source_adopt_result_fn stored_cb = nullptr;
+  PJ_source_promotion_result_fn stored_cb = nullptr;
   void* stored_ctx = nullptr;
   std::thread worker;
 
-  static bool adoptThunk(
-      void* ctx, const PJ_materialized_source_adopt_request_v1_t* /*request*/,
-      PJ_materialized_source_adopt_result_fn result_cb, void* callback_ctx, PJ_error_t* /*err*/) noexcept {
-    auto* self = static_cast<DeferredAdoptionHost*>(ctx);
+  static bool promoteThunk(
+      void* ctx, const PJ_source_promotion_request_v1_t* /*request*/, PJ_source_promotion_result_fn result_cb,
+      void* callback_ctx, PJ_error_t* /*err*/) noexcept {
+    auto* self = static_cast<DeferredPromotionHost*>(ctx);
     self->stored_cb = result_cb;
     self->stored_ctx = callback_ctx;
     self->worker = std::thread([self]() {
@@ -100,7 +101,7 @@ struct DeferredAdoptionHost {
         std::unique_lock<std::mutex> lock(self->mu);
         self->cv.wait(lock, [self] { return self->release_requested; });
       }
-      const char* msg = "adopted";
+      const char* msg = "promoted";
       self->stored_cb(self->stored_ctx, true, PJ_string_view_t{msg, std::char_traits<char>::length(msg)});
     });
     return true;
@@ -122,10 +123,10 @@ struct DeferredAdoptionHost {
     }
   }
 
-  [[nodiscard]] PJ_materialized_source_host_t view() {
-    static constexpr PJ_materialized_source_host_vtable_t kVtable{
-        1, sizeof(PJ_materialized_source_host_vtable_t), &DeferredAdoptionHost::adoptThunk};
-    return PJ_materialized_source_host_t{this, &kVtable};
+  [[nodiscard]] PJ_source_promotion_host_t view() {
+    static constexpr PJ_source_promotion_host_vtable_t kVtable{
+        1, sizeof(PJ_source_promotion_host_vtable_t), &DeferredPromotionHost::promoteThunk};
+    return PJ_source_promotion_host_t{this, &kVtable};
   }
 };
 
@@ -171,8 +172,8 @@ class FakeServiceRegistry {
   PJ_service_t service_{};
 };
 
-PJ::AdoptRequest makeRequest() {
-  PJ::AdoptRequest r;
+PJ::SourcePromotionRequest makeRequest() {
+  PJ::SourcePromotionRequest r;
   r.dataset = 7;
   r.source_identity = "mcap-cloud:v1:sha256/128:aa";
   r.local_path_utf8 = "/cache/aa.mcap";
@@ -182,27 +183,27 @@ PJ::AdoptRequest makeRequest() {
   return r;
 }
 
-TEST(MaterializedSourceService, RegistryLookupAndAdoptExactlyOnce) {
-  FakeAdoptionHost host;
-  const PJ_materialized_source_host_t raw_host = host.view();
+TEST(SourcePromotionService, RegistryLookupAndPromoteExactlyOnce) {
+  FakePromotionHost host;
+  const PJ_source_promotion_host_t raw_host = host.view();
 
   // Registered with protocol_version 1, exactly matching the trait's
   // kMinVersion 1 — this is the min-version-match path (equal, not just
   // "greater than"), exercised through the fake registry's real comparison.
   FakeServiceRegistry fake_registry;
   fake_registry.registerService(
-      PJ::sdk::MaterializedSourceHostService::kName, /*protocol_version=*/1,
+      PJ::sdk::SourcePromotionHostService::kName, /*protocol_version=*/1,
       PJ_service_t{raw_host.ctx, static_cast<const void*>(raw_host.vtable)});
 
   PJ::sdk::ServiceRegistry registry(fake_registry.view());
-  auto view_opt = registry.get<PJ::sdk::MaterializedSourceHostService>();
+  auto view_opt = registry.get<PJ::sdk::SourcePromotionHostService>();
   ASSERT_TRUE(view_opt.has_value());
   EXPECT_TRUE(view_opt->valid());
 
   int callback_calls = 0;
   bool last_ok = false;
   std::string last_message;
-  auto status = view_opt->adopt(makeRequest(), [&](bool ok, std::string message) {
+  auto status = view_opt->promoteToFileSource(makeRequest(), [&](bool ok, std::string message) {
     ++callback_calls;
     last_ok = ok;
     last_message = std::move(message);
@@ -211,7 +212,7 @@ TEST(MaterializedSourceService, RegistryLookupAndAdoptExactlyOnce) {
   ASSERT_TRUE(status) << status.error();
   EXPECT_EQ(callback_calls, 1);
   EXPECT_TRUE(last_ok);
-  EXPECT_EQ(last_message, "adopted");
+  EXPECT_EQ(last_message, "promoted");
 
   ASSERT_EQ(host.requests.size(), 1u);
   const auto& captured = host.requests[0];
@@ -226,51 +227,53 @@ TEST(MaterializedSourceService, RegistryLookupAndAdoptExactlyOnce) {
 // Pins kMinVersion forwarding: a registration below the trait's kMinVersion
 // (1) must be treated as absent, exercising FakeServiceRegistry's
 // version-rejection branch (dead code until this test).
-TEST(MaterializedSourceService, ProtocolVersionBelowMinIsNullopt) {
-  FakeAdoptionHost host;
-  const PJ_materialized_source_host_t raw_host = host.view();
+TEST(SourcePromotionService, ProtocolVersionBelowMinIsNullopt) {
+  FakePromotionHost host;
+  const PJ_source_promotion_host_t raw_host = host.view();
 
   FakeServiceRegistry fake_registry;
   fake_registry.registerService(
-      PJ::sdk::MaterializedSourceHostService::kName, /*protocol_version=*/0,
+      PJ::sdk::SourcePromotionHostService::kName, /*protocol_version=*/0,
       PJ_service_t{raw_host.ctx, static_cast<const void*>(raw_host.vtable)});
 
   PJ::sdk::ServiceRegistry registry(fake_registry.view());
-  auto view_opt = registry.get<PJ::sdk::MaterializedSourceHostService>();
+  auto view_opt = registry.get<PJ::sdk::SourcePromotionHostService>();
   EXPECT_FALSE(view_opt.has_value());
 }
 
-TEST(MaterializedSourceService, SynchronousRejectionNeverRunsCallback) {
-  FakeAdoptionHost host;
+TEST(SourcePromotionService, SynchronousRejectionNeverRunsCallback) {
+  FakePromotionHost host;
   host.accept = false;
-  PJ::MaterializedSourceHostView view(host.view());
+  PJ::SourcePromotionHostView view(host.view());
   ASSERT_TRUE(view.valid());
 
   int callback_calls = 0;
-  auto status = view.adopt(makeRequest(), [&](bool /*ok*/, std::string /*message*/) { ++callback_calls; });
+  auto status =
+      view.promoteToFileSource(makeRequest(), [&](bool /*ok*/, std::string /*message*/) { ++callback_calls; });
 
   EXPECT_FALSE(status);
   EXPECT_EQ(callback_calls, 0);
   EXPECT_TRUE(host.requests.empty());
 }
 
-TEST(MaterializedSourceService, AcceptedButFailedTransactionReportsOkFalse) {
-  FakeAdoptionHost host;
+TEST(SourcePromotionService, AcceptedButFailedTransactionReportsOkFalse) {
+  FakePromotionHost host;
   host.succeed = false;
-  PJ::MaterializedSourceHostView view(host.view());
+  PJ::SourcePromotionHostView view(host.view());
   ASSERT_TRUE(view.valid());
 
   int callback_calls = 0;
   bool reported_ok = true;
   std::string reported_message;
-  auto status = view.adopt(makeRequest(), [&](bool ok, std::string message) {
+  auto status = view.promoteToFileSource(makeRequest(), [&](bool ok, std::string message) {
     ++callback_calls;
     reported_ok = ok;
     reported_message = std::move(message);
   });
 
-  // Accepted (queued) — the adopt() Status is ok even though the transaction
-  // itself failed; failure arrives exclusively through the result callback.
+  // Accepted (queued) — the promoteToFileSource() Status is ok even though
+  // the transaction itself failed; failure arrives exclusively through the
+  // result callback.
   EXPECT_TRUE(status);
   EXPECT_EQ(callback_calls, 1);
   EXPECT_FALSE(reported_ok);
@@ -278,50 +281,51 @@ TEST(MaterializedSourceService, AcceptedButFailedTransactionReportsOkFalse) {
   EXPECT_EQ(host.requests.size(), 1u);
 }
 
-TEST(MaterializedSourceService, AbsentServiceIsNullopt) {
+TEST(SourcePromotionService, AbsentServiceIsNullopt) {
   FakeServiceRegistry fake_registry;  // nothing registered
   PJ::sdk::ServiceRegistry registry(fake_registry.view());
 
-  auto view_opt = registry.get<PJ::sdk::MaterializedSourceHostService>();
+  auto view_opt = registry.get<PJ::sdk::SourcePromotionHostService>();
   EXPECT_FALSE(view_opt.has_value());
 }
 
-TEST(MaterializedSourceService, InvalidViewRejectsAdopt) {
-  PJ::MaterializedSourceHostView view;  // default-constructed
+TEST(SourcePromotionService, InvalidViewRejectsPromote) {
+  PJ::SourcePromotionHostView view;  // default-constructed
   EXPECT_FALSE(view.valid());
 
   int callback_calls = 0;
-  auto status = view.adopt(makeRequest(), [&](bool /*ok*/, std::string /*message*/) { ++callback_calls; });
+  auto status =
+      view.promoteToFileSource(makeRequest(), [&](bool /*ok*/, std::string /*message*/) { ++callback_calls; });
 
   EXPECT_FALSE(status);
   EXPECT_EQ(callback_calls, 0);
 }
 
-TEST(MaterializedSourceService, CallbackExceptionIsSwallowed) {
-  FakeAdoptionHost host;
-  PJ::MaterializedSourceHostView view(host.view());
+TEST(SourcePromotionService, CallbackExceptionIsSwallowed) {
+  FakePromotionHost host;
+  PJ::SourcePromotionHostView view(host.view());
   ASSERT_TRUE(view.valid());
 
   // The exception must be swallowed at the ABI thunk boundary — this test's
-  // assertion is simply that adopt() returns normally and the process does
-  // not crash/terminate.
-  auto status =
-      view.adopt(makeRequest(), [](bool /*ok*/, std::string /*message*/) { throw std::runtime_error("boom"); });
+  // assertion is simply that promoteToFileSource() returns normally and the
+  // process does not crash/terminate.
+  auto status = view.promoteToFileSource(
+      makeRequest(), [](bool /*ok*/, std::string /*message*/) { throw std::runtime_error("boom"); });
 
   EXPECT_TRUE(status) << status.error();
   ASSERT_EQ(host.requests.size(), 1u);
 }
 
 // The ABI's documented normal mode is asynchronous ("the call returns before
-// the operation completes") — exercised here with DeferredAdoptionHost
-// instead of FakeAdoptionHost's re-entrant-synchronous delivery. This is
-// also the path where adopt()'s release()-before-the-vtable-call ordering
-// earns its keep: ownership must already belong to the raw pointer handed
-// to the host, not to the local unique_ptr, by the time result_cb might run
-// on another thread.
-TEST(MaterializedSourceService, DeferredAsyncResultDeliveredExactlyOnceAfterReturn) {
-  DeferredAdoptionHost host;
-  PJ::MaterializedSourceHostView view(host.view());
+// the operation completes") — exercised here with DeferredPromotionHost
+// instead of FakePromotionHost's re-entrant-synchronous delivery. This is
+// also the path where promoteToFileSource()'s release()-before-the-vtable-
+// call ordering earns its keep: ownership must already belong to the raw
+// pointer handed to the host, not to the local unique_ptr, by the time
+// result_cb might run on another thread.
+TEST(SourcePromotionService, DeferredAsyncResultDeliveredExactlyOnceAfterReturn) {
+  DeferredPromotionHost host;
+  PJ::SourcePromotionHostView view(host.view());
   ASSERT_TRUE(view.valid());
 
   std::atomic<int> callback_calls{0};
@@ -329,16 +333,17 @@ TEST(MaterializedSourceService, DeferredAsyncResultDeliveredExactlyOnceAfterRetu
   bool last_ok = false;
   std::string last_message;
 
-  auto status = view.adopt(makeRequest(), [&](bool ok, std::string message) {
+  auto status = view.promoteToFileSource(makeRequest(), [&](bool ok, std::string message) {
     callback_calls.fetch_add(1);
     last_ok = ok;
     last_message = std::move(message);
     callback_ran.store(true);
   });
 
-  // adopt() must report ACCEPTED before the deferred callback has run: the
-  // worker thread is blocked on host.release(), which we have not called
-  // yet, so this is deterministic rather than a timing-dependent guess.
+  // promoteToFileSource() must report ACCEPTED before the deferred callback
+  // has run: the worker thread is blocked on host.release(), which we have
+  // not called yet, so this is deterministic rather than a timing-dependent
+  // guess.
   ASSERT_TRUE(status) << status.error();
   EXPECT_FALSE(callback_ran.load());
   EXPECT_EQ(callback_calls.load(), 0);
@@ -348,7 +353,7 @@ TEST(MaterializedSourceService, DeferredAsyncResultDeliveredExactlyOnceAfterRetu
 
   EXPECT_EQ(callback_calls.load(), 1);
   EXPECT_TRUE(last_ok);
-  EXPECT_EQ(last_message, "adopted");
+  EXPECT_EQ(last_message, "promoted");
 }
 
 }  // namespace

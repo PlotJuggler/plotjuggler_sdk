@@ -199,7 +199,7 @@ class FakeImportToolbox : public PJ::ToolboxPluginBase {
         msg = "weird";
       } else {
         const bool cancelled = state->cancelled.load();
-        outcome = cancelled ? PJ_DESCRIPTOR_IMPORT_CANCELLED : PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED;
+        outcome = cancelled ? PJ_DESCRIPTOR_IMPORT_CANCELLED : PJ_DESCRIPTOR_IMPORT_SUCCEEDED_EAGER_ONLY;
         msg = cancelled ? "cancelled" : "done";
       }
       on_terminal(callback_ctx, outcome, PJ_string_view_t{msg, std::char_traits<char>::length(msg)});
@@ -369,7 +369,7 @@ class DelayedUnusableJobImportToolbox : public PJ::ToolboxPluginBase {
     self->worker_ = std::thread([self, on_terminal, callback_ctx] {
       self->gate_.acquire();
       const char* msg = "late";
-      on_terminal(callback_ctx, PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED, PJ_string_view_t{msg, 4});
+      on_terminal(callback_ctx, PJ_DESCRIPTOR_IMPORT_SUCCEEDED_EAGER_ONLY, PJ_string_view_t{msg, 4});
     });
     // ABI violation: leave out_job unusable (zeroed vtable) despite
     // returning true — this is exactly the case startImport's
@@ -438,7 +438,7 @@ TEST(DescriptorImportExtension, StartImportDeliversDatasetThenTerminalExactlyOnc
   ASSERT_EQ(order.size(), 2u);
   EXPECT_EQ(order[0], "dataset:7");
   EXPECT_EQ(order[1], "terminal");
-  EXPECT_EQ(outcome, PJ::DescriptorImportOutcome::kSucceededUnmaterialized);
+  EXPECT_EQ(outcome, PJ::DescriptorImportOutcome::kSucceededEagerOnly);
 }
 
 TEST(DescriptorImportExtension, DestroyWithoutJoinDestroysSafely) {
@@ -563,7 +563,7 @@ TEST(DescriptorImportExtension, UnknownOutcomeValueMapsToFailed) {
   PJ::DescriptorImportProviderView view(plugin.pluginExtension(PJ_DESCRIPTOR_IMPORT_EXTENSION_V1), &plugin);
   PJ::DescriptorImportStartRequest request;
   request.descriptor_json = R"({"v":1})";
-  PJ::DescriptorImportOutcome outcome = PJ::DescriptorImportOutcome::kSucceededUnmaterialized;
+  PJ::DescriptorImportOutcome outcome = PJ::DescriptorImportOutcome::kSucceededEagerOnly;
   auto job = view.startImport(request, nullptr, [&](PJ::DescriptorImportOutcome o, std::string) { outcome = o; });
   ASSERT_TRUE(job.has_value());
   plugin.releaseStart();

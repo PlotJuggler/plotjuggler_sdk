@@ -1,7 +1,7 @@
 /**
  * @file descriptor_import.hpp
  * @brief C++ wrappers for the descriptor-import v1 extension + service pair:
- * DescriptorImportProviderView, the RAII JoinableJob, MaterializedSourceHostView,
+ * DescriptorImportProviderView, the RAII JoinableJob, SourcePromotionHostView,
  * and their supporting value types. See pj_base/descriptor_import_protocol.h
  * for the full ABI/lifetime/threading contract this header wraps.
  *
@@ -10,8 +10,8 @@
  *     "pj.descriptor_import.v1" extension (DescriptorImportProviderView +
  *     JoinableJob).
  *   - Service half: a provider plugin consuming the host's
- *     "pj.materialized_source.v1" service via the bind() service registry
- *     (MaterializedSourceHostView + the PJ::sdk::MaterializedSourceHostService
+ *     "pj.source_promotion.v1" service via the bind() service registry
+ *     (SourcePromotionHostView + the PJ::sdk::SourcePromotionHostService
  *     trait).
  */
 // Copyright 2026 Davide Faconti
@@ -58,8 +58,8 @@ enum class DescriptorTrust : int32_t {
 enum class DescriptorImportOutcome : int32_t {
   kFailed = PJ_DESCRIPTOR_IMPORT_FAILED,
   kCancelled = PJ_DESCRIPTOR_IMPORT_CANCELLED,
-  kSucceededUnmaterialized = PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED,
-  kSucceededMaterialized = PJ_DESCRIPTOR_IMPORT_SUCCEEDED_MATERIALIZED,
+  kSucceededEagerOnly = PJ_DESCRIPTOR_IMPORT_SUCCEEDED_EAGER_ONLY,
+  kSucceededPromoted = PJ_DESCRIPTOR_IMPORT_SUCCEEDED_PROMOTED,
 };
 
 /// queryDescriptor result, copied immediately out of the C ABI's borrowed
@@ -397,10 +397,10 @@ class DescriptorImportProviderView {
     switch (outcome) {
       case PJ_DESCRIPTOR_IMPORT_CANCELLED:
         return DescriptorImportOutcome::kCancelled;
-      case PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED:
-        return DescriptorImportOutcome::kSucceededUnmaterialized;
-      case PJ_DESCRIPTOR_IMPORT_SUCCEEDED_MATERIALIZED:
-        return DescriptorImportOutcome::kSucceededMaterialized;
+      case PJ_DESCRIPTOR_IMPORT_SUCCEEDED_EAGER_ONLY:
+        return DescriptorImportOutcome::kSucceededEagerOnly;
+      case PJ_DESCRIPTOR_IMPORT_SUCCEEDED_PROMOTED:
+        return DescriptorImportOutcome::kSucceededPromoted;
       case PJ_DESCRIPTOR_IMPORT_FAILED:
       default:
         return DescriptorImportOutcome::kFailed;
@@ -469,15 +469,17 @@ class DescriptorImportProviderView {
 };
 
 // ---------------------------------------------------------------------------
-// Service half: "pj.materialized_source.v1"
-// A provider plugin consuming the host's optional adoption service, acquired
-// from the bind() service registry (see PJ::sdk::MaterializedSourceHostService
-// below). Absence from the registry means the host has no adoption support.
+// Service half: "pj.source_promotion.v1"
+// A provider plugin consuming the host's optional source-promotion service,
+// acquired from the bind() service registry (see
+// PJ::sdk::SourcePromotionHostService below). Absence from the registry means
+// the host has no source-promotion support.
 // ---------------------------------------------------------------------------
 
-/// Adoption request (C++ mirror). All strings are copied by the host during
-/// adopt() — the request may be destroyed as soon as adopt() returns.
-struct AdoptRequest {
+/// Promotion request (C++ mirror). All strings are copied by the host during
+/// promoteToFileSource() — the request may be destroyed as soon as
+/// promoteToFileSource() returns.
+struct SourcePromotionRequest {
   DatasetId dataset{};
   std::string source_identity;
   std::string local_path_utf8;
@@ -486,60 +488,65 @@ struct AdoptRequest {
   std::string descriptor_json;
 };
 
-/// Typed consumer of the "pj.materialized_source.v1" host service.
+/// Typed consumer of the "pj.source_promotion.v1" host service.
 ///
 /// Non-owning: this view wraps a borrowed fat pointer obtained from bind()'s
 /// service registry lookup and holds no keep-alive of its own. It must not
 /// outlive the plugin's bound service scope. valid() only checks the fat
-/// pointer's own shape (non-null ctx/vtable, struct_size, non-null adopt
-/// slot) — it CANNOT detect a stale pointer into a registry that has since
-/// been torn down. adopt()'s normal shape is asynchronous, with @p on_result
-/// typically firing well after bind() has already returned (see adopt()'s
-/// doc-comment) — that is the normal adoption shape, not an edge case — so a
-/// caller that holds onto this view (or a copy of it) to complete a pending
-/// adopt() later must independently ensure the underlying binding/registry
-/// stays alive for as long as that adoption is outstanding.
+/// pointer's own shape (non-null ctx/vtable, struct_size, non-null
+/// promote_to_file_source slot) — it CANNOT detect a stale pointer into a
+/// registry that has since been torn down. promoteToFileSource()'s normal
+/// shape is asynchronous, with @p on_result typically firing well after
+/// bind() has already returned (see promoteToFileSource()'s doc-comment) —
+/// that is the normal promotion shape, not an edge case — so a caller that
+/// holds onto this view (or a copy of it) to complete a pending
+/// promoteToFileSource() later must independently ensure the underlying
+/// binding/registry stays alive for as long as that promotion is
+/// outstanding.
 ///
-/// Per PJ_materialized_source_host_vtable_t's doc-comment, the host binds
-/// this service PER PLUGIN INSTANCE — ctx identifies the provider and the
-/// host derives the provider's manifest id from that binding itself. A
-/// plugin must therefore never share a bound view across plugin instances
-/// (e.g. cache one in a static and hand it to a sibling instance): doing so
-/// would let one provider adopt under another provider's identity.
-class MaterializedSourceHostView {
+/// Per PJ_source_promotion_host_vtable_t's doc-comment, the host binds this
+/// service PER PLUGIN INSTANCE — ctx identifies the provider and the host
+/// derives the provider's manifest id from that binding itself. A plugin
+/// must therefore never share a bound view across plugin instances (e.g.
+/// cache one in a static and hand it to a sibling instance): doing so would
+/// let one provider promote a source under another provider's identity.
+class SourcePromotionHostView {
  public:
-  MaterializedSourceHostView() = default;
-  explicit MaterializedSourceHostView(PJ_materialized_source_host_t host) : host_(host) {}
+  SourcePromotionHostView() = default;
+  explicit SourcePromotionHostView(PJ_source_promotion_host_t host) : host_(host) {}
 
   [[nodiscard]] bool valid() const noexcept {
     return host_.ctx != nullptr && host_.vtable != nullptr &&
-           host_.vtable->struct_size >=
-               offsetof(PJ_materialized_source_host_vtable_t, adopt) + sizeof(host_.vtable->adopt) &&
-           host_.vtable->adopt != nullptr;
+           host_.vtable->struct_size >= offsetof(PJ_source_promotion_host_vtable_t, promote_to_file_source) +
+                                            sizeof(host_.vtable->promote_to_file_source) &&
+           host_.vtable->promote_to_file_source != nullptr;
   }
 
-  /// [thread-safe, asynchronous] See PJ_materialized_source_host_vtable_t::adopt.
+  /// [thread-safe, asynchronous] See PJ_source_promotion_host_vtable_t::promote_to_file_source.
   /// An ok return means the request was ACCEPTED/queued only — it does NOT
-  /// mean the adoption transaction itself succeeded. Success or failure of
+  /// mean the promotion transaction itself succeeded. Success or failure of
   /// the transaction arrives exclusively through @p on_result's `ok`
   /// argument (mirrors the C header's accepted-vs-succeeded distinction —
-  /// see PJ_materialized_source_host_vtable_t::adopt's doc-comment).
+  /// see PJ_source_promotion_host_vtable_t::promote_to_file_source's
+  /// doc-comment).
   ///
   /// On acceptance, @p on_result runs exactly once, on the host's
-  /// adopt-result callback thread [host-callback-thread]: serialized per
+  /// promotion-result callback thread [host-callback-thread]: serialized per
   /// request, but NOT promised to be the main/GUI thread — do not touch
   /// main-thread-only state from @p on_result. It may run re-entrantly,
   /// before this call even returns, or well after (the normal shape — see
   /// the class doc's lifetime note above). A synchronous rejection returns
   /// an error Status and @p on_result never runs. @p on_result must not
   /// throw; an escaping exception is swallowed (the result is then lost —
-  /// the caller will never observe this adopt() call's outcome).
-  [[nodiscard]] Status adopt(const AdoptRequest& request, std::function<void(bool, std::string)> on_result) const {
+  /// the caller will never observe this promoteToFileSource() call's
+  /// outcome).
+  [[nodiscard]] Status promoteToFileSource(
+      const SourcePromotionRequest& request, std::function<void(bool, std::string)> on_result) const {
     if (!valid()) {
-      return unexpected("materialized source host service is not available");
+      return unexpected("source promotion host service is not available");
     }
 
-    PJ_materialized_source_adopt_request_v1_t raw{};
+    PJ_source_promotion_request_v1_t raw{};
     raw.struct_size = sizeof(raw);
     raw.dataset = PJ_data_source_handle_t{request.dataset};
     raw.source_identity = sdk::toAbiString(request.source_identity);
@@ -553,15 +560,16 @@ class MaterializedSourceHostView {
     auto ctx = std::make_unique<std::function<void(bool, std::string)>>(std::move(on_result));
 
     // Transfer ownership to the raw pointer BEFORE calling into the host: a
-    // re-entrant thunk (result_cb invoked synchronously, before adopt()
-    // returns) may free the pointee before this function resumes below.
-    // unique_ptr::release() only ever reads/clears its OWN stored pointer
-    // value — never the pointee — so this stays formally correct regardless
-    // of whether the thunk has already run by the time we get here.
+    // re-entrant thunk (result_cb invoked synchronously, before
+    // promoteToFileSource() returns) may free the pointee before this
+    // function resumes below. unique_ptr::release() only ever reads/clears
+    // its OWN stored pointer value — never the pointee — so this stays
+    // formally correct regardless of whether the thunk has already run by
+    // the time we get here.
     auto* raw_ctx = ctx.release();
 
     PJ_error_t err{};
-    if (!host_.vtable->adopt(host_.ctx, &raw, &MaterializedSourceHostView::resultThunk, raw_ctx, &err)) {
+    if (!host_.vtable->promote_to_file_source(host_.ctx, &raw, &SourcePromotionHostView::resultThunk, raw_ctx, &err)) {
       // Synchronous rejection: result_cb will never run. Reclaim ownership
       // so the context is still freed exactly once.
       const std::unique_ptr<std::function<void(bool, std::string)>> reclaimed{raw_ctx};
@@ -572,12 +580,13 @@ class MaterializedSourceHostView {
   }
 
  private:
-  /// [host-callback-thread] Per PJ_materialized_source_host_vtable_t::adopt's
-  /// contract, the host must invoke an ACCEPTED request's result_cb EXACTLY
-  /// ONCE. A second invocation is undefined behavior — use-after-free on the
-  /// closure this thunk already freed on the first call — and there is no
-  /// cheap defense against it: a "consumed" flag would itself have to live
-  /// in the same heap block this thunk frees on the first call.
+  /// [host-callback-thread] Per
+  /// PJ_source_promotion_host_vtable_t::promote_to_file_source's contract,
+  /// the host must invoke an ACCEPTED request's result_cb EXACTLY ONCE. A
+  /// second invocation is undefined behavior — use-after-free on the closure
+  /// this thunk already freed on the first call — and there is no cheap
+  /// defense against it: a "consumed" flag would itself have to live in the
+  /// same heap block this thunk frees on the first call.
   static void resultThunk(void* callback_ctx, bool ok, PJ_string_view_t message) noexcept {
     if (callback_ctx == nullptr) {
       return;
@@ -594,27 +603,27 @@ class MaterializedSourceHostView {
       // Host-callback thread crossing the ABI boundary: never let an
       // exception from the caller's closure unwind into the host. The
       // result is then lost — the caller's on_result will never observe
-      // this adopt() call's outcome.
+      // this promoteToFileSource() call's outcome.
     }
   }
 
-  PJ_materialized_source_host_t host_{};
+  PJ_source_promotion_host_t host_{};
 };
 
 }  // namespace PJ
 
 namespace PJ::sdk {
 
-/// Service trait for the optional per-plugin-instance adoption service
-/// ("pj.materialized_source.v1"). Absence from the registry means the host
-/// has no adoption support. See MaterializedSourceHostView's doc-comment for
-/// the per-plugin-instance binding contract.
-struct MaterializedSourceHostService {
-  static constexpr const char* kName = PJ_MATERIALIZED_SOURCE_HOST_SERVICE_V1;
+/// Service trait for the optional per-plugin-instance source-promotion
+/// service ("pj.source_promotion.v1"). Absence from the registry means the
+/// host has no source-promotion support. See SourcePromotionHostView's
+/// doc-comment for the per-plugin-instance binding contract.
+struct SourcePromotionHostService {
+  static constexpr const char* kName = PJ_SOURCE_PROMOTION_HOST_SERVICE_V1;
   static constexpr uint32_t kMinVersion = 1;
-  using Raw = PJ_materialized_source_host_t;
-  using Vtable = PJ_materialized_source_host_vtable_t;
-  using View = ::PJ::MaterializedSourceHostView;
+  using Raw = PJ_source_promotion_host_t;
+  using Vtable = PJ_source_promotion_host_vtable_t;
+  using View = ::PJ::SourcePromotionHostView;
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 

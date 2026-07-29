@@ -5,17 +5,17 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.20.0]
 
-### Feature: descriptor import v1 — import a persisted source descriptor, adopt the materialized artifact (MINOR)
+### Feature: descriptor import v1 — import a persisted source descriptor, promote the materialized artifact (MINOR)
 
 A provider plugin (any family) can now advertise "pj.descriptor_import.v1"
 through the existing `get_plugin_extension` hook, and a host can offer the
-optional "pj.materialized_source.v1" adoption service through the `bind()`
-registry — zero new family-vtable slots, no capability bit (presence =
-capability). This is the SDK half of a canonical-layout-replay design: a
+optional "pj.source_promotion.v1" source-promotion service through the
+`bind()` registry — zero new family-vtable slots, no capability bit (presence
+= capability). This is the SDK half of a canonical-layout-replay design: a
 layout stores an opaque provider descriptor; on load the host queries the
 provider (trust + identity + planned artifact path + `estimated_bytes`),
-optionally starts an import job, and the provider asks the host to adopt its
-materialized artifact as a stock file-backed source.
+optionally starts an import job, and the provider asks the host to promote
+its materialized artifact to a stock file-backed source.
 
 - New family-neutral installed C header `pj_base/descriptor_import_protocol.h`:
   `PJ_descriptor_import_provider_v1_t` with `query_descriptor` (sync, strictly
@@ -24,22 +24,23 @@ materialized artifact as a stock file-backed source.
   a caller-sized `PJ_descriptor_import_start_request_v1_t{descriptor_json,
   flags, max_transfer_bytes}` (v1 flags mask = 0 — unknown bits fail closed)
   with exactly two serialized callbacks: `on_dataset` (zero-or-one, precedes
-  the dataset's progress/publication/adoption) and `on_terminal` (exactly-once,
-  last: SUCCEEDED_MATERIALIZED / SUCCEEDED_UNMATERIALIZED / FAILED /
+  the dataset's progress/publication/promotion) and `on_terminal`
+  (exactly-once, last: SUCCEEDED_PROMOTED / SUCCEEDED_EAGER_ONLY / FAILED /
   CANCELLED), returning a joinable-job fat pointer (cancel / join / destroy).
-  The adoption request carries provider-supplied `loader_plugin_id` +
-  `loader_config_json` so a non-MCAP artifact adopts through its own companion
-  loader; the service is bound per plugin instance so the host derives the
-  provider identity itself. Every new appendable struct is struct_size-versioned
-  under an explicit growth contract (owner zero-initializes, peer touches only
-  fields wholly covered); the two fat-pointer handles are deliberately
-  ABI-frozen; enums are FORCE_INT32-pinned with fail-closed unknowns.
+  The promotion request carries provider-supplied `loader_plugin_id` +
+  `loader_config_json` so a non-MCAP artifact promotes through its own
+  companion loader; the service is bound per plugin instance so the host
+  derives the provider identity itself. Every new appendable struct is
+  struct_size-versioned under an explicit growth contract (owner
+  zero-initializes, peer touches only fields wholly covered); the two
+  fat-pointer handles are deliberately ABI-frozen; enums are
+  FORCE_INT32-pinned with fail-closed unknowns.
 - C++ wrappers in `pj_base/sdk/descriptor_import.hpp`:
   `DescriptorImportProviderView` (typed extension consumer, fail-closed enum
   mapping), RAII `JoinableJob` (owns the callback closures; destroy-before-
   release ordering; refuses ABI-violating job handles leak-over-UAF),
-  `MaterializedSourceHostView` + `PJ::sdk::MaterializedSourceHostService`
-  trait.
+  `SourcePromotionHostView::promoteToFileSource()` +
+  `PJ::sdk::SourcePromotionHostService` trait.
 - Generic dataset-ingest lifecycle: `DatasetIngestHostView` (progress
   start/update/finish, cooperative stop, report, parser access) obtained via
   new `ToolboxRuntimeHostView::createDatasetIngest()` /
