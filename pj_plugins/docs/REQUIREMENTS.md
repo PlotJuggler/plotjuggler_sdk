@@ -135,6 +135,10 @@ Toolbox plugins receive a simpler runtime host:
 
 - Message reporting.
 - Data-change notification (triggers host UI refresh).
+- Dataset-scoped ingest lifecycle (progress bar, cooperative stop, delegated
+  parser binding) for a dataset the toolbox creates — `createDatasetIngest()` /
+  `releaseDatasetIngest()`, the same underlying context DataSource delegated
+  ingest uses.
 
 ### 4.4 UI Surface
 

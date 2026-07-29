@@ -410,6 +410,46 @@ row-of-fields shape. See
   using `PJ::testing::ToolboxTestStore` (in `pj_plugins/include/pj_plugins/testing/`)
   to drive a toolbox plugin through ingest, transform, and config scenarios.
 
+## Descriptor import and source promotion (0.20.0)
+
+A toolbox (or any plugin family) that can re-create a dataset from a persisted
+descriptor — a cloud session, a database query — advertises
+`pj.descriptor_import.v1` from `pluginExtension()` by returning a static
+`PJ_descriptor_import_provider_v1_t` (`pj_base/descriptor_import_protocol.h`):
+
+- `query_descriptor` is synchronous and strictly bounded (no network, no
+  credential resolution, no blocking locks): it classifies trust
+  (refused / needs-confirmation / trusted), reports whether the artifact is
+  already materialized locally, and ALWAYS returns the provider's canonical
+  `source_identity`, the planned `local_path_utf8`, and `estimated_bytes`
+  (0 = unknown).
+- `start_import` launches the asynchronous import job (caller-sized request:
+  descriptor + flags + `max_transfer_bytes` ceiling). Exactly two serialized
+  callbacks: `on_dataset` (zero-or-one — announce the provisional dataset
+  BEFORE any progress/publication/promotion) and `on_terminal` (exactly-once,
+  last). Progress, publish ticks and cooperative stop do NOT ride the job:
+  they ride the dataset-scoped ingest lifecycle below.
+
+During the import the provider drives the standard ingest lifecycle through
+`ToolboxRuntimeHostView::createDatasetIngest(dataset_id)` — the canonical
+dataset-scoped surface for BOTH delegated parsing (`ensureParserBinding` /
+`pushMessage`) and direct writes (Arrow or scalar appends through
+`ToolboxHostView`, using the view only for progress/stop; the host refresh
+still travels through `notifyDataChanged()`). When the artifact
+file is complete, the provider asks the host to promote it to a stock
+file-backed source through the optional per-instance
+`pj.source_promotion.v1` service
+(`PJ::sdk::SourcePromotionHostService::promoteToFileSource()`): the request
+names the dataset, the artifact path, the provider's `source_identity`, the
+descriptor, and the loader (`loader_plugin_id` + `loader_config_json`) that
+can re-ingest the artifact with eager-path-identical semantics. Promotion is
+asynchronous — an accepted `promoteToFileSource()` only means queued; success
+arrives via the result callback. A provider that cannot yet produce such an
+artifact reports `SUCCEEDED_EAGER_ONLY` instead.
+
+C++ consumers: `PJ::DescriptorImportProviderView`, `PJ::JoinableJob`,
+`PJ::SourcePromotionHostView` in `pj_base/sdk/descriptor_import.hpp`.
+
 ## Common Mistakes
 
 | Symptom | Cause | Fix |

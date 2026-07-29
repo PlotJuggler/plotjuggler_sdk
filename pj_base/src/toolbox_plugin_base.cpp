@@ -5,7 +5,8 @@
 
 namespace PJ {
 
-Expected<ParserIngestHostView> ToolboxRuntimeHostView::createParserIngest(uint32_t data_source_id) const {
+Expected<PJ_data_source_runtime_host_t> ToolboxRuntimeHostView::acquireParserIngestContext(
+    uint32_t data_source_id) const {
   if (!valid()) {
     return unexpected("toolbox runtime host is not bound");
   }
@@ -17,7 +18,15 @@ Expected<ParserIngestHostView> ToolboxRuntimeHostView::createParserIngest(uint32
   if (!host_.vtable->create_parser_ingest(host_.ctx, data_source_id, &raw, &err)) {
     return unexpected(errorToString(err));
   }
-  return ParserIngestHostView{raw};
+  return raw;
+}
+
+Expected<ParserIngestHostView> ToolboxRuntimeHostView::createParserIngest(uint32_t data_source_id) const {
+  auto raw = acquireParserIngestContext(data_source_id);
+  if (!raw) {
+    return unexpected(std::move(raw).error());
+  }
+  return ParserIngestHostView{*raw};
 }
 
 Status ToolboxRuntimeHostView::releaseParserIngest(uint32_t data_source_id) const {
@@ -32,6 +41,18 @@ Status ToolboxRuntimeHostView::releaseParserIngest(uint32_t data_source_id) cons
     return unexpected(errorToString(err));
   }
   return okStatus();
+}
+
+Expected<DatasetIngestHostView> ToolboxRuntimeHostView::createDatasetIngest(uint32_t data_source_id) const {
+  auto raw = acquireParserIngestContext(data_source_id);
+  if (!raw) {
+    return unexpected(std::move(raw).error());
+  }
+  return DatasetIngestHostView{*raw};
+}
+
+Status ToolboxRuntimeHostView::releaseDatasetIngest(uint32_t data_source_id) const {
+  return releaseParserIngest(data_source_id);
 }
 
 Status ToolboxPluginBase::bind(sdk::ServiceRegistry services) {
