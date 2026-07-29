@@ -30,7 +30,7 @@
 #include <cstdint>
 
 #include "pj_base/data_source_protocol.h"
-#include "pj_base/descriptor_replay_protocol.h"
+#include "pj_base/descriptor_import_protocol.h"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/toolbox_protocol.h"
@@ -211,14 +211,14 @@ static_assert(
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 5, "v5 ABI version");
 
-// ---- descriptor_replay_protocol.h (new in 0.20.0) --------------------------
+// ---- descriptor_import_protocol.h (new in 0.20.0) --------------------------
 // First ABI pins for extension/service structs. Same maintenance rule as
 // above: tails may grow (update sizeof deliberately); existing offsets never
 // move.
 
 static_assert(sizeof(PJ_descriptor_trust_t) == 4, "PJ_descriptor_trust_t enum layout pinned");
-static_assert(sizeof(PJ_descriptor_replay_outcome_t) == 4, "PJ_descriptor_replay_outcome_t enum layout pinned");
-static_assert(sizeof(PJ_descriptor_replay_start_flags_t) == 8, "PJ_descriptor_replay_start_flags_t width pinned");
+static_assert(sizeof(PJ_descriptor_import_outcome_t) == 4, "PJ_descriptor_import_outcome_t enum layout pinned");
+static_assert(sizeof(PJ_descriptor_import_start_flags_t) == 8, "PJ_descriptor_import_start_flags_t width pinned");
 
 static_assert(
     offsetof(PJ_descriptor_query_result_v1_t, struct_size) == 0,
@@ -247,39 +247,39 @@ static_assert(
     "PJ_descriptor_query_result_v1_t size (update deliberately on append)");
 
 static_assert(
-    offsetof(PJ_descriptor_replay_start_request_v1_t, struct_size) == 0,
-    "PJ_descriptor_replay_start_request_v1_t.struct_size offset frozen");
+    offsetof(PJ_descriptor_import_start_request_v1_t, struct_size) == 0,
+    "PJ_descriptor_import_start_request_v1_t.struct_size offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_start_request_v1_t, reserved0) == 4,
-    "PJ_descriptor_replay_start_request_v1_t.reserved0 offset frozen");
+    offsetof(PJ_descriptor_import_start_request_v1_t, reserved0) == 4,
+    "PJ_descriptor_import_start_request_v1_t.reserved0 offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_start_request_v1_t, descriptor_json) == 8,
-    "PJ_descriptor_replay_start_request_v1_t.descriptor_json offset frozen");
+    offsetof(PJ_descriptor_import_start_request_v1_t, descriptor_json) == 8,
+    "PJ_descriptor_import_start_request_v1_t.descriptor_json offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_start_request_v1_t, flags) == 24,
-    "PJ_descriptor_replay_start_request_v1_t.flags offset frozen");
+    offsetof(PJ_descriptor_import_start_request_v1_t, flags) == 24,
+    "PJ_descriptor_import_start_request_v1_t.flags offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_start_request_v1_t, max_transfer_bytes) == 32,
-    "PJ_descriptor_replay_start_request_v1_t.max_transfer_bytes offset frozen");
+    offsetof(PJ_descriptor_import_start_request_v1_t, max_transfer_bytes) == 32,
+    "PJ_descriptor_import_start_request_v1_t.max_transfer_bytes offset frozen");
 static_assert(
-    sizeof(PJ_descriptor_replay_start_request_v1_t) == 40,
-    "PJ_descriptor_replay_start_request_v1_t size (update deliberately on append)");
+    sizeof(PJ_descriptor_import_start_request_v1_t) == 40,
+    "PJ_descriptor_import_start_request_v1_t size (update deliberately on append)");
 
 static_assert(
-    offsetof(PJ_descriptor_replay_callbacks_v1_t, struct_size) == 0,
-    "PJ_descriptor_replay_callbacks_v1_t.struct_size offset frozen");
+    offsetof(PJ_descriptor_import_callbacks_v1_t, struct_size) == 0,
+    "PJ_descriptor_import_callbacks_v1_t.struct_size offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_callbacks_v1_t, reserved0) == 4,
-    "PJ_descriptor_replay_callbacks_v1_t.reserved0 offset frozen");
+    offsetof(PJ_descriptor_import_callbacks_v1_t, reserved0) == 4,
+    "PJ_descriptor_import_callbacks_v1_t.reserved0 offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_callbacks_v1_t, on_dataset) == 8,
-    "PJ_descriptor_replay_callbacks_v1_t.on_dataset offset frozen");
+    offsetof(PJ_descriptor_import_callbacks_v1_t, on_dataset) == 8,
+    "PJ_descriptor_import_callbacks_v1_t.on_dataset offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_callbacks_v1_t, on_terminal) == 16,
-    "PJ_descriptor_replay_callbacks_v1_t.on_terminal offset frozen");
+    offsetof(PJ_descriptor_import_callbacks_v1_t, on_terminal) == 16,
+    "PJ_descriptor_import_callbacks_v1_t.on_terminal offset frozen");
 static_assert(
-    sizeof(PJ_descriptor_replay_callbacks_v1_t) == 24,
-    "PJ_descriptor_replay_callbacks_v1_t size (update deliberately on append)");
+    sizeof(PJ_descriptor_import_callbacks_v1_t) == 24,
+    "PJ_descriptor_import_callbacks_v1_t size (update deliberately on append)");
 
 static_assert(
     offsetof(PJ_joinable_job_vtable_t, struct_size) == 0, "PJ_joinable_job_vtable_t.struct_size offset frozen");
@@ -291,20 +291,20 @@ static_assert(sizeof(PJ_joinable_job_vtable_t) == 32, "PJ_joinable_job_vtable_t 
 static_assert(sizeof(PJ_joinable_job_t) == 16, "PJ_joinable_job_t fat pointer pinned");
 
 static_assert(
-    offsetof(PJ_descriptor_replay_provider_v1_t, struct_size) == 0,
-    "PJ_descriptor_replay_provider_v1_t.struct_size offset frozen");
+    offsetof(PJ_descriptor_import_provider_v1_t, struct_size) == 0,
+    "PJ_descriptor_import_provider_v1_t.struct_size offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_provider_v1_t, reserved0) == 4,
-    "PJ_descriptor_replay_provider_v1_t.reserved0 offset frozen");
+    offsetof(PJ_descriptor_import_provider_v1_t, reserved0) == 4,
+    "PJ_descriptor_import_provider_v1_t.reserved0 offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_provider_v1_t, query_descriptor) == 8,
-    "PJ_descriptor_replay_provider_v1_t.query_descriptor offset frozen");
+    offsetof(PJ_descriptor_import_provider_v1_t, query_descriptor) == 8,
+    "PJ_descriptor_import_provider_v1_t.query_descriptor offset frozen");
 static_assert(
-    offsetof(PJ_descriptor_replay_provider_v1_t, start_replay) == 16,
-    "PJ_descriptor_replay_provider_v1_t.start_replay offset frozen");
+    offsetof(PJ_descriptor_import_provider_v1_t, start_import) == 16,
+    "PJ_descriptor_import_provider_v1_t.start_import offset frozen");
 static_assert(
-    sizeof(PJ_descriptor_replay_provider_v1_t) == 24,
-    "PJ_descriptor_replay_provider_v1_t size (update deliberately on append)");
+    sizeof(PJ_descriptor_import_provider_v1_t) == 24,
+    "PJ_descriptor_import_provider_v1_t size (update deliberately on append)");
 
 static_assert(
     offsetof(PJ_materialized_source_adopt_request_v1_t, struct_size) == 0,

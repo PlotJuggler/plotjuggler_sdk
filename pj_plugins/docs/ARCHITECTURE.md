@@ -101,15 +101,15 @@ for known ids or `nullptr`. Hosts call via `handle.getPluginExtension(id)`
 (tail-slot-gated). Use the experimental namespace for work-in-progress
 extensions; graduate to stable (`pj.<name>.v1`) once locked in.
 
-Stable family-neutral example: `"pj.descriptor_replay.v1"`
-(`PJ_descriptor_replay_provider_v1_t`, declared in the standalone header
-`pj_base/descriptor_replay_protocol.h` — any plugin family can return it from
+Stable family-neutral example: `"pj.descriptor_import.v1"`
+(`PJ_descriptor_import_provider_v1_t`, declared in the standalone header
+`pj_base/descriptor_import_protocol.h` — any plugin family can return it from
 `get_plugin_extension`), paired with the optional host-side
 `"pj.materialized_source.v1"` service (`PJ_materialized_source_host_vtable_t`,
 same header) acquired through `bind()`'s service registry and bound per
-plugin instance. C++ wrappers (`DescriptorReplayProviderView`, `JoinableJob`,
-`MaterializedSourceHostView`) live in `pj_base/sdk/descriptor_replay.hpp`.
-See `docs/toolbox-guide.md` → "Descriptor replay and materialized-source
+plugin instance. C++ wrappers (`DescriptorImportProviderView`, `JoinableJob`,
+`MaterializedSourceHostView`) live in `pj_base/sdk/descriptor_import.hpp`.
+See `docs/toolbox-guide.md` → "Descriptor import and materialized-source
 adoption" for the plugin-author walkthrough.
 
 ## 0. C protocol v4 (current under ABI v5)
@@ -156,10 +156,10 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   `"pj.runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`,
   `"pj.settings.v1"`, `"pj.data_processors.v1"`, `"pj.materialized_source.v1"`).
   Plugins acquire only the services they use. `"pj.materialized_source.v1"`
-  (optional, bound per plugin instance) lets a descriptor-replay provider hand
+  (optional, bound per plugin instance) lets a descriptor-import provider hand
   a materialized artifact to the host for adoption as a stock file-backed
   source — see "Plugin extension query" above and
-  `pj_base/descriptor_replay_protocol.h`. `"pj.data_processors.v1"` (optional) lets a toolbox create
+  `pj_base/descriptor_import_protocol.h`. `"pj.data_processors.v1"` (optional) lets a toolbox create
   catalog-resident transform nodes in the host by data — a script plus
   input/output names and a params JSON blob; nothing executable crosses the
   boundary (the host owns execution). The script payload is **binary-safe**
@@ -234,7 +234,7 @@ pj_base/
     message_parser_protocol.h     ← C ABI
     toolbox_protocol.h            ← C ABI
     plugin_data_api.h             ← shared data-plane ABI (write hosts)
-    descriptor_replay_protocol.h  ← C ABI: pj.descriptor_replay.v1 extension +
+    descriptor_import_protocol.h  ← C ABI: pj.descriptor_import.v1 extension +
                                      pj.materialized_source.v1 host service
                                      (family-neutral)
     sdk/
@@ -242,7 +242,7 @@ pj_base/
       data_source_patterns.hpp      ← FileSourceBase, StreamSourceBase
       toolbox_plugin_base.hpp
       plugin_data_api.hpp           ← C++ wrappers for data hosts
-      descriptor_replay.hpp         ← C++ wrappers: DescriptorReplayProviderView,
+      descriptor_import.hpp         ← C++ wrappers: DescriptorImportProviderView,
                                        JoinableJob, MaterializedSourceHostView
 
 pj_plugins/

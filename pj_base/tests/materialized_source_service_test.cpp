@@ -24,8 +24,8 @@
 #include <utility>
 #include <vector>
 
-#include "pj_base/descriptor_replay_protocol.h"
-#include "pj_base/sdk/descriptor_replay.hpp"
+#include "pj_base/descriptor_import_protocol.h"
+#include "pj_base/sdk/descriptor_import.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 

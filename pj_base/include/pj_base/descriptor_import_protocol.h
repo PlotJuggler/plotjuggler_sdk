@@ -1,12 +1,12 @@
 /**
- * @file descriptor_replay_protocol.h
- * @brief Descriptor replay v1 — a FAMILY-NEUTRAL plugin extension + host
- * service pair for replaying a persisted "source descriptor" (an opaque,
+ * @file descriptor_import_protocol.h
+ * @brief Descriptor import v1 — a FAMILY-NEUTRAL plugin extension + host
+ * service pair for importing a persisted "source descriptor" (an opaque,
  * provider-defined JSON document, typically stored in a layout file) back
  * into a loaded dataset, and for adopting the provider's materialized
  * artifact as a stock file-backed source.
  *
- *  - Plugin side: "pj.descriptor_replay.v1" (PJ_descriptor_replay_provider_v1_t),
+ *  - Plugin side: "pj.descriptor_import.v1" (PJ_descriptor_import_provider_v1_t),
  *    returned from ANY plugin family's get_plugin_extension hook (see
  *    PJ_data_source_vtable_t::get_plugin_extension for the hook contract).
  *    plugin_ctx is the originating plugin-family instance context — the same
@@ -20,7 +20,7 @@
  *
  * Thread tags used below, beyond plugin_data_api.h's [main-thread] /
  * [thread-safe] set:
- *   [job-callback-thread, serialized]  A started replay job's callback
+ *   [job-callback-thread, serialized]  A started import job's callback
  *                                      thread; serialized, not necessarily main.
  *   [blocking, not-callback-thread]    May block; never call from a job or
  *                                      host callback.
@@ -44,7 +44,7 @@
  *  - query_descriptor inputs live for the call; views in out_result live
  *    until the NEXT query_descriptor call on the same plugin instance — the
  *    caller copies immediately.
- *  - start_replay copies the request contents and the callback function
+ *  - start_import copies the request contents and the callback function
  *    pointers before returning; no job callback may occur before it returns
  *    true.
  *  - Job callbacks are serialized but may arrive off the main thread; the
@@ -59,8 +59,8 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef PJ_DESCRIPTOR_REPLAY_PROTOCOL_H
-#define PJ_DESCRIPTOR_REPLAY_PROTOCOL_H
+#ifndef PJ_DESCRIPTOR_IMPORT_PROTOCOL_H
+#define PJ_DESCRIPTOR_IMPORT_PROTOCOL_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -73,14 +73,14 @@ extern "C" {
 #endif
 
 /* ==========================================================================
- * Plugin extension: "pj.descriptor_replay.v1"
+ * Plugin extension: "pj.descriptor_import.v1"
  *
  * Returned from any plugin family's get_plugin_extension() hook. Lets a
- * plugin advertise descriptor-query and replay-start support without a
+ * plugin advertise descriptor-query and import-start support without a
  * family protocol bump. See the file doc-block above for the full contract.
  * ========================================================================== */
 
-#define PJ_DESCRIPTOR_REPLAY_EXTENSION_V1 "pj.descriptor_replay.v1"
+#define PJ_DESCRIPTOR_IMPORT_EXTENSION_V1 "pj.descriptor_import.v1"
 #define PJ_MATERIALIZED_SOURCE_HOST_SERVICE_V1 "pj.materialized_source.v1"
 
 /** Unknown/future trust values fail closed: treat as REFUSED. */
@@ -93,21 +93,21 @@ typedef enum PJ_descriptor_trust_t {
 } PJ_descriptor_trust_t;
 
 /** Unknown/future outcome values fail closed: treat as FAILED. */
-typedef enum PJ_descriptor_replay_outcome_t {
-  PJ_DESCRIPTOR_REPLAY_FAILED = 0,
-  PJ_DESCRIPTOR_REPLAY_CANCELLED = 1,
-  /* Replay produced a usable eager dataset but no adoptable artifact. */
-  PJ_DESCRIPTOR_REPLAY_SUCCEEDED_UNMATERIALIZED = 2,
-  PJ_DESCRIPTOR_REPLAY_SUCCEEDED_MATERIALIZED = 3,
+typedef enum PJ_descriptor_import_outcome_t {
+  PJ_DESCRIPTOR_IMPORT_FAILED = 0,
+  PJ_DESCRIPTOR_IMPORT_CANCELLED = 1,
+  /* Import produced a usable eager dataset but no adoptable artifact. */
+  PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED = 2,
+  PJ_DESCRIPTOR_IMPORT_SUCCEEDED_MATERIALIZED = 3,
   /* Forces a stable 4-byte width across compilers. Not a real state. */
-  PJ_DESCRIPTOR_REPLAY_OUTCOME_FORCE_INT32 = 0x7FFFFFFF
-} PJ_descriptor_replay_outcome_t;
+  PJ_DESCRIPTOR_IMPORT_OUTCOME_FORCE_INT32 = 0x7FFFFFFF
+} PJ_descriptor_import_outcome_t;
 
-typedef uint64_t PJ_descriptor_replay_start_flags_t;
+typedef uint64_t PJ_descriptor_import_start_flags_t;
 
 /* V1 defines no optional modes. Added flag bits require an SDK MINOR. */
-#define PJ_DESCRIPTOR_REPLAY_START_FLAG_NONE UINT64_C(0)
-#define PJ_DESCRIPTOR_REPLAY_START_FLAGS_V1_MASK UINT64_C(0)
+#define PJ_DESCRIPTOR_IMPORT_START_FLAG_NONE UINT64_C(0)
+#define PJ_DESCRIPTOR_IMPORT_START_FLAGS_V1_MASK UINT64_C(0)
 
 /*
  * Caller zero-initializes its complete available capacity, then sets
@@ -129,7 +129,7 @@ typedef struct PJ_descriptor_query_result_v1_t {
   PJ_string_view_t message; /* optional refusal/confirmation explanation */
 
   /*
-   * Best estimate of provider payload bytes that replay would transfer,
+   * Best estimate of provider payload bytes that import would transfer,
    * measured consistently with max_transfer_bytes. Zero means unknown.
    * Derived from the descriptor or local metadata — never the network.
    */
@@ -140,29 +140,29 @@ typedef struct PJ_descriptor_query_result_v1_t {
  * Caller-owned and caller-sized. The caller zero-initializes the complete
  * allocation, then sets struct_size.
  *
- * descriptor_json is valid for the call; start_replay copies it before
+ * descriptor_json is valid for the call; start_import copies it before
  * returning successfully. Runtime options live HERE, never in the descriptor
  * (the descriptor is the persisted identity artifact).
  */
-typedef struct PJ_descriptor_replay_start_request_v1_t {
+typedef struct PJ_descriptor_import_start_request_v1_t {
   uint32_t struct_size;
   uint32_t reserved0; /* must be zero */
 
   PJ_string_view_t descriptor_json;
-  PJ_descriptor_replay_start_flags_t flags;
+  PJ_descriptor_import_start_flags_t flags;
 
   /*
-   * Maximum provider payload bytes that may be transferred by this replay.
+   * Maximum provider payload bytes that may be transferred by this import.
    * Zero means no additional caller-imposed ceiling; provider-configured
    * hard resource limits still apply.
    */
   uint64_t max_transfer_bytes;
-} PJ_descriptor_replay_start_request_v1_t;
+} PJ_descriptor_import_start_request_v1_t;
 
 /*
- * General-purpose cancel/join/destroy shape — not descriptor-replay-specific.
+ * General-purpose cancel/join/destroy shape — not descriptor-import-specific.
  * Other future async plugin APIs may reuse it as-is; it lives in this header
- * only because descriptor replay v1 is its first consumer. Its layout is
+ * only because descriptor import v1 is its first consumer. Its layout is
  * frozen regardless of what else comes to depend on it.
  */
 typedef struct PJ_joinable_job_vtable_t {
@@ -191,7 +191,7 @@ typedef struct PJ_joinable_job_t {
   const PJ_joinable_job_vtable_t* vtable;
 } PJ_joinable_job_t;
 
-typedef struct PJ_descriptor_replay_callbacks_v1_t {
+typedef struct PJ_descriptor_import_callbacks_v1_t {
   uint32_t struct_size;
   uint32_t reserved0; /* must be zero */
 
@@ -205,17 +205,17 @@ typedef struct PJ_descriptor_replay_callbacks_v1_t {
    * [job-callback-thread, serialized] Exactly once and last. message is valid
    * only for the duration of the callback.
    */
-  void (*on_terminal)(void* callback_ctx, PJ_descriptor_replay_outcome_t outcome, PJ_string_view_t message) PJ_NOEXCEPT;
-} PJ_descriptor_replay_callbacks_v1_t;
+  void (*on_terminal)(void* callback_ctx, PJ_descriptor_import_outcome_t outcome, PJ_string_view_t message) PJ_NOEXCEPT;
+} PJ_descriptor_import_callbacks_v1_t;
 
 /*
  * Returned through any plugin family's get_plugin_extension() for
- * PJ_DESCRIPTOR_REPLAY_EXTENSION_V1. The plugin owns this struct; it must
+ * PJ_DESCRIPTOR_IMPORT_EXTENSION_V1. The plugin owns this struct; it must
  * stay valid for the plugin instance lifetime. plugin_ctx is the same
  * originating plugin-instance context passed to get_plugin_extension(); it is
  * never the extension-table pointer.
  */
-typedef struct PJ_descriptor_replay_provider_v1_t {
+typedef struct PJ_descriptor_import_provider_v1_t {
   uint32_t struct_size;
   uint32_t reserved0; /* must be zero */
 
@@ -235,17 +235,17 @@ typedef struct PJ_descriptor_replay_provider_v1_t {
    * no callbacks, and out_job untouched. On true: out_job is valid and
    * on_terminal will occur exactly once.
    */
-  bool (*start_replay)(
-      void* plugin_ctx, const PJ_descriptor_replay_start_request_v1_t* request,
-      const PJ_descriptor_replay_callbacks_v1_t* callbacks, void* callback_ctx, PJ_joinable_job_t* out_job,
+  bool (*start_import)(
+      void* plugin_ctx, const PJ_descriptor_import_start_request_v1_t* request,
+      const PJ_descriptor_import_callbacks_v1_t* callbacks, void* callback_ctx, PJ_joinable_job_t* out_job,
       PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_descriptor_replay_provider_v1_t;
+} PJ_descriptor_import_provider_v1_t;
 
 /* ==========================================================================
  * Host service: "pj.materialized_source.v1" (protocol_version 1)
  *
  * Acquired from the bind() service registry, bound per plugin instance.
- * Lets a descriptor-replay provider hand its materialized artifact to the
+ * Lets a descriptor-import provider hand its materialized artifact to the
  * host to be adopted as a stock file-backed source. Absence means the host
  * has no adoption support. See the file doc-block above for the full
  * contract.

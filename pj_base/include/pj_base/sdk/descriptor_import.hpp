@@ -1,13 +1,13 @@
 /**
- * @file descriptor_replay.hpp
- * @brief C++ wrappers for the descriptor-replay v1 extension + service pair:
- * DescriptorReplayProviderView, the RAII JoinableJob, MaterializedSourceHostView,
- * and their supporting value types. See pj_base/descriptor_replay_protocol.h
+ * @file descriptor_import.hpp
+ * @brief C++ wrappers for the descriptor-import v1 extension + service pair:
+ * DescriptorImportProviderView, the RAII JoinableJob, MaterializedSourceHostView,
+ * and their supporting value types. See pj_base/descriptor_import_protocol.h
  * for the full ABI/lifetime/threading contract this header wraps.
  *
  * Two halves, in order:
  *   - Extension CONSUMER half: a host reading a plugin's
- *     "pj.descriptor_replay.v1" extension (DescriptorReplayProviderView +
+ *     "pj.descriptor_import.v1" extension (DescriptorImportProviderView +
  *     JoinableJob).
  *   - Service half: a provider plugin consuming the host's
  *     "pj.materialized_source.v1" service via the bind() service registry
@@ -29,7 +29,7 @@
 #include <thread>
 #include <utility>
 
-#include "pj_base/descriptor_replay_protocol.h"
+#include "pj_base/descriptor_import_protocol.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_traits.hpp"
@@ -38,7 +38,7 @@
 namespace PJ {
 
 // ---------------------------------------------------------------------------
-// Extension consumer half: "pj.descriptor_replay.v1"
+// Extension consumer half: "pj.descriptor_import.v1"
 // A host reading a plugin's extension, obtained from that plugin family's
 // get_plugin_extension() hook.
 // ---------------------------------------------------------------------------
@@ -52,14 +52,14 @@ enum class DescriptorTrust : int32_t {
   kTrusted = PJ_DESCRIPTOR_TRUST_TRUSTED,
 };
 
-/// Fail-closed C++ mirror of PJ_descriptor_replay_outcome_t. Unknown/future
+/// Fail-closed C++ mirror of PJ_descriptor_import_outcome_t. Unknown/future
 /// values map to kFailed. Initialized directly from the C enumerators so the
 /// mirror can never drift.
-enum class ReplayOutcome : int32_t {
-  kFailed = PJ_DESCRIPTOR_REPLAY_FAILED,
-  kCancelled = PJ_DESCRIPTOR_REPLAY_CANCELLED,
-  kSucceededUnmaterialized = PJ_DESCRIPTOR_REPLAY_SUCCEEDED_UNMATERIALIZED,
-  kSucceededMaterialized = PJ_DESCRIPTOR_REPLAY_SUCCEEDED_MATERIALIZED,
+enum class DescriptorImportOutcome : int32_t {
+  kFailed = PJ_DESCRIPTOR_IMPORT_FAILED,
+  kCancelled = PJ_DESCRIPTOR_IMPORT_CANCELLED,
+  kSucceededUnmaterialized = PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED,
+  kSucceededMaterialized = PJ_DESCRIPTOR_IMPORT_SUCCEEDED_MATERIALIZED,
 };
 
 /// queryDescriptor result, copied immediately out of the C ABI's borrowed
@@ -74,9 +74,9 @@ struct DescriptorQueryResult {
   uint64_t estimated_bytes = 0;  ///< 0 = unknown
 };
 
-struct ReplayStartRequest {
+struct DescriptorImportStartRequest {
   std::string descriptor_json;
-  uint64_t flags = PJ_DESCRIPTOR_REPLAY_START_FLAG_NONE;
+  uint64_t flags = PJ_DESCRIPTOR_IMPORT_START_FLAG_NONE;
   uint64_t max_transfer_bytes = 0;  ///< 0 = no caller ceiling
 };
 
@@ -90,8 +90,8 @@ struct ReplayStartRequest {
 /// on_terminal) — destroy()/join() block until the callback thread quiesces,
 /// so doing so from that same thread is a self-join deadlock (or, per the
 /// underlying pthread/std::thread implementation, a terminate()). Discarding
-/// the Expected<JoinableJob> returned by startReplay (e.g. ignoring the
-/// return value) destroys it immediately, which cancels the replay.
+/// the Expected<JoinableJob> returned by startImport (e.g. ignoring the
+/// return value) destroys it immediately, which cancels the import.
 ///
 /// cancel() and join() are thread-safe with respect to the underlying JOB
 /// (the provider's vtable slots are documented [thread-safe] /
@@ -146,11 +146,11 @@ class JoinableJob {
   }
 
  private:
-  friend class DescriptorReplayProviderView;
+  friend class DescriptorImportProviderView;
 
   /// Callback closures plus a dispatch guard that lets a caller who has
   /// decided this context can never be safely freed (an ABI-violating job —
-  /// see DescriptorReplayProviderView::startReplay) permanently disable
+  /// see DescriptorImportProviderView::startImport) permanently disable
   /// dispatch through it instead.
   ///
   /// The guard is a SINGLE combined atomic — bit 31 (kDisabledBit) is the
@@ -179,7 +179,7 @@ class JoinableJob {
   /// flight.
   struct CallbackContext {
     std::function<void(DatasetId)> on_dataset;
-    std::function<void(ReplayOutcome, std::string)> on_terminal;
+    std::function<void(DescriptorImportOutcome, std::string)> on_terminal;
 
     static constexpr uint32_t kDisabledBit = 0x80000000u;
     std::atomic<uint32_t> dispatch_state{0};
@@ -212,7 +212,7 @@ class JoinableJob {
   /// this correct under a weak memory model. Once this returns, ctx's
   /// on_dataset/on_terminal are guaranteed to never run again — safe to free
   /// the closures (or leak the allocation) afterwards. Only ever called from
-  /// startReplay's ABI-violation path or reset()'s defensive leak branch
+  /// startImport's ABI-violation path or reset()'s defensive leak branch
   /// below; NEVER call it from inside one of ctx's own callbacks (that
   /// thread would be waiting on itself).
   static void quiesce(CallbackContext& ctx) noexcept {
@@ -235,7 +235,7 @@ class JoinableJob {
         // dispatch, waiting out anything already in flight) so the closures
         // can never run again, THEN leak the allocation rather than risk a
         // use-after-free — this only happens when a provider violates the
-        // ABI (see DescriptorReplayProviderView::startReplay, which handles
+        // ABI (see DescriptorImportProviderView::startImport, which handles
         // the common case of this directly; this branch is defense in depth
         // for any other path that might construct a JoinableJob).
         if (callback_ctx_) {
@@ -252,7 +252,7 @@ class JoinableJob {
   std::unique_ptr<CallbackContext> callback_ctx_;
 };
 
-/// Typed consumer of the "pj.descriptor_replay.v1" extension.
+/// Typed consumer of the "pj.descriptor_import.v1" extension.
 ///
 /// Non-owning: this view is just a (pointer, ctx) pair borrowed from the
 /// plugin instance and must not outlive it. Construct from the raw pointer
@@ -262,24 +262,24 @@ class JoinableJob {
 /// from it has been destroyed — this view holds no keep-alive of its own, so
 /// hosts must independently hold their ToolboxHandle/library owner for as
 /// long as any JoinableJob obtained through it is still alive.
-class DescriptorReplayProviderView {
+class DescriptorImportProviderView {
  public:
-  DescriptorReplayProviderView() = default;
+  DescriptorImportProviderView() = default;
 
-  DescriptorReplayProviderView(const void* extension, void* plugin_ctx)
-      : ext_(static_cast<const PJ_descriptor_replay_provider_v1_t*>(extension)), plugin_ctx_(plugin_ctx) {}
+  DescriptorImportProviderView(const void* extension, void* plugin_ctx)
+      : ext_(static_cast<const PJ_descriptor_import_provider_v1_t*>(extension)), plugin_ctx_(plugin_ctx) {}
 
   [[nodiscard]] bool valid() const noexcept {
     return ext_ != nullptr &&
            ext_->struct_size >=
-               offsetof(PJ_descriptor_replay_provider_v1_t, start_replay) + sizeof(ext_->start_replay) &&
-           ext_->query_descriptor != nullptr && ext_->start_replay != nullptr;
+               offsetof(PJ_descriptor_import_provider_v1_t, start_import) + sizeof(ext_->start_import) &&
+           ext_->query_descriptor != nullptr && ext_->start_import != nullptr;
   }
 
-  /// [main-thread, strictly bounded] See PJ_descriptor_replay_provider_v1_t::query_descriptor.
+  /// [main-thread, strictly bounded] See PJ_descriptor_import_provider_v1_t::query_descriptor.
   [[nodiscard]] Expected<DescriptorQueryResult> queryDescriptor(std::string_view descriptor_json) const {
     if (!valid()) {
-      return unexpected("descriptor replay provider extension is not available");
+      return unexpected("descriptor import provider extension is not available");
     }
     PJ_descriptor_query_result_v1_t raw{};
     raw.struct_size = sizeof(raw);
@@ -308,13 +308,13 @@ class DescriptorReplayProviderView {
     return result;
   }
 
-  /// [main-thread] See PJ_descriptor_replay_provider_v1_t::start_replay. On
+  /// [main-thread] See PJ_descriptor_import_provider_v1_t::start_import. On
   /// success, on_dataset fires zero-or-one time and on_terminal fires
   /// exactly once, both on a job-callback thread — never before this call
   /// returns. @p on_dataset and @p on_terminal must not throw: an escaping
   /// exception is swallowed at the ABI boundary (see onTerminalThunk), and
   /// for on_terminal specifically this means the completion notification is
-  /// lost — the caller will never observe that replay's outcome.
+  /// lost — the caller will never observe that import's outcome.
   ///
   /// On an ERROR return, @p on_dataset and @p on_terminal are guaranteed to
   /// never be invoked — including when the error comes from a provider that
@@ -323,23 +323,23 @@ class DescriptorReplayProviderView {
   /// (permanently disabled, waiting out anything already in flight) before
   /// this function returns, so the caller may safely tear down whatever its
   /// closures captured by reference as soon as it sees the error.
-  [[nodiscard]] Expected<JoinableJob> startReplay(
-      const ReplayStartRequest& request, std::function<void(DatasetId)> on_dataset,
-      std::function<void(ReplayOutcome, std::string)> on_terminal) const {
+  [[nodiscard]] Expected<JoinableJob> startImport(
+      const DescriptorImportStartRequest& request, std::function<void(DatasetId)> on_dataset,
+      std::function<void(DescriptorImportOutcome, std::string)> on_terminal) const {
     if (!valid()) {
-      return unexpected("descriptor replay provider extension is not available");
+      return unexpected("descriptor import provider extension is not available");
     }
 
-    PJ_descriptor_replay_start_request_v1_t raw_request{};
+    PJ_descriptor_import_start_request_v1_t raw_request{};
     raw_request.struct_size = sizeof(raw_request);
     raw_request.descriptor_json = sdk::toAbiString(request.descriptor_json);
     raw_request.flags = request.flags;
     raw_request.max_transfer_bytes = request.max_transfer_bytes;
 
-    PJ_descriptor_replay_callbacks_v1_t raw_callbacks{};
+    PJ_descriptor_import_callbacks_v1_t raw_callbacks{};
     raw_callbacks.struct_size = sizeof(raw_callbacks);
-    raw_callbacks.on_dataset = &DescriptorReplayProviderView::onDatasetThunk;
-    raw_callbacks.on_terminal = &DescriptorReplayProviderView::onTerminalThunk;
+    raw_callbacks.on_dataset = &DescriptorImportProviderView::onDatasetThunk;
+    raw_callbacks.on_terminal = &DescriptorImportProviderView::onTerminalThunk;
 
     // CallbackContext is not movable (it holds atomics — see the class
     // doc-comment), so construct it in place and assign the closures rather
@@ -350,10 +350,10 @@ class DescriptorReplayProviderView {
 
     PJ_joinable_job_t raw_job{};
     PJ_error_t err{};
-    if (!ext_->start_replay(plugin_ctx_, &raw_request, &raw_callbacks, callback_ctx.get(), &raw_job, &err)) {
+    if (!ext_->start_import(plugin_ctx_, &raw_request, &raw_callbacks, callback_ctx.get(), &raw_job, &err)) {
       return unexpected(sdk::errorToString(err));
     }
-    // Contract check (PJ_descriptor_replay_provider_v1_t::start_replay):
+    // Contract check (PJ_descriptor_import_provider_v1_t::start_import):
     // "On true: out_job is valid". Validate ALL THREE vtable slots the ABI
     // promises, not just destroy: a job with a usable destroy but a missing
     // cancel/join would otherwise construct successfully and then break
@@ -374,7 +374,7 @@ class DescriptorReplayProviderView {
       raw_job.vtable->destroy(raw_job.ctx);
       const std::string missing = !cancel_ok && !join_ok ? "cancel and join" : (!cancel_ok ? "cancel" : "join");
       return unexpected(
-          "descriptor replay provider returned a job missing a usable " + missing + " slot (violates ABI contract)");
+          "descriptor import provider returned a job missing a usable " + missing + " slot (violates ABI contract)");
     }
 
     // destroy itself is unusable: there is no way to safely stop the job, so
@@ -389,21 +389,21 @@ class DescriptorReplayProviderView {
     JoinableJob::quiesce(*callback_ctx);
     (void)callback_ctx.release();
     return unexpected(
-        "descriptor replay provider returned true from start_replay with an unusable job (violates ABI contract)");
+        "descriptor import provider returned true from start_import with an unusable job (violates ABI contract)");
   }
 
  private:
-  static ReplayOutcome mapOutcome(PJ_descriptor_replay_outcome_t outcome) noexcept {
+  static DescriptorImportOutcome mapOutcome(PJ_descriptor_import_outcome_t outcome) noexcept {
     switch (outcome) {
-      case PJ_DESCRIPTOR_REPLAY_CANCELLED:
-        return ReplayOutcome::kCancelled;
-      case PJ_DESCRIPTOR_REPLAY_SUCCEEDED_UNMATERIALIZED:
-        return ReplayOutcome::kSucceededUnmaterialized;
-      case PJ_DESCRIPTOR_REPLAY_SUCCEEDED_MATERIALIZED:
-        return ReplayOutcome::kSucceededMaterialized;
-      case PJ_DESCRIPTOR_REPLAY_FAILED:
+      case PJ_DESCRIPTOR_IMPORT_CANCELLED:
+        return DescriptorImportOutcome::kCancelled;
+      case PJ_DESCRIPTOR_IMPORT_SUCCEEDED_UNMATERIALIZED:
+        return DescriptorImportOutcome::kSucceededUnmaterialized;
+      case PJ_DESCRIPTOR_IMPORT_SUCCEEDED_MATERIALIZED:
+        return DescriptorImportOutcome::kSucceededMaterialized;
+      case PJ_DESCRIPTOR_IMPORT_FAILED:
       default:
-        return ReplayOutcome::kFailed;
+        return DescriptorImportOutcome::kFailed;
     }
   }
 
@@ -438,7 +438,7 @@ class DescriptorReplayProviderView {
   }
 
   static void onTerminalThunk(
-      void* callback_ctx, PJ_descriptor_replay_outcome_t outcome, PJ_string_view_t message) noexcept {
+      void* callback_ctx, PJ_descriptor_import_outcome_t outcome, PJ_string_view_t message) noexcept {
     if (callback_ctx == nullptr) {
       return;
     }
@@ -459,12 +459,12 @@ class DescriptorReplayProviderView {
       // on_dataset (zero-or-one, non-terminal), on_terminal is exactly-once
       // and last — if it throws, the exception is swallowed here AND the
       // completion notification is lost; the caller's on_terminal callable
-      // will never observe this replay's outcome.
+      // will never observe this import's outcome.
     }
     ctx->dispatch_state.fetch_sub(1, std::memory_order_release);
   }
 
-  const PJ_descriptor_replay_provider_v1_t* ext_ = nullptr;
+  const PJ_descriptor_import_provider_v1_t* ext_ = nullptr;
   void* plugin_ctx_ = nullptr;
 };
 
