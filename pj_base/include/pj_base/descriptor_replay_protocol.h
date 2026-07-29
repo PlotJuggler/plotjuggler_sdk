@@ -292,6 +292,7 @@ typedef struct PJ_materialized_source_host_vtable_t {
    * false: request rejected synchronously; result_cb will not run.
    * true: request accepted; result_cb will run exactly once. This does NOT
    * mean the dataset swap has happened yet — only that it has been queued.
+   * result_cb MAY be invoked re-entrantly, before adopt() returns.
    *
    * By the time result_cb reports ok=true, the host has transactionally
    * replaced the named dataset, captured the loader's accepted configuration,

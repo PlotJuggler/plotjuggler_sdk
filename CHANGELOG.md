@@ -30,9 +30,10 @@ materialized artifact as a stock file-backed source.
   The adoption request carries provider-supplied `loader_plugin_id` +
   `loader_config_json` so a non-MCAP artifact adopts through its own companion
   loader; the service is bound per plugin instance so the host derives the
-  provider identity itself. Every new struct is struct_size-versioned under an
-  explicit growth contract (owner zero-initializes, peer touches only fields
-  wholly covered); enums are FORCE_INT32-pinned with fail-closed unknowns.
+  provider identity itself. Every new appendable struct is struct_size-versioned
+  under an explicit growth contract (owner zero-initializes, peer touches only
+  fields wholly covered); the two fat-pointer handles are deliberately
+  ABI-frozen; enums are FORCE_INT32-pinned with fail-closed unknowns.
 - C++ wrappers in `pj_base/sdk/descriptor_replay.hpp`:
   `DescriptorReplayProviderView` (typed extension consumer, fail-closed enum
   mapping), RAII `JoinableJob` (owns the callback closures; destroy-before-

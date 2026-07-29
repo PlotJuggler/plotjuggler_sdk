@@ -254,6 +254,30 @@ TEST(MaterializedSourceService, SynchronousRejectionNeverRunsCallback) {
   EXPECT_TRUE(host.requests.empty());
 }
 
+TEST(MaterializedSourceService, AcceptedButFailedTransactionReportsOkFalse) {
+  FakeAdoptionHost host;
+  host.succeed = false;
+  PJ::MaterializedSourceHostView view(host.view());
+  ASSERT_TRUE(view.valid());
+
+  int callback_calls = 0;
+  bool reported_ok = true;
+  std::string reported_message;
+  auto status = view.adopt(makeRequest(), [&](bool ok, std::string message) {
+    ++callback_calls;
+    reported_ok = ok;
+    reported_message = std::move(message);
+  });
+
+  // Accepted (queued) — the adopt() Status is ok even though the transaction
+  // itself failed; failure arrives exclusively through the result callback.
+  EXPECT_TRUE(status);
+  EXPECT_EQ(callback_calls, 1);
+  EXPECT_FALSE(reported_ok);
+  EXPECT_EQ(reported_message, "generation mismatch");
+  EXPECT_EQ(host.requests.size(), 1u);
+}
+
 TEST(MaterializedSourceService, AbsentServiceIsNullopt) {
   FakeServiceRegistry fake_registry;  // nothing registered
   PJ::sdk::ServiceRegistry registry(fake_registry.view());
