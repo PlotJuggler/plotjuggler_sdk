@@ -90,10 +90,13 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
   }
 
   // Release the most recently created job's start gate. No-op if no job has
-  // been created yet.
+  // been created yet, or if that job has since been destroyed (jobDestroy
+  // CASes itself out of last_job_ before freeing — see JobState below — so
+  // this can never dereference a dangling pointer).
   void releaseStart() {
-    if (last_job_ != nullptr) {
-      last_job_->releaseStartOnce();
+    JobState* job = last_job_.load(std::memory_order_acquire);
+    if (job != nullptr) {
+      job->releaseStartOnce();
     }
   }
 
@@ -106,6 +109,11 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
     std::atomic<bool> cancelled{false};
     std::binary_semaphore start_gate{0};
     std::atomic<bool> start_released{false};
+    // Back-pointer to the owning FakeReplayToolbox's last_job_, so
+    // jobDestroy can null it out before this JobState is freed (see
+    // releaseStart's doc-comment). Null if this job was created via a
+    // plugin_ctx the fake couldn't identify itself with.
+    std::atomic<JobState*>* owner_last_job = nullptr;
 
     // At-most-once release: safe to call both from the test (via
     // releaseStart()) and unconditionally from jobDestroy (so a job whose
@@ -169,7 +177,8 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
     out_job->ctx = state;
     out_job->vtable = &kJobVtable;
     if (self != nullptr) {
-      self->last_job_ = state;
+      state->owner_last_job = &self->last_job_;
+      self->last_job_.store(state, std::memory_order_release);
     }
     state->worker = std::thread([state, on_dataset, on_terminal, callback_ctx, force_unknown_outcome] {
       // FIRST action: block until the test explicitly releases us. This
@@ -211,6 +220,13 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
     // here so join() below can't deadlock destroy().
     state->releaseStartOnce();
     jobJoin(ctx);
+    if (state->owner_last_job != nullptr) {
+      // CAS ourselves out (only if last_job_ still points at THIS state) so
+      // releaseStart() can never observe a dangling pointer after the delete
+      // below.
+      JobState* expected = state;
+      state->owner_last_job->compare_exchange_strong(expected, nullptr);
+    }
     delete state;
   }
 
@@ -220,7 +236,7 @@ class FakeReplayToolbox : public PJ::ToolboxPluginBase {
 
   PJ_descriptor_replay_provider_v1_t ext_{
       sizeof(PJ_descriptor_replay_provider_v1_t), 0, &FakeReplayToolbox::queryThunk, &FakeReplayToolbox::startThunk};
-  JobState* last_job_ = nullptr;  // non-owning; owned by the returned out_job->ctx
+  std::atomic<JobState*> last_job_{nullptr};  // non-owning; owned by the returned out_job->ctx
 };
 
 // A provider whose start_replay hands back a job with a deliberately

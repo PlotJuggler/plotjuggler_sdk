@@ -151,16 +151,38 @@ class JoinableJob {
   /// Callback closures plus a dispatch guard that lets a caller who has
   /// decided this context can never be safely freed (an ABI-violating job —
   /// see DescriptorReplayProviderView::startReplay) permanently disable
-  /// dispatch through it instead. Both ABI thunks increment in_flight FIRST
-  /// and only then check disabled — closing the check/increment race — so
-  /// quiesce() below, once it observes in_flight back at 0, has a
-  /// happens-before relationship with every dispatch that could still touch
-  /// the user's closures.
+  /// dispatch through it instead.
+  ///
+  /// The guard is a SINGLE combined atomic — bit 31 (kDisabledBit) is the
+  /// disabled flag, bits 0..30 are the in-flight dispatch count — not two
+  /// independent atomics. That's required for correctness, not just
+  /// tidiness: with two independent atomics, a thunk's fetch_add(in_flight)
+  /// and quiesce()'s disabled.store() are unrelated writes to unrelated
+  /// objects, so on a weak memory model each side's corresponding load can
+  /// observe a stale value from before the other side's write — the thunk
+  /// reads disabled==false while quiesce() concurrently reads
+  /// in_flight==0 — letting quiesce() return while the thunk goes on to
+  /// invoke the user's closure (a classic store-buffering hazard; no
+  /// happens-before relation forms between two independently-ordered
+  /// atomics like that). Packing both into one atomic closes this: the
+  /// thunk's entry fetch_add and quiesce()'s fetch_or are read-modify-write
+  /// operations on the SAME atomic object, and the standard guarantees all
+  /// RMW operations on one atomic object are related by that object's
+  /// single total modification order. So either the fetch_add precedes the
+  /// fetch_or — in which case quiesce()'s wait loop cannot observe the
+  /// count back at zero until the thunk's closing fetch_sub, whose release
+  /// synchronizes-with the wait loop's acquire load, making the closure's
+  /// completion happen-before quiesce() returns — or the fetch_add follows
+  /// the fetch_or, in which case the value the thunk reads already carries
+  /// kDisabledBit and it backs out without ever touching the closure. No
+  /// interleaving lets quiesce() return while a dispatch is pending or in
+  /// flight.
   struct CallbackContext {
     std::function<void(DatasetId)> on_dataset;
     std::function<void(ReplayOutcome, std::string)> on_terminal;
-    std::atomic<int> in_flight{0};
-    std::atomic<bool> disabled{false};
+
+    static constexpr uint32_t kDisabledBit = 0x80000000u;
+    std::atomic<uint32_t> dispatch_state{0};
   };
 
   JoinableJob(PJ_joinable_job_t job, std::unique_ptr<CallbackContext> callback_ctx)
@@ -185,15 +207,17 @@ class JoinableJob {
   }
 
   /// Permanently disables ctx's thunks, then blocks until any dispatch
-  /// already past the increment-then-check race window has finished. Once
-  /// this returns, ctx's on_dataset/on_terminal are guaranteed to never run
-  /// again — safe to free the closures (or leak the allocation) afterwards.
-  /// Only ever called from startReplay's ABI-violation path or reset()'s
-  /// defensive leak branch below; NEVER call it from inside one of ctx's own
-  /// callbacks (that thread would be waiting on itself).
+  /// already accounted for in ctx's dispatch_state has finished. See
+  /// CallbackContext's doc-comment for why the single combined atomic makes
+  /// this correct under a weak memory model. Once this returns, ctx's
+  /// on_dataset/on_terminal are guaranteed to never run again — safe to free
+  /// the closures (or leak the allocation) afterwards. Only ever called from
+  /// startReplay's ABI-violation path or reset()'s defensive leak branch
+  /// below; NEVER call it from inside one of ctx's own callbacks (that
+  /// thread would be waiting on itself).
   static void quiesce(CallbackContext& ctx) noexcept {
-    ctx.disabled.store(true, std::memory_order_release);
-    while (ctx.in_flight.load(std::memory_order_acquire) != 0) {
+    ctx.dispatch_state.fetch_or(CallbackContext::kDisabledBit, std::memory_order_acq_rel);
+    while ((ctx.dispatch_state.load(std::memory_order_acquire) & ~CallbackContext::kDisabledBit) != 0) {
       std::this_thread::yield();
     }
   }
@@ -388,15 +412,18 @@ class DescriptorReplayProviderView {
       return;
     }
     auto* ctx = static_cast<JoinableJob::CallbackContext*>(callback_ctx);
-    // Dispatch guard: increment FIRST, then check disabled (see
-    // CallbackContext's doc-comment) — if a JoinableJob::quiesce() call has
-    // (or races to) disable this context, back out without touching the
-    // user's closure at all. This is what makes it safe to leak an
-    // ABI-violating job's context instead of freeing it: the context becomes
-    // permanently inert rather than merely unreachable.
-    ctx->in_flight.fetch_add(1, std::memory_order_acq_rel);
-    if (ctx->disabled.load(std::memory_order_acquire)) {
-      ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
+    // Dispatch guard: increment the shared dispatch_state FIRST, then check
+    // the bit it carries back (see CallbackContext's doc-comment for why
+    // this single combined atomic — not two independent ones — is what
+    // makes this correct under a weak memory model). If a
+    // JoinableJob::quiesce() call has (or races to) disable this context,
+    // back out without touching the user's closure at all. This is what
+    // makes it safe to leak an ABI-violating job's context instead of
+    // freeing it: the context becomes permanently inert rather than merely
+    // unreachable.
+    const uint32_t prev = ctx->dispatch_state.fetch_add(1, std::memory_order_acq_rel);
+    if ((prev & JoinableJob::CallbackContext::kDisabledBit) != 0) {
+      ctx->dispatch_state.fetch_sub(1, std::memory_order_acq_rel);
       return;
     }
     try {
@@ -407,7 +434,7 @@ class DescriptorReplayProviderView {
       // Job-callback thread crossing the ABI boundary: never let an
       // exception from the host's closure unwind into the plugin.
     }
-    ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
+    ctx->dispatch_state.fetch_sub(1, std::memory_order_release);
   }
 
   static void onTerminalThunk(
@@ -417,9 +444,9 @@ class DescriptorReplayProviderView {
     }
     auto* ctx = static_cast<JoinableJob::CallbackContext*>(callback_ctx);
     // Dispatch guard — see onDatasetThunk's comment.
-    ctx->in_flight.fetch_add(1, std::memory_order_acq_rel);
-    if (ctx->disabled.load(std::memory_order_acquire)) {
-      ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
+    const uint32_t prev = ctx->dispatch_state.fetch_add(1, std::memory_order_acq_rel);
+    if ((prev & JoinableJob::CallbackContext::kDisabledBit) != 0) {
+      ctx->dispatch_state.fetch_sub(1, std::memory_order_acq_rel);
       return;
     }
     try {
@@ -434,7 +461,7 @@ class DescriptorReplayProviderView {
       // completion notification is lost; the caller's on_terminal callable
       // will never observe this replay's outcome.
     }
-    ctx->in_flight.fetch_sub(1, std::memory_order_acq_rel);
+    ctx->dispatch_state.fetch_sub(1, std::memory_order_release);
   }
 
   const PJ_descriptor_replay_provider_v1_t* ext_ = nullptr;
