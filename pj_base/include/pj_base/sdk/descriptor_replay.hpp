@@ -1,14 +1,18 @@
 /**
  * @file descriptor_replay.hpp
- * @brief C++ wrappers for the descriptor-replay v1 extension (consumer
- * side): DescriptorReplayProviderView, the RAII JoinableJob, and their
- * supporting value types. See pj_base/descriptor_replay_protocol.h for the
- * full ABI/lifetime/threading contract this header wraps.
+ * @brief C++ wrappers for the descriptor-replay v1 extension + service pair:
+ * DescriptorReplayProviderView, the RAII JoinableJob, MaterializedSourceHostView,
+ * and their supporting value types. See pj_base/descriptor_replay_protocol.h
+ * for the full ABI/lifetime/threading contract this header wraps.
  *
- * This is the extension-CONSUMER half only (a host reading a plugin's
- * "pj.descriptor_replay.v1" extension). The service half
- * (MaterializedSourceHostView + trait for "pj.materialized_source.v1") is a
- * separate, later addition.
+ * Two halves, in order:
+ *   - Extension CONSUMER half: a host reading a plugin's
+ *     "pj.descriptor_replay.v1" extension (DescriptorReplayProviderView +
+ *     JoinableJob).
+ *   - Service half: a provider plugin consuming the host's
+ *     "pj.materialized_source.v1" service via the bind() service registry
+ *     (MaterializedSourceHostView + the PJ::sdk::MaterializedSourceHostService
+ *     trait).
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
@@ -26,9 +30,16 @@
 #include "pj_base/descriptor_replay_protocol.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
+#include "pj_base/sdk/service_traits.hpp"
 #include "pj_base/types.hpp"
 
 namespace PJ {
+
+// ---------------------------------------------------------------------------
+// Extension consumer half: "pj.descriptor_replay.v1"
+// A host reading a plugin's extension, obtained from that plugin family's
+// get_plugin_extension() hook.
+// ---------------------------------------------------------------------------
 
 /// Fail-closed C++ mirror of PJ_descriptor_trust_t. Unknown/future values map
 /// to kRefused (see PJ_descriptor_trust_t doc-comment). Initialized directly
@@ -337,4 +348,154 @@ class DescriptorReplayProviderView {
   void* plugin_ctx_ = nullptr;
 };
 
+// ---------------------------------------------------------------------------
+// Service half: "pj.materialized_source.v1"
+// A provider plugin consuming the host's optional adoption service, acquired
+// from the bind() service registry (see PJ::sdk::MaterializedSourceHostService
+// below). Absence from the registry means the host has no adoption support.
+// ---------------------------------------------------------------------------
+
+/// Adoption request (C++ mirror). All strings are copied by the host during
+/// adopt() — the request may be destroyed as soon as adopt() returns.
+struct AdoptRequest {
+  DatasetId dataset{};
+  std::string source_identity;
+  std::string local_path_utf8;
+  std::string loader_plugin_id;
+  std::string loader_config_json;
+  std::string descriptor_json;
+};
+
+/// Typed consumer of the "pj.materialized_source.v1" host service.
+///
+/// Non-owning: this view wraps a borrowed fat pointer obtained from bind()'s
+/// service registry lookup and holds no keep-alive of its own. It must not
+/// outlive the plugin's bound service scope. valid() only checks the fat
+/// pointer's own shape (non-null ctx/vtable, struct_size, non-null adopt
+/// slot) — it CANNOT detect a stale pointer into a registry that has since
+/// been torn down. adopt()'s normal shape is asynchronous, with @p on_result
+/// typically firing well after bind() has already returned (see adopt()'s
+/// doc-comment) — that is the normal adoption shape, not an edge case — so a
+/// caller that holds onto this view (or a copy of it) to complete a pending
+/// adopt() later must independently ensure the underlying binding/registry
+/// stays alive for as long as that adoption is outstanding.
+///
+/// Per PJ_materialized_source_host_vtable_t's doc-comment, the host binds
+/// this service PER PLUGIN INSTANCE — ctx identifies the provider and the
+/// host derives the provider's manifest id from that binding itself. A
+/// plugin must therefore never share a bound view across plugin instances
+/// (e.g. cache one in a static and hand it to a sibling instance): doing so
+/// would let one provider adopt under another provider's identity.
+class MaterializedSourceHostView {
+ public:
+  MaterializedSourceHostView() = default;
+  explicit MaterializedSourceHostView(PJ_materialized_source_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.ctx != nullptr && host_.vtable != nullptr &&
+           host_.vtable->struct_size >=
+               offsetof(PJ_materialized_source_host_vtable_t, adopt) + sizeof(host_.vtable->adopt) &&
+           host_.vtable->adopt != nullptr;
+  }
+
+  /// [thread-safe, asynchronous] See PJ_materialized_source_host_vtable_t::adopt.
+  /// An ok return means the request was ACCEPTED/queued only — it does NOT
+  /// mean the adoption transaction itself succeeded. Success or failure of
+  /// the transaction arrives exclusively through @p on_result's `ok`
+  /// argument (mirrors the C header's accepted-vs-succeeded distinction —
+  /// see PJ_materialized_source_host_vtable_t::adopt's doc-comment).
+  ///
+  /// On acceptance, @p on_result runs exactly once, on the host's
+  /// adopt-result callback thread [host-callback-thread]: serialized per
+  /// request, but NOT promised to be the main/GUI thread — do not touch
+  /// main-thread-only state from @p on_result. It may run re-entrantly,
+  /// before this call even returns, or well after (the normal shape — see
+  /// the class doc's lifetime note above). A synchronous rejection returns
+  /// an error Status and @p on_result never runs. @p on_result must not
+  /// throw; an escaping exception is swallowed (the result is then lost —
+  /// the caller will never observe this adopt() call's outcome).
+  [[nodiscard]] Status adopt(const AdoptRequest& request, std::function<void(bool, std::string)> on_result) const {
+    if (!valid()) {
+      return unexpected("materialized source host service is not available");
+    }
+
+    PJ_materialized_source_adopt_request_v1_t raw{};
+    raw.struct_size = sizeof(raw);
+    raw.dataset = PJ_data_source_handle_t{request.dataset};
+    raw.source_identity = sdk::toAbiString(request.source_identity);
+    raw.local_path_utf8 = sdk::toAbiString(request.local_path_utf8);
+    raw.loader_plugin_id = sdk::toAbiString(request.loader_plugin_id);
+    raw.loader_config_json = sdk::toAbiString(request.loader_config_json);
+    raw.descriptor_json = sdk::toAbiString(request.descriptor_json);
+
+    // Heap-allocate the closure so it can outlive this call: on acceptance
+    // the thunk owns it and frees it exactly once when result_cb runs.
+    auto ctx = std::make_unique<std::function<void(bool, std::string)>>(std::move(on_result));
+
+    // Transfer ownership to the raw pointer BEFORE calling into the host: a
+    // re-entrant thunk (result_cb invoked synchronously, before adopt()
+    // returns) may free the pointee before this function resumes below.
+    // unique_ptr::release() only ever reads/clears its OWN stored pointer
+    // value — never the pointee — so this stays formally correct regardless
+    // of whether the thunk has already run by the time we get here.
+    auto* raw_ctx = ctx.release();
+
+    PJ_error_t err{};
+    if (!host_.vtable->adopt(host_.ctx, &raw, &MaterializedSourceHostView::resultThunk, raw_ctx, &err)) {
+      // Synchronous rejection: result_cb will never run. Reclaim ownership
+      // so the context is still freed exactly once.
+      const std::unique_ptr<std::function<void(bool, std::string)>> reclaimed{raw_ctx};
+      return unexpected(sdk::errorToString(err));
+    }
+    // Accepted: the thunk now owns the context (already released above).
+    return okStatus();
+  }
+
+ private:
+  /// [host-callback-thread] Per PJ_materialized_source_host_vtable_t::adopt's
+  /// contract, the host must invoke an ACCEPTED request's result_cb EXACTLY
+  /// ONCE. A second invocation is undefined behavior — use-after-free on the
+  /// closure this thunk already freed on the first call — and there is no
+  /// cheap defense against it: a "consumed" flag would itself have to live
+  /// in the same heap block this thunk frees on the first call.
+  static void resultThunk(void* callback_ctx, bool ok, PJ_string_view_t message) noexcept {
+    if (callback_ctx == nullptr) {
+      return;
+    }
+    // Take ownership FIRST so the context is freed exactly once even if the
+    // callback below throws.
+    std::unique_ptr<std::function<void(bool, std::string)>> fn{
+        static_cast<std::function<void(bool, std::string)>*>(callback_ctx)};
+    try {
+      if (*fn) {
+        (*fn)(ok, std::string(sdk::toStringView(message)));
+      }
+    } catch (...) {
+      // Host-callback thread crossing the ABI boundary: never let an
+      // exception from the caller's closure unwind into the host. The
+      // result is then lost — the caller's on_result will never observe
+      // this adopt() call's outcome.
+    }
+  }
+
+  PJ_materialized_source_host_t host_{};
+};
+
 }  // namespace PJ
+
+namespace PJ::sdk {
+
+/// Service trait for the optional per-plugin-instance adoption service
+/// ("pj.materialized_source.v1"). Absence from the registry means the host
+/// has no adoption support. See MaterializedSourceHostView's doc-comment for
+/// the per-plugin-instance binding contract.
+struct MaterializedSourceHostService {
+  static constexpr const char* kName = PJ_MATERIALIZED_SOURCE_HOST_SERVICE_V1;
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_materialized_source_host_t;
+  using Vtable = PJ_materialized_source_host_vtable_t;
+  using View = ::PJ::MaterializedSourceHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
+}  // namespace PJ::sdk

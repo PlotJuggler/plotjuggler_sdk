@@ -100,6 +100,7 @@ if(PJ_BUILD_TESTS)
     tests/push_message_test.cpp
     tests/notify_available_topics_test.cpp
     tests/descriptor_replay_extension_test.cpp
+    tests/materialized_source_service_test.cpp
     tests/image_codec_test.cpp
     tests/depth_image_codec_test.cpp
     tests/point_cloud_codec_test.cpp
