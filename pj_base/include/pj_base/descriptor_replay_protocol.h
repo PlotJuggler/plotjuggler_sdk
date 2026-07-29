@@ -38,6 +38,9 @@
  * Encoding, lifetime and threading rules:
  *  - All text and JSON is UTF-8. Paths are absolute filesystem paths encoded
  *    as UTF-8; on Windows the host converts them to native wide paths.
+ *  - out_error may be NULL on every call in this file (matching
+ *    plugin_data_api.h convention) — callees must tolerate it, e.g. via a
+ *    fillError()-style helper that no-ops on NULL.
  *  - query_descriptor inputs live for the call; views in out_result live
  *    until the NEXT query_descriptor call on the same plugin instance — the
  *    caller copies immediately.
