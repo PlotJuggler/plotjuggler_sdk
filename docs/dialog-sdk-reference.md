@@ -68,6 +68,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setSelectedItems(name, vector<string>)` | Set selected items by text |
 | `setListItemsDeletable(name, bool)` | Draw a trailing trash button on every row; a click fires `onItemDeleteRequested`. |
 | `setListPlaceholder(name, text)` | Centered empty-state hint over the list while it has no items; hidden once items appear. |
+| `setListItemsDisabled(name, vector<string>)` | Grey out (disable + make unselectable) the items whose text is in the set, keeping them visible; matched by item text. An empty/absent set re-enables every item. |
+| `setListSelectionMode(name, bool multi)` | Switch a list between single (`false`, default) and multi (`true`, extended) selection. |
 
 ### QTableWidget
 

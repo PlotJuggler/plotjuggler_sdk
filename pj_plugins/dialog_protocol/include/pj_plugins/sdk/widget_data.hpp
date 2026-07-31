@@ -280,6 +280,23 @@ class WidgetData {
     return *this;
   }
 
+  /// Grey out (disable + make unselectable) the QListWidget items whose text is
+  /// in `disabled`, keeping them visible. Matched by item text, like
+  /// setSelectedItems. Re-send on every build; an empty/absent set re-enables
+  /// every item.
+  WidgetData& setListItemsDisabled(std::string_view name, const std::vector<std::string>& disabled) {
+    entry(name)["list_disabled_items"] = disabled;
+    return *this;
+  }
+
+  /// Switch a QListWidget between single (false, the default) and multi
+  /// (true, extended) selection. Re-send on every build; the host applies the
+  /// requested mode each time.
+  WidgetData& setListSelectionMode(std::string_view name, bool multi) {
+    entry(name)["list_multi_select"] = multi;
+    return *this;
+  }
+
   /// Centered empty-state hint drawn over a QListWidget while it holds no items;
   /// the host hides it the moment items appear and restores it when the list is
   /// empty again. Mirrors setChartPlaceholder for lists.
