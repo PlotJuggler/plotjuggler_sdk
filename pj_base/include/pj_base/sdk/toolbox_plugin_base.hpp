@@ -69,6 +69,10 @@ class ToolboxRuntimeHostView {
   /// createParserIngest must not be used afterwards.
   [[nodiscard]] Status releaseParserIngest(uint32_t data_source_id) const;
 
+  /// Abort a provisional context and remove its toolbox-created data source.
+  /// Use only before notifyDataChanged has exposed the source to readers.
+  [[nodiscard]] Status discardParserIngest(uint32_t data_source_id) const;
+
   /// Generic alias over the same context as createParserIngest: the canonical
   /// dataset-scoped ingest lifecycle for BOTH delegated parsing and direct
   /// toolbox writes (progress/stop + optional parser access). Same threading

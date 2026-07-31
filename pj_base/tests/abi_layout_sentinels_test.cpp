@@ -206,7 +206,10 @@ static_assert(
     offsetof(PJ_toolbox_runtime_host_vtable_t, release_parser_ingest) == 32,
     "toolbox runtime parser-ingest release slot pinned");
 static_assert(
-    sizeof(PJ_toolbox_runtime_host_vtable_t) == 40, "Toolbox runtime host size (update deliberately on append)");
+    offsetof(PJ_toolbox_runtime_host_vtable_t, discard_parser_ingest) == 40,
+    "toolbox runtime parser-ingest discard slot pinned");
+static_assert(
+    sizeof(PJ_toolbox_runtime_host_vtable_t) == 48, "Toolbox runtime host size (update deliberately on append)");
 
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 5, "v5 ABI version");

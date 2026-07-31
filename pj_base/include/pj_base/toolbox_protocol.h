@@ -29,6 +29,9 @@ extern "C" {
 /** Protocol version. Host and plugin must agree on the same major version. */
 #define PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION 4
 
+/** Compile-time feature marker for the discard_parser_ingest tail slot. */
+#define PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST 1
+
 /**
  * Minimum vtable size for v4.0 compatibility, pinned at v4.0 release.
  *
@@ -98,6 +101,15 @@ typedef struct PJ_toolbox_runtime_host_vtable_t {
    * destroy it. Idempotent: releasing an unknown id succeeds. The fat
    * pointer from create_parser_ingest must not be used afterwards. */
   bool (*release_parser_ingest)(void* ctx, uint32_t data_source_id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /** [thread-safe] Abort a provisional parser-ingest context and remove its
+   * toolbox-created data source, including any partially registered scalar or
+   * object topics. This is the rollback path for an import that produced no
+   * successful result. The plugin MUST call it before notify_data_changed has
+   * exposed the source to readers; every handle for the source becomes invalid.
+   * Idempotent: discarding an unknown id succeeds. ABI-APPENDED slot: gate via
+   * struct_size before calling. */
+  bool (*discard_parser_ingest)(void* ctx, uint32_t data_source_id, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_runtime_host_vtable_t;
 
 typedef struct {
