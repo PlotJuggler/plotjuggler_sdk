@@ -346,9 +346,16 @@ typedef struct {
  * Arrow C Data Interface is the canonical bulk-ingest path
  * (append_arrow_stream). Per-record slots remain for streaming producers
  * and simple plugins where batching does not fit naturally. Thread tags:
- *   [main-thread]    GUI thread. Dialog callbacks, initial config.
- *   [stream-thread]  Host's background ingest thread. Most appends.
- *   [thread-safe]    Any thread.
+ *   [main-thread]    GUI thread ONLY. Dialog callbacks, initial config.
+ *   [stream-thread]  Any ONE thread at a time — typically the plugin's own
+ *                    ingest/worker thread, not the GUI thread. The host
+ *                    serialises its own state (engine lock / ObjectStore), so
+ *                    calling off the GUI thread is sanctioned; but each host
+ *                    object carries a SHARED error buffer whose pointer is
+ *                    handed back through PJ_error_t*, so two threads must not
+ *                    be inside slots of the SAME host object concurrently.
+ *                    Serialise with your own mutex if you fan out.
+ *   [thread-safe]    Any thread, concurrently.
  * ========================================================================== */
 
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
@@ -453,6 +460,22 @@ typedef struct {
  *
  * Toolbox host: multi-source read+write.
  *
+ * Threading: every IMPLEMENTED slot below is [stream-thread], NOT [main-thread].
+ * Driving this vtable from a toolbox plugin's own fetch/ingest worker is the
+ * sanctioned shape — the host serialises its own state internally (the write
+ * and catalog slots take the engine lock for the whole call; the object slots
+ * go through ObjectStore's shared_mutex). What is NOT supported is two threads
+ * inside slots of the SAME PJ_toolbox_host_t concurrently: the host state
+ * carries one shared error buffer whose pointer is handed back through
+ * PJ_error_t*, so concurrent failures would race on it. Fan out with your own
+ * mutex if you need to (toolbox_mosaico's fetch worker holds a host_write_mu_
+ * for exactly this).
+ *
+ * The two ABI-appended tail slots (register_object_topic_on_dataset,
+ * set_object_topic_retention) deliberately keep a conservative [main-thread]
+ * tag: no host implements them yet — every known vtable leaves them NULL — so
+ * there is no implementation to audit. Re-tag when the first one lands.
+ *
  * read_series_arrow: caller zero-initialises both out structs. Host fills
  * them (allocates buffers, sets release callbacks). On success the caller
  * MUST invoke out_schema->release and out_array->release when done. The
@@ -462,48 +485,48 @@ typedef struct PJ_toolbox_host_vtable_t {
   uint32_t abi_version;
   uint32_t struct_size;
 
-  /* [main-thread] Create a new named data source, returning its handle. */
+  /* [stream-thread] Create a new named data source, returning its handle. */
   bool (*create_data_source)(
       void* ctx, PJ_string_view_t name, PJ_data_source_handle_t* out_source, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Ensure a topic exists under a specified data source. */
+  /* [stream-thread] Ensure a topic exists under a specified data source. */
   bool (*ensure_topic)(
       void* ctx, PJ_data_source_handle_t source, PJ_string_view_t topic_name, PJ_topic_handle_t* out_topic,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Ensure a field exists under a topic. */
+  /* [stream-thread] Ensure a field exists under a topic. */
   bool (*ensure_field)(
       void* ctx, PJ_topic_handle_t topic, PJ_string_view_t field_name, PJ_primitive_type_t type,
       PJ_field_handle_t* out_field, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Append a record by field name. */
+  /* [stream-thread] Append a record by field name. */
   bool (*append_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Append a record with pre-resolved field handles. */
+  /* [stream-thread] Append a record with pre-resolved field handles. */
   bool (*append_bound_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Bulk-write via Arrow C Data Interface (same ownership rule
+  /* [stream-thread] Bulk-write via Arrow C Data Interface (same ownership rule
    * as PJ_source_write_host_vtable_t::append_arrow_stream). */
   bool (*append_arrow_stream)(
       void* ctx, PJ_topic_handle_t topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Snapshot the current catalog of data sources, topics, and
+  /* [stream-thread] Snapshot the current catalog of data sources, topics, and
    * fields. Caller releases via snapshot.release(snapshot.release_ctx). */
   bool (*acquire_catalog_snapshot)(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Materialise one field's time series into a host-owned
+  /* [stream-thread] Materialise one field's time series into a host-owned
    * ArrowArray (two columns: timestamp + field). Caller must call
    * out_schema->release and out_array->release when done. */
   bool (*read_series_arrow)(
       void* ctx, PJ_field_handle_t field, struct ArrowSchema* out_schema, struct ArrowArray* out_array,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Register an object topic for media payloads (images, point
+  /* [stream-thread] Register an object topic for media payloads (images, point
    * clouds, annotations). The topic is namespaced under the data source
    * previously created via create_data_source. `metadata_json` is opaque to
    * the host — viewers and parsers read it to pick a renderer (e.g.
@@ -514,7 +537,7 @@ typedef struct PJ_toolbox_host_vtable_t {
       void* ctx, PJ_data_source_handle_t source, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
       PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Eager push of an object payload — host copies the bytes
+  /* [stream-thread] Eager push of an object payload — host copies the bytes
    * into ObjectStore. Appropriate for both small messages and the
    * one-shot media writes that toolbox plugins typically perform; lazy
    * push is not offered on the toolbox surface (plugin holds the bytes
