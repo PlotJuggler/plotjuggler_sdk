@@ -7,6 +7,7 @@
 #include <cstring>
 #include <exception>
 #include <pj_base/plugin_abi_export.hpp>
+#include <pj_base/plugin_descriptor_section.hpp>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -287,8 +288,13 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
 #define PJ_DIALOG_PLUGIN(...) \
   PJ_DIALOG_PLUGIN_EXPAND(    \
       PJ_DIALOG_PLUGIN_SELECT(__VA_ARGS__, PJ_DIALOG_PLUGIN_WITH_MANIFEST, PJ_DIALOG_PLUGIN_LEGACY)(__VA_ARGS__))
-#define PJ_DIALOG_PLUGIN_LEGACY(ClassName) PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, nullptr)
-#define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson)                             \
+// A dialog declared without a manifest has nothing to embed, so it emits no
+// descriptor blob and discovery falls back to loading the DSO.
+#define PJ_DIALOG_PLUGIN_LEGACY(ClassName) PJ_DIALOG_PLUGIN_IMPL(ClassName, nullptr)
+#define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson) \
+  PJ_DIALOG_PLUGIN_IMPL(ClassName, ManifestJson)                \
+  PJ_EMBED_PLUGIN_DESCRIPTOR(dialog, PJ::detail::kDescriptorFamilyDialog, ManifestJson)
+#define PJ_DIALOG_PLUGIN_IMPL(ClassName, ManifestJson)                                      \
   PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_DIALOG_EXPORT)                                            \
   extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept {   \
     static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate(           \
@@ -349,4 +355,9 @@ PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
   }
 #define PJ_DIALOG_PLUGIN_WITH_MANIFEST(ClassName, ManifestJson) \
   PJ_DIALOG_PLUGIN_NAMED(ClassName, ClassName, ManifestJson)
+// The manifest-less form has to be rerouted too: its shared body emits the
+// fixed `extern "C" PJ_get_dialog_vtable`, which collides across the plugins
+// folded into one statically linked binary.
+#undef PJ_DIALOG_PLUGIN_LEGACY
+#define PJ_DIALOG_PLUGIN_LEGACY(ClassName) PJ_DIALOG_PLUGIN_NAMED(ClassName, ClassName, nullptr)
 #endif  // PJ_STATIC_PLUGINS

@@ -132,16 +132,34 @@ previously-circulated pre-v4 design included):
   the ABI headers carries a `[main-thread]` / `[stream-thread]` /
   `[thread-safe]` comment. Host-side runtime checking is optional
   (reserved for a future `"pj.thread_check.v1"` service).
-- **Embedded-manifest plugin discovery.** Each DSO exports a
-  family-specific protocol vtable with embedded metadata (`manifest_json`
-  for data sources, parsers, toolboxes, and newly built dialogs; legacy v4.0
-  dialogs fall back to `create()` + `get_manifest()` during inspection).
+- **Embedded-manifest plugin discovery, without loading the plugin.** Every
+  DSO built with a `PJ_*_PLUGIN` macro carries a self-describing descriptor
+  blob — magic, ABI version, family, manifest JSON — in a dedicated section
+  (`.pj_manifest` on ELF, `.pjmani` on PE, `__PJ,__manifest` on Mach-O). See
+  `pj_base/plugin_descriptor_section.hpp` for the layout.
   Host-side `PJ::scanPluginDsos(dir)` (in
-  `pj_plugins/host/plugin_catalog.hpp`) walks platform plugin libraries,
-  loads each candidate, validates the ABI and protocol vtable, and parses
-  `id`, `name`, `version`, family-specific fields, and optional metadata
-  directly from the embedded manifest. Broken or incompatible candidates
-  are reported as diagnostics while discovery continues.
+  `pj_plugins/host/plugin_catalog.hpp`) walks platform plugin libraries and
+  reads that section straight off disk, parsing `id`, `name`, `version`,
+  family-specific fields, and optional metadata without ever mapping the
+  image. Broken or incompatible candidates are reported as diagnostics while
+  discovery continues; an ABI-version mismatch is rejected from the section
+  alone, so a plugin built against a different ABI is never loaded.
+
+  Discovery must not `dlopen`, because **`dlclose` cannot undo it**: glibc
+  pins a library NODELETE as soon as it defines an `STB_GNU_UNIQUE` symbol,
+  which any vague-linkage static produces. An inspect-then-close pass leaves
+  the plugin resident for the life of the process, and a second copy of the
+  same plugin loaded later from another path binds to the first copy's
+  storage — with its initialisation guards already set — so layout drift
+  between the two builds corrupts the process.
+
+  A DSO with no descriptor section (built against an older SDK, or with a
+  hand-written vtable) falls back to the original path: `dlopen`, validate
+  the ABI and protocol vtable, read `manifest_json` from the vtable, and
+  `dlclose`. Legacy v4.0 dialogs additionally fall back to `create()` +
+  `get_manifest()`. Vtable-shape validation for plugins taking the static
+  path happens when they are actually loaded, which the family loaders
+  (`data_source_library.cpp` and siblings) do for every plugin regardless.
 - **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
   only (DEEPBIND was a documented ASAN/allocator-interposition trap).
   Plugin-local symbol isolation is left to `-fvisibility=hidden`.
@@ -266,6 +284,7 @@ pj_plugins/
     toolbox_library.hpp
     toolbox_handle.hpp
     plugin_catalog.hpp              ← embedded-manifest DSO scanner (scanPluginDsos / inspectPluginDso)
+    ../src/detail/descriptor_section_reader.hpp ← reads the descriptor section off disk (ELF / PE / Mach-O)
     service_registry_builder.hpp    ← service wiring into bind()
     config_envelope.hpp             ← versioned config wrapper
   include/pj_plugins/sdk/

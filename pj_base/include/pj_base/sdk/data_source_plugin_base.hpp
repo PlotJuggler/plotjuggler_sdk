@@ -37,6 +37,7 @@
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_abi_export.hpp"
+#include "pj_base/plugin_descriptor_section.hpp"
 #include "pj_base/sdk/data_source_host_views.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
@@ -227,7 +228,8 @@ class DataSourcePluginBase {
         },                                                                                               \
         manifest);                                                                                       \
     return vt;                                                                                           \
-  }
+  }                                                                                                      \
+  PJ_EMBED_PLUGIN_DESCRIPTOR(data_source, PJ::detail::kDescriptorFamilyDataSource, manifest)
 
 // Variant for namespaced plugin classes. SymbolName must be an unqualified
 // identifier and is used only to form the unique static getter name.

@@ -1,6 +1,7 @@
 find_package(nlohmann_json REQUIRED)
 
 add_library(pj_plugin_loader_detail STATIC
+  src/detail/descriptor_section_reader.cpp
   src/detail/vtable_validation.cpp
 )
 target_include_directories(pj_plugin_loader_detail PUBLIC
@@ -362,6 +363,7 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MISSING_ID_PLUGIN_PATH="$<TARGET_FILE:missing_id_data_source_plugin>"
   PJ_INVALID_OPTIONAL_PLUGIN_PATH="$<TARGET_FILE:invalid_optional_manifest_data_source_plugin>"
   PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
+  PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_source_with_dialog_plugin>"
 )
 target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(plugin_catalog_test PRIVATE
@@ -372,8 +374,18 @@ add_dependencies(plugin_catalog_test mock_data_source_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
                  static_manifest_dialog_plugin legacy_macro_dialog_plugin
-                 missing_dialog_required_slots_plugin)
+                 missing_dialog_required_slots_plugin mock_source_with_dialog_plugin)
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
+
+# Unit test: object-file parsing for the static plugin-descriptor reader.
+# Builds synthetic ELF / PE / Mach-O containers, so it needs no fixture DSOs and
+# covers the formats this host cannot itself produce.
+add_executable(descriptor_section_reader_test tests/descriptor_section_reader_test.cpp)
+target_compile_options(descriptor_section_reader_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(descriptor_section_reader_test PRIVATE
+  pj_plugin_loader_detail pj_base GTest::gtest_main
+)
+add_test(NAME descriptor_section_reader_test COMMAND descriptor_section_reader_test)
 
 endif() # PJ_BUILD_TESTS
 

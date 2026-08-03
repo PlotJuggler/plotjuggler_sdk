@@ -6,7 +6,7 @@ pj_base is the **Level 0** foundation and the **SDK boundary** for plugin author
 - `include/pj_base/` — vocabulary primitives: `types.hpp`, `time.hpp` (absolute time spine: `Timepoint`/`Duration` + `fromRaw`/`toRaw`), `type_tree.hpp`, `dataset.hpp`, `expected.hpp`, `span.hpp`, `number_parse.hpp`, `assert.hpp`, `diagnostic_sink.hpp`, `buffer_anchor.hpp`.
 - `include/pj_base/builtin/` — the 16 builtin object struct headers (`*.hpp`; 17 enum values in `BuiltinObjectType`, values 2 and 12 reserved) + their 15 wire codecs (`*_codec.hpp`; RobotDescription has none) + the `BuiltinObject` (`std::any`) type-erased holder.
 - `include/pj_base/sdk/` — C++ SDK over the ABI: DataSource + Toolbox `*_plugin_base.hpp`, `service_registry.hpp`/`service_traits.hpp`, host views, Arrow RAII holders, `testing/`.
-- `include/pj_base/*_protocol.h`, `plugin_data_api.h`, `builtin_object_abi.h`, `plugin_abi_export.hpp` — the stable C-ABI surface for DataSource/MessageParser/Toolbox (the Dialog protocol header lives in `pj_plugins/dialog_protocol/`).
+- `include/pj_base/*_protocol.h`, `plugin_data_api.h`, `builtin_object_abi.h`, `plugin_abi_export.hpp`, `plugin_descriptor_section.hpp` (the statically discoverable manifest blob every `PJ_*_PLUGIN` macro emits) — the stable C-ABI surface for DataSource/MessageParser/Toolbox (the Dialog protocol header lives in `pj_plugins/dialog_protocol/`).
 - `proto/pj/` — canonical `.proto` wire contracts for the builtin types (see its README).
 - `src/`, `tests/` — codec/parse impls and gtests.
 - `abi/baseline.abi` — golden libabigail dump; the ABI-stability regression baseline.

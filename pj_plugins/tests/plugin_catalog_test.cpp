@@ -170,6 +170,45 @@ TEST_F(PluginCatalogTest, ResultIsSortedByPath) {
   EXPECT_EQ(result->plugins[1].dso_path.filename(), pluginFileName("zz_plugin"));
 }
 
+#if defined(__linux__)
+/// The reason the descriptor section exists.
+///
+/// dlclose does not unmap a DSO that defines STB_GNU_UNIQUE symbols, so an
+/// inspect-then-close pass used to leave every scanned plugin resident for the
+/// life of the process. A second copy of the same plugin loaded later from
+/// another path then bound to the first copy's storage. Discovery must
+/// therefore not map the image at all.
+TEST_F(PluginCatalogTest, InspectingADsoDoesNotLeaveItMapped) {
+  const auto path = copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, pluginFileName("residency_probe"));
+
+  auto descriptor = inspectPluginDso(path);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+
+  std::ifstream maps("/proc/self/maps");
+  ASSERT_TRUE(maps.is_open());
+  const std::string needle = path.string();
+  std::string line;
+  bool mapped = false;
+  while (std::getline(maps, line)) {
+    if (line.find(needle) != std::string::npos) {
+      mapped = true;
+      break;
+    }
+  }
+  EXPECT_FALSE(mapped) << "inspectPluginDso mapped " << needle
+                       << "; discovery must read the descriptor section instead of dlopen'ing";
+}
+#endif
+
+/// A DSO exposing several families reports the same one the dlopen probe order
+/// would have picked, so switching discovery to the static path cannot silently
+/// reclassify a plugin.
+TEST_F(PluginCatalogTest, MultiFamilyDsoReportsTheHighestPrecedenceFamily) {
+  auto descriptor = inspectPluginDso(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->family, PluginFamily::kDataSource);
+}
+
 TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {
   EXPECT_EQ(toString(PluginFamily::kDataSource), "data_source");
   EXPECT_EQ(toString(PluginFamily::kMessageParser), "message_parser");

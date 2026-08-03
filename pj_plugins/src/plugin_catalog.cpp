@@ -6,18 +6,22 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
 
+#include "detail/descriptor_section_reader.hpp"
 #include "detail/library_loader.hpp"
 #include "detail/vtable_validation.hpp"
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/message_parser_protocol.h"
+#include "pj_base/plugin_descriptor_section.hpp"
 #include "pj_base/toolbox_protocol.h"
 #include "pj_plugins/dialog_protocol.h"
 
@@ -161,6 +165,47 @@ Expected<ManifestCandidate> findEmbeddedManifest(void* handle) {
   return unexpected(out.str());
 }
 
+// Probe order for a DSO that implements several families. Mirrors
+// findEmbeddedManifest's sequence so static and dlopen discovery agree on which
+// family a multi-family DSO is reported as.
+constexpr std::array<PluginFamily, 4> kFamilyPrecedence = {
+    PluginFamily::kDataSource, PluginFamily::kMessageParser, PluginFamily::kToolbox, PluginFamily::kDialog};
+
+static_assert(static_cast<uint32_t>(PluginFamily::kDataSource) == detail::kDescriptorFamilyDataSource);
+static_assert(static_cast<uint32_t>(PluginFamily::kMessageParser) == detail::kDescriptorFamilyMessageParser);
+static_assert(static_cast<uint32_t>(PluginFamily::kToolbox) == detail::kDescriptorFamilyToolbox);
+static_assert(static_cast<uint32_t>(PluginFamily::kDialog) == detail::kDescriptorFamilyDialog);
+
+/// Recovers the manifest from the DSO's descriptor section, without loading it.
+///
+/// An absent value means "no usable descriptor section, fall back to dlopen" —
+/// an old plugin, a hand-written vtable, or an image this build cannot parse.
+/// An error means the plugin must be rejected outright, which currently covers
+/// only an ABI mismatch: loading a DSO built against a different ABI is exactly
+/// what the boot handshake exists to prevent, so it must not fall through to a
+/// path that would dlopen it.
+Expected<std::optional<ManifestCandidate>> staticManifestCandidate(const std::filesystem::path& dso_path) {
+  auto descriptors = detail::readEmbeddedDescriptors(dso_path);
+  if (!descriptors || descriptors->empty()) {
+    return std::optional<ManifestCandidate>{};
+  }
+  for (const detail::EmbeddedDescriptor& descriptor : *descriptors) {
+    if (descriptor.abi_version != PJ_ABI_VERSION) {
+      return unexpected(
+          fmt::format(
+              "plugin pj_plugin_abi_version mismatch (expected {}, got {})", PJ_ABI_VERSION, descriptor.abi_version));
+    }
+  }
+  for (PluginFamily family : kFamilyPrecedence) {
+    for (const detail::EmbeddedDescriptor& descriptor : *descriptors) {
+      if (descriptor.family == static_cast<uint32_t>(family)) {
+        return std::optional<ManifestCandidate>({family, descriptor.manifest_json});
+      }
+    }
+  }
+  return std::optional<ManifestCandidate>{};  // only families this build does not know
+}
+
 Expected<std::vector<std::string>> readStringArray(const nlohmann::json& j, std::string_view key) {
   std::vector<std::string> values;
   const auto it = j.find(std::string(key));
@@ -299,6 +344,25 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
   }
   auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
 
+  // Preferred path: read the descriptor straight out of the image on disk. It
+  // is not just faster — it is the only way to inspect a DSO without leaving it
+  // resident, because dlclose does not unmap a library that defines
+  // STB_GNU_UNIQUE symbols. See pj_base/plugin_descriptor_section.hpp.
+  auto embedded = staticManifestCandidate(dso_path);
+  if (!embedded) {
+    return unexpected(with_path(embedded.error()));
+  }
+  if (embedded->has_value()) {
+    auto descriptor = decodeManifest(dso_path, (*embedded)->family, (*embedded)->manifest_json);
+    if (!descriptor) {
+      return unexpected(with_path(descriptor.error()));
+    }
+    return *descriptor;
+  }
+
+  // Fallback for a DSO with no descriptor section — built against an SDK that
+  // predates it, or carrying a hand-written vtable. Vtable-shape validation
+  // runs here for those; every plugin is validated again when it is loaded.
   auto handle = detail::loadLibraryHandle(dso_path.string());
   if (!handle) {
     return unexpected(with_path(handle.error()));

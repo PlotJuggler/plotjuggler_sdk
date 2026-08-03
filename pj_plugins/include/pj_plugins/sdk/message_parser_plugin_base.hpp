@@ -27,6 +27,7 @@
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/plugin_abi_export.hpp"
+#include "pj_base/plugin_descriptor_section.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
@@ -375,7 +376,8 @@ class MessageParserPluginBase {
         },                                                                                                        \
         manifest);                                                                                                \
     return vt;                                                                                                    \
-  }
+  }                                                                                                               \
+  PJ_EMBED_PLUGIN_DESCRIPTOR(message_parser, PJ::detail::kDescriptorFamilyMessageParser, manifest)
 
 // Variant for namespaced plugin classes. SymbolName must be an unqualified
 // identifier and is used only to form the unique static getter name.

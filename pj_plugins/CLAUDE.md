@@ -24,7 +24,9 @@ submodule-internal modules; `pj_base` carries none).
 - `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host for tests).
 - `dialog_protocol/` — **nested module** (own CMake): the Dialog C ABI, C++
   dialog SDK, and host dialog loader/handle. See `dialog_protocol/CLAUDE.md`.
-- `src/` — loader/catalog `.cpp`; `src/detail/` vtable validation + dlopen.
+- `src/` — loader/catalog `.cpp`; `src/detail/` vtable validation, dlopen, and
+  the object-file reader that pulls a plugin's descriptor section off disk so
+  discovery never has to map the DSO (`descriptor_section_reader.hpp`).
 - `examples/` — mock plugins exercised by tests (`mock_data_source`, …).
 - `tests/` — host-side loader + lifecycle tests.
 
