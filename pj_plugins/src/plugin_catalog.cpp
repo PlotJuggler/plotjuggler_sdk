@@ -338,6 +338,26 @@ std::string_view toString(PluginFamily family) noexcept {
   return "unknown";
 }
 
+Expected<std::optional<PluginDescriptor>> readSectionDescriptor(const std::filesystem::path& dso_path) {
+  if (!hasDsoSuffix(dso_path)) {
+    return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
+  }
+  auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
+
+  auto embedded = staticManifestCandidate(dso_path);
+  if (!embedded) {
+    return unexpected(with_path(embedded.error()));
+  }
+  if (!embedded->has_value()) {
+    return std::optional<PluginDescriptor>{};
+  }
+  auto descriptor = decodeManifest(dso_path, (*embedded)->family, (*embedded)->manifest_json);
+  if (!descriptor) {
+    return unexpected(with_path(descriptor.error()));
+  }
+  return std::optional<PluginDescriptor>(*descriptor);
+}
+
 Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
     return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));

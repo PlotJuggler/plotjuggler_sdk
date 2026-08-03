@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -76,6 +77,24 @@ struct PluginScanResult {
 
 /// Inspect one DSO and return its embedded plugin descriptor.
 [[nodiscard]] Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path);
+
+/// Reads the manifest embedded in the DSO's descriptor section without loading
+/// the plugin, and returns the parsed PluginDescriptor for the winning family
+/// (the same family-precedence rule inspectPluginDso applies).
+///
+/// Returns nullopt when the DSO has no descriptor section — either an old
+/// plugin built against a pre-section SDK, or one carrying a hand-written
+/// vtable. Returns an error when the container cannot be parsed at all or the
+/// section is present but unreadable, or when an ABI-version mismatch requires
+/// rejecting the plugin outright.
+///
+/// Intended for callers that already hold a PluginDescriptor from a live
+/// plugin (via its vtable's manifest_json) and want to cross-check that
+/// discovery saw the same metadata the loaded plugin reports. A mismatch is
+/// diagnostic-only: it flags a stale descriptor blob or a packaging mixup
+/// against honest builds. It is not a security control — a malicious DSO can
+/// lie consistently in both places.
+[[nodiscard]] Expected<std::optional<PluginDescriptor>> readSectionDescriptor(const std::filesystem::path& dso_path);
 
 /// Recursively scan a directory for platform plugin DSOs. Invalid candidates are
 /// reported in diagnostics while discovery continues.

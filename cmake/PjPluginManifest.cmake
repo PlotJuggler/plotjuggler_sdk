@@ -56,6 +56,21 @@ function(pj_emit_plugin_manifest TARGET)
   #
   # -Bsymbolic-functions is Linux/ELF-specific. On macOS the linker uses
   # two-level namespace by default (equivalent behavior), so the flag is omitted.
+  #
+  # SCOPE CAVEAT — this pair does NOT cover STB_GNU_UNIQUE data objects
+  # (Meyers singletons, inline variables, template statics, thread_local, and
+  # their `__cxa_guard_*` guards). By construction, unique symbols are a
+  # process-wide data lookup that glibc funnels through a namespace-scoped
+  # unique table (`do_lookup_unique` in glibc's `dl-lookup.c`), and
+  # -Bsymbolic-functions is a function-call rewrite that does not touch data
+  # bindings. Any vague-linkage static a first-party plugin's transitive deps
+  # instantiate (libstdc++'s own templates ship with default visibility, so
+  # `-fvisibility=hidden` on plugin source does not silence them either) still
+  # reaches `.dynsym` as UNIQUE. That is what causes a bundled DSO opened for
+  # discovery to stay resident once its unique names are entered in the
+  # process's unique table — see `pj_base/plugin_descriptor_section.hpp` for
+  # the mechanism, and the follow-up hardening (linker version scripts or
+  # `-fno-gnu-unique`) that closes the load-time gap this file cannot.
   set_target_properties(${TARGET} PROPERTIES
     CXX_VISIBILITY_PRESET   hidden
     C_VISIBILITY_PRESET     hidden

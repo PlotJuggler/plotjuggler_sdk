@@ -31,9 +31,22 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   return reinterpret_cast<void*>(module);
 #else
   // RTLD_NOW  — resolve all symbols now; fail-fast on missing ones.
-  // RTLD_LOCAL — keep plugin symbols out of the global symbol pool; each
-  //              plugin resolves its own copies of bundled statics in
-  //              isolation from other plugins and from the host.
+  // RTLD_LOCAL — keep plugin symbols out of the global symbol pool for
+  //              *most* symbols. Two categories still leak:
+  //   - STB_GNU_UNIQUE data (any vague-linkage static — inline variables,
+  //     Meyers singletons, template statics — whose defining DSO exports
+  //     it) is deliberately global by design: glibc funnels every unique
+  //     name through a process-wide table (see `do_lookup_unique` in
+  //     glibc's `dl-lookup.c`), which is precisely the mechanism that
+  //     causes a second copy of the same plugin to bind into the first
+  //     copy's storage and skip its own constructors. RTLD_LOCAL does not
+  //     override that; the fix is to NOT dlopen for discovery — see
+  //     `pj_base/plugin_descriptor_section.hpp` and `inspectPluginDso`.
+  //   - Anything the build did not manage to hide before it reached
+  //     `.dynsym`. `-fvisibility=hidden` covers first-party code but
+  //     libstdc++'s templates ship with default visibility, so their
+  //     instantiations reach `.dynsym` regardless; a proper cutoff needs a
+  //     linker version script — tracked as follow-up hardening.
   //
   // Historical note: we USED to also set RTLD_DEEPBIND on glibc to force
   // the plugin's own symbol scope ahead of the global one (Conan OpenSSL
@@ -41,13 +54,16 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // breaks LD_PRELOAD'd malloc interposition, which makes every plugin
   // dlopen fail under AddressSanitizer (and similarly for jemalloc /
   // tcmalloc interposition in production). Plugin-local symbol isolation
-  // uses two build-time mechanisms (cmake/PjPluginManifest.cmake):
+  // uses two build-time mechanisms (cmake/PjPluginManifest.cmake), both
+  // best-effort against the two carve-outs above:
   // 1. -fvisibility=hidden: hides symbols defined in plugin source files.
   // 2. -Wl,-Bsymbolic-functions (Linux): function calls within the .so
   //    resolve to the embedded static copies, bypassing PLT. This covers
   //    deps compiled without -fvisibility=hidden (e.g. libssl.a from Conan)
   //    whose symbols enter the .so with default visibility and whose calls
   //    would otherwise resolve to the host's namespace first via PLT.
+  //    It does NOT help against STB_GNU_UNIQUE data objects — the flag is
+  //    a function-call rewrite, not a data-lookup override.
   // malloc/pthread/system calls are NOT defined in the plugin so they still
   // reach the host — ASAN malloc interposition works correctly.
   int flags = RTLD_NOW | RTLD_LOCAL;

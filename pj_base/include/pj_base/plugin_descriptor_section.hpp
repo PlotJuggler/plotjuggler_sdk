@@ -14,13 +14,20 @@
 // The host reads a plugin's family and manifest straight out of the DSO image
 // on disk, so discovery never has to dlopen the plugin. That matters because
 // dlclose does not necessarily unmap what dlopen mapped: glibc pins a DSO
-// NODELETE as soon as it defines an STB_GNU_UNIQUE symbol (any vague-linkage
-// static — inline-function locals, template statics, Meyers singletons — that
-// reaches .dynsym). An inspect-then-close pass therefore leaves the plugin
-// resident for the life of the process. If a second copy of the same plugin is
-// later loaded from a different path, that copy binds its own references to the
-// first copy's storage and finds its initialisation guards already set, so any
-// layout drift between the two builds corrupts the process.
+// NODELETE as soon as it is the FIRST PROVIDER of a name entered into the
+// namespace's process-wide unique table (`do_lookup_unique` in glibc's
+// `dl-lookup.c`). "First provider" is load-bearing here: a later copy of the
+// same plugin whose unique names are already present in the table does not
+// itself get pinned — it binds INTO the first copy's storage instead, which is
+// what makes the duplicate-mapping bug so specific to the order things load in.
+// Any vague-linkage static reaching `.dynsym` is a candidate for STB_GNU_UNIQUE
+// binding (inline-function locals, template statics, Meyers singletons,
+// thread_local, and their `__cxa_guard_*` guards). An inspect-then-close pass
+// on a bundled plugin therefore leaves that plugin resident for the life of
+// the process. If a second copy of the same plugin is later loaded from a
+// different path, that copy binds its own references to the first copy's
+// storage and finds its initialisation guards already set, so any layout drift
+// between the two builds corrupts the process.
 //
 // Every DSO built with a PJ_*_PLUGIN macro carries one of these blobs per
 // family it implements. The blob duplicates the manifest string that is also
@@ -58,7 +65,11 @@
 #define PJ_PLUGIN_DESCRIPTOR_SECTION_NAME ".pj_manifest"
 #define PJ_PLUGIN_DESCRIPTOR_PLACEMENT __attribute__((section(".pj_manifest")))
 // `used` keeps the compiler from dropping it; `retain` (SHF_GNU_RETAIN) keeps
-// the linker from dropping it under --gc-sections.
+// the linker from dropping it under --gc-sections. `visibility("default")`
+// might look redundant next to those two, but it is deliberate belt-and-braces:
+// on toolchains too old for `retain` / SHF_GNU_RETAIN, an exported symbol is
+// itself a gc-root, and default visibility makes it exported. It is the same
+// job `dllexport` does on MSVC.
 #if defined(__has_attribute)
 #if __has_attribute(retain)
 #define PJ_PLUGIN_DESCRIPTOR_KEEP __attribute__((visibility("default"), used, retain))

@@ -217,5 +217,19 @@ TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {
   EXPECT_EQ(toString(PluginFamily::kUnknown), "unknown");
 }
 
+/// The section-derived manifest primitive that callers use to cross-check
+/// against a live plugin's vtable manifest after load. Returning the same
+/// descriptor discovery would report keeps the two paths honest — a stale
+/// blob or packaging mixup that made them diverge would surface as a
+/// diagnostic on the host runtime side (out of scope for this SDK).
+TEST_F(PluginCatalogTest, ReadSectionDescriptorReturnsParsedManifest) {
+  auto section = readSectionDescriptor(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH);
+  ASSERT_TRUE(section.has_value()) << section.error();
+  ASSERT_TRUE(section->has_value()) << "the mock DSO carries a descriptor section by construction";
+  EXPECT_EQ((*section)->family, PluginFamily::kDataSource);
+  EXPECT_FALSE((*section)->id.empty());
+  EXPECT_FALSE((*section)->version.empty());
+}
+
 }  // namespace
 }  // namespace PJ
