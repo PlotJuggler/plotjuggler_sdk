@@ -9,6 +9,7 @@
 
 #include "pj_base/assert.hpp"
 #include "pj_base/builtin/builtin_object.hpp"
+#include "pj_base/expected.hpp"
 #include "pj_base/sdk/detail/json.hpp"
 
 namespace PJ::sdk {
@@ -22,7 +23,8 @@ inline constexpr std::string_view kBuiltinObjectTypeMetadataKey = "builtin_objec
 /// `builtinObjectType()` accepts only the SDK enum and serializes its canonical
 /// `name()` (for example, `BuiltinObjectType::kImage` becomes `"kImage"`).
 /// Custom string fields are emitted in lexicographic key order after the
-/// canonical type field.
+/// canonical type field. `build()` returns an error after any invalid setter
+/// call, including in release builds where assertions are disabled.
 ///
 /// @since 0.21.0
 class ObjectTopicMetadataBuilder {
@@ -36,6 +38,8 @@ class ObjectTopicMetadataBuilder {
     const auto parsed = parseBuiltinObjectType(name(type));
     const bool is_known_type = type != BuiltinObjectType::kNone && parsed.has_value() && *parsed == type;
     if (!is_known_type) {
+      builtin_object_type_.reset();
+      setError("builtin object topic type must be a known, non-reserved value other than kNone");
       PJ_ASSERT(is_known_type, "builtin object topic type must be a known, non-reserved value other than kNone");
       return *this;
     }
@@ -51,6 +55,8 @@ class ObjectTopicMetadataBuilder {
   ObjectTopicMetadataBuilder& string(std::string_view key, std::string_view value) {
     const bool is_custom_key = key != kBuiltinObjectTypeMetadataKey;
     if (!is_custom_key) {
+      builtin_object_type_.reset();
+      setError("metadata key \"builtin_object_type\" is reserved; use builtinObjectType()");
       PJ_ASSERT(is_custom_key, "builtin_object_type must be set through builtinObjectType()");
       return *this;
     }
@@ -58,9 +64,14 @@ class ObjectTopicMetadataBuilder {
     return *this;
   }
 
-  /// Serialize the accumulated metadata as a deterministic JSON object.
+  /// Serialize the accumulated metadata as a deterministic JSON object, or
+  /// return the first contract error recorded by a setter.
   /// @since 0.21.0
-  [[nodiscard]] std::string build() const {
+  [[nodiscard]] Expected<std::string> build() const {
+    if (error_.has_value()) {
+      return unexpected(*error_);
+    }
+
     std::string out;
     out.reserve(48U + strings_.size() * 16U);
     out.push_back('{');
@@ -88,6 +99,13 @@ class ObjectTopicMetadataBuilder {
  private:
   std::optional<BuiltinObjectType> builtin_object_type_;
   std::map<std::string, std::string> strings_;
+  std::optional<std::string> error_;
+
+  void setError(std::string_view error) {
+    if (!error_.has_value()) {
+      error_ = error;
+    }
+  }
 };
 
 }  // namespace PJ::sdk

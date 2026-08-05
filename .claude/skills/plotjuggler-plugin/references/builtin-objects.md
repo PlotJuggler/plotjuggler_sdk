@@ -46,6 +46,7 @@ it, then register a topic once and push per sample:
 
 ```cpp
 #include <pj_base/builtin/image_annotations_codec.hpp>   // the matching codec
+#include <pj_base/sdk/object_topic_metadata.hpp>
 
 const auto* objectHost = objectWriteHost();          // DataSource accessor; nullable
 if (!objectHost) return PJ::unexpected("object store unavailable");
@@ -53,12 +54,10 @@ if (!objectHost) return PJ::unexpected("object store unavailable");
 PJ::sdk::ImageAnnotations anno = /* fill in */;
 std::vector<uint8_t> bytes = PJ::serializeImageAnnotations(anno);   // PJ:: (not PJ::sdk::); infallible
 
-// metadata_json is opaque to the store but read by VIEWERS to pick a renderer —
-// an empty "{}" makes the topic unrenderable. Build it with MediaMetadataBuilder
-// (pj_base/sdk/media_metadata.hpp):
-const std::string meta = PJ::sdk::MediaMetadataBuilder().mediaClass("image_annotations").build();
-
-auto topic = objectHost->registerTopic("overlays", meta);
+// The typed overload emits the canonical builtin_object_type metadata with the
+// exact PJ::sdk::name() value ("kImageAnnotations") used by viewers.
+auto topic = objectHost->registerTopic(
+    "overlays", PJ::sdk::BuiltinObjectType::kImageAnnotations);
 if (!topic) return PJ::unexpected(topic.error());
 auto st = objectHost->pushOwned(*topic, timestamp_ns, bytes);      // host copies the bytes
 if (!st) return PJ::unexpected(st.error());

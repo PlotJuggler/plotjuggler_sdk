@@ -4,6 +4,7 @@
 
 #include <array>
 #include <charconv>
+#include <concepts>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -806,11 +807,17 @@ class SourceObjectWriteHostView {
 
   /// Register a built-in object topic using canonical renderer metadata.
   /// Custom string fields already present in `extra_metadata` are preserved.
+  /// Invalid metadata returns `unexpected` without calling the raw host slot.
   /// @since 0.21.0
+  template <typename ObjectType>
+    requires std::same_as<ObjectType, BuiltinObjectType>
   [[nodiscard]] Expected<ObjectTopicHandle> registerTopic(
-      std::string_view name, BuiltinObjectType type, ObjectTopicMetadataBuilder extra_metadata = {}) const {
-    const std::string metadata_json = extra_metadata.builtinObjectType(type).build();
-    return registerTopic(name, metadata_json);
+      std::string_view name, ObjectType type, ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const auto metadata_json = extra_metadata.builtinObjectType(type).build();
+    if (!metadata_json) {
+      return unexpected(metadata_json.error());
+    }
+    return registerTopic(name, *metadata_json);
   }
 
   /// Eager push — host copies the bytes into its own storage.
@@ -1291,12 +1298,18 @@ class ToolboxHostView {
 
   /// Register a built-in object topic using canonical renderer metadata.
   /// Custom string fields already present in `extra_metadata` are preserved.
+  /// Invalid metadata returns `unexpected` without calling the raw host slot.
   /// @since 0.21.0
+  template <typename ObjectType>
+    requires std::same_as<ObjectType, BuiltinObjectType>
   [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopic(
-      DataSourceHandle source, std::string_view name, BuiltinObjectType type,
+      DataSourceHandle source, std::string_view name, ObjectType type,
       ObjectTopicMetadataBuilder extra_metadata = {}) const {
-    const std::string metadata_json = extra_metadata.builtinObjectType(type).build();
-    return registerObjectTopic(source, name, metadata_json);
+    const auto metadata_json = extra_metadata.builtinObjectType(type).build();
+    if (!metadata_json) {
+      return unexpected(metadata_json.error());
+    }
+    return registerObjectTopic(source, name, *metadata_json);
   }
 
   /// Eager push of an object payload — host copies the bytes into its own
@@ -1345,13 +1358,18 @@ class ToolboxHostView {
 
   /// Register a built-in object topic on an existing dataset using canonical
   /// renderer metadata. Custom string fields already present in
-  /// `extra_metadata` are preserved.
+  /// `extra_metadata` are preserved. Invalid metadata returns `unexpected`
+  /// without calling the raw host slot.
   /// @since 0.21.0
+  template <typename ObjectType>
+    requires std::same_as<ObjectType, BuiltinObjectType>
   [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopicOnDataset(
-      DatasetId dataset, std::string_view name, BuiltinObjectType type,
-      ObjectTopicMetadataBuilder extra_metadata = {}) const {
-    const std::string metadata_json = extra_metadata.builtinObjectType(type).build();
-    return registerObjectTopicOnDataset(dataset, name, metadata_json);
+      DatasetId dataset, std::string_view name, ObjectType type, ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const auto metadata_json = extra_metadata.builtinObjectType(type).build();
+    if (!metadata_json) {
+      return unexpected(metadata_json.error());
+    }
+    return registerObjectTopicOnDataset(dataset, name, *metadata_json);
   }
 
   /// Bound a topic's retention to the last `max_entries` snapshots (0 = unlimited).

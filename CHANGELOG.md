@@ -10,11 +10,15 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 - Added `PJ::sdk::ObjectTopicMetadataBuilder`. Its typed
   `builtinObjectType()` method emits the canonical `builtin_object_type` key
   using the exact `PJ::sdk::name()` value, while custom string metadata is
-  escaped and emitted in deterministic key order.
+  escaped and emitted in deterministic key order. `build()` returns
+  `Expected<std::string>` so invalid/reserved types and attempts to insert the
+  canonical key as custom metadata remain errors even when assertions are
+  disabled.
 - Added typed C++ registration overloads on `SourceObjectWriteHostView` and
   `ToolboxHostView` (including existing-dataset registration). Existing raw
-  JSON overloads remain source-compatible, and no C ABI struct, vtable, or
-  protocol changed.
+  JSON overloads remain source-compatible—including calls with `{}`—and
+  invalid typed metadata is returned without calling the raw host slot. No C
+  ABI struct, vtable, or protocol changed.
 - Clarified that `MediaMetadataBuilder::mediaClass()` supplies supplemental
   media metadata and does not select a canonical built-in renderer.
 
