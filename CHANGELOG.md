@@ -129,6 +129,17 @@ protocol version, or introducing a `PJ_SDK_HAS_*` macro:
 The shared picker controller, staged-file lease ownership, and browser/WASM
 host implementation remain companion PlotJuggler work.
 
+### Example: canonical SDK 0.21 dialog controls
+
+The installed-SDK consumer now builds one Qt-free `DialogPluginTyped` example
+that composes the 0.21 dialog additions: graceful host-info fallback,
+object-name-keyed stacked pages, a stable-ID topic tree with independent
+visibility filtering and lazy snapshot publication, and a capability-gated
+structured multi-file picker with distinct selected/cancelled/unsupported
+handling. Protocol-level tests drive the example through `DialogHandle`,
+`WidgetDataView`, and `WidgetEventBuilder`, including static-manifest and tree
+validation checks.
+
 ## [0.20.0]
 
 ### Feature: descriptor import v1 — import a persisted source descriptor, promote the materialized artifact (MINOR)

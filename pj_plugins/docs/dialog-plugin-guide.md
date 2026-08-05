@@ -48,8 +48,13 @@ For a namespaced class in a static build, provide the getter-symbol token
 separately: `PJ_DIALOG_PLUGIN_NAMED(my::Dialog, MyDialog, kManifestJson)`.
 Dynamic builds may use either form.
 
-A complete example lives at
-`pj_plugins/dialog_protocol/examples/mock_dialog.cpp`.
+The [SDK dialog controls example](../../examples/sdk_consumer/dialog_controls.cpp)
+is the canonical 0.21 usage sample. It composes runtime host-info fallback,
+object-name-keyed `QStackedWidget` pages, a filtered/lazy stable-ID
+`QTreeWidget`, and a capability-gated structured multi-file picker in one
+Qt-free `DialogPluginTyped`. The smaller
+`pj_plugins/dialog_protocol/examples/mock_dialog.cpp` remains the minimal
+fixture for basic controls.
 
 ## Plugin Contract
 

@@ -116,6 +116,7 @@ set(PJ_PLUGIN_TESTS
   dialog_plugin_typed_test
   plugin_lifecycle_test
   dialog_handle_test
+  dialog_controls_example_test
   widget_data_view_test
   widget_event_builder_test
   dialog_library_test
@@ -148,6 +149,16 @@ add_test(NAME plugin_lifecycle_test COMMAND plugin_lifecycle_test)
 add_executable(dialog_handle_test tests/dialog_handle_test.cpp examples/mock_dialog.cpp)
 target_link_libraries(dialog_handle_test PRIVATE pj_dialog_host pj_dialog_sdk GTest::gtest_main)
 add_test(NAME dialog_handle_test COMMAND dialog_handle_test)
+
+# Protocol-level validation of the canonical installed-SDK example. Compiling
+# the same Qt-free source into the test exercises its exported static manifest
+# and vtable directly, without loading Qt or opening a native picker.
+add_executable(dialog_controls_example_test
+  tests/dialog_controls_example_test.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/sdk_consumer/dialog_controls.cpp
+)
+target_link_libraries(dialog_controls_example_test PRIVATE pj_dialog_host pj_dialog_sdk GTest::gtest_main)
+add_test(NAME dialog_controls_example_test COMMAND dialog_controls_example_test)
 
 add_executable(widget_data_view_test tests/widget_data_view_test.cpp)
 target_link_libraries(widget_data_view_test PRIVATE pj_dialog_host GTest::gtest_main)
