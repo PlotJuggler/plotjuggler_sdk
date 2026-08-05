@@ -578,6 +578,58 @@ class ParserWriteHostView {
 };
 
 // ---------------------------------------------------------------------------
+// ParserRuntimeHostView — optional non-fatal parser diagnostics
+// ---------------------------------------------------------------------------
+
+/** C++ mirror of PJ_parser_diagnostic_level_t. @since 0.21.0 */
+enum class ParserDiagnosticLevel : uint32_t {
+  Info = PJ_PARSER_DIAGNOSTIC_INFO,
+  Warning = PJ_PARSER_DIAGNOSTIC_WARNING,
+  Error = PJ_PARSER_DIAGNOSTIC_ERROR,
+};
+
+/// Plugin-side view of the optional `pj.parser_runtime.v1` service.
+///
+/// Reporting is noexcept and must be non-blocking for the parse callback
+/// thread. An unbound view safely discards reports. `stable_code` is a
+/// machine-stable deduplication key such as `integer_overflow`, not localized
+/// or value-filled prose; `message` is representative human-readable text.
+/// Fatal inability to parse the current message still uses `Status`.
+///
+/// @since 0.21.0
+class ParserRuntimeHostView {
+ public:
+  ParserRuntimeHostView() = default;
+  explicit ParserRuntimeHostView(PJ_parser_runtime_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
+
+  /// Report one recoverable/aggregated condition to the host. Safe no-op when
+  /// the optional service is absent or does not expose the v1 slot.
+  ///
+  /// @since 0.21.0
+  void reportDiagnostic(
+      ParserDiagnosticLevel level, std::string_view stable_code, std::string_view message,
+      uint64_t occurrences = 1) const noexcept {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_parser_runtime_host_vtable_t, host_.vtable, report_diagnostic)) {
+      return;
+    }
+    host_.vtable->report_diagnostic(
+        host_.ctx, static_cast<PJ_parser_diagnostic_level_t>(level), toAbiString(stable_code), toAbiString(message),
+        occurrences);
+  }
+
+  [[nodiscard]] const PJ_parser_runtime_host_t& raw() const noexcept {
+    return host_;
+  }
+
+ private:
+  PJ_parser_runtime_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
 // Object read host view (protocol v4)
 //
 // Read-only access to `pj_datastore::ObjectStore`. Exposes lookup / list /

@@ -456,6 +456,57 @@ typedef struct {
   const PJ_parser_write_host_vtable_t* vtable;
 } PJ_parser_write_host_t;
 
+/**
+ * Optional parser runtime diagnostics service ("pj.parser_runtime.v1",
+ * protocol_version 1).
+ *
+ * Parsers use this service for recoverable or aggregated conditions that do
+ * not make the current parse fail. Fatal failure of the current message still
+ * travels through the parser's Status/PJ_error_t path.
+ *
+ * The host aggregates reports by parser manifest ID, bound schema/type,
+ * level, and stable_code. stable_code is a plugin-defined, machine-stable
+ * deduplication key (for example "integer_overflow"), never localized or
+ * value-filled prose. All string views are borrowed for the duration of the
+ * call.
+ *
+ * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ *
+ * @since 0.21.0
+ */
+#define PJ_PARSER_RUNTIME_HOST_SERVICE_V1 "pj.parser_runtime.v1"
+
+/** Diagnostic severity reported by a message parser. @since 0.21.0 */
+typedef enum {
+  PJ_PARSER_DIAGNOSTIC_INFO = 0,
+  PJ_PARSER_DIAGNOSTIC_WARNING = 1,
+  PJ_PARSER_DIAGNOSTIC_ERROR = 2,
+  /* Forces a stable 4-byte width across compilers. Not a real level. */
+  PJ_PARSER_DIAGNOSTIC_FORCE_INT32 = 0x7FFFFFFF,
+} PJ_parser_diagnostic_level_t;
+
+/** ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ * @since 0.21.0 */
+typedef struct PJ_parser_runtime_host_vtable_t {
+  uint32_t protocol_version;
+  uint32_t struct_size;
+
+  /* [thread-safe, non-blocking] Report a recoverable parser diagnostic.
+   * The implementation must not throw or block the parse callback thread.
+   * occurrences is the number of equivalent events represented by this
+   * report; the host accumulates it under stable_code. classify_schema is
+   * side-effect free and must never call this slot. */
+  void (*report_diagnostic)(
+      void* ctx, PJ_parser_diagnostic_level_t level, PJ_string_view_t stable_code, PJ_string_view_t message,
+      uint64_t occurrences) PJ_NOEXCEPT;
+} PJ_parser_runtime_host_vtable_t;
+
+/** ABI-FROZEN: fat pointer layout permanent. @since 0.21.0 */
+typedef struct {
+  void* ctx;
+  const PJ_parser_runtime_host_vtable_t* vtable;
+} PJ_parser_runtime_host_t;
+
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  *
  * Toolbox host: multi-source read+write.
