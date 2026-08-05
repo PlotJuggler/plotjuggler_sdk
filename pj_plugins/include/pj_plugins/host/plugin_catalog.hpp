@@ -44,7 +44,10 @@ struct PluginDescriptor {
   std::string id;
   std::string name;
   std::string version;
-  std::string min_plotjuggler_version;  ///< optional; "" means no declared minimum (always compatible)
+  std::string min_plotjuggler_version;  ///< optional application-release expectation; advisory host policy
+  /// Optional SDK contract floor; "" means undeclared. This is a hard host-side
+  /// load gate, distinct from both the application release and the compile SDK.
+  std::string min_sdk_required;
   std::string description;
   std::string category;
   std::vector<std::string> encoding;         ///< for message parsers (one or more)
@@ -66,9 +69,10 @@ struct PluginScanResult {
 
 /// Decode a plugin's embedded manifest JSON into a descriptor, applying the
 /// canonical validation both discovery paths share: `id`/`name`/`version` are
-/// required non-empty strings, typed fields reject mismatched JSON types, and
-/// a message parser must declare a non-empty `encoding` array. `source_path`
-/// is recorded as the descriptor's dso_path (for a DSO the file path; a host
+/// required non-empty strings, typed fields reject mismatched JSON types,
+/// `min_sdk_required` is empty or one concrete SemVer 2.0.0 version, and a
+/// message parser must declare a non-empty `encoding` array. `source_path` is
+/// recorded as the descriptor's dso_path (for a DSO the file path; a host
 /// registering a statically linked plugin passes a synthetic label instead);
 /// error strings do not embed it — callers prefix their own source context.
 [[nodiscard]] Expected<PluginDescriptor> decodeManifest(
