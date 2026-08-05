@@ -90,7 +90,7 @@ TEST_F(DialogHandleTest, SetHostInfoTreatsTruncatedOldVtableAsUnsupported) {
   std::memcpy(error.domain, "unchanged", sizeof("unchanged"));
   const PJ_error_t expected_error = error;
 
-  EXPECT_FALSE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(handle.setHostInfo(info, &error), PJ::SetHostInfoResult::Unsupported);
   EXPECT_EQ(recorder.calls, 0);
   EXPECT_EQ(std::memcmp(&error, &expected_error, sizeof(error)), 0);
 }
@@ -105,7 +105,7 @@ TEST_F(DialogHandleTest, SetHostInfoTreatsNullSlotAsUnsupported) {
   std::memcpy(error.domain, "unchanged", sizeof("unchanged"));
   const PJ_error_t expected_error = error;
 
-  EXPECT_FALSE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(handle.setHostInfo(info, &error), PJ::SetHostInfoResult::Unsupported);
   EXPECT_EQ(recorder.calls, 0);
   EXPECT_EQ(std::memcmp(&error, &expected_error, sizeof(error)), 0);
 }
@@ -117,7 +117,7 @@ TEST_F(DialogHandleTest, SetHostInfoForwardsToValidSlot) {
   const auto info = testHostInfo();
   PJ_error_t error{};
 
-  EXPECT_TRUE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(handle.setHostInfo(info, &error), PJ::SetHostInfoResult::Accepted);
   EXPECT_EQ(recorder.calls, 1);
   EXPECT_EQ(recorder.info, &info);
   EXPECT_EQ(recorder.error, &error);
@@ -132,7 +132,7 @@ TEST_F(DialogHandleTest, SetHostInfoPropagatesPluginFailureAndError) {
   const auto info = testHostInfo();
   PJ_error_t error{};
 
-  EXPECT_FALSE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(handle.setHostInfo(info, &error), PJ::SetHostInfoResult::Rejected);
   EXPECT_EQ(recorder.calls, 1);
   EXPECT_EQ(error.code, 73);
   EXPECT_STREQ(error.domain, "test");

@@ -89,6 +89,10 @@ borrowing) and before the first `ui_content()`, `loadConfig()`, or
 `widget_data()` call. `DialogPluginBase` copies the two version strings and the
 capability bits during delivery, so plugins may safely retain the returned
 information even though the C string views are valid only during the ABI call.
+The host-info struct is independently appendable: fields not wholly covered by
+its `struct_size` are treated as empty strings or zero capability bits. Each
+successful delivery atomically replaces the previous snapshot (last writer
+wins); a rejected delivery leaves the previous snapshot intact.
 
 Derived dialogs inspect the protected `hostInfo()` accessor:
 

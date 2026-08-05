@@ -428,8 +428,10 @@ application supplies the concrete renderer/reactive loop for its UI toolkit.
 
 `DialogHandle::setHostInfo()` is the only runtime layer that inspects the
 optional vtable slot: it gates the read with `PJ_HAS_TAIL_SLOT`, and concrete
-dialog/panel engines do not access the field directly. A missing slot is a
-clean unsupported result, preserving compatibility with pre-0.21 plugins.
+dialog/panel engines do not access the field directly. Its tri-state result
+distinguishes an absent pre-0.21 slot (`Unsupported`, with no plugin call) from
+a plugin accepting or rejecting the information (`Accepted`/`Rejected`). A
+rejected call may populate `PJ_error_t`, but the C contract does not require it.
 
 ### Widget binding
 

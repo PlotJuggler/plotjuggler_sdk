@@ -106,6 +106,14 @@ TEST_F(PluginCatalogTest, InspectDialogDsoFallsBackWhenStaticManifestSlotIsNull)
   EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
 }
 
+TEST_F(PluginCatalogTest, InspectRequiredPrefixOnlyDialogDsoDoesNotReadStaticManifestTail) {
+  auto descriptor = inspectPluginDso(PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "old-dialog-vtable");
+  EXPECT_EQ(descriptor->name, "Old Dialog Vtable");
+  EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
+}
+
 TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {
   auto descriptor = inspectPluginDso(PJ_MISSING_ID_PLUGIN_PATH);
   ASSERT_FALSE(descriptor.has_value());

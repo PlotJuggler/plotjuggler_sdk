@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <pj_plugins/sdk/dialog_plugin_base.hpp>
@@ -115,6 +116,43 @@ TEST_F(DialogPluginBaseHostInfoTest, CopiesStringsAndCapabilitiesDuringDelivery)
   EXPECT_FALSE(info->has(PJ::DialogHostCapability::kCanSelectFolder));
 }
 
+TEST_F(DialogPluginBaseHostInfoTest, AcceptsOnlyFieldsCoveredByStructSize) {
+  static constexpr char kSdkVersion[] = "0.21.0";
+  static constexpr char kIgnoredPlotJugglerVersion[] = "must-not-be-read";
+  const PJ_dialog_host_info_t info{
+      static_cast<uint32_t>(offsetof(PJ_dialog_host_info_t, plotjuggler_version)),
+      PJ_string_view_t{kSdkVersion, sizeof(kSdkVersion) - 1},
+      PJ_string_view_t{kIgnoredPlotJugglerVersion, sizeof(kIgnoredPlotJugglerVersion) - 1},
+      PJ_DIALOG_HOST_CAN_OPEN_FILE,
+  };
+  PJ_error_t error{};
+
+  ASSERT_TRUE(vtable_->set_host_info(context_, &info, &error));
+  const auto& observed = plugin().observedHostInfo();
+  ASSERT_TRUE(observed.has_value());
+  EXPECT_EQ(observed->sdk_version, "0.21.0");
+  EXPECT_TRUE(observed->plotjuggler_version.empty());
+  EXPECT_EQ(observed->capabilities, 0u);
+}
+
+TEST_F(DialogPluginBaseHostInfoTest, AcceptsNullDataAndZeroLengthStringViewsAsEmpty) {
+  static constexpr char kIgnored[] = "ignored";
+  const PJ_dialog_host_info_t info{
+      static_cast<uint32_t>(sizeof(PJ_dialog_host_info_t)),
+      PJ_string_view_t{nullptr, 0},
+      PJ_string_view_t{kIgnored, 0},
+      PJ_DIALOG_HOST_CAN_OPEN_FILES,
+  };
+  PJ_error_t error{};
+
+  ASSERT_TRUE(vtable_->set_host_info(context_, &info, &error));
+  const auto& observed = plugin().observedHostInfo();
+  ASSERT_TRUE(observed.has_value());
+  EXPECT_TRUE(observed->sdk_version.empty());
+  EXPECT_TRUE(observed->plotjuggler_version.empty());
+  EXPECT_TRUE(observed->has(PJ::DialogHostCapability::kCanOpenFiles));
+}
+
 TEST_F(DialogPluginBaseHostInfoTest, RepeatedDeliveryIsLastWriterWins) {
   ASSERT_TRUE(deliver("0.21.0", "4.1.0", PJ_DIALOG_HOST_CAN_OPEN_FILE));
   ASSERT_TRUE(deliver("0.22.0", "4.2.0", PJ_DIALOG_HOST_CAN_SELECT_FOLDER));
@@ -125,6 +163,21 @@ TEST_F(DialogPluginBaseHostInfoTest, RepeatedDeliveryIsLastWriterWins) {
   EXPECT_EQ(info->plotjuggler_version, "4.2.0");
   EXPECT_FALSE(info->has(PJ::DialogHostCapability::kCanOpenFile));
   EXPECT_TRUE(info->has(PJ::DialogHostCapability::kCanSelectFolder));
+}
+
+TEST_F(DialogPluginBaseHostInfoTest, FailedSecondDeliveryPreservesFirstSnapshot) {
+  ASSERT_TRUE(deliver("0.21.0", "4.2.0", PJ_DIALOG_HOST_CAN_SAVE_FILE_PATH));
+
+  const PJ_dialog_host_info_t invalid_info{};
+  PJ_error_t error{};
+  ASSERT_FALSE(vtable_->set_host_info(context_, &invalid_info, &error));
+  EXPECT_NE(error.code, 0);
+
+  const auto& observed = plugin().observedHostInfo();
+  ASSERT_TRUE(observed.has_value());
+  EXPECT_EQ(observed->sdk_version, "0.21.0");
+  EXPECT_EQ(observed->plotjuggler_version, "4.2.0");
+  EXPECT_TRUE(observed->has(PJ::DialogHostCapability::kCanSaveFilePath));
 }
 
 }  // namespace

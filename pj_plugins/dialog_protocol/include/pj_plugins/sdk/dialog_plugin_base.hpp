@@ -80,7 +80,8 @@ class DialogPluginBase {
   ///
   /// An empty optional means the plugin is running under a pre-0.21 host or a
   /// non-conforming embedding host. Repeated successful deliveries use
-  /// last-writer-wins semantics.
+  /// last-writer-wins semantics; a rejected delivery preserves the last
+  /// successfully captured snapshot.
   ///
   /// @since 0.21.0
   [[nodiscard]] const std::optional<DialogHostInfo>& hostInfo() const noexcept {
@@ -269,21 +270,34 @@ class DialogPluginBase {
       self->storeError(out_error, 2, "dialog", "set_host_info called with null info");
       return false;
     }
-    constexpr std::size_t kRequiredSize =
-        offsetof(PJ_dialog_host_info_t, capabilities) + sizeof(PJ_dialog_host_info_t::capabilities);
-    if (info->struct_size < kRequiredSize) {
+    constexpr std::size_t kHeaderSize =
+        offsetof(PJ_dialog_host_info_t, struct_size) + sizeof(PJ_dialog_host_info_t::struct_size);
+    if (info->struct_size < kHeaderSize) {
       self->storeError(out_error, 2, "dialog", "set_host_info called with undersized info");
       return false;
     }
+    const auto field_is_covered = [info](std::size_t offset, std::size_t size) noexcept {
+      return static_cast<std::size_t>(info->struct_size) >= offset + size;
+    };
     try {
       auto copy_string = [](PJ_string_view_t value) {
-        return value.data == nullptr ? std::string() : std::string(value.data, value.size);
+        return value.data == nullptr || value.size == 0 ? std::string() : std::string(value.data, value.size);
       };
-      DialogHostInfo copied{copy_string(info->sdk_version), copy_string(info->plotjuggler_version), info->capabilities};
+      DialogHostInfo copied;
+      if (field_is_covered(offsetof(PJ_dialog_host_info_t, sdk_version), sizeof(PJ_string_view_t))) {
+        copied.sdk_version = copy_string(info->sdk_version);
+      }
+      if (field_is_covered(offsetof(PJ_dialog_host_info_t, plotjuggler_version), sizeof(PJ_string_view_t))) {
+        copied.plotjuggler_version = copy_string(info->plotjuggler_version);
+      }
+      if (field_is_covered(offsetof(PJ_dialog_host_info_t, capabilities), sizeof(uint64_t))) {
+        copied.capabilities = info->capabilities;
+      }
       self->host_info_ = std::move(copied);
       return true;
-    } catch (const std::exception& e) {
-      self->storeError(out_error, 1, "dialog", std::string("set_host_info failed: ") + e.what());
+    } catch (const std::exception&) {
+      // Keep this noexcept catch path allocation-free, including for bad_alloc.
+      self->storeError(out_error, 1, "dialog", "set_host_info failed");
       return false;
     } catch (...) {
       self->storeError(out_error, 1, "dialog", "unknown exception in set_host_info");

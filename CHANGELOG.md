@@ -17,11 +17,14 @@ tail slot:
   `PJ_DIALOG_PROTOCOL_VERSION` remains 4, `PJ_DIALOG_MIN_VTABLE_SIZE` remains
   pinned to the required prefix, and old vtables are accepted unchanged.
 - `DialogHandle::setHostInfo()` owns the runtime `PJ_HAS_TAIL_SLOT` gate and
-  leaves the error output untouched when the slot is absent.
+  returns an explicit `Unsupported`/`Accepted`/`Rejected` result. Unsupported
+  slots are never called and leave the error output untouched; rejection may
+  optionally carry a plugin error.
 - `DialogPluginBase` copies host information, exposes protected `hostInfo()` and
-  typed `DialogHostCapability` checks, and uses last-writer-wins replacement.
-  Empty `hostInfo()` is the fallback signal for a pre-0.21 or non-conforming
-  embedding host.
+  typed `DialogHostCapability` checks, accepts appendable partial host-info
+  structs with zero/empty defaults, and uses last-writer-wins replacement after
+  successful deliveries. Empty `hostInfo()` is the fallback signal for a
+  pre-0.21 or non-conforming embedding host.
 
 The generated SDK version header and `PJ_SDK_HAS_DIALOG_HOST_INFO` feature-test
 macro are deferred to their separate 0.21 package; no `PJ_SDK_HAS_*` macro is

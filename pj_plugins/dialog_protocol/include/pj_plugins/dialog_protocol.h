@@ -56,7 +56,9 @@ typedef enum PJ_dialog_host_capability_t {
   PJ_DIALOG_HOST_CAN_SAVE_FILE_PATH = 1ull << 2,
   PJ_DIALOG_HOST_CAN_SELECT_FOLDER = 1ull << 3,
   PJ_DIALOG_HOST_STAGES_BROWSER_FILE = 1ull << 4,
-  /* Forces a stable 4-byte width across compilers. Not a real capability. */
+  /* Forces a stable 4-byte width across compilers. Not a real capability.
+   * New enum members are therefore limited to bits 0-30. Future capabilities
+   * using bits 31 or higher must be UINT64_C(...) #define constants instead. */
   PJ_DIALOG_HOST_CAPABILITY_FORCE_INT32 = 0x7FFFFFFF
 } PJ_dialog_host_capability_t;
 
@@ -65,9 +67,10 @@ typedef enum PJ_dialog_host_capability_t {
  *
  * The host zero-initializes the complete storage it provides and sets
  * struct_size to its available size. Consumers read only fields wholly covered
- * by struct_size so this struct can grow by appending fields. String views are
- * valid only for the duration of set_host_info; plugins that retain them must
- * copy them during the call.
+ * by struct_size so this struct can grow by appending fields; uncovered string
+ * fields are treated as empty and uncovered capability bits as zero. String
+ * views are valid only for the duration of set_host_info; plugins that retain
+ * them must copy them during the call.
  *
  * @since 0.21.0
  */
@@ -121,7 +124,9 @@ typedef struct PJ_dialog_vtable_t {
    * The host calls this after creating or borrowing the dialog context and
    * before get_ui_content, load_config, or get_widget_data. Repeated successful
    * calls replace the previous information (last writer wins). The info pointer
-   * and its string views are valid only for this call.
+   * and its string views are valid only for this call. Returns true when the
+   * information was accepted. A false return rejects the delivery and may, but
+   * is not required to, populate error.
    *
    * @since 0.21.0
    */

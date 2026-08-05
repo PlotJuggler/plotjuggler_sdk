@@ -12,6 +12,15 @@
 
 namespace PJ {
 
+/// Result of delivering runtime host information to a dialog.
+///
+/// @since 0.21.0
+enum class SetHostInfoResult {
+  Unsupported,
+  Accepted,
+  Rejected,
+};
+
 /// RAII wrapper around a plugin vtable + context (protocol v4).
 class DialogHandle {
  public:
@@ -62,21 +71,23 @@ class DialogHandle {
   /// Supply immutable host information to this dialog instance.
   ///
   /// This method owns the optional-tail-slot gate: runtime engines must call it
-  /// instead of reading PJ_dialog_vtable_t::set_host_info directly. Returns
-  /// false without invoking plugin code or modifying @p out_error when the
-  /// dialog predates the slot or exposes it as null. Otherwise forwards the
-  /// plugin's boolean result and error unchanged.
+  /// instead of reading PJ_dialog_vtable_t::set_host_info directly.
+  /// SetHostInfoResult::Unsupported means the dialog predates the slot, exposes
+  /// it as null, or the handle is empty; plugin code is not invoked and
+  /// @p out_error is not modified. SetHostInfoResult::Accepted means the plugin
+  /// returned true. SetHostInfoResult::Rejected means the plugin returned false;
+  /// @p out_error may be populated, but the C contract does not require it.
   ///
   /// Call after construction/borrowing and before ui_content(), load_config(),
   /// or widget_data(). The info and its string views need only remain valid for
   /// the duration of this call.
   ///
   /// @since 0.21.0
-  [[nodiscard]] bool setHostInfo(const PJ_dialog_host_info_t& info, PJ_error_t* out_error = nullptr) {
+  [[nodiscard]] SetHostInfoResult setHostInfo(const PJ_dialog_host_info_t& info, PJ_error_t* out_error = nullptr) {
     if (vt_ == nullptr || ctx_ == nullptr || !PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, set_host_info)) {
-      return false;
+      return SetHostInfoResult::Unsupported;
     }
-    return vt_->set_host_info(ctx_, &info, out_error);
+    return vt_->set_host_info(ctx_, &info, out_error) ? SetHostInfoResult::Accepted : SetHostInfoResult::Rejected;
   }
 
   // --- Queries ---

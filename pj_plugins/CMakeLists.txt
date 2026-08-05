@@ -358,6 +358,7 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
   PJ_STATIC_MANIFEST_DIALOG_PLUGIN_PATH="$<TARGET_FILE:static_manifest_dialog_plugin>"
   PJ_LEGACY_MACRO_DIALOG_PLUGIN_PATH="$<TARGET_FILE:legacy_macro_dialog_plugin>"
+  PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH="$<TARGET_FILE:old_dialog_vtable_plugin>"
   PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_required_slots_plugin>"
   PJ_MISSING_ID_PLUGIN_PATH="$<TARGET_FILE:missing_id_data_source_plugin>"
   PJ_INVALID_OPTIONAL_PLUGIN_PATH="$<TARGET_FILE:invalid_optional_manifest_data_source_plugin>"
@@ -372,7 +373,7 @@ add_dependencies(plugin_catalog_test mock_data_source_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
                  static_manifest_dialog_plugin legacy_macro_dialog_plugin
-                 missing_dialog_required_slots_plugin)
+                 old_dialog_vtable_plugin missing_dialog_required_slots_plugin)
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS

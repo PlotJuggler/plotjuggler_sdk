@@ -80,15 +80,28 @@ TEST(DialogLibraryTest, RejectsMissingRequiredSlot) {
   EXPECT_NE(lib.error().find("Dialog vtable missing required slot: get_ui_content"), std::string::npos);
 }
 
-TEST(DialogLibraryTest, AcceptsPreHostInfoVtableWithRequiredV4Prefix) {
+TEST(DialogLibraryTest, AcceptsRequiredPrefixOnlyVtableAndGatesOptionalTailSlots) {
   auto lib = PJ::DialogLibrary::load(PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH);
   ASSERT_TRUE(lib) << lib.error();
   ASSERT_NE(lib->vtable(), nullptr);
-  EXPECT_EQ(lib->vtable()->struct_size, offsetof(PJ_dialog_vtable_t, set_host_info));
+  EXPECT_EQ(lib->vtable()->struct_size, PJ_DIALOG_MIN_VTABLE_SIZE);
   EXPECT_EQ(PJ_DIALOG_MIN_VTABLE_SIZE, offsetof(PJ_dialog_vtable_t, manifest_json));
+  EXPECT_FALSE(PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, lib->vtable(), manifest_json));
+  EXPECT_FALSE(PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, lib->vtable(), set_host_info));
 
   auto handle = lib->createHandle();
   EXPECT_EQ(handle.manifest(), R"({"id":"old-dialog-vtable","name":"Old Dialog Vtable","version":"1.0.0"})");
+
+  const PJ_dialog_host_info_t info{
+      static_cast<uint32_t>(sizeof(PJ_dialog_host_info_t)),
+      PJ_string_view_t{"0.21.0", 6},
+      PJ_string_view_t{"4.2.0", 5},
+      PJ_DIALOG_HOST_CAN_OPEN_FILE,
+  };
+  PJ_error_t error{};
+  error.code = 91;
+  EXPECT_EQ(handle.setHostInfo(info, &error), PJ::SetHostInfoResult::Unsupported);
+  EXPECT_EQ(error.code, 91);
 }
 
 TEST(DialogLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {

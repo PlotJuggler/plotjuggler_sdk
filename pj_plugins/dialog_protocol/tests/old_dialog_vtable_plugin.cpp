@@ -52,12 +52,16 @@ bool loadConfig(void*, PJ_string_view_t, PJ_error_t*) noexcept {
   return true;
 }
 
+bool setHostInfo(void*, const PJ_dialog_host_info_t*, PJ_error_t*) noexcept {
+  return true;
+}
+
 }  // namespace
 
 extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept {
   static const PJ_dialog_vtable_t vtable = {
       .protocol_version = PJ_DIALOG_PROTOCOL_VERSION,
-      .struct_size = offsetof(PJ_dialog_vtable_t, set_host_info),
+      .struct_size = PJ_DIALOG_MIN_VTABLE_SIZE,
       .create = create,
       .destroy = destroy,
       .get_manifest = getManifest,
@@ -69,8 +73,8 @@ extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noe
       .on_rejected = onRejected,
       .save_config = saveConfig,
       .load_config = loadConfig,
-      .manifest_json = R"({"id":"old-dialog-vtable","name":"Old Dialog Vtable","version":"1.0.0"})",
-      .set_host_info = nullptr,
+      .manifest_json = R"({"id":"must-not-be-read","name":"Must Not Be Read","version":"1.0.0"})",
+      .set_host_info = setHostInfo,
   };
   return &vtable;
 }
