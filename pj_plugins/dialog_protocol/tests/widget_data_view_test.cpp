@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <pj_plugins/host/widget_data_view.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
@@ -525,12 +526,14 @@ TEST(WidgetDataViewTest, TableDeltaNullUpdateValueMeansKeyless) {
 
 namespace {
 
-void expectTreeItemsRejected(std::string_view json, std::string_view reason_fragment) {
+void expectTreeItemsRejected(std::string_view json, std::initializer_list<std::string_view> reason_fragments) {
   PJ::WidgetDataView view(json);
   std::string reason;
   EXPECT_FALSE(view.treeItems("tree", &reason).has_value());
   EXPECT_FALSE(reason.empty());
-  EXPECT_NE(reason.find(reason_fragment), std::string::npos) << reason;
+  for (const auto fragment : reason_fragments) {
+    EXPECT_NE(reason.find(fragment), std::string::npos) << reason;
+  }
 }
 
 }  // namespace
@@ -615,48 +618,81 @@ TEST(WidgetDataViewTest, TreeRaggedCellsAreAccepted) {
   EXPECT_EQ((*items)[1].cells.size(), 2U);
 }
 
+TEST(WidgetDataViewTest, TreeUnicodeAndEscapedByteIdsRoundTripWithoutIdentityChanges) {
+  const std::string root_id = "root-\xE2\x98\x83-\x01";
+  const std::string child_id = "child-\xF0\x9F\x9A\x80-\x1b";
+  PJ::WidgetData data;
+  data.setTreeItems(
+      "tree", {{root_id, "", {{"Root", std::nullopt, "", ""}}, true, true, PJ::TreeCheckState::None, false},
+               {child_id, root_id, {{"Child", std::nullopt, "", ""}}, true, true, PJ::TreeCheckState::None, false}});
+
+  const std::string encoded = data.toJson();
+  EXPECT_NE(encoded.find("\\u0001"), std::string::npos);
+  EXPECT_NE(encoded.find("\\u001b"), std::string::npos);
+  const auto items = PJ::WidgetDataView(encoded).treeItems("tree");
+  ASSERT_TRUE(items.has_value());
+  ASSERT_EQ(items->size(), 2U);
+  EXPECT_EQ((*items)[0].id, root_id);
+  EXPECT_EQ((*items)[1].id, child_id);
+  EXPECT_EQ((*items)[1].parent_id, root_id);
+}
+
 TEST(WidgetDataViewTest, TreeDuplicateIdsRejectWholeSnapshotWithReason) {
   expectTreeItemsRejected(
       R"({"tree":{"tree_items":[{"id":"dup","parent_id":"","cells":[]},{"id":"dup","parent_id":"","cells":[]}]}})",
-      "duplicate id");
+      {"duplicate id", "'dup'"});
+}
+
+TEST(WidgetDataViewTest, TreeDuplicateParentIdReferencedByEarlierChildRejectsWholeSnapshot) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"child","parent_id":"dup","cells":[]},{"id":"dup","parent_id":"","cells":[]},{"id":"dup","parent_id":"","cells":[]}]}})",
+      {"duplicate id", "'dup'"});
 }
 
 TEST(WidgetDataViewTest, TreeEmptyIdRejectsWholeSnapshotWithReason) {
-  expectTreeItemsRejected(R"({"tree":{"tree_items":[{"id":"","parent_id":"","cells":[]}]}})", "must not be empty");
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"","parent_id":"","cells":[]}]}})", {"tree_items[0].id", "must not be empty"});
 }
 
 TEST(WidgetDataViewTest, TreeMissingParentRejectsWholeSnapshotWithReason) {
   expectTreeItemsRejected(
       R"({"tree":{"tree_items":[{"id":"child","parent_id":"missing","cells":[]},{"id":"valid","parent_id":"","cells":[]}]}})",
-      "missing parent");
+      {"'child'", "missing parent"});
 }
 
 TEST(WidgetDataViewTest, TreeSelfParentRejectsWholeSnapshotWithReason) {
-  expectTreeItemsRejected(R"({"tree":{"tree_items":[{"id":"self","parent_id":"self","cells":[]}]}})", "own parent");
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"self","parent_id":"self","cells":[]}]}})", {"'self'", "own parent"});
 }
 
 TEST(WidgetDataViewTest, TreeLongerParentCycleRejectsWholeSnapshotWithReason) {
   expectTreeItemsRejected(
       R"({"tree":{"tree_items":[{"id":"a","parent_id":"c","cells":[]},{"id":"b","parent_id":"a","cells":[]},{"id":"c","parent_id":"b","cells":[]}]}})",
-      "parent cycle");
+      {"parent cycle", "'a'"});
 }
 
 TEST(WidgetDataViewTest, TreeBadCheckStateRejectsWholeSnapshotWithReason) {
   expectTreeItemsRejected(
       R"({"tree":{"tree_items":[{"id":"valid","parent_id":"","cells":[]},{"id":"bad","parent_id":"","cells":[],"check_state":"partial"}]}})",
-      "check_state has invalid value");
+      {"tree_items[1].check_state", "'partial'"});
 }
 
 TEST(WidgetDataViewTest, TreeBadSortValueRejectsWholeSnapshotWithReason) {
   expectTreeItemsRejected(
       R"({"tree":{"tree_items":[{"id":"valid","parent_id":"","cells":[]},{"id":"bad","parent_id":"","cells":[{"text":"x","sort_value":"large"}]}]}})",
-      "sort_value must be a number");
+      {"tree_items[1].cells[0].sort_value", "number"});
 }
 
 TEST(WidgetDataViewTest, TreeBadCellTextRejectsWholeSnapshotWithReason) {
   expectTreeItemsRejected(
       R"({"tree":{"tree_items":[{"id":"valid","parent_id":"","cells":[]},{"id":"bad","parent_id":"","cells":[{"text":12}]}]}})",
-      ".text must be a string");
+      {"tree_items[1].cells[0].text", "string"});
+}
+
+TEST(WidgetDataViewTest, TreeDeeplyNestedBadSortValueRejectsWholeSnapshotWithCellPath) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"root","parent_id":"","cells":[]},{"id":"branch","parent_id":"root","cells":[]},{"id":"leaf","parent_id":"branch","cells":[]},{"id":"deep","parent_id":"leaf","cells":[{"text":"a"},{"text":"b"},{"text":"c","sort_value":{"bad":true}}]}]}})",
+      {"tree_items[3].cells[2].sort_value", "number"});
 }
 
 TEST(WidgetDataViewTest, TreeStateOnlyChannelsAreIndependentAndEmptyArraysClear) {
@@ -690,6 +726,15 @@ TEST(WidgetDataViewTest, TreeVisibilityDistinguishesAbsentEmptyFilterAndReset) {
   reset.clearTreeVisibleIds("tree");
   auto clear = PJ::WidgetDataView(reset.toJson()).treeVisibilityUpdate("tree");
   ASSERT_TRUE(clear.has_value());
-  EXPECT_EQ(clear->mode, PJ::WidgetDataView::TreeVisibilityUpdate::Mode::Reset);
+  EXPECT_EQ(clear->mode, PJ::TreeVisibilityUpdate::Mode::Reset);
   EXPECT_TRUE(clear->ids.empty());
+}
+
+TEST(WidgetDataViewTest, TreeStringArrayChannelsRejectEveryMalformedArrayAtomically) {
+  PJ::WidgetDataView view(
+      R"({"tree":{"tree_headers":["Name",1,"Type"],"tree_selected_ids":[1],"tree_expanded_ids":[1],"tree_visible_ids":[1,2]}})");
+  EXPECT_FALSE(view.treeHeaders("tree").has_value());
+  EXPECT_FALSE(view.treeSelectedIds("tree").has_value());
+  EXPECT_FALSE(view.treeExpandedIds("tree").has_value());
+  EXPECT_FALSE(view.treeVisibilityUpdate("tree").has_value());
 }

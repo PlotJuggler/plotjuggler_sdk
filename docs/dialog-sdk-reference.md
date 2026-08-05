@@ -143,6 +143,12 @@ current snapshot are exposed unchanged by the view and pruned with a host
 diagnostic. Invalid `tree_items` data is rejected atomically;
 `treeItems(name, &validation_error)` supplies the reason.
 
+All four string-array view channels (headers, selected IDs, expanded IDs, and a
+visibility filter) decode strictly: if any array member is not a string, that
+whole channel returns `nullopt` and remains unchanged. A malformed array is
+never interpreted as an empty destructive update. Activation columns likewise
+must be integers in the inclusive range `0..INT_MAX`.
+
 `may_have_children=true` permits a host-only expansion placeholder until the
 plugin publishes a later complete snapshot with real children. V1 always sends
 full keyed snapshots; deltas are deferred. Any future tree delta must reuse the

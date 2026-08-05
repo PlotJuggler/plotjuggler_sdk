@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <pj_plugins/sdk/widget_event.hpp>
 
 using PJ::WidgetEvent;
@@ -146,6 +147,12 @@ TEST(WidgetEventTest, TreeItemActivationParsesIdAndColumn) {
   ASSERT_TRUE(activation.has_value());
   EXPECT_EQ(activation->id, "imu");
   EXPECT_EQ(activation->column, 1);
+
+  WidgetEvent maximum(
+      std::string(R"({"tree_item_activated":{"id":"imu","column":)") + std::to_string(std::numeric_limits<int>::max()) +
+      "}}");
+  ASSERT_TRUE(maximum.treeItemActivated().has_value());
+  EXPECT_EQ(maximum.treeItemActivated()->column, std::numeric_limits<int>::max());
 }
 
 TEST(WidgetEventTest, TreeExpansionParsesIdAndState) {
@@ -168,6 +175,10 @@ TEST(WidgetEventTest, MalformedTreeEventsReturnNullopt) {
   EXPECT_FALSE(WidgetEvent(R"({"tree_selection_changed":["ok",2]})").treeSelectionChanged());
   EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu"}})").treeItemActivated());
   EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":-1}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":2147483648}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":4294967296}})").treeItemActivated());
+  EXPECT_FALSE(
+      WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":18446744073709551615}})").treeItemActivated());
   EXPECT_FALSE(WidgetEvent(R"({"tree_expansion_changed":{"id":"","expanded":true}})").treeExpansionChanged());
   EXPECT_FALSE(WidgetEvent(R"({"tree_check_state_changed":{"id":"imu","state":"partial"}})").treeCheckStateChanged());
 }

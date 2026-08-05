@@ -584,3 +584,9 @@ TEST(WidgetDataTest, ClearTreeVisibleIdsEmitsJsonNull) {
   wd.clearTreeVisibleIds("topicTree");
   EXPECT_TRUE(parse(wd)["topicTree"]["tree_visible_ids"].is_null());
 }
+
+TEST(WidgetDataTest, SetTreeVisibleIdsAfterClearReEmitsFilterInSameBuilder) {
+  WidgetData wd;
+  wd.clearTreeVisibleIds("topicTree").setTreeVisibleIds("topicTree", {"imu", "gps"});
+  EXPECT_EQ(parse(wd)["topicTree"]["tree_visible_ids"], nlohmann::json({"imu", "gps"}));
+}

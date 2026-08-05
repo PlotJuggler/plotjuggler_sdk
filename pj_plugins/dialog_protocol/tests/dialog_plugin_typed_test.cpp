@@ -433,15 +433,28 @@ TEST(TypedDispatchTreeFailClosedTest, MalformedAndMixedTreePayloadsInvokeNoOther
       dispatch(plugin, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"partial"},"checked":true})"));
   EXPECT_FALSE(
       dispatch(plugin, "tree", R"({"tree_selection_changed":["imu"],"tree_item_activated":{"id":"imu","column":0}})"));
+  EXPECT_FALSE(dispatch(
+      plugin, "tree",
+      R"({"tree_item_activated":{"id":"imu","column":0},"stacked_index":2,"stacked_page":"advanced"})"));
   EXPECT_EQ(plugin.legacy_calls, 0);
 }
 
 TEST_F(TypedDispatchTest, MalformedTreePayloadsInvokeNoTreeCallback) {
   EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_selection_changed":"imu"})"));
   EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_item_activated":{"id":"imu","column":-1}})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_item_activated":{"id":"imu","column":4294967296}})"));
   EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_expansion_changed":{"id":"","expanded":true}})"));
   EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"partial"}})"));
   EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_TRUE(plugin_.last_handler.empty());
+}
+
+TEST_F(TypedDispatchTest, CombinedTreeAndStackedPayloadInvokesNeitherCallback) {
+  EXPECT_FALSE(dispatch(
+      plugin_, "tree",
+      R"({"tree_item_activated":{"id":"imu","column":0},"stacked_index":2,"stacked_page":"advanced"})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.stacked_calls, 0);
   EXPECT_TRUE(plugin_.last_handler.empty());
 }
 

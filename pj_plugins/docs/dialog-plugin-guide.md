@@ -511,6 +511,9 @@ the same `WidgetData`; absence means leave that host state unchanged. An empty
 selected-ID or expanded-ID array clears that state. IDs not present in the
 current snapshot are not a malformed tree: the host ignores them with a
 diagnostic, while `WidgetDataView` deliberately exposes them as sent.
+Headers and every ID-array channel decode strictly: one non-string member makes
+that whole channel invalid/unchanged, rather than partially applying it or
+mistaking it for an empty clear.
 
 Visibility has three states that must not be collapsed into an
 `optional<vector<string>>`:
@@ -530,6 +533,8 @@ does not delete a node or erase its logical selection/expansion state.
 Selection is likewise logical rather than limited to rendered rows. The host
 keeps private selected-ID state, and every `onTreeSelectionChanged` call contains
 the complete selected-ID set, including selected nodes hidden by filtering.
+Item-activation columns are accepted only as integers in `0..INT_MAX`; an
+out-of-range value makes the event malformed and it is not dispatched.
 
 ### Lazy children and snapshot validation
 

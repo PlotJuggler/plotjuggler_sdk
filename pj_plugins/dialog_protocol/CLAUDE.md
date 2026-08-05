@@ -20,6 +20,9 @@ Local traps not visible from the headers:
   sibling order; check state is column 0 only. Visibility is tri-state:
   absent/unchanged, ID array/filter (empty hides all), or JSON null/reset; the
   host adds visible ancestors and keeps selection logical across filtering.
+  Header and ID arrays are strict: any non-string rejects that whole channel as
+  unchanged, so malformed arrays never become destructive clears. Activation
+  columns must be integers in `0..INT_MAX`.
   `may_have_children` supports a private placeholder followed by a later full
   snapshot. Tree deltas are deferred; any future delta reuses the table
   sequence/all-or-nothing contract. See `../docs/dialog-plugin-guide.md`.

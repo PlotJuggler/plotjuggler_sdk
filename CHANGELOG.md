@@ -70,11 +70,14 @@ introducing a `PJ_SDK_HAS_*` macro:
   follows the strict table-delta `nullopt` rejection precedent and adds an
   optional validation-error output for host diagnostics. Unknown state IDs are
   left for host-side pruning. `TreeVisibilityUpdate` preserves all three states.
+  Tree header/ID arrays also reject their whole channel on any non-string member,
+  so malformed input cannot be misread as a destructive empty update.
 - Four distinct host event objects cover complete logical selection, item
   activation, expansion, and check-state changes. `DialogPluginTyped` appends
   the matching virtual callbacks after the stacked callback and claims tree
   keys before all older channels: exactly one well-formed tree event dispatches;
-  malformed or mixed tree payloads fail closed without fallthrough.
+  malformed or mixed tree payloads fail closed without fallthrough. Activation
+  columns are decoded losslessly and accepted only in `0..INT_MAX`.
 - `may_have_children` supports host-private lazy placeholders followed by a
   later complete snapshot. Tree deltas remain deferred; a future delta must
   reuse the table protocol's fresh sequence and all-or-nothing rules.

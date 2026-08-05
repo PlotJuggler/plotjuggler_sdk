@@ -20,6 +20,16 @@
 
 namespace PJ {
 
+/// A QTreeWidget visibility-channel update. Filter carries the exact ID set
+/// supplied by the plugin (including an empty, active zero-match filter), while
+/// Reset removes the current filter.
+/// @since 0.21.0
+struct TreeVisibilityUpdate {
+  enum class Mode { Filter, Reset };
+  Mode mode = Mode::Filter;
+  std::vector<std::string> ids;
+};
+
 /// Read-only view of the JSON returned by get_widget_data().
 /// Each getter takes a widget name and reads the corresponding property.
 /// Returns std::nullopt for missing widgets or missing/wrong-typed fields.
@@ -100,7 +110,7 @@ class WidgetDataView {
   /// Tree column labels. This state channel is independent of treeItems().
   /// @since 0.21.0
   [[nodiscard]] std::optional<std::vector<std::string>> treeHeaders(std::string_view name) const {
-    return getStringArray(name, "tree_headers");
+    return getStrictStringArray(name, "tree_headers");
   }
 
   /// Decode one complete tree_items snapshot, preserving its flat array order
@@ -270,21 +280,19 @@ class WidgetDataView {
   /// pruning and its diagnostic are host-side. An empty array clears selection.
   /// @since 0.21.0
   [[nodiscard]] std::optional<std::vector<std::string>> treeSelectedIds(std::string_view name) const {
-    return getStringArray(name, "tree_selected_ids");
+    return getStrictStringArray(name, "tree_selected_ids");
   }
 
   /// IDs absent from the current snapshot are intentionally preserved here;
   /// pruning and its diagnostic are host-side. An empty array clears expansion.
   /// @since 0.21.0
   [[nodiscard]] std::optional<std::vector<std::string>> treeExpandedIds(std::string_view name) const {
-    return getStringArray(name, "tree_expanded_ids");
+    return getStrictStringArray(name, "tree_expanded_ids");
   }
 
-  struct TreeVisibilityUpdate {
-    enum class Mode { Filter, Reset };
-    Mode mode = Mode::Filter;
-    std::vector<std::string> ids;
-  };
+  /// Compatibility spelling retained for code that names the result through
+  /// WidgetDataView; the public result type itself lives at namespace scope.
+  using TreeVisibilityUpdate = PJ::TreeVisibilityUpdate;
 
   /// Tri-state visibility update: nullopt means absent/unchanged, Reset means
   /// JSON null/remove the filter, and Filter means an ID array. A Filter with
@@ -306,13 +314,12 @@ class WidgetDataView {
     if (!it->is_array()) {
       return std::nullopt;
     }
-    TreeVisibilityUpdate update;
-    update.ids.reserve(it->size());
-    for (const auto& id : *it) {
-      if (id.is_string()) {
-        update.ids.push_back(id.get<std::string>());
-      }
+    auto ids = decodeStrictStringArray(*it);
+    if (!ids.has_value()) {
+      return std::nullopt;
     }
+    TreeVisibilityUpdate update;
+    update.ids = std::move(*ids);
     return update;
   }
 
@@ -1245,6 +1252,33 @@ class WidgetDataView {
       }
     }
     return result;
+  }
+
+  static std::optional<std::vector<std::string>> decodeStrictStringArray(const nlohmann::json& encoded) {
+    if (!encoded.is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> result;
+    result.reserve(encoded.size());
+    for (const auto& item : encoded) {
+      if (!item.is_string()) {
+        return std::nullopt;
+      }
+      result.push_back(item.get<std::string>());
+    }
+    return result;
+  }
+
+  std::optional<std::vector<std::string>> getStrictStringArray(std::string_view name, const char* field) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find(field);
+    if (it == w->end()) {
+      return std::nullopt;
+    }
+    return decodeStrictStringArray(*it);
   }
 };
 

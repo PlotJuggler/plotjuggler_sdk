@@ -2,6 +2,8 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdint>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
@@ -131,6 +133,8 @@ class WidgetEvent {
     return ids;
   }
 
+  /// Parsed QTreeWidget item-activation payload.
+  /// @since 0.21.0
   struct TreeItemActivation {
     std::string id;
     int column = 0;
@@ -146,13 +150,30 @@ class WidgetEvent {
     }
     auto id = it->find("id");
     auto column = it->find("column");
-    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || column == it->end() ||
-        !column->is_number_integer() || column->get<int>() < 0) {
+    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || column == it->end()) {
       return std::nullopt;
     }
-    return TreeItemActivation{id->get<std::string>(), column->get<int>()};
+    int decoded_column = 0;
+    if (column->is_number_unsigned()) {
+      const auto value = column->get<std::uint64_t>();
+      if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      decoded_column = static_cast<int>(value);
+    } else if (column->is_number_integer()) {
+      const auto value = column->get<std::int64_t>();
+      if (value < 0 || value > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      decoded_column = static_cast<int>(value);
+    } else {
+      return std::nullopt;
+    }
+    return TreeItemActivation{id->get<std::string>(), decoded_column};
   }
 
+  /// Parsed QTreeWidget expansion-change payload.
+  /// @since 0.21.0
   struct TreeExpansionChange {
     std::string id;
     bool expanded = false;
@@ -174,6 +195,8 @@ class WidgetEvent {
     return TreeExpansionChange{id->get<std::string>(), expanded->get<bool>()};
   }
 
+  /// Parsed QTreeWidget column-0 check-state-change payload.
+  /// @since 0.21.0
   struct TreeCheckStateChange {
     std::string id;
     TreeCheckState state = TreeCheckState::None;
