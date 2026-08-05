@@ -697,15 +697,17 @@ class WidgetDataView {
   }
 
   // --- QStackedWidget ---
-  /// Page objectName requested by WidgetData::setStackedPage. When this and
-  /// stackedIndex() are both present, the page name takes precedence.
+  /// Page objectName requested by WidgetData::setStackedPage. Applying the page
+  /// name instead of stackedIndex() when both are present is the host contract;
+  /// its binding behavior is covered by companion PJ4 host tests.
   /// @since 0.21.0
   [[nodiscard]] std::optional<std::string> stackedPage(std::string_view name) const {
     return getString(name, "stacked_page");
   }
 
-  /// Numeric page requested by WidgetData::setStackedIndex. A simultaneous
-  /// stackedPage() value takes precedence.
+  /// Numeric page requested by WidgetData::setStackedIndex. Embedding hosts
+  /// must ignore this value when stackedPage() is also present; that application
+  /// priority is covered by companion PJ4 host tests.
   /// @since 0.21.0
   [[nodiscard]] std::optional<int> stackedIndex(std::string_view name) const {
     return getInt(name, "stacked_index");

@@ -154,16 +154,97 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   }
 };
 
-class DefaultHandlersPlugin : public PJ::DialogPluginTyped {
+/// Leaves onStackedPageChanged at its default while recording every legacy
+/// typed callback, so fail-closed stacked dispatch cannot hide a misroute.
+class LegacyHandlerRecordingPlugin : public PJ::DialogPluginTyped {
  public:
   std::string manifest() const override {
-    return R"({"name":"default-handlers-test"})";
+    return R"({"name":"legacy-handler-recording-test"})";
   }
   std::string ui_content() const override {
     return "<ui/>";
   }
   std::string widget_data() override {
     return "{}";
+  }
+
+  bool onTextChanged(std::string_view /*widget_name*/, std::string_view /*text*/) override {
+    return recordLegacyCall();
+  }
+  bool onIndexChanged(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onToggled(std::string_view /*widget_name*/, bool /*checked*/) override {
+    return recordLegacyCall();
+  }
+  bool onValueChanged(std::string_view /*widget_name*/, int /*value*/) override {
+    return recordLegacyCall();
+  }
+  bool onValueChanged(std::string_view /*widget_name*/, double /*value*/) override {
+    return recordLegacyCall();
+  }
+  bool onSelectionChanged(std::string_view /*widget_name*/, const std::vector<std::string>& /*selected*/) override {
+    return recordLegacyCall();
+  }
+  bool onClicked(std::string_view /*widget_name*/) override {
+    return recordLegacyCall();
+  }
+  bool onFileSelected(std::string_view /*widget_name*/, std::string_view /*path*/) override {
+    return recordLegacyCall();
+  }
+  bool onFolderSelected(std::string_view /*widget_name*/, std::string_view /*path*/) override {
+    return recordLegacyCall();
+  }
+  bool onTabChanged(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onItemDoubleClicked(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onItemDeleteRequested(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onHeaderClicked(std::string_view /*widget_name*/, int /*section*/) override {
+    return recordLegacyCall();
+  }
+  bool onTableRadioSelected(std::string_view /*widget_name*/, int /*row*/) override {
+    return recordLegacyCall();
+  }
+  bool onCodeChanged(std::string_view /*widget_name*/, std::string_view /*code*/) override {
+    return recordLegacyCall();
+  }
+  bool onCodeChangedWithCursor(std::string_view /*widget_name*/, std::string_view /*code*/, int /*cursor*/) override {
+    return recordLegacyCall();
+  }
+  bool onItemsDropped(std::string_view /*widget_name*/, const std::vector<std::string>& /*items*/) override {
+    return recordLegacyCall();
+  }
+  bool onChartViewChanged(
+      std::string_view /*widget_name*/, double /*x_min*/, double /*x_max*/, double /*y_min*/,
+      double /*y_max*/) override {
+    return recordLegacyCall();
+  }
+  bool onRangeChanged(std::string_view /*widget_name*/, int /*lower*/, int /*upper*/) override {
+    return recordLegacyCall();
+  }
+  bool onMarkerTimelineChanged(
+      std::string_view /*widget_name*/, const std::vector<PJ::TimelineMark>& /*marks*/) override {
+    return recordLegacyCall();
+  }
+  bool onDateRangeChanged(
+      std::string_view /*widget_name*/, std::string_view /*from_iso*/, std::string_view /*to_iso*/) override {
+    return recordLegacyCall();
+  }
+  bool onDateTimeChanged(std::string_view /*widget_name*/, std::string_view /*iso8601*/) override {
+    return recordLegacyCall();
+  }
+
+  int legacy_calls = 0;
+
+ private:
+  bool recordLegacyCall() {
+    ++legacy_calls;
+    return true;
   }
 };
 
@@ -265,15 +346,21 @@ TEST_F(TypedDispatchTest, TabAndComboEventsDoNotTriggerStackedPageHandler) {
   EXPECT_EQ(plugin_.stacked_calls, 0);
 }
 
-TEST_F(TypedDispatchTest, IncompleteStackedPageEventDoesNotDispatchTypedCallback) {
-  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2})"));
-  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_page": "advanced_page"})"));
+TEST_F(TypedDispatchTest, PartialStackedPayloadsFailClosedBeforeLegacyChannels) {
+  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2, "current_index": 7})"));
+  EXPECT_TRUE(plugin_.last_handler.empty());
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+
+  plugin_.reset();
+  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_page": "advanced_page", "text": "x"})"));
+  EXPECT_TRUE(plugin_.last_handler.empty());
   EXPECT_EQ(plugin_.stacked_calls, 0);
 }
 
-TEST(TypedDispatchDefaultHandlerTest, StackedPageChangedFallsThroughHarmlessly) {
-  DefaultHandlersPlugin plugin;
-  EXPECT_FALSE(dispatch(plugin, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "advanced_page"})"));
+TEST(TypedDispatchDefaultHandlerTest, DefaultStackedHandlerInvokesNoLegacyHandler) {
+  LegacyHandlerRecordingPlugin plugin;
+  EXPECT_FALSE(dispatch(plugin, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "p", "text": "x"})"));
+  EXPECT_EQ(plugin.legacy_calls, 0);
 }
 
 TEST_F(TypedDispatchTest, DateRangeChanged) {
@@ -326,6 +413,14 @@ TEST_F(TypedDispatchTest, CurrentIndexTakesPriorityOverValue) {
   // current_index is checked before value
   EXPECT_TRUE(dispatch(plugin_, "w", R"({"current_index": 1, "value": 5})"));
   EXPECT_EQ(plugin_.last_handler, "index_changed");
+}
+
+TEST_F(TypedDispatchTest, StackedPagePairClaimsEventBeforeText) {
+  EXPECT_TRUE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "p", "text": "x"})"));
+  EXPECT_EQ(plugin_.last_handler, "stacked_page_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 1);
+  EXPECT_EQ(plugin_.last_int, 2);
+  EXPECT_EQ(plugin_.last_page, "p");
 }
 
 TEST_F(TypedDispatchTest, StackedPagePairTakesPriorityOverScalarIndexChannels) {

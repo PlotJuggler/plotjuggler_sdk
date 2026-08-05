@@ -149,6 +149,19 @@ class DialogPluginTyped : public DialogPluginBase {
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
 
+    // Either stacked key claims the event before every legacy channel. A host
+    // event is valid only when both typed representations are present; partial
+    // or malformed stacked payloads fail closed instead of being reinterpreted
+    // through unrelated keys such as text, current_index, or tab_index.
+    if (event.has("stacked_index") || event.has("stacked_page")) {
+      const auto index = event.stackedIndex();
+      const auto page = event.stackedPage();
+      if (!index || !page) {
+        return false;
+      }
+      return onStackedPageChanged(widget_name, *index, *page);
+    }
+
     if (auto v = event.chartViewChanged()) {
       return onChartViewChanged(widget_name, v->x_min, v->x_max, v->y_min, v->y_max);
     }
@@ -172,14 +185,6 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.text()) {
       return onTextChanged(widget_name, *v);
-    }
-    // The QStackedWidget event is a paired, uniquely named channel. Check it
-    // before the scalar current_index and tab_index channels so a mixed event
-    // is dispatched exactly once as the more specific stacked-page change.
-    if (auto index = event.stackedIndex()) {
-      if (auto page = event.stackedPage()) {
-        return onStackedPageChanged(widget_name, *index, *page);
-      }
     }
     if (auto v = event.currentIndex()) {
       return onIndexChanged(widget_name, *v);
