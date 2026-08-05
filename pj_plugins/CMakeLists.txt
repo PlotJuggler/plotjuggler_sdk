@@ -307,6 +307,14 @@ target_link_libraries(message_parser_runtime_test PRIVATE
 )
 add_test(NAME message_parser_runtime_test COMMAND message_parser_runtime_test)
 
+# Compile-time pins for the cross-DSO MessageParserPluginBase member layout.
+add_executable(message_parser_abi_layout_sentinels_test tests/message_parser_abi_layout_sentinels_test.cpp)
+target_compile_options(message_parser_abi_layout_sentinels_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(message_parser_abi_layout_sentinels_test PRIVATE
+  pj_plugin_sdk GTest::gtest_main
+)
+add_test(NAME message_parser_abi_layout_sentinels_test COMMAND message_parser_abi_layout_sentinels_test)
+
 # Unit test: ObjectIngestPolicyResolver cascade rules.
 add_executable(object_ingest_policy_test tests/object_ingest_policy_test.cpp)
 target_compile_options(object_ingest_policy_test PRIVATE ${PJ_WARNING_FLAGS})

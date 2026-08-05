@@ -61,4 +61,27 @@ TEST(MessageParserRuntimeService, DefaultBindAcquiresAndForwardsOptionalService)
   EXPECT_EQ(diagnostic.occurrences, 5u);
 }
 
+TEST(MessageParserRuntimeService, RebindWithoutOptionalServiceClearsRuntimeView) {
+  PJ::sdk::testing::ParserWriteRecorder writes;
+  PJ::sdk::testing::ParserRuntimeRecorder diagnostics;
+
+  PJ::ServiceRegistryBuilder registry_with_runtime;
+  registry_with_runtime.registerService<PJ::sdk::ParserWriteHostService>(writes.makeHost());
+  registry_with_runtime.registerService<PJ::sdk::ParserRuntimeHostService>(diagnostics.makeHost());
+
+  InspectableParser parser;
+  ASSERT_TRUE(parser.bind(PJ::sdk::ServiceRegistry{registry_with_runtime.view()}));
+  ASSERT_TRUE(parser.diagnosticsBound());
+  parser.emitDiagnostic(PJ::sdk::ParserDiagnosticLevel::Info, "before_rebind", "forwarded");
+  ASSERT_EQ(diagnostics.diagnostics().size(), 1u);
+
+  PJ::ServiceRegistryBuilder registry_without_runtime;
+  registry_without_runtime.registerService<PJ::sdk::ParserWriteHostService>(writes.makeHost());
+  ASSERT_TRUE(parser.bind(PJ::sdk::ServiceRegistry{registry_without_runtime.view()}));
+  EXPECT_FALSE(parser.diagnosticsBound());
+
+  parser.emitDiagnostic(PJ::sdk::ParserDiagnosticLevel::Error, "after_rebind", "must be discarded");
+  EXPECT_EQ(diagnostics.diagnostics().size(), 1u);
+}
+
 }  // namespace

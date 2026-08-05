@@ -62,10 +62,24 @@ struct SchemaHandler {
   std::function<Expected<ObjectRecord>(Timestamp, PayloadView)> parse_object;
 };
 
+namespace testing {
+struct MessageParserPluginBaseLayoutSentinel;
+}
+
 }  // namespace sdk
 
 /**
  * Base class for MessageParser plugins (protocol v4).
+ *
+ * ABI LAYOUT CONTRACT: PJ4 treats the plugin-created context as a
+ * MessageParserPluginBase pointer and directly calls classifySchema(),
+ * parseScalars(), and parseObject() across the DSO boundary. Consequently,
+ * this class's member layout is cross-DSO ABI within one PJ_ABI_VERSION.
+ * Existing data members must never move: new members are APPEND-ONLY at the
+ * data-member tail. The host-invoked final methods above must never access an
+ * appended member, because an older plugin instance does not contain it. The
+ * host owns only a pointer obtained from create() and never allocates or copies
+ * this object.
  */
 class MessageParserPluginBase {
  public:
@@ -360,14 +374,19 @@ class MessageParserPluginBase {
   std::string bound_type_name_;
 
  private:
+  friend struct sdk::testing::MessageParserPluginBaseLayoutSentinel;
+
   sdk::ServiceRegistry service_registry_{};
   sdk::ParserWriteHostView write_host_view_{PJ_parser_write_host_t{}};
   sdk::ParserObjectWriteHostView object_write_host_view_{};
-  sdk::ParserRuntimeHostView parser_runtime_host_view_{};
   std::string config_buf_;
 
   // Schema handler table populated by the plugin via registerSchemaHandler().
   std::unordered_map<std::string, sdk::SchemaHandler> handlers_;
+
+  // ABI-APPENDED in 0.21.0. New data members must be appended after this one;
+  // never insert into the frozen prefix above.
+  sdk::ParserRuntimeHostView parser_runtime_host_view_{};
 
   static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {
     sdk::fillError(out_error, code, domain, message);
