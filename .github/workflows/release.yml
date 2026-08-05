@@ -49,7 +49,7 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Resolve the version/tag once and verify it matches conanfile.py, so the
+  # Resolve the version/tag once and verify it matches VERSION, so the
   # build matrix and the GitHub Release all agree on a single source of truth.
   # ---------------------------------------------------------------------------
   prepare:
@@ -83,16 +83,15 @@ jobs:
 
       - uses: conan-io/setup-conan@v1
 
-      - name: Verify recipe version matches tag
-        # Prevents the common footgun of tagging vX.Y.Z but forgetting to bump
-        # `version` in conanfile.py. Fails fast before we publish.
+      - name: Verify SDK version matches tag
+        # Conan and CMake both derive their package version from VERSION.
         run: |
-          recipe_version=$(python3 -c "import re; print(re.search(r'^\s*version\s*=\s*\"([^\"]+)\"', open('conanfile.py').read(), re.M).group(1))")
-          if [[ "${recipe_version}" != "${{ steps.ref.outputs.version }}" ]]; then
-            echo "::error::conanfile.py version (${recipe_version}) does not match tag (${{ steps.ref.outputs.version }})"
+          sdk_version="$(tr -d '\r\n' < VERSION)"
+          if [[ "${sdk_version}" != "${{ steps.ref.outputs.version }}" ]]; then
+            echo "::error::VERSION (${sdk_version}) does not match tag (${{ steps.ref.outputs.version }})"
             exit 1
           fi
-          echo "Version match: ${recipe_version}"
+          echo "Version match: ${sdk_version}"
 
       - name: Guard against re-publishing an existing version with different sources
         # The incident this matrix fixes was triggered by *moving* a released tag:

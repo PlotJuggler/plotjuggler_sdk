@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <pj_base/sdk/data_source_patterns.hpp>
+#include <pj_base/sdk/semver.hpp>
+#include <pj_base/sdk/version.hpp>
 
 namespace {
 
@@ -12,6 +14,9 @@ class MinimalDataSource : public PJ::FileSourceBase {
   }
 
   PJ::Status importData() override {
+    if (!PJ::SemVer::isValid(PJ::sdkVersion())) {
+      return PJ::unexpected("configured SDK version is not valid SemVer");
+    }
     return PJ::okStatus();
   }
 };

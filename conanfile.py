@@ -6,7 +6,7 @@ Exposes three CMake components under the `plotjuggler_sdk::` namespace:
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
 
-A consuming Conan recipe declares e.g. `plotjuggler_sdk/0.20.0` and then:
+A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
 
     find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
@@ -24,13 +24,13 @@ gtest is resolved as a test_require.
 
 from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain
-from conan.tools.files import copy
+from conan.tools.files import copy, load
 import os
+from pathlib import Path
 
 
 class PlotjugglerSdkConan(ConanFile):
     name = "plotjuggler_sdk"
-    version = "0.20.0"
     # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
     license = "Apache-2.0"
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"
@@ -56,6 +56,7 @@ class PlotjugglerSdkConan(ConanFile):
     }
 
     exports_sources = (
+        "VERSION",
         "CMakeLists.txt",
         "LICENSE",
         "LICENSE-APACHE",
@@ -64,6 +65,10 @@ class PlotjugglerSdkConan(ConanFile):
         "pj_plugins/*",
         "examples/*",
     )
+
+    def set_version(self):
+        version_file = Path(self.recipe_folder) / "VERSION"
+        self.version = load(self, version_file).strip()
 
     def config_options(self):
         if self.settings.os == "Windows":
