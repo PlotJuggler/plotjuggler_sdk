@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -92,6 +93,233 @@ class WidgetDataView {
   }
   [[nodiscard]] std::optional<bool> listMultiSelect(std::string_view name) const {
     return getBool(name, "list_multi_select");
+  }
+
+  // --- QTreeWidget ---
+
+  /// Tree column labels. This state channel is independent of treeItems().
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<std::string>> treeHeaders(std::string_view name) const {
+    return getStringArray(name, "tree_headers");
+  }
+
+  /// Decode one complete tree_items snapshot, preserving its flat array order
+  /// exactly (and therefore plugin-declared sibling insertion order). Ragged
+  /// cell arrays are valid; the host renders missing trailing cells as empty.
+  ///
+  /// Like the strict tableDelta() reader, any malformed member rejects the
+  /// entire update and returns nullopt. If `validation_error` is non-null it is
+  /// cleared for an absent/valid update and populated with the rejection reason
+  /// for an invalid update, giving embedding hosts a diagnostic to report.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<TreeItem>> treeItems(
+      std::string_view name, std::string* validation_error = nullptr) const {
+    if (validation_error != nullptr) {
+      validation_error->clear();
+    }
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto items_it = w->find("tree_items");
+    if (items_it == w->end()) {
+      return std::nullopt;
+    }
+    if (!items_it->is_array()) {
+      return rejectTreeItems(validation_error, "tree_items must be an array");
+    }
+
+    std::vector<TreeItem> items;
+    items.reserve(items_it->size());
+    std::unordered_map<std::string, std::size_t> id_indexes;
+    id_indexes.reserve(items_it->size());
+
+    for (std::size_t item_index = 0; item_index < items_it->size(); ++item_index) {
+      const auto& encoded_item = (*items_it)[item_index];
+      const std::string item_prefix = "tree_items[" + std::to_string(item_index) + "]";
+      if (!encoded_item.is_object()) {
+        return rejectTreeItems(validation_error, item_prefix + " must be an object");
+      }
+
+      TreeItem item;
+      auto id_it = encoded_item.find("id");
+      if (id_it == encoded_item.end() || !id_it->is_string()) {
+        return rejectTreeItems(validation_error, item_prefix + ".id must be a string");
+      }
+      item.id = id_it->get<std::string>();
+      if (item.id.empty()) {
+        return rejectTreeItems(validation_error, item_prefix + ".id must not be empty");
+      }
+      if (id_indexes.find(item.id) != id_indexes.end()) {
+        return rejectTreeItems(validation_error, "tree_items contains duplicate id '" + item.id + "'");
+      }
+
+      auto parent_it = encoded_item.find("parent_id");
+      if (parent_it == encoded_item.end() || !parent_it->is_string()) {
+        return rejectTreeItems(validation_error, item_prefix + ".parent_id must be a string");
+      }
+      item.parent_id = parent_it->get<std::string>();
+      if (item.parent_id == item.id) {
+        return rejectTreeItems(validation_error, "tree item '" + item.id + "' must not be its own parent");
+      }
+
+      auto cells_it = encoded_item.find("cells");
+      if (cells_it == encoded_item.end() || !cells_it->is_array()) {
+        return rejectTreeItems(validation_error, item_prefix + ".cells must be an array");
+      }
+      item.cells.reserve(cells_it->size());
+      for (std::size_t cell_index = 0; cell_index < cells_it->size(); ++cell_index) {
+        const auto& encoded_cell = (*cells_it)[cell_index];
+        const std::string cell_prefix = item_prefix + ".cells[" + std::to_string(cell_index) + "]";
+        if (!encoded_cell.is_object()) {
+          return rejectTreeItems(validation_error, cell_prefix + " must be an object");
+        }
+
+        TreeCell cell;
+        auto text_it = encoded_cell.find("text");
+        if (text_it == encoded_cell.end() || !text_it->is_string()) {
+          return rejectTreeItems(validation_error, cell_prefix + ".text must be a string");
+        }
+        cell.text = text_it->get<std::string>();
+
+        if (auto sort_it = encoded_cell.find("sort_value"); sort_it != encoded_cell.end() && !sort_it->is_null()) {
+          cell.sort_value = numericFromJson(*sort_it);
+          if (!cell.sort_value.has_value()) {
+            return rejectTreeItems(validation_error, cell_prefix + ".sort_value must be a number or null");
+          }
+        }
+
+        if (auto tooltip_it = encoded_cell.find("tooltip"); tooltip_it != encoded_cell.end()) {
+          if (!tooltip_it->is_string()) {
+            return rejectTreeItems(validation_error, cell_prefix + ".tooltip must be a string");
+          }
+          cell.tooltip = tooltip_it->get<std::string>();
+        }
+        if (auto icon_it = encoded_cell.find("icon"); icon_it != encoded_cell.end()) {
+          if (!icon_it->is_string()) {
+            return rejectTreeItems(validation_error, cell_prefix + ".icon must be a string");
+          }
+          cell.icon = icon_it->get<std::string>();
+        }
+        item.cells.push_back(std::move(cell));
+      }
+
+      if (!decodeOptionalBool(encoded_item, "enabled", item.enabled)) {
+        return rejectTreeItems(validation_error, item_prefix + ".enabled must be a boolean");
+      }
+      if (!decodeOptionalBool(encoded_item, "selectable", item.selectable)) {
+        return rejectTreeItems(validation_error, item_prefix + ".selectable must be a boolean");
+      }
+      if (!decodeOptionalBool(encoded_item, "may_have_children", item.may_have_children)) {
+        return rejectTreeItems(validation_error, item_prefix + ".may_have_children must be a boolean");
+      }
+
+      if (auto state_it = encoded_item.find("check_state"); state_it != encoded_item.end()) {
+        if (!state_it->is_string()) {
+          return rejectTreeItems(validation_error, item_prefix + ".check_state must be a string");
+        }
+        auto state = treeCheckStateFromWireValue(state_it->get_ref<const std::string&>());
+        if (!state.has_value()) {
+          return rejectTreeItems(
+              validation_error, item_prefix + ".check_state has invalid value '" + state_it->get<std::string>() + "'");
+        }
+        item.check_state = *state;
+      }
+
+      id_indexes.emplace(item.id, items.size());
+      items.push_back(std::move(item));
+    }
+
+    for (const auto& item : items) {
+      if (!item.parent_id.empty() && id_indexes.find(item.parent_id) == id_indexes.end()) {
+        return rejectTreeItems(
+            validation_error, "tree item '" + item.id + "' references missing parent '" + item.parent_id + "'");
+      }
+    }
+
+    // Every item has at most one outgoing parent edge, so an iterative color
+    // walk detects cycles without recursion depth depending on the tree size.
+    std::vector<unsigned char> visit_state(items.size(), 0);
+    for (std::size_t start = 0; start < items.size(); ++start) {
+      if (visit_state[start] == 2) {
+        continue;
+      }
+      std::vector<std::size_t> path;
+      std::size_t current = start;
+      while (visit_state[current] == 0) {
+        visit_state[current] = 1;
+        path.push_back(current);
+        if (items[current].parent_id.empty()) {
+          break;
+        }
+        current = id_indexes.at(items[current].parent_id);
+      }
+      if (visit_state[current] == 1 && !items[current].parent_id.empty()) {
+        return rejectTreeItems(
+            validation_error, "tree_items contains a parent cycle involving '" + items[current].id + "'");
+      }
+      for (const std::size_t index : path) {
+        visit_state[index] = 2;
+      }
+    }
+
+    return items;
+  }
+
+  /// IDs absent from the current snapshot are intentionally preserved here;
+  /// pruning and its diagnostic are host-side. An empty array clears selection.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<std::string>> treeSelectedIds(std::string_view name) const {
+    return getStringArray(name, "tree_selected_ids");
+  }
+
+  /// IDs absent from the current snapshot are intentionally preserved here;
+  /// pruning and its diagnostic are host-side. An empty array clears expansion.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<std::string>> treeExpandedIds(std::string_view name) const {
+    return getStringArray(name, "tree_expanded_ids");
+  }
+
+  struct TreeVisibilityUpdate {
+    enum class Mode { Filter, Reset };
+    Mode mode = Mode::Filter;
+    std::vector<std::string> ids;
+  };
+
+  /// Tri-state visibility update: nullopt means absent/unchanged, Reset means
+  /// JSON null/remove the filter, and Filter means an ID array. A Filter with
+  /// no IDs is an active zero-match filter. Unknown IDs remain exposed for the
+  /// host to prune; the host also computes the visible ancestors of matches.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<TreeVisibilityUpdate> treeVisibilityUpdate(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto it = w->find("tree_visible_ids");
+    if (it == w->end()) {
+      return std::nullopt;
+    }
+    if (it->is_null()) {
+      return TreeVisibilityUpdate{TreeVisibilityUpdate::Mode::Reset, {}};
+    }
+    if (!it->is_array()) {
+      return std::nullopt;
+    }
+    TreeVisibilityUpdate update;
+    update.ids.reserve(it->size());
+    for (const auto& id : *it) {
+      if (id.is_string()) {
+        update.ids.push_back(id.get<std::string>());
+      }
+    }
+    return update;
+  }
+
+  /// false selects single-selection mode; true selects extended selection.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<bool> treeMultiSelection(std::string_view name) const {
+    return getBool(name, "tree_multi_selection");
   }
 
   // --- QTableWidget ---
@@ -921,6 +1149,25 @@ class WidgetDataView {
     }
     if (v.is_number_float()) {
       return NumericValue(v.get<double>());
+    }
+    return std::nullopt;
+  }
+
+  static bool decodeOptionalBool(const nlohmann::json& object, const char* key, bool& value) {
+    auto it = object.find(key);
+    if (it == object.end()) {
+      return true;
+    }
+    if (!it->is_boolean()) {
+      return false;
+    }
+    value = it->get<bool>();
+    return true;
+  }
+
+  static std::optional<std::vector<TreeItem>> rejectTreeItems(std::string* validation_error, std::string reason) {
+    if (validation_error != nullptr) {
+      *validation_error = std::move(reason);
     }
     return std::nullopt;
   }

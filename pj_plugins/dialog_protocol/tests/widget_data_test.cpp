@@ -528,3 +528,59 @@ TEST(WidgetDataTest, TypedUpdateCellCarriesValue) {
   // fourth element means the cell's sort key is cleared, not preserved.
   EXPECT_EQ(cells[1].size(), 3U);
 }
+
+// --- QTreeWidget ---
+
+TEST(WidgetDataTest, TreeSnapshotAndStateChannelsUseCanonicalWireShape) {
+  PJ::TreeCell root_cell{"Sensors", PJ::NumericValue(std::uint64_t{1} << 60), "All sensor topics", "folder"};
+  PJ::TreeCell child_cell{"/imu", PJ::NumericValue(-2.5), "IMU stream", "topic"};
+  std::vector<PJ::TreeItem> items = {
+      {"sensors", "", {root_cell}, false, false, PJ::TreeCheckState::PartiallyChecked, true},
+      {"imu",
+       "sensors",
+       {child_cell, PJ::TreeCell{"sensor_msgs/Imu", std::nullopt, "", ""}},
+       true,
+       true,
+       PJ::TreeCheckState::Checked,
+       false},
+      {"unchecked", "", {}, true, true, PJ::TreeCheckState::Unchecked, false},
+      {"plain", "", {}, true, true, PJ::TreeCheckState::None, false},
+  };
+
+  WidgetData wd;
+  wd.setTreeHeaders("topicTree", {"Topic", "Type"})
+      .setTreeItems("topicTree", items)
+      .setTreeSelectedIds("topicTree", {"imu"})
+      .setTreeExpandedIds("topicTree", {"sensors"})
+      .setTreeVisibleIds("topicTree", {"imu", "unknown-yet"})
+      .setTreeSelectionMode("topicTree", true);
+
+  const auto j = parse(wd);
+  const auto& tree = j["topicTree"];
+  EXPECT_EQ(tree["tree_headers"], nlohmann::json({"Topic", "Type"}));
+  ASSERT_EQ(tree["tree_items"].size(), 4U);
+  const auto& root = tree["tree_items"][0];
+  EXPECT_EQ(root["id"], "sensors");
+  EXPECT_EQ(root["parent_id"], "");
+  EXPECT_FALSE(root["enabled"]);
+  EXPECT_FALSE(root["selectable"]);
+  EXPECT_TRUE(root["may_have_children"]);
+  EXPECT_EQ(root["check_state"], "partially_checked");
+  EXPECT_EQ(root["cells"][0]["text"], "Sensors");
+  EXPECT_EQ(root["cells"][0]["sort_value"], std::uint64_t{1} << 60);
+  EXPECT_EQ(root["cells"][0]["tooltip"], "All sensor topics");
+  EXPECT_EQ(root["cells"][0]["icon"], "folder");
+  EXPECT_EQ(tree["tree_items"][1]["check_state"], "checked");
+  EXPECT_EQ(tree["tree_items"][2]["check_state"], "unchecked");
+  EXPECT_EQ(tree["tree_items"][3]["check_state"], "none");
+  EXPECT_EQ(tree["tree_selected_ids"], nlohmann::json({"imu"}));
+  EXPECT_EQ(tree["tree_expanded_ids"], nlohmann::json({"sensors"}));
+  EXPECT_EQ(tree["tree_visible_ids"], nlohmann::json({"imu", "unknown-yet"}));
+  EXPECT_TRUE(tree["tree_multi_selection"]);
+}
+
+TEST(WidgetDataTest, ClearTreeVisibleIdsEmitsJsonNull) {
+  WidgetData wd;
+  wd.clearTreeVisibleIds("topicTree");
+  EXPECT_TRUE(parse(wd)["topicTree"]["tree_visible_ids"].is_null());
+}

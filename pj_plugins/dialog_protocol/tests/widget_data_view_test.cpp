@@ -520,3 +520,176 @@ TEST(WidgetDataViewTest, TableDeltaNullUpdateValueMeansKeyless) {
   ASSERT_EQ(delta->update_cells.size(), 1U);
   EXPECT_FALSE(delta->update_cells[0].value.has_value());
 }
+
+// --- QTreeWidget ---
+
+namespace {
+
+void expectTreeItemsRejected(std::string_view json, std::string_view reason_fragment) {
+  PJ::WidgetDataView view(json);
+  std::string reason;
+  EXPECT_FALSE(view.treeItems("tree", &reason).has_value());
+  EXPECT_FALSE(reason.empty());
+  EXPECT_NE(reason.find(reason_fragment), std::string::npos) << reason;
+}
+
+}  // namespace
+
+TEST(WidgetDataViewTest, TreeWriterViewRoundTripPreservesEveryFieldAndArrayOrder) {
+  constexpr std::uint64_t kLargeSortKey = std::uint64_t{1} << 60;
+  PJ::WidgetData data;
+  data.setTreeHeaders("tree", {"Topic", "Type"})
+      .setTreeItems(
+          "tree", {{"child-b",
+                    "root",
+                    {{"B", PJ::NumericValue(-4.5), "second sibling", "topic"}},
+                    false,
+                    false,
+                    PJ::TreeCheckState::Unchecked,
+                    true},
+                   {"root",
+                    "",
+                    {{"Sensors", PJ::NumericValue(kLargeSortKey), "root tooltip", "folder"}},
+                    true,
+                    true,
+                    PJ::TreeCheckState::PartiallyChecked,
+                    true},
+                   {"child-a",
+                    "root",
+                    {{"A", std::nullopt, "", ""}, {"sensor_msgs/Imu", PJ::NumericValue(7), "type", "schema"}},
+                    true,
+                    true,
+                    PJ::TreeCheckState::Checked,
+                    false},
+                   {"plain", "", {}, true, true, PJ::TreeCheckState::None, false}})
+      .setTreeSelectedIds("tree", {"child-a", "not-loaded"})
+      .setTreeExpandedIds("tree", {"root", "not-loaded"})
+      .setTreeVisibleIds("tree", {"child-a", "not-loaded"})
+      .setTreeSelectionMode("tree", true);
+
+  PJ::WidgetDataView view(data.toJson());
+  EXPECT_EQ(view.treeHeaders("tree"), (std::vector<std::string>{"Topic", "Type"}));
+  std::string validation_error = "stale";
+  auto items = view.treeItems("tree", &validation_error);
+  ASSERT_TRUE(items.has_value()) << validation_error;
+  EXPECT_TRUE(validation_error.empty());
+  ASSERT_EQ(items->size(), 4U);
+  // Flat array order, including child-before-parent and sibling B-before-A, is
+  // preserved exactly. The host uses that order within each sibling group.
+  EXPECT_EQ((*items)[0].id, "child-b");
+  EXPECT_EQ((*items)[1].id, "root");
+  EXPECT_EQ((*items)[2].id, "child-a");
+  EXPECT_EQ((*items)[0].parent_id, "root");
+  EXPECT_FALSE((*items)[0].enabled);
+  EXPECT_FALSE((*items)[0].selectable);
+  EXPECT_TRUE((*items)[0].may_have_children);
+  EXPECT_EQ((*items)[0].check_state, PJ::TreeCheckState::Unchecked);
+  ASSERT_EQ((*items)[0].cells.size(), 1U);
+  EXPECT_EQ((*items)[0].cells[0].text, "B");
+  ASSERT_TRUE((*items)[0].cells[0].sort_value.has_value());
+  EXPECT_EQ(std::get<double>(*(*items)[0].cells[0].sort_value), -4.5);
+  EXPECT_EQ((*items)[0].cells[0].tooltip, "second sibling");
+  EXPECT_EQ((*items)[0].cells[0].icon, "topic");
+  EXPECT_EQ((*items)[1].check_state, PJ::TreeCheckState::PartiallyChecked);
+  EXPECT_EQ(std::get<std::uint64_t>(*(*items)[1].cells[0].sort_value), kLargeSortKey);
+  EXPECT_EQ((*items)[2].check_state, PJ::TreeCheckState::Checked);
+  EXPECT_EQ((*items)[3].check_state, PJ::TreeCheckState::None);
+
+  // Unknown IDs are deliberately exposed unchanged; pruning belongs to the host.
+  EXPECT_EQ(view.treeSelectedIds("tree"), (std::vector<std::string>{"child-a", "not-loaded"}));
+  EXPECT_EQ(view.treeExpandedIds("tree"), (std::vector<std::string>{"root", "not-loaded"}));
+  auto visibility = view.treeVisibilityUpdate("tree");
+  ASSERT_TRUE(visibility.has_value());
+  EXPECT_EQ(visibility->mode, PJ::WidgetDataView::TreeVisibilityUpdate::Mode::Filter);
+  EXPECT_EQ(visibility->ids, (std::vector<std::string>{"child-a", "not-loaded"}));
+  EXPECT_EQ(view.treeMultiSelection("tree"), true);
+}
+
+TEST(WidgetDataViewTest, TreeRaggedCellsAreAccepted) {
+  PJ::WidgetDataView view(
+      R"({"tree":{"tree_items":[{"id":"root","parent_id":"","cells":[{"text":"one"}]},{"id":"other","parent_id":"","cells":[{"text":"one"},{"text":"two"}]}]}})");
+  auto items = view.treeItems("tree");
+  ASSERT_TRUE(items.has_value());
+  ASSERT_EQ(items->size(), 2U);
+  EXPECT_EQ((*items)[0].cells.size(), 1U);
+  EXPECT_EQ((*items)[1].cells.size(), 2U);
+}
+
+TEST(WidgetDataViewTest, TreeDuplicateIdsRejectWholeSnapshotWithReason) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"dup","parent_id":"","cells":[]},{"id":"dup","parent_id":"","cells":[]}]}})",
+      "duplicate id");
+}
+
+TEST(WidgetDataViewTest, TreeEmptyIdRejectsWholeSnapshotWithReason) {
+  expectTreeItemsRejected(R"({"tree":{"tree_items":[{"id":"","parent_id":"","cells":[]}]}})", "must not be empty");
+}
+
+TEST(WidgetDataViewTest, TreeMissingParentRejectsWholeSnapshotWithReason) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"child","parent_id":"missing","cells":[]},{"id":"valid","parent_id":"","cells":[]}]}})",
+      "missing parent");
+}
+
+TEST(WidgetDataViewTest, TreeSelfParentRejectsWholeSnapshotWithReason) {
+  expectTreeItemsRejected(R"({"tree":{"tree_items":[{"id":"self","parent_id":"self","cells":[]}]}})", "own parent");
+}
+
+TEST(WidgetDataViewTest, TreeLongerParentCycleRejectsWholeSnapshotWithReason) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"a","parent_id":"c","cells":[]},{"id":"b","parent_id":"a","cells":[]},{"id":"c","parent_id":"b","cells":[]}]}})",
+      "parent cycle");
+}
+
+TEST(WidgetDataViewTest, TreeBadCheckStateRejectsWholeSnapshotWithReason) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"valid","parent_id":"","cells":[]},{"id":"bad","parent_id":"","cells":[],"check_state":"partial"}]}})",
+      "check_state has invalid value");
+}
+
+TEST(WidgetDataViewTest, TreeBadSortValueRejectsWholeSnapshotWithReason) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"valid","parent_id":"","cells":[]},{"id":"bad","parent_id":"","cells":[{"text":"x","sort_value":"large"}]}]}})",
+      "sort_value must be a number");
+}
+
+TEST(WidgetDataViewTest, TreeBadCellTextRejectsWholeSnapshotWithReason) {
+  expectTreeItemsRejected(
+      R"({"tree":{"tree_items":[{"id":"valid","parent_id":"","cells":[]},{"id":"bad","parent_id":"","cells":[{"text":12}]}]}})",
+      ".text must be a string");
+}
+
+TEST(WidgetDataViewTest, TreeStateOnlyChannelsAreIndependentAndEmptyArraysClear) {
+  PJ::WidgetData data;
+  data.setTreeHeaders("tree", {"Name"})
+      .setTreeSelectedIds("tree", {})
+      .setTreeExpandedIds("tree", {})
+      .setTreeSelectionMode("tree", false);
+  PJ::WidgetDataView view(data.toJson());
+  EXPECT_FALSE(view.treeItems("tree").has_value());
+  ASSERT_TRUE(view.treeSelectedIds("tree").has_value());
+  EXPECT_TRUE(view.treeSelectedIds("tree")->empty());
+  ASSERT_TRUE(view.treeExpandedIds("tree").has_value());
+  EXPECT_TRUE(view.treeExpandedIds("tree")->empty());
+  EXPECT_EQ(view.treeHeaders("tree"), (std::vector<std::string>{"Name"}));
+  EXPECT_EQ(view.treeMultiSelection("tree"), false);
+}
+
+TEST(WidgetDataViewTest, TreeVisibilityDistinguishesAbsentEmptyFilterAndReset) {
+  PJ::WidgetDataView absent(R"({"tree":{"tree_selected_ids":[]}})");
+  EXPECT_FALSE(absent.treeVisibilityUpdate("tree").has_value());
+
+  PJ::WidgetData filtered;
+  filtered.setTreeVisibleIds("tree", {});
+  auto filter = PJ::WidgetDataView(filtered.toJson()).treeVisibilityUpdate("tree");
+  ASSERT_TRUE(filter.has_value());
+  EXPECT_EQ(filter->mode, PJ::WidgetDataView::TreeVisibilityUpdate::Mode::Filter);
+  EXPECT_TRUE(filter->ids.empty());
+
+  PJ::WidgetData reset;
+  reset.clearTreeVisibleIds("tree");
+  auto clear = PJ::WidgetDataView(reset.toJson()).treeVisibilityUpdate("tree");
+  ASSERT_TRUE(clear.has_value());
+  EXPECT_EQ(clear->mode, PJ::WidgetDataView::TreeVisibilityUpdate::Mode::Reset);
+  EXPECT_TRUE(clear->ids.empty());
+}

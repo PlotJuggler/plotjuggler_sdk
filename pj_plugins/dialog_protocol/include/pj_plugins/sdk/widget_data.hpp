@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "pj_base/types.hpp"
+#include "pj_plugins/sdk/tree_types.hpp"
 
 namespace PJ {
 
@@ -477,6 +478,88 @@ class WidgetData {
     auto& e = entry(name);
     e["radio_column"] = column;
     e["radio_checked_row"] = checked_row;
+    return *this;
+  }
+
+  // --- QTreeWidget ---
+
+  /// Set the tree's column labels. This channel is independent of tree_items.
+  /// @since 0.21.0
+  WidgetData& setTreeHeaders(std::string_view name, const std::vector<std::string>& headers) {
+    entry(name)["tree_headers"] = headers;
+    return *this;
+  }
+
+  /// Publish a complete flat, keyed tree snapshot. Array order is preserved
+  /// and defines insertion order among items with the same parent_id. V1
+  /// check_state applies to column 0 only.
+  /// @since 0.21.0
+  WidgetData& setTreeItems(std::string_view name, const std::vector<TreeItem>& items) {
+    nlohmann::json encoded = nlohmann::json::array();
+    for (const auto& item : items) {
+      nlohmann::json cells = nlohmann::json::array();
+      for (const auto& cell : item.cells) {
+        nlohmann::json encoded_cell = {{"text", cell.text}};
+        if (cell.sort_value.has_value()) {
+          std::visit([&encoded_cell](auto value) { encoded_cell["sort_value"] = value; }, *cell.sort_value);
+        }
+        if (!cell.tooltip.empty()) {
+          encoded_cell["tooltip"] = cell.tooltip;
+        }
+        if (!cell.icon.empty()) {
+          encoded_cell["icon"] = cell.icon;
+        }
+        cells.push_back(std::move(encoded_cell));
+      }
+      encoded.push_back(
+          {{"id", item.id},
+           {"parent_id", item.parent_id},
+           {"cells", std::move(cells)},
+           {"enabled", item.enabled},
+           {"selectable", item.selectable},
+           {"check_state", treeCheckStateWireValue(item.check_state)},
+           {"may_have_children", item.may_have_children}});
+    }
+    entry(name)["tree_items"] = std::move(encoded);
+    return *this;
+  }
+
+  /// Replace the complete logical selection. An empty array clears it. IDs
+  /// not present in the current snapshot remain on the wire for host pruning.
+  /// @since 0.21.0
+  WidgetData& setTreeSelectedIds(std::string_view name, const std::vector<std::string>& ids) {
+    entry(name)["tree_selected_ids"] = ids;
+    return *this;
+  }
+
+  /// Replace the expanded-ID set. An empty array collapses every public item.
+  /// IDs not present in the current snapshot remain on the wire for host pruning.
+  /// @since 0.21.0
+  WidgetData& setTreeExpandedIds(std::string_view name, const std::vector<std::string>& ids) {
+    entry(name)["tree_expanded_ids"] = ids;
+    return *this;
+  }
+
+  /// Install an ID-keyed visibility filter. An empty array is an active
+  /// zero-match filter; use clearTreeVisibleIds() to remove the filter.
+  /// @since 0.21.0
+  WidgetData& setTreeVisibleIds(std::string_view name, const std::vector<std::string>& ids) {
+    entry(name)["tree_visible_ids"] = ids;
+    return *this;
+  }
+
+  /// Remove the active ID-keyed visibility filter (JSON null), restoring
+  /// visible-by-default behavior for current and future tree items.
+  /// @since 0.21.0
+  WidgetData& clearTreeVisibleIds(std::string_view name) {
+    entry(name)["tree_visible_ids"] = nullptr;
+    return *this;
+  }
+
+  /// Select single (false) or extended multi-selection (true) behavior.
+  /// @since 0.21.0
+  WidgetData& setTreeSelectionMode(std::string_view name, bool multi) {
+    entry(name)["tree_multi_selection"] = multi;
     return *this;
   }
 
