@@ -44,6 +44,40 @@ extern "C" {
  * thread, so every slot is [main-thread].
  */
 
+/**
+ * Host features that a dialog may use when the corresponding bit is present in
+ * PJ_dialog_host_info_t::capabilities.
+ *
+ * @since 0.21.0
+ */
+typedef enum PJ_dialog_host_capability_t {
+  PJ_DIALOG_HOST_CAN_OPEN_FILE = 1ull << 0,
+  PJ_DIALOG_HOST_CAN_OPEN_FILES = 1ull << 1,
+  PJ_DIALOG_HOST_CAN_SAVE_FILE_PATH = 1ull << 2,
+  PJ_DIALOG_HOST_CAN_SELECT_FOLDER = 1ull << 3,
+  PJ_DIALOG_HOST_STAGES_BROWSER_FILE = 1ull << 4,
+  /* Forces a stable 4-byte width across compilers. Not a real capability. */
+  PJ_DIALOG_HOST_CAPABILITY_FORCE_INT32 = 0x7FFFFFFF
+} PJ_dialog_host_capability_t;
+
+/**
+ * Immutable host information supplied to one dialog instance.
+ *
+ * The host zero-initializes the complete storage it provides and sets
+ * struct_size to its available size. Consumers read only fields wholly covered
+ * by struct_size so this struct can grow by appending fields. String views are
+ * valid only for the duration of set_host_info; plugins that retain them must
+ * copy them during the call.
+ *
+ * @since 0.21.0
+ */
+typedef struct PJ_dialog_host_info_t {
+  uint32_t struct_size;
+  PJ_string_view_t sdk_version;
+  PJ_string_view_t plotjuggler_version;
+  uint64_t capabilities;
+} PJ_dialog_host_info_t;
+
 typedef struct PJ_dialog_vtable_t {
   uint32_t protocol_version; /* Must equal PJ_DIALOG_PROTOCOL_VERSION */
   uint32_t struct_size;
@@ -80,9 +114,23 @@ typedef struct PJ_dialog_vtable_t {
    * discovery. When present, the host reads this instead of instantiating
    * the dialog during scans. */
   const char* manifest_json;
+
+  /**
+   * [main-thread] Optional runtime host information channel.
+   *
+   * The host calls this after creating or borrowing the dialog context and
+   * before get_ui_content, load_config, or get_widget_data. Repeated successful
+   * calls replace the previous information (last writer wins). The info pointer
+   * and its string views are valid only for this call.
+   *
+   * @since 0.21.0
+   */
+  bool (*set_host_info)(void* context, const PJ_dialog_host_info_t* info, PJ_error_t* error) PJ_NOEXCEPT;
 } PJ_dialog_vtable_t;
-/* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
- * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_DIALOG_MIN_VTABLE_SIZE. */
+/* The vtable above is ABI-APPENDABLE: the required v4 prefix ends at
+ * load_config. manifest_json and set_host_info are optional tail slots, and
+ * every host read of either one is guarded with PJ_HAS_TAIL_SLOT. Appending
+ * optional slots does not change PJ_DIALOG_MIN_VTABLE_SIZE. */
 
 /*
  * Every dialog plugin exports this symbol.

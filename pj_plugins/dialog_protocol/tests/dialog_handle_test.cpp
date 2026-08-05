@@ -3,12 +3,59 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <nlohmann/json.hpp>
 #include <pj_plugins/host/dialog_handle.hpp>
 #include <string>
 
 // Defined in mock_dialog.cpp, linked statically
 extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept;
+
+namespace {
+
+struct HostInfoCallRecorder {
+  int calls = 0;
+  const PJ_dialog_host_info_t* info = nullptr;
+  PJ_error_t* error = nullptr;
+  bool result = true;
+};
+
+bool recordHostInfo(void* ctx, const PJ_dialog_host_info_t* info, PJ_error_t* error) noexcept {
+  auto* recorder = static_cast<HostInfoCallRecorder*>(ctx);
+  ++recorder->calls;
+  recorder->info = info;
+  recorder->error = error;
+  if (!recorder->result && error != nullptr) {
+    error->code = 73;
+    std::memcpy(error->domain, "test", sizeof("test"));
+    std::memcpy(error->message, "plugin rejected host info", sizeof("plugin rejected host info"));
+  }
+  return recorder->result;
+}
+
+PJ_dialog_vtable_t hostInfoVtable(
+    uint32_t struct_size, bool (*set_host_info)(void*, const PJ_dialog_host_info_t*, PJ_error_t*) noexcept) {
+  PJ_dialog_vtable_t vtable{};
+  vtable.protocol_version = PJ_DIALOG_PROTOCOL_VERSION;
+  vtable.struct_size = struct_size;
+  vtable.set_host_info = set_host_info;
+  return vtable;
+}
+
+PJ_dialog_host_info_t testHostInfo() {
+  static constexpr char kSdkVersion[] = "0.21.0";
+  static constexpr char kPlotJugglerVersion[] = "4.2.0";
+  return PJ_dialog_host_info_t{
+      static_cast<uint32_t>(sizeof(PJ_dialog_host_info_t)),
+      PJ_string_view_t{kSdkVersion, sizeof(kSdkVersion) - 1},
+      PJ_string_view_t{kPlotJugglerVersion, sizeof(kPlotJugglerVersion) - 1},
+      PJ_DIALOG_HOST_CAN_OPEN_FILE,
+  };
+}
+
+}  // namespace
 
 class DialogHandleTest : public ::testing::Test {
  protected:
@@ -29,6 +76,67 @@ TEST_F(DialogHandleTest, NullVtable) {
   PJ::DialogHandle h(nullptr);
   EXPECT_EQ(h.vtable(), nullptr);
   EXPECT_EQ(h.context(), nullptr);
+}
+
+// --- Host information ---
+
+TEST_F(DialogHandleTest, SetHostInfoTreatsTruncatedOldVtableAsUnsupported) {
+  HostInfoCallRecorder recorder;
+  auto vtable = hostInfoVtable(static_cast<uint32_t>(offsetof(PJ_dialog_vtable_t, set_host_info)), recordHostInfo);
+  auto handle = PJ::DialogHandle::borrowed(&vtable, &recorder);
+  const auto info = testHostInfo();
+  PJ_error_t error{};
+  error.code = 91;
+  std::memcpy(error.domain, "unchanged", sizeof("unchanged"));
+  const PJ_error_t expected_error = error;
+
+  EXPECT_FALSE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(recorder.calls, 0);
+  EXPECT_EQ(std::memcmp(&error, &expected_error, sizeof(error)), 0);
+}
+
+TEST_F(DialogHandleTest, SetHostInfoTreatsNullSlotAsUnsupported) {
+  HostInfoCallRecorder recorder;
+  auto vtable = hostInfoVtable(static_cast<uint32_t>(sizeof(PJ_dialog_vtable_t)), nullptr);
+  auto handle = PJ::DialogHandle::borrowed(&vtable, &recorder);
+  const auto info = testHostInfo();
+  PJ_error_t error{};
+  error.code = 92;
+  std::memcpy(error.domain, "unchanged", sizeof("unchanged"));
+  const PJ_error_t expected_error = error;
+
+  EXPECT_FALSE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(recorder.calls, 0);
+  EXPECT_EQ(std::memcmp(&error, &expected_error, sizeof(error)), 0);
+}
+
+TEST_F(DialogHandleTest, SetHostInfoForwardsToValidSlot) {
+  HostInfoCallRecorder recorder;
+  auto vtable = hostInfoVtable(static_cast<uint32_t>(sizeof(PJ_dialog_vtable_t)), recordHostInfo);
+  auto handle = PJ::DialogHandle::borrowed(&vtable, &recorder);
+  const auto info = testHostInfo();
+  PJ_error_t error{};
+
+  EXPECT_TRUE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(recorder.calls, 1);
+  EXPECT_EQ(recorder.info, &info);
+  EXPECT_EQ(recorder.error, &error);
+  EXPECT_EQ(error.code, 0);
+}
+
+TEST_F(DialogHandleTest, SetHostInfoPropagatesPluginFailureAndError) {
+  HostInfoCallRecorder recorder;
+  recorder.result = false;
+  auto vtable = hostInfoVtable(static_cast<uint32_t>(sizeof(PJ_dialog_vtable_t)), recordHostInfo);
+  auto handle = PJ::DialogHandle::borrowed(&vtable, &recorder);
+  const auto info = testHostInfo();
+  PJ_error_t error{};
+
+  EXPECT_FALSE(handle.setHostInfo(info, &error));
+  EXPECT_EQ(recorder.calls, 1);
+  EXPECT_EQ(error.code, 73);
+  EXPECT_STREQ(error.domain, "test");
+  EXPECT_STREQ(error.message, "plugin rejected host info");
 }
 
 // --- Move semantics ---

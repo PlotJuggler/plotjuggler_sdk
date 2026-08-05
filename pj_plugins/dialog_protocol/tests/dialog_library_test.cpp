@@ -21,6 +21,10 @@
 #error "PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
 #endif
 
+#ifndef PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH
+#error "PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH must be defined"
+#endif
+
 namespace {
 
 TEST(DialogLibraryTest, LoadAndCreateHandle) {
@@ -74,6 +78,17 @@ TEST(DialogLibraryTest, RejectsMissingRequiredSlot) {
   auto lib = PJ::DialogLibrary::load(PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH);
   ASSERT_FALSE(lib);
   EXPECT_NE(lib.error().find("Dialog vtable missing required slot: get_ui_content"), std::string::npos);
+}
+
+TEST(DialogLibraryTest, AcceptsPreHostInfoVtableWithRequiredV4Prefix) {
+  auto lib = PJ::DialogLibrary::load(PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH);
+  ASSERT_TRUE(lib) << lib.error();
+  ASSERT_NE(lib->vtable(), nullptr);
+  EXPECT_EQ(lib->vtable()->struct_size, offsetof(PJ_dialog_vtable_t, set_host_info));
+  EXPECT_EQ(PJ_DIALOG_MIN_VTABLE_SIZE, offsetof(PJ_dialog_vtable_t, manifest_json));
+
+  auto handle = lib->createHandle();
+  EXPECT_EQ(handle.manifest(), R"({"id":"old-dialog-vtable","name":"Old Dialog Vtable","version":"1.0.0"})");
 }
 
 TEST(DialogLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {

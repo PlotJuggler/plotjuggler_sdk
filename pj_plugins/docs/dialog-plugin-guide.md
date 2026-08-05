@@ -81,6 +81,57 @@ others prevent runtime failures that are silent at compile time.
 - Retain the JSON string returned by `widget_data()` on the host side past
   the next `widget_data()` call on the same dialog.
 
+### Host information and graceful fallback
+
+Since SDK 0.21.0, a conforming host supplies immutable version and capability
+information to every standalone or borrowed dialog context after creation (or
+borrowing) and before the first `ui_content()`, `loadConfig()`, or
+`widget_data()` call. `DialogPluginBase` copies the two version strings and the
+capability bits during delivery, so plugins may safely retain the returned
+information even though the C string views are valid only during the ABI call.
+
+Derived dialogs inspect the protected `hostInfo()` accessor:
+
+```cpp
+std::string widget_data() override {
+  const auto& host = hostInfo();
+  if (!host || !host->has(PJ::DialogHostCapability::kStagesBrowserFile)) {
+    return PJ::WidgetData{}
+        .setLabel("compatibilityMessage",
+                  "This dialog needs a newer PlotJuggler host")
+        .toJson();
+  }
+  // Build the normal dialog state.
+  return buildNormalWidgetData();
+}
+```
+
+`hostInfo()` is empty when the dialog runs on a pre-0.21 host or a
+non-conforming embedding host. Treat that as the graceful-fallback signal:
+keep a meaningful legacy JSON path when possible, or return a small
+incompatibility UI instead of emitting state that an older host cannot apply.
+It cannot make a non-dialog plugin feature self-reject on an already-shipped
+pre-0.21 loader; that requires a protocol/ABI bump.
+
+Available `DialogHostCapability` values are:
+
+| Capability | Meaning |
+|---|---|
+| `kCanOpenFile` | The host can open a single-file picker. |
+| `kCanOpenFiles` | The host can open a multi-file picker. |
+| `kCanSaveFilePath` | The host can choose a destination file path. |
+| `kCanSelectFolder` | The host can select a folder. |
+| `kStagesBrowserFile` | A browser-selected file is staged to a host-accessible path before delivery. |
+
+Delivery is last-writer-wins: a later successful host-info call replaces both
+stored strings and the complete capability mask. Plugin code should normally
+observe one delivery before first use; the replacement rule makes re-binding
+deterministic for embedding hosts and tests.
+
+The generated `PJ_SDK_HAS_DIALOG_HOST_INFO` feature-test macro is intentionally
+deferred to the separate SDK-version-header package; this package adds no
+`PJ_SDK_HAS_*` macros.
+
 ## Step by Step
 
 ### 1. Declare your class

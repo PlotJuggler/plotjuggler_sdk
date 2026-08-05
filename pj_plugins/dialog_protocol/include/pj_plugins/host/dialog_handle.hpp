@@ -59,6 +59,26 @@ class DialogHandle {
   DialogHandle(const DialogHandle&) = delete;
   DialogHandle& operator=(const DialogHandle&) = delete;
 
+  /// Supply immutable host information to this dialog instance.
+  ///
+  /// This method owns the optional-tail-slot gate: runtime engines must call it
+  /// instead of reading PJ_dialog_vtable_t::set_host_info directly. Returns
+  /// false without invoking plugin code or modifying @p out_error when the
+  /// dialog predates the slot or exposes it as null. Otherwise forwards the
+  /// plugin's boolean result and error unchanged.
+  ///
+  /// Call after construction/borrowing and before ui_content(), load_config(),
+  /// or widget_data(). The info and its string views need only remain valid for
+  /// the duration of this call.
+  ///
+  /// @since 0.21.0
+  [[nodiscard]] bool setHostInfo(const PJ_dialog_host_info_t& info, PJ_error_t* out_error = nullptr) {
+    if (vt_ == nullptr || ctx_ == nullptr || !PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, set_host_info)) {
+      return false;
+    }
+    return vt_->set_host_info(ctx_, &info, out_error);
+  }
+
   // --- Queries ---
   [[nodiscard]] std::string manifest() const {
     return safeString(vt_->get_manifest(ctx_));

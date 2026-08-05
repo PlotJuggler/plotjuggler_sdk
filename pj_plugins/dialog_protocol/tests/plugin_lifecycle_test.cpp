@@ -29,7 +29,15 @@ static_assert(offsetof(PJ_dialog_vtable_t, load_config) == 88, "v4 dialog baseli
 static_assert(PJ_DIALOG_MIN_VTABLE_SIZE == 96, "Dialog MIN vtable size is pinned at v4.0");
 static_assert(PJ_DIALOG_MIN_VTABLE_SIZE <= sizeof(PJ_dialog_vtable_t), "MIN must never exceed current");
 static_assert(offsetof(PJ_dialog_vtable_t, manifest_json) == 96, "Dialog static manifest tail slot appended");
-static_assert(sizeof(PJ_dialog_vtable_t) == 104, "Dialog vtable size updated deliberately on append");
+static_assert(offsetof(PJ_dialog_vtable_t, set_host_info) == 104, "Dialog host-info tail slot appended");
+static_assert(sizeof(PJ_dialog_vtable_t) == 112, "Dialog vtable size updated deliberately on append");
+
+static_assert(sizeof(PJ_dialog_host_capability_t) == 4, "Dialog host-capability enum width pinned");
+static_assert(offsetof(PJ_dialog_host_info_t, struct_size) == 0, "Dialog host-info prefix pinned");
+static_assert(offsetof(PJ_dialog_host_info_t, sdk_version) == 8, "Dialog host-info layout pinned");
+static_assert(offsetof(PJ_dialog_host_info_t, plotjuggler_version) == 24, "Dialog host-info layout pinned");
+static_assert(offsetof(PJ_dialog_host_info_t, capabilities) == 40, "Dialog host-info layout pinned");
+static_assert(sizeof(PJ_dialog_host_info_t) == 48, "Dialog host-info size pinned at introduction");
 
 class PluginLifecycleTest : public ::testing::Test {
  protected:
@@ -76,6 +84,8 @@ TEST_F(PluginLifecycleTest, AllFunctionPointersNonNull) {
   EXPECT_NE(vt_->load_config, nullptr);
   ASSERT_TRUE(PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, manifest_json));
   EXPECT_NE(vt_->manifest_json, nullptr);
+  ASSERT_TRUE(PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, set_host_info));
+  EXPECT_NE(vt_->set_host_info, nullptr);
 }
 
 // --- Manifest ---

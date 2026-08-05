@@ -3,6 +3,30 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.21.0]
+
+### Feature: dialog host-information tail slot (MINOR)
+
+Dialogs can now observe the embedding host's SDK version, PlotJuggler version,
+and runtime dialog capabilities through a backward-compatible optional vtable
+tail slot:
+
+- New C ABI types `PJ_dialog_host_capability_t` (width-pinned) and appendable
+  `PJ_dialog_host_info_t`, whose string views are call-duration-only.
+- Optional `PJ_dialog_vtable_t::set_host_info` after `manifest_json`.
+  `PJ_DIALOG_PROTOCOL_VERSION` remains 4, `PJ_DIALOG_MIN_VTABLE_SIZE` remains
+  pinned to the required prefix, and old vtables are accepted unchanged.
+- `DialogHandle::setHostInfo()` owns the runtime `PJ_HAS_TAIL_SLOT` gate and
+  leaves the error output untouched when the slot is absent.
+- `DialogPluginBase` copies host information, exposes protected `hostInfo()` and
+  typed `DialogHostCapability` checks, and uses last-writer-wins replacement.
+  Empty `hostInfo()` is the fallback signal for a pre-0.21 or non-conforming
+  embedding host.
+
+The generated SDK version header and `PJ_SDK_HAS_DIALOG_HOST_INFO` feature-test
+macro are deferred to their separate 0.21 package; no `PJ_SDK_HAS_*` macro is
+introduced here. PlotJuggler host wiring also lands separately.
+
 ## [0.20.0]
 
 ### Feature: descriptor import v1 — import a persisted source descriptor, promote the materialized artifact (MINOR)

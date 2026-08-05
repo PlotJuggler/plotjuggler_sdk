@@ -6,12 +6,37 @@
 
 #include <cstring>
 #include <exception>
+#include <optional>
 #include <pj_base/plugin_abi_export.hpp>
 #include <string>
 #include <string_view>
 #include <utility>
 
 namespace PJ {
+
+/// Host capabilities available to a dialog instance.
+///
+/// @since 0.21.0
+enum class DialogHostCapability : uint64_t {
+  kCanOpenFile = PJ_DIALOG_HOST_CAN_OPEN_FILE,
+  kCanOpenFiles = PJ_DIALOG_HOST_CAN_OPEN_FILES,
+  kCanSaveFilePath = PJ_DIALOG_HOST_CAN_SAVE_FILE_PATH,
+  kCanSelectFolder = PJ_DIALOG_HOST_CAN_SELECT_FOLDER,
+  kStagesBrowserFile = PJ_DIALOG_HOST_STAGES_BROWSER_FILE,
+};
+
+/// Owned copy of the runtime information supplied by the embedding host.
+///
+/// @since 0.21.0
+struct DialogHostInfo {
+  std::string sdk_version;
+  std::string plotjuggler_version;
+  uint64_t capabilities = 0;
+
+  [[nodiscard]] bool has(DialogHostCapability capability) const noexcept {
+    return (capabilities & static_cast<uint64_t>(capability)) != 0;
+  }
+};
 
 /// C++ base class for Dialog plugins (protocol v4).
 ///
@@ -50,6 +75,19 @@ class DialogPluginBase {
     return false;
   }
 
+ protected:
+  /// Information supplied by a conforming 0.21+ host before first dialog use.
+  ///
+  /// An empty optional means the plugin is running under a pre-0.21 host or a
+  /// non-conforming embedding host. Repeated successful deliveries use
+  /// last-writer-wins semantics.
+  ///
+  /// @since 0.21.0
+  [[nodiscard]] const std::optional<DialogHostInfo>& hostInfo() const noexcept {
+    return host_info_;
+  }
+
+ public:
   template <typename CreateFn>
   static const PJ_dialog_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest_json = nullptr) {
     static const PJ_dialog_vtable_t vt = {
@@ -67,6 +105,7 @@ class DialogPluginBase {
         trampoline_save_config,
         trampoline_load_config,
         manifest_json,
+        trampoline_set_host_info,
     };
     return &vt;
   }
@@ -79,6 +118,9 @@ class DialogPluginBase {
 
   bool manifest_cached_ = false;
   bool ui_content_cached_ = false;
+
+  // Layout discipline: append new data members after every existing member.
+  std::optional<DialogHostInfo> host_info_;
 
   static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {
     if (out_error == nullptr) {
@@ -217,6 +259,34 @@ class DialogPluginBase {
       return false;
     } catch (...) {
       self->storeError(out_error, 1, "dialog", "unknown exception in load_config");
+      return false;
+    }
+  }
+
+  static bool trampoline_set_host_info(void* ctx, const PJ_dialog_host_info_t* info, PJ_error_t* out_error) noexcept {
+    auto* self = static_cast<DialogPluginBase*>(ctx);
+    if (info == nullptr) {
+      self->storeError(out_error, 2, "dialog", "set_host_info called with null info");
+      return false;
+    }
+    constexpr std::size_t kRequiredSize =
+        offsetof(PJ_dialog_host_info_t, capabilities) + sizeof(PJ_dialog_host_info_t::capabilities);
+    if (info->struct_size < kRequiredSize) {
+      self->storeError(out_error, 2, "dialog", "set_host_info called with undersized info");
+      return false;
+    }
+    try {
+      auto copy_string = [](PJ_string_view_t value) {
+        return value.data == nullptr ? std::string() : std::string(value.data, value.size);
+      };
+      DialogHostInfo copied{copy_string(info->sdk_version), copy_string(info->plotjuggler_version), info->capabilities};
+      self->host_info_ = std::move(copied);
+      return true;
+    } catch (const std::exception& e) {
+      self->storeError(out_error, 1, "dialog", std::string("set_host_info failed: ") + e.what());
+      return false;
+    } catch (...) {
+      self->storeError(out_error, 1, "dialog", "unknown exception in set_host_info");
       return false;
     }
   }
