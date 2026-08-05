@@ -5,6 +5,19 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.21.0]
 
+### Feature: canonical object-topic renderer metadata (MINOR)
+
+- Added `PJ::sdk::ObjectTopicMetadataBuilder`. Its typed
+  `builtinObjectType()` method emits the canonical `builtin_object_type` key
+  using the exact `PJ::sdk::name()` value, while custom string metadata is
+  escaped and emitted in deterministic key order.
+- Added typed C++ registration overloads on `SourceObjectWriteHostView` and
+  `ToolboxHostView` (including existing-dataset registration). Existing raw
+  JSON overloads remain source-compatible, and no C ABI struct, vtable, or
+  protocol changed.
+- Clarified that `MediaMetadataBuilder::mediaClass()` supplies supplemental
+  media metadata and does not select a canonical built-in renderer.
+
 ### Feature: message-parser runtime diagnostics service (MINOR)
 
 MessageParser plugins can now acquire the optional

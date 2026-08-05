@@ -124,6 +124,23 @@ annotations, frame transforms, or no builtin object.
 | `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
 | `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
 | `kVoxelGrid` | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
+| `kPlotMarkers` | `PJ::sdk::PlotMarkers` | Findings on a time-series plot (regions, events, bands, and labels). |
+
+### Object-topic renderer metadata
+
+An object topic that contains one of these built-in types announces it in
+registration metadata with the single canonical key `builtin_object_type`. Its
+value is the exact string returned by `PJ::sdk::name(BuiltinObjectType)`, which
+is the enum name shown in the first table column, including the leading `k`.
+For example, an image topic uses
+`{"builtin_object_type":"kImage"}`. The C++ SDK's
+`ObjectTopicMetadataBuilder` and typed object-topic registration overloads
+produce this field without a free-form type string.
+
+`object_type` and `media_class` are not renderer-discovery aliases.
+`MediaMetadataBuilder` remains available for supplemental fields such as media
+classification, encoding, and schema, and custom untyped object topics remain
+valid.
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
