@@ -139,9 +139,13 @@ previously-circulated pre-v4 design included):
   Host-side `PJ::scanPluginDsos(dir)` (in
   `pj_plugins/host/plugin_catalog.hpp`) walks platform plugin libraries,
   loads each candidate, validates the ABI and protocol vtable, and parses
-  `id`, `name`, `version`, family-specific fields, and optional metadata
-  directly from the embedded manifest. Broken or incompatible candidates
-  are reported as diagnostics while discovery continues.
+  `id`, `name`, `version`, the optional compatibility fields
+  `min_sdk_required` and `min_plotjuggler_version`, family-specific fields,
+  and optional metadata directly from the embedded manifest. The former is a
+  concrete SemVer SDK-contract floor and the latter retains its distinct
+  application-release meaning; see `REQUIREMENTS.md` section 2.1 for the full
+  compatibility vocabulary and manifest rules. Broken or incompatible
+  candidates are reported as diagnostics while discovery continues.
 - **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
   only (DEEPBIND was a documented ASAN/allocator-interposition trap).
   Plugin-local symbol isolation is left to `-fvisibility=hidden`.

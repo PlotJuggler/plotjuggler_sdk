@@ -104,14 +104,12 @@ changes within `0.x`** — the next ABI/API break ships as `1.0.0`. So a plugin 
 `[>=0.Y.Z <1.0.0]`. (Deliberately stricter than the usual "0.x may break" convention, because
 plugins pin against this SDK.)
 
-**Mechanics.** The version lives in **three** places that must stay in sync — `version` in
-`conanfile.py`, `PJ_PACKAGE_VERSION` in the root `CMakeLists.txt`, and `context.version` in
-`recipe.yaml` (the conda/pixi package version `rattler-build` embeds; `pixi.toml` itself carries
-**no** version) — plus the example tag in the `conanfile.py` docstring. The `conda-release.yml`
-release job hard-fails ("Verify tag matches all version sources") if the `v*` tag and any of the
-three disagree, so a bump that misses `recipe.yaml` cannot be released. A non-MAJOR PR must not
-alter `abi/baseline.abi` beyond additions (verify with `abidiff`). Tagging and pushing a release is
-a separate, explicitly-authorized step — never tag or push a release without the user's go-ahead.
+**Mechanics.** The root `VERSION` file is the only hand-maintained SDK version. Conan reads it in
+`set_version()`, CMake passes it to `project(... VERSION ...)`, and the conda workflow exports it as
+`PJ_SDK_VERSION` for `recipe.yaml`. Release jobs hard-fail when a `v*` tag disagrees with `VERSION`.
+`pixi.toml` itself carries no version. A non-MAJOR PR must not alter `abi/baseline.abi` beyond
+additions (verify with `abidiff`). Tagging and pushing a release is a separate,
+explicitly-authorized step — never tag or push a release without the user's go-ahead.
 
 ## Coding Conventions
 

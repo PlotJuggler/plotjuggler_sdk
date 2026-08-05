@@ -18,6 +18,7 @@
 #include "detail/vtable_validation.hpp"
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/message_parser_protocol.h"
+#include "pj_base/sdk/semver.hpp"
 #include "pj_base/toolbox_protocol.h"
 #include "pj_plugins/dialog_protocol.h"
 
@@ -250,6 +251,19 @@ Expected<PluginDescriptor> decodeManifest(
   if (!min_plotjuggler_version) {
     return unexpected(min_plotjuggler_version.error());
   }
+  auto min_sdk_required = optional_string("min_sdk_required");
+  if (!min_sdk_required) {
+    return unexpected(min_sdk_required.error());
+  }
+  if (!min_sdk_required->empty()) {
+    auto parsed_min_sdk = SemVer::parse(*min_sdk_required);
+    if (!parsed_min_sdk) {
+      return unexpected(
+          fmt::format(
+              "plugin embedded manifest key min_sdk_required has invalid semantic version value \"{}\": {}",
+              *min_sdk_required, parsed_min_sdk.error()));
+    }
+  }
   auto file_extensions = readStringArray(j, "file_extensions");
   if (!file_extensions) {
     return unexpected(file_extensions.error());
@@ -262,6 +276,7 @@ Expected<PluginDescriptor> decodeManifest(
   d.description = *description;
   d.category = *category;
   d.min_plotjuggler_version = *min_plotjuggler_version;
+  d.min_sdk_required = *min_sdk_required;
   d.file_extensions = *file_extensions;
   d.capabilities = *capabilities;
 
