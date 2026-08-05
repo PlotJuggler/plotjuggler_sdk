@@ -134,6 +134,16 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// QStackedWidget: the current page changed. `page_object_name` is the
+  /// stable identity; `index` describes the widget's current layout. Kept at
+  /// the tail of the callback list so existing virtual slots retain their
+  /// positions.
+  /// @since 0.21.0
+  virtual bool onStackedPageChanged(
+      std::string_view /*widget_name*/, int /*index*/, std::string_view /*page_object_name*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
@@ -162,6 +172,14 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.text()) {
       return onTextChanged(widget_name, *v);
+    }
+    // The QStackedWidget event is a paired, uniquely named channel. Check it
+    // before the scalar current_index and tab_index channels so a mixed event
+    // is dispatched exactly once as the more specific stacked-page change.
+    if (auto index = event.stackedIndex()) {
+      if (auto page = event.stackedPage()) {
+        return onStackedPageChanged(widget_name, *index, *page);
+      }
     }
     if (auto v = event.currentIndex()) {
       return onIndexChanged(widget_name, *v);

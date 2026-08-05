@@ -91,6 +91,16 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// QStackedWidget: current page changed. Always emits both the transient
+  /// index and the page's stable Qt objectName.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string stackedPageChanged(int index, std::string_view page_object_name) {
+    nlohmann::json j;
+    j["stacked_index"] = index;
+    j["stacked_page"] = page_object_name;
+    return j.dump();
+  }
+
   /// QListWidget: item double-clicked
   [[nodiscard]] static std::string itemDoubleClicked(int index) {
     nlohmann::json j;

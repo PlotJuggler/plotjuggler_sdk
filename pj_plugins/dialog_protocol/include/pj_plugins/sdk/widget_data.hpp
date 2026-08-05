@@ -793,6 +793,28 @@ class WidgetData {
     return *this;
   }
 
+  // --- QStackedWidget ---
+
+  /// Select a page by its direct child widget's Qt objectName, which remains
+  /// stable when pages are reordered. When both stacked_page and stacked_index
+  /// are present, stacked_page wins. An empty name is invalid; it is serialized
+  /// so the host can warn and leave the current page unchanged.
+  /// @since 0.21.0
+  WidgetData& setStackedPage(std::string_view name, std::string_view page_object_name) {
+    entry(name)["stacked_page"] = std::string(page_object_name);
+    return *this;
+  }
+
+  /// Select a page by its current numeric index. Prefer setStackedPage for
+  /// persisted state: stacked_page wins when both keys are present. A negative
+  /// index is serialized for host validation and leaves the current page
+  /// unchanged.
+  /// @since 0.21.0
+  WidgetData& setStackedIndex(std::string_view name, int index) {
+    entry(name)["stacked_index"] = index;
+    return *this;
+  }
+
   // --- Generic (any widget) ---
   WidgetData& setEnabled(std::string_view name, bool enabled) {
     entry(name)["enabled"] = enabled;

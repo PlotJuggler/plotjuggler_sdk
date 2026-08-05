@@ -110,6 +110,15 @@ TEST(WidgetEventBuilderTest, TabChanged) {
   EXPECT_EQ(*ev.tabIndex(), 2);
 }
 
+TEST(WidgetEventBuilderTest, StackedPageChangedEmitsNameAndIndex) {
+  std::string json = PJ::WidgetEventBuilder::stackedPageChanged(2, "advanced_page");
+  PJ::WidgetEvent ev(json);
+  ASSERT_TRUE(ev.stackedIndex().has_value());
+  EXPECT_EQ(*ev.stackedIndex(), 2);
+  ASSERT_TRUE(ev.stackedPage().has_value());
+  EXPECT_EQ(*ev.stackedPage(), "advanced_page");
+}
+
 TEST(WidgetEventBuilderTest, DateRangeChanged) {
   std::string json = PJ::WidgetEventBuilder::dateRangeChanged("2016-04-29T00:00:00", "2016-05-01T12:00:00");
   PJ::WidgetEvent ev(json);

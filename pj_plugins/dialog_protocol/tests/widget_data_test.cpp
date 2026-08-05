@@ -370,6 +370,30 @@ TEST(WidgetDataTest, SetTabIndex) {
   EXPECT_EQ(j["tab_widget"]["tab_index"], 1);
 }
 
+// --- StackedWidget ---
+
+TEST(WidgetDataTest, SetStackedPage) {
+  WidgetData wd;
+  wd.setStackedPage("configuration_stack", "advanced_page");
+  auto j = parse(wd);
+  EXPECT_EQ(j["configuration_stack"]["stacked_page"], "advanced_page");
+}
+
+TEST(WidgetDataTest, SetStackedIndex) {
+  WidgetData wd;
+  wd.setStackedIndex("configuration_stack", 2);
+  auto j = parse(wd);
+  EXPECT_EQ(j["configuration_stack"]["stacked_index"], 2);
+}
+
+TEST(WidgetDataTest, InvalidStackedSelectionIsSerializedForHostValidation) {
+  WidgetData wd;
+  wd.setStackedPage("configuration_stack", "").setStackedIndex("configuration_stack", -1);
+  auto j = parse(wd);
+  EXPECT_EQ(j["configuration_stack"]["stacked_page"], "");
+  EXPECT_EQ(j["configuration_stack"]["stacked_index"], -1);
+}
+
 // --- Generic ---
 
 TEST(WidgetDataTest, SetEnabled) {

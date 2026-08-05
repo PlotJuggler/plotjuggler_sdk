@@ -696,6 +696,21 @@ class WidgetDataView {
     return getInt(name, "tab_index");
   }
 
+  // --- QStackedWidget ---
+  /// Page objectName requested by WidgetData::setStackedPage. When this and
+  /// stackedIndex() are both present, the page name takes precedence.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::string> stackedPage(std::string_view name) const {
+    return getString(name, "stacked_page");
+  }
+
+  /// Numeric page requested by WidgetData::setStackedIndex. A simultaneous
+  /// stackedPage() value takes precedence.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<int> stackedIndex(std::string_view name) const {
+    return getInt(name, "stacked_index");
+  }
+
   // --- Drop target ---
   [[nodiscard]] bool isDropTarget(std::string_view name) const {
     return getBool(name, "drop_target").value_or(false);

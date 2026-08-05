@@ -30,6 +30,25 @@ The generated SDK version header and `PJ_SDK_HAS_DIALOG_HOST_INFO` feature-test
 macro are deferred to their separate 0.21 package; no `PJ_SDK_HAS_*` macro is
 introduced here. PlotJuggler host wiring also lands separately.
 
+### Feature: QStackedWidget dialog SDK binding (MINOR)
+
+Dialogs can now describe and observe `QStackedWidget` state through additive
+JSON, without changing the dialog C ABI, `PJ_dialog_vtable_t`, or protocol
+version:
+
+- `WidgetData::setStackedPage()` and `setStackedIndex()` emit `stacked_page`
+  and `stacked_index`; the direct child page's Qt `objectName` is the stable
+  identity and wins when both keys are present. Invalid empty/unknown names and
+  negative/out-of-range indexes are host warning/no-ops.
+- `WidgetDataView` exposes both optional representations independently.
+- The host-side `WidgetEventBuilder::stackedPageChanged()` always emits both
+  representations; `WidgetEvent` parses either key defensively, and
+  `DialogPluginTyped::onStackedPageChanged()` dispatches the complete pair once.
+
+This package is the SDK surface only; the Qt application, signal blocking, and
+signal connection land in the companion PlotJuggler host package. No
+`PJ_SDK_HAS_*` macro is introduced here.
+
 ## [0.20.0]
 
 ### Feature: descriptor import v1 — import a persisted source descriptor, promote the materialized artifact (MINOR)

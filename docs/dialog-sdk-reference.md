@@ -116,6 +116,19 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 |--------|-------------|
 | `setTabIndex(name, int)` | Set active tab index |
 
+### QStackedWidget
+
+Use the direct child page's Qt `objectName` as its stable identity. A page name
+survives page reordering; an index describes only the current layout. When both
+keys are emitted, the page name wins. Empty/unknown names and negative or
+out-of-range indexes are invalid: writers preserve them on the wire so the host
+can warn and leave the current page unchanged.
+
+| Method | Description |
+|--------|-------------|
+| `setStackedPage(name, page_object_name)` | Select a page by stable Qt `objectName` (preferred) |
+| `setStackedIndex(name, int)` | Select a page by its current index |
+
 ### QDateTimeEdit
 
 Also binds the `QDateEdit` / `QTimeEdit` subclasses. Datetimes are wall-clock
@@ -188,6 +201,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
+| `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | New page index and stable Qt `objectName` |
 | `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
 
 ---

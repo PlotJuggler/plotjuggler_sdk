@@ -92,6 +92,21 @@ class WidgetEvent {
     return getInt("tab_index");
   }
 
+  /// QStackedWidget: current page index. Hosts normally emit this together
+  /// with stackedPage(); each accessor remains independently defensive.
+  /// @since 0.21.0
+  std::optional<int> stackedIndex() const {
+    return getInt("stacked_index");
+  }
+
+  /// QStackedWidget: current page's stable Qt objectName. Hosts normally emit
+  /// this together with stackedIndex(); each accessor remains independently
+  /// defensive.
+  /// @since 0.21.0
+  std::optional<std::string> stackedPage() const {
+    return getString("stacked_page");
+  }
+
   /// QListWidget: item double-clicked (returns row index)
   std::optional<int> itemDoubleClickedIndex() const {
     return getInt("item_double_clicked_index");

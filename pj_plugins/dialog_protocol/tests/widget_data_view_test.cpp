@@ -297,6 +297,16 @@ TEST(WidgetDataViewTest, TabIndex) {
   EXPECT_EQ(v.tabIndex("tabs"), 1);
 }
 
+// --- QStackedWidget ---
+
+TEST(WidgetDataViewTest, StackedPageAndIndexRoundTripExposeBothKeys) {
+  PJ::WidgetData wd;
+  wd.setStackedPage("configuration_stack", "advanced_page").setStackedIndex("configuration_stack", 2);
+  PJ::WidgetDataView v(wd.toJson());
+  EXPECT_EQ(v.stackedPage("configuration_stack"), "advanced_page");
+  EXPECT_EQ(v.stackedIndex("configuration_stack"), 2);
+}
+
 // --- Generic ---
 
 TEST(WidgetDataViewTest, Enabled) {

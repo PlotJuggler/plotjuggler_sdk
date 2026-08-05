@@ -87,6 +87,15 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     return true;
   }
 
+  bool onStackedPageChanged(std::string_view widget_name, int index, std::string_view page_object_name) override {
+    ++stacked_calls;
+    last_handler = "stacked_page_changed";
+    last_widget = std::string(widget_name);
+    last_int = index;
+    last_page = std::string(page_object_name);
+    return true;
+  }
+
   bool onDateRangeChanged(std::string_view widget_name, std::string_view from_iso, std::string_view to_iso) override {
     last_handler = "date_range_changed";
     last_widget = std::string(widget_name);
@@ -123,7 +132,9 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   std::string last_text;
   std::string last_date_from;
   std::string last_date_to;
+  std::string last_page;
   int last_int = -1;
+  int stacked_calls = 0;
   double last_double = -1.0;
   bool last_bool = false;
   std::vector<std::string> last_strings;
@@ -134,10 +145,25 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     last_text.clear();
     last_date_from.clear();
     last_date_to.clear();
+    last_page.clear();
     last_int = -1;
+    stacked_calls = 0;
     last_double = -1.0;
     last_bool = false;
     last_strings.clear();
+  }
+};
+
+class DefaultHandlersPlugin : public PJ::DialogPluginTyped {
+ public:
+  std::string manifest() const override {
+    return R"({"name":"default-handlers-test"})";
+  }
+  std::string ui_content() const override {
+    return "<ui/>";
+  }
+  std::string widget_data() override {
+    return "{}";
   }
 };
 
@@ -219,6 +245,37 @@ TEST_F(TypedDispatchTest, TabChanged) {
   EXPECT_EQ(plugin_.last_int, 2);
 }
 
+TEST_F(TypedDispatchTest, StackedPageChangedFiresExactlyOnceWithBothValues) {
+  EXPECT_TRUE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "advanced_page"})"));
+  EXPECT_EQ(plugin_.stacked_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "stacked_page_changed");
+  EXPECT_EQ(plugin_.last_widget, "configuration_stack");
+  EXPECT_EQ(plugin_.last_int, 2);
+  EXPECT_EQ(plugin_.last_page, "advanced_page");
+}
+
+TEST_F(TypedDispatchTest, TabAndComboEventsDoNotTriggerStackedPageHandler) {
+  EXPECT_TRUE(dispatch(plugin_, "tabs", R"({"tab_index": 1})"));
+  EXPECT_EQ(plugin_.last_handler, "tab_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+
+  plugin_.reset();
+  EXPECT_TRUE(dispatch(plugin_, "combo", R"({"current_index": 3})"));
+  EXPECT_EQ(plugin_.last_handler, "index_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, IncompleteStackedPageEventDoesNotDispatchTypedCallback) {
+  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2})"));
+  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_page": "advanced_page"})"));
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+}
+
+TEST(TypedDispatchDefaultHandlerTest, StackedPageChangedFallsThroughHarmlessly) {
+  DefaultHandlersPlugin plugin;
+  EXPECT_FALSE(dispatch(plugin, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "advanced_page"})"));
+}
+
 TEST_F(TypedDispatchTest, DateRangeChanged) {
   EXPECT_TRUE(dispatch(plugin_, "picker", R"({"date_from_iso": "2016-04-29T00:00:00", "date_to_iso": ""})"));
   EXPECT_EQ(plugin_.last_handler, "date_range_changed");
@@ -269,6 +326,16 @@ TEST_F(TypedDispatchTest, CurrentIndexTakesPriorityOverValue) {
   // current_index is checked before value
   EXPECT_TRUE(dispatch(plugin_, "w", R"({"current_index": 1, "value": 5})"));
   EXPECT_EQ(plugin_.last_handler, "index_changed");
+}
+
+TEST_F(TypedDispatchTest, StackedPagePairTakesPriorityOverScalarIndexChannels) {
+  EXPECT_TRUE(dispatch(
+      plugin_, "configuration_stack",
+      R"({"stacked_index": 2, "stacked_page": "advanced_page", "current_index": 7, "tab_index": 8})"));
+  EXPECT_EQ(plugin_.last_handler, "stacked_page_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 1);
+  EXPECT_EQ(plugin_.last_int, 2);
+  EXPECT_EQ(plugin_.last_page, "advanced_page");
 }
 
 TEST_F(TypedDispatchTest, CodeChangedCarriesCursorToTypedHandler) {

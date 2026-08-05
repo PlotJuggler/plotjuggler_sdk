@@ -11,6 +11,10 @@ Local traps not visible from the headers:
   the XML, or the dialog renders with no OK/Cancel and no compile error.
 - `QTextEdit` / model-based `QTableView` are unsupported by the widget binding —
   use `QPlainTextEdit` / `QTableWidget`. See `../docs/dialog-plugin-guide.md`.
+- `QStackedWidget` pages are addressed by each direct child page's Qt
+  `objectName`, not its label or position. `stacked_page` wins over a simultaneous
+  `stacked_index`; empty/unknown names and negative/out-of-range indexes are
+  invalid host-side warning/no-ops. See `../docs/dialog-plugin-guide.md`.
 - A table must not combine `sortingEnabled=true` in its `.ui` XML with
   `onHeaderClicked`: Qt sorts the view while the plugin reorders the model and the
   plugin's order loses. Sort keys (`setTableRows` with `TableItem`) or

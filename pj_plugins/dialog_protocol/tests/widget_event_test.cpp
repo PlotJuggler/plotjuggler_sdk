@@ -117,6 +117,18 @@ TEST(WidgetEventTest, TabIndex) {
   EXPECT_EQ(ev.tabIndex().value(), 1);
 }
 
+// --- Stacked page ---
+
+TEST(WidgetEventTest, StackedPageFieldsParseIndependently) {
+  WidgetEvent page_only(R"({"stacked_page": "advanced_page"})");
+  EXPECT_EQ(page_only.stackedPage(), "advanced_page");
+  EXPECT_FALSE(page_only.stackedIndex().has_value());
+
+  WidgetEvent index_only(R"({"stacked_index": 2})");
+  EXPECT_EQ(index_only.stackedIndex(), 2);
+  EXPECT_FALSE(index_only.stackedPage().has_value());
+}
+
 // --- Has ---
 
 TEST(WidgetEventTest, Has) {

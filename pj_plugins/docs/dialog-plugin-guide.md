@@ -313,6 +313,7 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 | `onItemDoubleClicked(name, index)` | QListWidget | row index of double-clicked item |
 | `onHeaderClicked(name, section)` | QTableWidget | clicked column index (for plugin-owned sorting) |
 | `onTabChanged(name, index)` | QTabWidget | new tab index |
+| `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | new page index and stable page `objectName` |
 
 All handlers default to returning `false`. Override only the ones you need.
 
@@ -427,6 +428,7 @@ work like polling a server for available topics.
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
 | DateRangePicker (date range) | `setDateRangePlaceholder` | `onDateRangeChanged(name, from_iso, to_iso)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
+| QStackedWidget | `setStackedPage`, `setStackedIndex` | `onStackedPageChanged(name, index, page_object_name)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
 All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
@@ -442,6 +444,15 @@ Sorting has its own section below.
 
 For `DateRangePicker`, the `from_iso` / `to_iso` strings are ISO-8601 datetimes
 and are empty when that side of the range is unbounded.
+
+For `QStackedWidget`, prefer `setStackedPage(name, page_object_name)`: the
+`page_object_name` is the direct child page widget's Qt `objectName`, so it stays
+stable if pages are inserted or reordered. If `setStackedPage` and
+`setStackedIndex` both contribute keys to one widget, the page name wins. The
+writer deliberately preserves an empty page name or negative index on the wire,
+following the other index-based setters; the host diagnoses an empty/unknown
+name or negative/out-of-range index and leaves the current page unchanged.
+Page-change events always report both the current index and page `objectName`.
 
 > **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
 > widget binding system. Use `QPlainTextEdit` for plain text or code editing,
