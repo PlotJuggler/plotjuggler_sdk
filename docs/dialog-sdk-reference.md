@@ -57,8 +57,91 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setButtonIconNamed(name, icon_id)` | Set a button icon by id, resolved from the host's themed icon set (consistent tinting; unknown id → no icon) |
 | `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) |
 | `setFilePicker(name, text, filter, title)` | Turn into an **open** file picker (existing file) |
+| `setFilePicker(name, text, FilePickerOptions)` | Configure a structured single/multiple-open, save, or directory picker; also emits the closest legacy action for older hosts. Since 0.21.0. |
 | `setSaveFilePicker(name, text, filter, title, default_suffix="")` | Turn into a **save-as** file picker (navigate + type a new filename); reports via `onFileSelected`. `default_suffix` is appended when the typed name has none |
 | `setFolderPicker(name, text, title)` | Turn into folder picker |
+
+### Structured file pickers (since 0.21.0)
+
+Structured pickers use these shared SDK types:
+
+```cpp
+enum class FilePickerMode { OpenFile, OpenFiles, SaveFile, SelectDirectory };
+
+struct FilePickerFilter {
+  std::string id;
+  std::string label;
+  std::vector<std::string> patterns;
+};
+
+struct FilePickerOptions {
+  FilePickerMode mode = FilePickerMode::OpenFile;
+  std::string title;
+  std::string accept_label;
+  std::string initial_directory;
+  std::string suggested_name;
+  std::string default_suffix;
+  std::vector<FilePickerFilter> filters;
+  std::string initially_selected_filter_id;
+  bool confirm_overwrite = true;
+};
+```
+
+Modes have exactly these canonical wire strings: `OpenFile` → `"open_file"`,
+`OpenFiles` → `"open_files"`, `SaveFile` → `"save_file"`, and
+`SelectDirectory` → `"select_directory"`. Filter IDs are stable plugin-owned
+identities. Do not use the displayed label as an ID: native filter text can be
+localized, normalized, or otherwise changed by the host.
+
+Every filter ID must be non-empty and unique, each filter needs at least one
+non-empty pattern, and a non-empty `initially_selected_filter_id` must name one
+of the filters. Following the tree/stacked precedent, `WidgetData` serializes
+caller input without throwing or repairing it; `WidgetDataView::filePickerOptions`
+validates the complete object atomically and optionally reports the reason.
+`isStructuredFilePicker` reports key presence, so malformed structured data is
+not silently reinterpreted as its co-serialized legacy action. The legacy
+`isFilePicker`, `isSaveFilePicker`, `isFolderPicker`, filter, title, and suffix
+accessors continue to work on valid structured widgets.
+
+Legacy host degradation is explicit:
+
+| Structured mode/result | Legacy host or old dispatcher |
+|---|---|
+| `OpenFile` | Existing single-open action and `file_selected` |
+| `OpenFiles` | Degrades to existing single-open action; first selected path only |
+| `SaveFile` | Existing save action and `file_selected` |
+| `SelectDirectory` | Existing folder action and `folder_selected` |
+| `Cancelled` | No legacy key; old dispatcher receives nothing |
+| `Unsupported` | No legacy key; old dispatcher receives nothing |
+| `Error` | No legacy key; old dispatcher receives nothing |
+
+Results use the following shape:
+
+```cpp
+enum class FilePickerStatus { Selected, Cancelled, Unsupported, Error };
+
+struct FilePickerResult {
+  FilePickerStatus status = FilePickerStatus::Cancelled;
+  std::vector<std::string> paths;
+  std::vector<std::string> display_names;
+  std::string selected_filter_id;
+  std::string error;
+};
+```
+
+The canonical status strings are `"selected"`, `"cancelled"`,
+`"unsupported"`, and `"error"`. `Unsupported` means the host cannot honestly
+provide the requested filesystem-path operation. In particular, a browser host
+must return `Unsupported` for directory selection or save-to-path unless it has
+a concrete implementation; it must not manufacture a path. Browser-visible
+names belong in `display_names` when staged host-readable `paths` are synthetic.
+
+`WidgetEventBuilder::filePickerResult(result)` co-emits `file_selected` for the
+first selected file path. Hosts use the mode-aware overload
+`filePickerResult(mode, result)` for `SelectDirectory`, which instead co-emits
+`folder_selected`. Cancelled, unsupported, and error results carry only the
+structured object. `WidgetEvent::filePickerResult()` validates the complete
+payload atomically.
 
 ### QListWidget
 
@@ -254,6 +337,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onClicked(name)` | QPushButton | (no payload) |
 | `onFileSelected(name, path)` | QPushButton (file picker or save-file picker) | Selected file path |
 | `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path |
+| `onFilePickerResult(name, result)` | QPushButton (structured file picker) | Complete `FilePickerResult`, including cancellation/unsupported/error. Since 0.21.0. |
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts (table: column-0 text) |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
 | `onItemDeleteRequested(name, index)` | QListWidget (deletable) | Row whose trash button was clicked (see `setListItemsDeletable`) |
@@ -270,6 +354,14 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onTreeExpansionChanged(name, id, expanded)` | QTreeWidget | Stable item ID and new expansion state |
 | `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | Stable item ID and new column-0 `TreeCheckState` |
 | `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
+
+The structured result key has dispatch priority. A malformed
+`file_picker_result` fails closed without falling through to a co-located legacy,
+tree, or stacked key. The default `onFilePickerResult` forwards the first
+selected path exactly once to `onFileSelected` or `onFolderSelected`; overriding
+the new handler suppresses that default bridge, so an adopter receives only the
+new callback. Picker button ordering is always `onClicked` → host picker →
+result callback. Perform file I/O in the result callback, not `onClicked`.
 
 ---
 

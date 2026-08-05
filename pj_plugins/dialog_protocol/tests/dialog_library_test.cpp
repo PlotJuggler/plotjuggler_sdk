@@ -9,6 +9,8 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
+#include "pj_plugins/host/widget_event_builder.hpp"
+
 #ifndef PJ_MOCK_DIALOG_PLUGIN_PATH
 #error "PJ_MOCK_DIALOG_PLUGIN_PATH must be defined"
 #endif
@@ -23,6 +25,10 @@
 
 #ifndef PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH
 #error "PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH must be defined"
+#endif
+
+#ifndef PJ_OLD_FILE_PICKER_DISPATCHER_PLUGIN_PATH
+#error "PJ_OLD_FILE_PICKER_DISPATCHER_PLUGIN_PATH must be defined"
 #endif
 
 namespace {
@@ -102,6 +108,42 @@ TEST(DialogLibraryTest, AcceptsRequiredPrefixOnlyVtableAndGatesOptionalTailSlots
   error.code = 91;
   EXPECT_EQ(handle.setHostInfo(info, &error), PJ::SetHostInfoResult::Unsupported);
   EXPECT_EQ(error.code, 91);
+}
+
+TEST(DialogLibraryTest, OldBinaryFilePickerDispatcherSeesSelectedLegacyKeyAndOtherStatusesStaySilent) {
+  auto lib = PJ::DialogLibrary::load(PJ_OLD_FILE_PICKER_DISPATCHER_PLUGIN_PATH);
+  ASSERT_TRUE(lib) << lib.error();
+  auto handle = lib->createHandle();
+
+  PJ::FilePickerResult result;
+  result.status = PJ::FilePickerStatus::Selected;
+  result.paths = {"/data/a.mcap", "/data/b.mcap"};
+  result.display_names = {"a.mcap", "b.mcap"};
+  EXPECT_TRUE(
+      handle.sendEvent("bags", PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::OpenFiles, result)));
+  auto observed = nlohmann::json::parse(handle.widget_data());
+  EXPECT_EQ(observed["legacy_calls"], 1);
+  EXPECT_EQ(observed["callback"], "file_selected");
+  EXPECT_EQ(observed["path"], "/data/a.mcap");
+
+  result.paths = {"/data/bags"};
+  result.display_names = {"bags"};
+  EXPECT_TRUE(handle.sendEvent(
+      "folder", PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::SelectDirectory, result)));
+  observed = nlohmann::json::parse(handle.widget_data());
+  EXPECT_EQ(observed["legacy_calls"], 2);
+  EXPECT_EQ(observed["callback"], "folder_selected");
+  EXPECT_EQ(observed["path"], "/data/bags");
+
+  for (const auto status :
+       {PJ::FilePickerStatus::Cancelled, PJ::FilePickerStatus::Unsupported, PJ::FilePickerStatus::Error}) {
+    result = {};
+    result.status = status;
+    result.error = status == PJ::FilePickerStatus::Error ? "failed" : "";
+    EXPECT_FALSE(handle.sendEvent("picker", PJ::WidgetEventBuilder::filePickerResult(result)));
+  }
+  observed = nlohmann::json::parse(handle.widget_data());
+  EXPECT_EQ(observed["legacy_calls"], 2);
 }
 
 TEST(DialogLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {

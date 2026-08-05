@@ -110,6 +110,23 @@ TEST(WidgetEventTest, FileSelected) {
   EXPECT_EQ(ev.fileSelected().value(), "/path/to/cert.pem");
 }
 
+TEST(WidgetEventTest, FilePickerResultRejectsMalformedPayloadsAtomically) {
+  const std::vector<std::string> malformed = {
+      R"({"file_picker_result":17})",
+      R"({"file_picker_result":{"status":"selected","paths":[],"display_names":[],"selected_filter_id":"","error":""}})",
+      R"({"file_picker_result":{"status":"chosen","paths":["/a"],"display_names":["a"],"selected_filter_id":"","error":""}})",
+      R"({"file_picker_result":{"status":"selected","paths":[""],"display_names":["a"],"selected_filter_id":"","error":""}})",
+      R"({"file_picker_result":{"status":"selected","paths":["/a",2],"display_names":["a"],"selected_filter_id":"","error":""}})",
+      R"({"file_picker_result":{"status":"selected","paths":["/a"],"display_names":[2],"selected_filter_id":"","error":""}})",
+      R"({"file_picker_result":{"status":"selected","paths":["/a"],"display_names":["a"],"selected_filter_id":2,"error":""}})",
+      R"({"file_picker_result":{"status":"selected","paths":["/a"],"display_names":["a"],"selected_filter_id":""}})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    EXPECT_FALSE(WidgetEvent(json).filePickerResult().has_value());
+  }
+}
+
 // --- TabIndex ---
 
 TEST(WidgetEventTest, TabIndex) {

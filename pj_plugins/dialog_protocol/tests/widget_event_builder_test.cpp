@@ -6,6 +6,7 @@
 #include <pj_plugins/host/widget_event_builder.hpp>
 #include <pj_plugins/sdk/widget_event.hpp>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // Round-trip pattern: build JSON with WidgetEventBuilder, parse with WidgetEvent.
@@ -101,6 +102,82 @@ TEST(WidgetEventBuilderTest, FileSelected) {
   PJ::WidgetEvent ev(json);
   ASSERT_TRUE(ev.fileSelected().has_value());
   EXPECT_EQ(*ev.fileSelected(), "/tmp/cert.pem");
+}
+
+TEST(WidgetEventBuilderTest, FilePickerSelectedSingleRoundTripsAndCoEmitsLegacyPath) {
+  PJ::FilePickerResult expected;
+  expected.status = PJ::FilePickerStatus::Selected;
+  expected.paths = {"/data/a.mcap"};
+  expected.display_names = {"a.mcap"};
+  expected.selected_filter_id = "bags";
+
+  const std::string json = PJ::WidgetEventBuilder::filePickerResult(expected);
+  PJ::WidgetEvent event(json);
+  auto actual = event.filePickerResult();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->status, expected.status);
+  EXPECT_EQ(actual->paths, expected.paths);
+  EXPECT_EQ(actual->display_names, expected.display_names);
+  EXPECT_EQ(actual->selected_filter_id, expected.selected_filter_id);
+  EXPECT_EQ(actual->error, expected.error);
+  EXPECT_EQ(event.fileSelected(), expected.paths.front());
+  EXPECT_FALSE(event.folderSelected().has_value());
+  EXPECT_EQ(event.raw().size(), 2u);
+}
+
+TEST(WidgetEventBuilderTest, FilePickerSelectedMultiRoundTripsAndLegacyGetsFirstPathOnly) {
+  PJ::FilePickerResult expected;
+  expected.status = PJ::FilePickerStatus::Selected;
+  expected.paths = {"/data/a.mcap", "/data/b.mcap"};
+  expected.display_names = {"a.mcap", "b.mcap"};
+  expected.selected_filter_id = "bags";
+
+  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::OpenFiles, expected));
+  auto actual = event.filePickerResult();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->paths, expected.paths);
+  EXPECT_EQ(actual->display_names, expected.display_names);
+  EXPECT_EQ(event.fileSelected(), "/data/a.mcap");
+  EXPECT_FALSE(event.folderSelected().has_value());
+}
+
+TEST(WidgetEventBuilderTest, FilePickerSelectedDirectoryCoEmitsFolderPath) {
+  PJ::FilePickerResult expected;
+  expected.status = PJ::FilePickerStatus::Selected;
+  expected.paths = {"/data/bags"};
+  expected.display_names = {"bags"};
+
+  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::SelectDirectory, expected));
+  ASSERT_TRUE(event.filePickerResult().has_value());
+  EXPECT_EQ(event.folderSelected(), "/data/bags");
+  EXPECT_FALSE(event.fileSelected().has_value());
+  EXPECT_EQ(event.raw().size(), 2u);
+}
+
+TEST(WidgetEventBuilderTest, FilePickerNonSelectedStatusesRoundTripWithoutLegacyKey) {
+  const std::vector<std::tuple<PJ::FilePickerStatus, std::string>> cases = {
+      {PJ::FilePickerStatus::Cancelled, ""},
+      {PJ::FilePickerStatus::Unsupported, "Directory selection is unavailable"},
+      {PJ::FilePickerStatus::Error, "Native picker failed"},
+  };
+
+  for (const auto& [status, error] : cases) {
+    SCOPED_TRACE(static_cast<int>(status));
+    PJ::FilePickerResult expected;
+    expected.status = status;
+    expected.error = error;
+    PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(expected));
+    auto actual = event.filePickerResult();
+    ASSERT_TRUE(actual.has_value());
+    EXPECT_EQ(actual->status, status);
+    EXPECT_TRUE(actual->paths.empty());
+    EXPECT_TRUE(actual->display_names.empty());
+    EXPECT_TRUE(actual->selected_filter_id.empty());
+    EXPECT_EQ(actual->error, error);
+    EXPECT_FALSE(event.has("file_selected"));
+    EXPECT_FALSE(event.has("folder_selected"));
+    EXPECT_EQ(event.raw().size(), 1u);
+  }
 }
 
 TEST(WidgetEventBuilderTest, TabChanged) {

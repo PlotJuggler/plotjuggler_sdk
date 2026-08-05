@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "pj_base/types.hpp"
+#include "pj_plugins/sdk/file_picker_types.hpp"
 #include "pj_plugins/sdk/tree_types.hpp"
 
 namespace PJ {
@@ -708,6 +709,70 @@ class WidgetData {
     e["action"] = "file_picker";
     e["filter"] = filter;
     e["title"] = title;
+    return *this;
+  }
+
+  /// Turn a QPushButton into a structured picker while co-serializing the
+  /// closest legacy action. OpenFiles deliberately degrades to the old
+  /// single-open action. Filters become a Qt filter string such as
+  /// "Images (*.png *.jpg);;All files (*)" for older hosts.
+  ///
+  /// Like the tree and stacked writers, this setter is a lossless serializer:
+  /// it does not throw or repair invalid IDs/patterns. WidgetDataView validates
+  /// the complete file_picker object atomically and reports a diagnostic.
+  /// @since 0.21.0
+  WidgetData& setFilePicker(std::string_view name, std::string_view button_text, const FilePickerOptions& options) {
+    nlohmann::json encoded_filters = nlohmann::json::array();
+    std::string legacy_filter;
+    for (const auto& filter : options.filters) {
+      encoded_filters.push_back({{"id", filter.id}, {"label", filter.label}, {"patterns", filter.patterns}});
+      if (!legacy_filter.empty()) {
+        legacy_filter += ";;";
+      }
+      legacy_filter += filter.label;
+      legacy_filter += " (";
+      for (std::size_t index = 0; index < filter.patterns.size(); ++index) {
+        if (index != 0) {
+          legacy_filter += ' ';
+        }
+        legacy_filter += filter.patterns[index];
+      }
+      legacy_filter += ')';
+    }
+
+    auto& e = entry(name);
+    e["button_text"] = button_text;
+    e["file_picker"] = {
+        {"mode", filePickerModeWireValue(options.mode)},
+        {"title", options.title},
+        {"accept_label", options.accept_label},
+        {"initial_directory", options.initial_directory},
+        {"suggested_name", options.suggested_name},
+        {"default_suffix", options.default_suffix},
+        {"filters", std::move(encoded_filters)},
+        {"initially_selected_filter_id", options.initially_selected_filter_id},
+        {"confirm_overwrite", options.confirm_overwrite},
+    };
+    e["title"] = options.title;
+
+    switch (options.mode) {
+      case FilePickerMode::OpenFile:
+      case FilePickerMode::OpenFiles:
+        e["action"] = "file_picker";
+        e["filter"] = legacy_filter;
+        e.erase("default_suffix");
+        break;
+      case FilePickerMode::SaveFile:
+        e["action"] = "save_file_picker";
+        e["filter"] = legacy_filter;
+        e["default_suffix"] = options.default_suffix;
+        break;
+      case FilePickerMode::SelectDirectory:
+        e["action"] = "folder_picker";
+        e.erase("filter");
+        e.erase("default_suffix");
+        break;
+    }
     return *this;
   }
 

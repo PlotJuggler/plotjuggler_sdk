@@ -86,6 +86,40 @@ This package is the Qt-free SDK surface only. QTreeWidget reconciliation,
 placeholders, signal blocking, selection preservation, ancestor-closure
 filtering, and typed sorting land in the companion PlotJuggler host package.
 
+### Feature: structured file-picker dialog SDK binding (MINOR)
+
+Dialogs can now request and observe structured single/multiple-open, save, and
+directory pickers through additive JSON, without changing the dialog C ABI,
+protocol version, or introducing a `PJ_SDK_HAS_*` macro:
+
+- New `FilePickerMode`, `FilePickerFilter`, `FilePickerOptions`,
+  `FilePickerStatus`, and `FilePickerResult` types with documented canonical
+  wire strings. Stable filter IDs survive localized or normalized native filter
+  text.
+- `WidgetData::setFilePicker(..., FilePickerOptions)` emits the complete
+  structured object plus the closest legacy action, title, Qt filter string,
+  and save suffix. Multiple-open deliberately degrades to legacy single-open;
+  directory mode degrades to the legacy folder action. Existing picker
+  overloads remain unchanged.
+- The writer preserves caller input, following tree/stacked precedent;
+  `WidgetDataView::filePickerOptions()` atomically rejects invalid modes,
+  empty/duplicate filter IDs, missing selected IDs, empty patterns, and
+  malformed fields while legacy accessors continue to read the co-serialized
+  fields.
+- Structured result events preserve every selected path, browser display name,
+  selected filter ID, and error. Selected results co-emit the first legacy path;
+  cancelled, unsupported, and error results do not. A binary fixture verifies
+  the previous dispatcher sees selected compatibility keys and remains silent
+  for other statuses.
+- `DialogPluginTyped::onFilePickerResult()` is appended after the tree
+  callbacks. Structured keys dispatch first and fail closed when malformed or
+  mixed. The default handler forwards the first selected path exactly once to
+  the matching legacy callback; an override receives only the structured
+  callback.
+
+The shared picker controller, staged-file lease ownership, and browser/WASM
+host implementation remain companion PlotJuggler work.
+
 ## [0.20.0]
 
 ### Feature: descriptor import v1 — import a persisted source descriptor, promote the materialized artifact (MINOR)

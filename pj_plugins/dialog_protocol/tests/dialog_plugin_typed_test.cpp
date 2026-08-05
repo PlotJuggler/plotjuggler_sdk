@@ -6,6 +6,7 @@
 #include <pj_plugins/sdk/dialog_plugin_typed.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -74,7 +75,16 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   }
 
   bool onFileSelected(std::string_view widget_name, std::string_view path) override {
+    ++file_selected_calls;
     last_handler = "file_selected";
+    last_widget = std::string(widget_name);
+    last_text = std::string(path);
+    return true;
+  }
+
+  bool onFolderSelected(std::string_view widget_name, std::string_view path) override {
+    ++folder_selected_calls;
+    last_handler = "folder_selected";
     last_widget = std::string(widget_name);
     last_text = std::string(path);
     return true;
@@ -131,6 +141,14 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     return true;
   }
 
+  bool onFilePickerResult(std::string_view widget_name, const PJ::FilePickerResult& result) override {
+    ++file_picker_result_calls;
+    last_handler = "file_picker_result";
+    last_widget = std::string(widget_name);
+    last_file_picker_result = result;
+    return true;
+  }
+
   bool onDateRangeChanged(std::string_view widget_name, std::string_view from_iso, std::string_view to_iso) override {
     last_handler = "date_range_changed";
     last_widget = std::string(widget_name);
@@ -171,9 +189,13 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   int last_int = -1;
   int stacked_calls = 0;
   int tree_calls = 0;
+  int file_picker_result_calls = 0;
+  int file_selected_calls = 0;
+  int folder_selected_calls = 0;
   double last_double = -1.0;
   bool last_bool = false;
   PJ::TreeCheckState last_tree_check_state = PJ::TreeCheckState::None;
+  PJ::FilePickerResult last_file_picker_result;
   std::vector<std::string> last_strings;
 
   void reset() {
@@ -186,9 +208,13 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     last_int = -1;
     stacked_calls = 0;
     tree_calls = 0;
+    file_picker_result_calls = 0;
+    file_selected_calls = 0;
+    folder_selected_calls = 0;
     last_double = -1.0;
     last_bool = false;
     last_tree_check_state = PJ::TreeCheckState::None;
+    last_file_picker_result = {};
     last_strings.clear();
   }
 };
@@ -287,6 +313,55 @@ class LegacyHandlerRecordingPlugin : public PJ::DialogPluginTyped {
   }
 };
 
+/// Uses the SDK's default onFilePickerResult bridge and records only the two
+/// legacy destinations, matching a typed plugin recompiled without adopting
+/// the new callback.
+class DefaultFilePickerBridgePlugin : public PJ::DialogPluginTyped {
+ public:
+  std::string manifest() const override {
+    return R"({"name":"default-file-picker-bridge-test"})";
+  }
+  std::string ui_content() const override {
+    return "<ui/>";
+  }
+  std::string widget_data() override {
+    return "{}";
+  }
+
+  bool onFileSelected(std::string_view widget_name, std::string_view path) override {
+    ++file_calls;
+    last_widget = std::string(widget_name);
+    last_path = std::string(path);
+    return true;
+  }
+
+  bool onFolderSelected(std::string_view widget_name, std::string_view path) override {
+    ++folder_calls;
+    last_widget = std::string(widget_name);
+    last_path = std::string(path);
+    return true;
+  }
+
+  int file_calls = 0;
+  int folder_calls = 0;
+  std::string last_widget;
+  std::string last_path;
+};
+
+/// Observes every structured callback, then explicitly delegates to the SDK
+/// default so non-selected status tests can prove that no legacy callback runs.
+class DelegatingFilePickerBridgePlugin : public DefaultFilePickerBridgePlugin {
+ public:
+  bool onFilePickerResult(std::string_view widget_name, const PJ::FilePickerResult& result) override {
+    ++result_calls;
+    last_status = result.status;
+    return PJ::DialogPluginTyped::onFilePickerResult(widget_name, result);
+  }
+
+  int result_calls = 0;
+  PJ::FilePickerStatus last_status = PJ::FilePickerStatus::Selected;
+};
+
 // Helper: call the base class on_widget_event through the public interface.
 // DialogPluginTyped::on_widget_event is final, but we access it via DialogPluginBase ref.
 bool dispatch(PJ::DialogPluginBase& plugin, std::string_view widget, std::string_view json) {
@@ -349,6 +424,92 @@ TEST_F(TypedDispatchTest, FileSelected) {
   EXPECT_TRUE(dispatch(plugin_, "file_btn", R"({"file_selected": "/tmp/data.csv"})"));
   EXPECT_EQ(plugin_.last_handler, "file_selected");
   EXPECT_EQ(plugin_.last_text, "/tmp/data.csv");
+}
+
+TEST_F(TypedDispatchTest, FolderSelectedLegacyOnlyStillDispatches) {
+  EXPECT_TRUE(dispatch(plugin_, "folder_btn", R"({"folder_selected": "/tmp/data"})"));
+  EXPECT_EQ(plugin_.last_handler, "folder_selected");
+  EXPECT_EQ(plugin_.last_text, "/tmp/data");
+  EXPECT_EQ(plugin_.folder_selected_calls, 1);
+  EXPECT_EQ(plugin_.file_picker_result_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, OverriddenFilePickerResultGetsExactlyOneNewCallbackAndNoLegacyCallback) {
+  EXPECT_TRUE(dispatch(
+      plugin_, "bags",
+      R"({"file_picker_result":{"status":"selected","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""},"file_selected":"/a.mcap"})"));
+  EXPECT_EQ(plugin_.file_picker_result_calls, 1);
+  EXPECT_EQ(plugin_.file_selected_calls, 0);
+  EXPECT_EQ(plugin_.folder_selected_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "file_picker_result");
+  EXPECT_EQ(plugin_.last_widget, "bags");
+  EXPECT_EQ(plugin_.last_file_picker_result.status, PJ::FilePickerStatus::Selected);
+  EXPECT_EQ(plugin_.last_file_picker_result.paths, (std::vector<std::string>{"/a.mcap", "/b.mcap"}));
+}
+
+TEST(TypedDispatchFilePickerBridgeTest, DefaultHandlerForwardsFirstFilePathExactlyOnce) {
+  DefaultFilePickerBridgePlugin plugin;
+  EXPECT_TRUE(dispatch(
+      plugin, "bags",
+      R"({"file_picker_result":{"status":"selected","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""},"file_selected":"/a.mcap"})"));
+  EXPECT_EQ(plugin.file_calls, 1);
+  EXPECT_EQ(plugin.folder_calls, 0);
+  EXPECT_EQ(plugin.last_widget, "bags");
+  EXPECT_EQ(plugin.last_path, "/a.mcap");
+}
+
+TEST(TypedDispatchFilePickerBridgeTest, DefaultHandlerForwardsDirectoryPathExactlyOnce) {
+  DefaultFilePickerBridgePlugin plugin;
+  EXPECT_TRUE(dispatch(
+      plugin, "folder",
+      R"({"file_picker_result":{"status":"selected","paths":["/data"],"display_names":["data"],"selected_filter_id":"","error":""},"folder_selected":"/data"})"));
+  EXPECT_EQ(plugin.file_calls, 0);
+  EXPECT_EQ(plugin.folder_calls, 1);
+  EXPECT_EQ(plugin.last_widget, "folder");
+  EXPECT_EQ(plugin.last_path, "/data");
+}
+
+TEST(TypedDispatchFilePickerBridgeTest, NonSelectedStatusesReachNewHandlerButDoNotInvokeLegacyHandlers) {
+  DelegatingFilePickerBridgePlugin plugin;
+  const std::vector<std::pair<std::string, PJ::FilePickerStatus>> cases = {
+      {R"({"file_picker_result":{"status":"cancelled","paths":[],"display_names":[],"selected_filter_id":"","error":""}})",
+       PJ::FilePickerStatus::Cancelled},
+      {R"({"file_picker_result":{"status":"unsupported","paths":[],"display_names":[],"selected_filter_id":"","error":"not available"}})",
+       PJ::FilePickerStatus::Unsupported},
+      {R"({"file_picker_result":{"status":"error","paths":[],"display_names":[],"selected_filter_id":"","error":"failed"}})",
+       PJ::FilePickerStatus::Error},
+  };
+  for (const auto& [json, status] : cases) {
+    SCOPED_TRACE(json);
+    EXPECT_FALSE(dispatch(plugin, "picker", json));
+    EXPECT_EQ(plugin.last_status, status);
+  }
+  EXPECT_EQ(plugin.result_calls, 3);
+  EXPECT_EQ(plugin.file_calls, 0);
+  EXPECT_EQ(plugin.folder_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, FilePickerResultMalformedOrMixedPayloadsFailClosedWithoutFallthrough) {
+  const std::vector<std::string> malformed = {
+      R"({"file_picker_result":17,"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","paths":[],"display_names":[],"selected_filter_id":"","error":""},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","paths":["/new"],"display_names":["new"],"selected_filter_id":"","error":""},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","paths":["/new"],"display_names":["new"],"selected_filter_id":"","error":""},"file_selected":"/new","folder_selected":"/new"})",
+      R"({"file_picker_result":{"status":"selected","paths":["/new"],"display_names":["new"],"selected_filter_id":"","error":""},"file_selected":"/new","tree_selection_changed":["legacy"]})",
+      R"({"file_picker_result":{"status":"broken","paths":[],"display_names":[],"selected_filter_id":"","error":""},"stacked_index":2,"stacked_page":"legacy"})",
+      R"({"file_picker_result":{"status":"cancelled","paths":[],"display_names":[],"selected_filter_id":"","error":""},"file_selected":"/legacy"})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    plugin_.reset();
+    EXPECT_FALSE(dispatch(plugin_, "picker", json));
+    EXPECT_EQ(plugin_.file_picker_result_calls, 0);
+    EXPECT_EQ(plugin_.file_selected_calls, 0);
+    EXPECT_EQ(plugin_.folder_selected_calls, 0);
+    EXPECT_EQ(plugin_.tree_calls, 0);
+    EXPECT_EQ(plugin_.stacked_calls, 0);
+    EXPECT_TRUE(plugin_.last_handler.empty());
+  }
 }
 
 TEST_F(TypedDispatchTest, SelectionChanged) {

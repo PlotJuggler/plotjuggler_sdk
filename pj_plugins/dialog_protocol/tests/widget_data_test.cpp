@@ -352,6 +352,60 @@ TEST(WidgetDataTest, SetFilePicker) {
   EXPECT_EQ(j["cert_btn"]["button_text"], "Browse...");
 }
 
+TEST(WidgetDataTest, SetStructuredFilePickerSerializesEveryFieldAndLegacyEquivalent) {
+  PJ::FilePickerOptions options;
+  options.mode = PJ::FilePickerMode::OpenFiles;
+  options.title = "Select ROS bag files";
+  options.accept_label = "Open";
+  options.initial_directory = "/data/bags";
+  options.suggested_name = "recording.mcap";
+  options.default_suffix = "mcap";
+  options.filters = {{"bags", "ROS bag files", {"*.bag", "*.db3", "*.mcap"}}, {"all", "All files", {"*"}}};
+  options.initially_selected_filter_id = "bags";
+  options.confirm_overwrite = false;
+
+  WidgetData wd;
+  wd.setFilePicker("openBags", "Open bags...", options);
+  auto j = parse(wd);
+
+  EXPECT_EQ(j["openBags"]["button_text"], "Open bags...");
+  EXPECT_EQ(j["openBags"]["file_picker"], json::parse(R"({
+    "mode": "open_files",
+    "title": "Select ROS bag files",
+    "accept_label": "Open",
+    "initial_directory": "/data/bags",
+    "suggested_name": "recording.mcap",
+    "default_suffix": "mcap",
+    "filters": [
+      {"id": "bags", "label": "ROS bag files", "patterns": ["*.bag", "*.db3", "*.mcap"]},
+      {"id": "all", "label": "All files", "patterns": ["*"]}
+    ],
+    "initially_selected_filter_id": "bags",
+    "confirm_overwrite": false
+  })"));
+  EXPECT_EQ(j["openBags"]["action"], "file_picker");
+  EXPECT_EQ(j["openBags"]["filter"], "ROS bag files (*.bag *.db3 *.mcap);;All files (*)");
+  EXPECT_EQ(j["openBags"]["title"], options.title);
+  EXPECT_FALSE(j["openBags"].contains("default_suffix"));
+}
+
+TEST(WidgetDataTest, LegacySaveAndFolderPickerOverloadsRemainUnchanged) {
+  WidgetData wd;
+  wd.setSaveFilePicker("save", "Save...", "JSON (*.json)", "Save configuration", "json");
+  wd.setFolderPicker("folder", "Choose...", "Select output folder");
+  auto j = parse(wd);
+
+  EXPECT_EQ(
+      j["save"],
+      json::parse(
+          R"json({"action":"save_file_picker","button_text":"Save...","default_suffix":"json","filter":"JSON (*.json)","title":"Save configuration"})json"));
+  EXPECT_EQ(
+      j["folder"],
+      json::parse(R"({"action":"folder_picker","button_text":"Choose...","title":"Select output folder"})"));
+  EXPECT_FALSE(j["save"].contains("file_picker"));
+  EXPECT_FALSE(j["folder"].contains("file_picker"));
+}
+
 // --- DialogButtonBox ---
 
 TEST(WidgetDataTest, SetOkEnabled) {

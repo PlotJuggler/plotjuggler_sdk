@@ -26,6 +26,15 @@ Local traps not visible from the headers:
   `may_have_children` supports a private placeholder followed by a later full
   snapshot. Tree deltas are deferred; any future delta reuses the table
   sequence/all-or-nothing contract. See `../docs/dialog-plugin-guide.md`.
+- Structured file pickers use stable filter IDs because native display text may
+  be localized or normalized. As with tree/stacked, the writer serializes
+  caller input and `WidgetDataView` atomically rejects empty/duplicate IDs,
+  missing selected IDs, or empty patterns. The structured result key claims
+  dispatch before tree/stacked/legacy keys; malformed payloads fail closed.
+  Selected results co-emit only the first `file_selected` path (or
+  `folder_selected` for directory mode), while cancelled/unsupported/error
+  results emit no legacy key. `onClicked` precedes the host picker and result;
+  file work belongs in `onFilePickerResult`. See `../docs/dialog-plugin-guide.md`.
 - A table must not combine `sortingEnabled=true` in its `.ui` XML with
   `onHeaderClicked`: Qt sorts the view while the plugin reorders the model and the
   plugin's order loses. Sort keys (`setTableRows` with `TableItem`) or

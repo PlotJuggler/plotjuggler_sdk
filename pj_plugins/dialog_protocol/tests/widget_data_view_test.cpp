@@ -284,6 +284,163 @@ TEST(WidgetDataViewTest, NotFilePicker) {
   EXPECT_FALSE(v.isFilePicker("btn"));
 }
 
+TEST(WidgetDataViewTest, StructuredFilePickerRoundTripsEveryOptionField) {
+  PJ::FilePickerOptions expected;
+  expected.mode = PJ::FilePickerMode::SaveFile;
+  expected.title = "Export recording";
+  expected.accept_label = "Export";
+  expected.initial_directory = "/data/out";
+  expected.suggested_name = "session.mcap";
+  expected.default_suffix = "mcap";
+  expected.filters = {{"mcap", "MCAP recordings", {"*.mcap"}}, {"all", "All files", {"*"}}};
+  expected.initially_selected_filter_id = "mcap";
+  expected.confirm_overwrite = false;
+
+  PJ::WidgetData data;
+  data.setFilePicker("export", "Export...", expected);
+  PJ::WidgetDataView view(data.toJson());
+  EXPECT_TRUE(view.isStructuredFilePicker("export"));
+  std::string error = "stale";
+  auto actual = view.filePickerOptions("export", &error);
+  ASSERT_TRUE(actual.has_value()) << error;
+  EXPECT_TRUE(error.empty());
+  EXPECT_EQ(actual->mode, expected.mode);
+  EXPECT_EQ(actual->title, expected.title);
+  EXPECT_EQ(actual->accept_label, expected.accept_label);
+  EXPECT_EQ(actual->initial_directory, expected.initial_directory);
+  EXPECT_EQ(actual->suggested_name, expected.suggested_name);
+  EXPECT_EQ(actual->default_suffix, expected.default_suffix);
+  ASSERT_EQ(actual->filters.size(), expected.filters.size());
+  EXPECT_EQ(actual->filters[0].id, expected.filters[0].id);
+  EXPECT_EQ(actual->filters[0].label, expected.filters[0].label);
+  EXPECT_EQ(actual->filters[0].patterns, expected.filters[0].patterns);
+  EXPECT_EQ(actual->filters[1].id, expected.filters[1].id);
+  EXPECT_EQ(actual->filters[1].label, expected.filters[1].label);
+  EXPECT_EQ(actual->filters[1].patterns, expected.filters[1].patterns);
+  EXPECT_EQ(actual->initially_selected_filter_id, expected.initially_selected_filter_id);
+  EXPECT_EQ(actual->confirm_overwrite, expected.confirm_overwrite);
+}
+
+TEST(WidgetDataViewTest, StructuredFilePickerLegacyCoSerializationDegradesPerMode) {
+  PJ::FilePickerOptions options;
+  options.title = "Pick data";
+  options.default_suffix = "mcap";
+  options.filters = {{"data", "Data files", {"*.bag", "*.mcap"}}, {"all", "All files", {"*"}}};
+
+  PJ::WidgetData data;
+  options.mode = PJ::FilePickerMode::OpenFile;
+  data.setFilePicker("single", "Open...", options);
+  options.mode = PJ::FilePickerMode::OpenFiles;
+  data.setFilePicker("multiple", "Open many...", options);
+  options.mode = PJ::FilePickerMode::SaveFile;
+  data.setFilePicker("save", "Save...", options);
+  options.mode = PJ::FilePickerMode::SelectDirectory;
+  data.setFilePicker("directory", "Choose...", options);
+
+  PJ::WidgetDataView view(data.toJson());
+  constexpr std::string_view kQtFilter = "Data files (*.bag *.mcap);;All files (*)";
+  for (const std::string_view name : {"single", "multiple"}) {
+    EXPECT_TRUE(view.isStructuredFilePicker(name));
+    EXPECT_TRUE(view.isFilePicker(name));
+    EXPECT_FALSE(view.isSaveFilePicker(name));
+    EXPECT_FALSE(view.isFolderPicker(name));
+    EXPECT_EQ(view.filePickerFilter(name), kQtFilter);
+    EXPECT_EQ(view.filePickerTitle(name), options.title);
+    EXPECT_FALSE(view.saveFilePickerDefaultSuffix(name).has_value());
+  }
+
+  EXPECT_TRUE(view.isStructuredFilePicker("save"));
+  EXPECT_TRUE(view.isSaveFilePicker("save"));
+  EXPECT_EQ(view.filePickerFilter("save"), kQtFilter);
+  EXPECT_EQ(view.filePickerTitle("save"), options.title);
+  EXPECT_EQ(view.saveFilePickerDefaultSuffix("save"), "mcap");
+
+  EXPECT_TRUE(view.isStructuredFilePicker("directory"));
+  EXPECT_TRUE(view.isFolderPicker("directory"));
+  EXPECT_EQ(view.folderPickerTitle("directory"), options.title);
+  EXPECT_FALSE(view.filePickerFilter("directory").has_value());
+  EXPECT_FALSE(view.saveFilePickerDefaultSuffix("directory").has_value());
+}
+
+TEST(WidgetDataViewTest, StructuredFilePickerRejectsInvalidOptionsAtomically) {
+  PJ::FilePickerOptions valid;
+  valid.filters = {{"data", "Data", {"*.mcap"}}};
+  valid.initially_selected_filter_id = "data";
+
+  const auto expect_rejected = [](const PJ::FilePickerOptions& options, std::string_view reason) {
+    PJ::WidgetData data;
+    data.setFilePicker("picker", "Pick...", options);
+    PJ::WidgetDataView view(data.toJson());
+    EXPECT_TRUE(view.isStructuredFilePicker("picker"));
+    std::string error;
+    EXPECT_FALSE(view.filePickerOptions("picker", &error).has_value());
+    EXPECT_NE(error.find(reason), std::string::npos) << error;
+  };
+
+  auto duplicate = valid;
+  duplicate.filters.push_back({"data", "Duplicate", {"*.bag"}});
+  expect_rejected(duplicate, "duplicate id");
+
+  auto empty_id = valid;
+  empty_id.filters[0].id.clear();
+  empty_id.initially_selected_filter_id.clear();
+  expect_rejected(empty_id, "id must not be empty");
+
+  auto missing_selected = valid;
+  missing_selected.initially_selected_filter_id = "missing";
+  expect_rejected(missing_selected, "references missing filter");
+
+  auto no_patterns = valid;
+  no_patterns.filters[0].patterns.clear();
+  expect_rejected(no_patterns, "patterns must be a non-empty array");
+
+  auto empty_pattern = valid;
+  empty_pattern.filters[0].patterns = {""};
+  expect_rejected(empty_pattern, "must be a non-empty string");
+}
+
+TEST(WidgetDataViewTest, StructuredFilePickerRejectsUnknownModeAndMalformedFieldsAtomically) {
+  PJ::FilePickerOptions options;
+  options.filters = {{"all", "All files", {"*"}}};
+  PJ::WidgetData data;
+  data.setFilePicker("picker", "Pick...", options);
+  auto encoded = nlohmann::json::parse(data.toJson());
+
+  encoded["picker"]["file_picker"]["mode"] = "open";
+  std::string error;
+  EXPECT_FALSE(PJ::WidgetDataView(encoded.dump()).filePickerOptions("picker", &error));
+  EXPECT_NE(error.find("invalid value"), std::string::npos);
+
+  encoded = nlohmann::json::parse(data.toJson());
+  encoded["picker"]["file_picker"].erase("accept_label");
+  EXPECT_FALSE(PJ::WidgetDataView(encoded.dump()).filePickerOptions("picker", &error));
+  EXPECT_NE(error.find("string fields"), std::string::npos);
+
+  PJ::WidgetDataView wrong_type(R"({"picker":{"file_picker":17,"action":"file_picker"}})");
+  EXPECT_TRUE(wrong_type.isStructuredFilePicker("picker"));
+  EXPECT_FALSE(wrong_type.filePickerOptions("picker", &error));
+  EXPECT_NE(error.find("must be an object"), std::string::npos);
+}
+
+TEST(WidgetDataViewTest, LegacyOnlyPickerAccessorsStillRoundTrip) {
+  PJ::WidgetData data;
+  data.setFilePicker("open", "Open...", "CSV (*.csv)", "Open data")
+      .setSaveFilePicker("save", "Save...", "JSON (*.json)", "Save data", "json")
+      .setFolderPicker("folder", "Choose...", "Select folder");
+  PJ::WidgetDataView view(data.toJson());
+
+  EXPECT_TRUE(view.isFilePicker("open"));
+  EXPECT_EQ(view.filePickerFilter("open"), "CSV (*.csv)");
+  EXPECT_EQ(view.filePickerTitle("open"), "Open data");
+  EXPECT_FALSE(view.isStructuredFilePicker("open"));
+  EXPECT_TRUE(view.isSaveFilePicker("save"));
+  EXPECT_EQ(view.saveFilePickerDefaultSuffix("save"), "json");
+  EXPECT_FALSE(view.isStructuredFilePicker("save"));
+  EXPECT_TRUE(view.isFolderPicker("folder"));
+  EXPECT_EQ(view.folderPickerTitle("folder"), "Select folder");
+  EXPECT_FALSE(view.isStructuredFilePicker("folder"));
+}
+
 // --- QDialogButtonBox ---
 
 TEST(WidgetDataViewTest, OkEnabled) {

@@ -99,6 +99,12 @@ add_library(old_dialog_vtable_plugin SHARED tests/old_dialog_vtable_plugin.cpp)
 target_compile_options(old_dialog_vtable_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(old_dialog_vtable_plugin PRIVATE pj_dialog_protocol)
 
+# Binary fixture whose event reader predates file_picker_result and therefore
+# observes only the co-serialized file_selected/folder_selected compatibility key.
+add_library(old_file_picker_dispatcher_plugin SHARED tests/old_file_picker_dispatcher_plugin.cpp)
+target_compile_options(old_file_picker_dispatcher_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(old_file_picker_dispatcher_plugin PRIVATE pj_dialog_protocol nlohmann_json::nlohmann_json)
+
 # --- Tests ---
 
 enable_testing()
@@ -159,6 +165,7 @@ target_compile_definitions(dialog_library_test PRIVATE
   PJ_MISSING_DIALOG_ABI_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_abi_plugin>"
   PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_required_slots_plugin>"
   PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH="$<TARGET_FILE:old_dialog_vtable_plugin>"
+  PJ_OLD_FILE_PICKER_DISPATCHER_PLUGIN_PATH="$<TARGET_FILE:old_file_picker_dispatcher_plugin>"
 )
 target_link_libraries(dialog_library_test PRIVATE
   pj_dialog_library pj_dialog_host pj_dialog_sdk GTest::gtest_main
@@ -168,6 +175,7 @@ add_dependencies(dialog_library_test
   missing_dialog_abi_plugin
   missing_dialog_required_slots_plugin
   old_dialog_vtable_plugin
+  old_file_picker_dispatcher_plugin
 )
 add_test(NAME dialog_library_test COMMAND dialog_library_test)
 

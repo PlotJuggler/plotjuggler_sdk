@@ -761,6 +761,115 @@ class WidgetDataView {
   }
 
   // --- File picker ---
+  /// Whether the widget contains the structured `file_picker` channel. Key
+  /// presence claims the channel even when its payload is malformed; call
+  /// filePickerOptions() to validate and decode it atomically.
+  /// @since 0.21.0
+  [[nodiscard]] bool isStructuredFilePicker(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    return w != nullptr && w->contains("file_picker");
+  }
+
+  /// Decode one complete structured picker request. Every field is required
+  /// and strictly typed. Filter IDs must be non-empty and unique, every filter
+  /// must carry at least one non-empty pattern, and a non-empty initially
+  /// selected ID must name one of those filters. Any failure rejects the whole
+  /// object; co-serialized legacy fields remain available to legacy accessors.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<FilePickerOptions> filePickerOptions(
+      std::string_view name, std::string* validation_error = nullptr) const {
+    if (validation_error != nullptr) {
+      validation_error->clear();
+    }
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto picker_it = w->find("file_picker");
+    if (picker_it == w->end()) {
+      return std::nullopt;
+    }
+    if (!picker_it->is_object()) {
+      return rejectFilePickerOptions(validation_error, "file_picker must be an object");
+    }
+
+    FilePickerOptions options;
+    auto mode_it = picker_it->find("mode");
+    if (mode_it == picker_it->end() || !mode_it->is_string()) {
+      return rejectFilePickerOptions(validation_error, "file_picker.mode must be a string");
+    }
+    auto mode = filePickerModeFromWireValue(mode_it->get_ref<const std::string&>());
+    if (!mode.has_value()) {
+      return rejectFilePickerOptions(
+          validation_error, "file_picker.mode has invalid value '" + mode_it->get<std::string>() + "'");
+    }
+    options.mode = *mode;
+
+    if (!decodeRequiredString(*picker_it, "title", options.title) ||
+        !decodeRequiredString(*picker_it, "accept_label", options.accept_label) ||
+        !decodeRequiredString(*picker_it, "initial_directory", options.initial_directory) ||
+        !decodeRequiredString(*picker_it, "suggested_name", options.suggested_name) ||
+        !decodeRequiredString(*picker_it, "default_suffix", options.default_suffix) ||
+        !decodeRequiredString(*picker_it, "initially_selected_filter_id", options.initially_selected_filter_id)) {
+      return rejectFilePickerOptions(validation_error, "file_picker string fields must all be present and strings");
+    }
+
+    auto overwrite_it = picker_it->find("confirm_overwrite");
+    if (overwrite_it == picker_it->end() || !overwrite_it->is_boolean()) {
+      return rejectFilePickerOptions(validation_error, "file_picker.confirm_overwrite must be a boolean");
+    }
+    options.confirm_overwrite = overwrite_it->get<bool>();
+
+    auto filters_it = picker_it->find("filters");
+    if (filters_it == picker_it->end() || !filters_it->is_array()) {
+      return rejectFilePickerOptions(validation_error, "file_picker.filters must be an array");
+    }
+    std::unordered_map<std::string, bool> filter_ids;
+    filter_ids.reserve(filters_it->size());
+    options.filters.reserve(filters_it->size());
+    for (std::size_t filter_index = 0; filter_index < filters_it->size(); ++filter_index) {
+      const auto& encoded_filter = (*filters_it)[filter_index];
+      const std::string prefix = "file_picker.filters[" + std::to_string(filter_index) + "]";
+      if (!encoded_filter.is_object()) {
+        return rejectFilePickerOptions(validation_error, prefix + " must be an object");
+      }
+      FilePickerFilter filter;
+      if (!decodeRequiredString(encoded_filter, "id", filter.id) ||
+          !decodeRequiredString(encoded_filter, "label", filter.label)) {
+        return rejectFilePickerOptions(validation_error, prefix + ".id and .label must be strings");
+      }
+      if (filter.id.empty()) {
+        return rejectFilePickerOptions(validation_error, prefix + ".id must not be empty");
+      }
+      if (!filter_ids.emplace(filter.id, true).second) {
+        return rejectFilePickerOptions(
+            validation_error, "file_picker.filters contains duplicate id '" + filter.id + "'");
+      }
+      auto patterns_it = encoded_filter.find("patterns");
+      if (patterns_it == encoded_filter.end() || !patterns_it->is_array() || patterns_it->empty()) {
+        return rejectFilePickerOptions(validation_error, prefix + ".patterns must be a non-empty array");
+      }
+      filter.patterns.reserve(patterns_it->size());
+      for (std::size_t pattern_index = 0; pattern_index < patterns_it->size(); ++pattern_index) {
+        const auto& pattern = (*patterns_it)[pattern_index];
+        if (!pattern.is_string() || pattern.get_ref<const std::string&>().empty()) {
+          return rejectFilePickerOptions(
+              validation_error, prefix + ".patterns[" + std::to_string(pattern_index) + "] must be a non-empty string");
+        }
+        filter.patterns.push_back(pattern.get<std::string>());
+      }
+      options.filters.push_back(std::move(filter));
+    }
+
+    if (!options.initially_selected_filter_id.empty() &&
+        filter_ids.find(options.initially_selected_filter_id) == filter_ids.end()) {
+      return rejectFilePickerOptions(
+          validation_error, "file_picker.initially_selected_filter_id references missing filter '" +
+                                options.initially_selected_filter_id + "'");
+    }
+    return options;
+  }
+
   [[nodiscard]] bool isFilePicker(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
@@ -1177,6 +1286,22 @@ class WidgetDataView {
       *validation_error = std::move(reason);
     }
     return std::nullopt;
+  }
+
+  static std::optional<FilePickerOptions> rejectFilePickerOptions(std::string* validation_error, std::string reason) {
+    if (validation_error != nullptr) {
+      *validation_error = std::move(reason);
+    }
+    return std::nullopt;
+  }
+
+  static bool decodeRequiredString(const nlohmann::json& object, const char* key, std::string& value) {
+    auto it = object.find(key);
+    if (it == object.end() || !it->is_string()) {
+      return false;
+    }
+    value = it->get<std::string>();
+    return true;
   }
 
   const nlohmann::json* widget(std::string_view name) const {

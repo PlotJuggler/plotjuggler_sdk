@@ -309,6 +309,7 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 | `onValueChanged(name, double)` | QDoubleSpinBox | new double value |
 | `onClicked(name)` | QPushButton | (no payload) |
 | `onFileSelected(name, path)` | QPushButton (file picker) | selected file path |
+| `onFilePickerResult(name, result)` | QPushButton (structured file picker, since 0.21.0) | complete selected/cancelled/unsupported/error result |
 | `onSelectionChanged(name, items)` | QListWidget | vector of selected item texts |
 | `onItemDoubleClicked(name, index)` | QListWidget | row index of double-clicked item |
 | `onHeaderClicked(name, section)` | QTableWidget | clicked column index (for plugin-owned sorting) |
@@ -421,6 +422,7 @@ work like polling a server for available topics.
 | QDoubleSpinBox | `setValue(double)` | `onValueChanged(name, double)` |
 | QPushButton | `setButtonText` | `onClicked(name)` |
 | QPushButton (file picker) | `setFilePicker` | `onFileSelected(name, path)` |
+| QPushButton (structured file picker, since 0.21.0) | `setFilePicker` with `FilePickerOptions` | `onFilePickerResult(name, result)` |
 | QPushButton (save-file picker) | `setSaveFilePicker` | `onFileSelected(name, path)` |
 | QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
@@ -746,6 +748,87 @@ bool onFileSelected(std::string_view name, std::string_view path) override {
   return false;
 }
 ```
+
+### Structured file picker (since 0.21.0)
+
+Use the `FilePickerOptions` overload when a dialog needs multiple selection,
+stable filters, a suggested name or initial directory, an explicit accept
+label, overwrite policy, or structured cancellation/error reporting:
+
+```cpp
+PJ::FilePickerOptions options;
+options.mode = PJ::FilePickerMode::OpenFiles;
+options.title = "Select ROS bag files";
+options.accept_label = "Open";
+options.initial_directory = "/data/bags";
+options.filters = {
+    {"bags", "ROS bag files", {"*.bag", "*.db3", "*.mcap"}},
+    {"all", "All files", {"*"}},
+};
+options.initially_selected_filter_id = "bags";
+
+wd.setFilePicker("openBags", "Open bags...", options);
+
+bool onFilePickerResult(
+    std::string_view name, const PJ::FilePickerResult& result) override {
+  if (name != "openBags") {
+    return false;
+  }
+  if (result.status == PJ::FilePickerStatus::Selected) {
+    importBags(result.paths);  // All selected paths, not only the legacy first.
+  } else if (result.status == PJ::FilePickerStatus::Error) {
+    picker_error_ = result.error;
+  }
+  return true;
+}
+```
+
+`FilePickerMode` has four canonical wire values: `OpenFile` / `"open_file"`,
+`OpenFiles` / `"open_files"`, `SaveFile` / `"save_file"`, and
+`SelectDirectory` / `"select_directory"`. The option fields are `mode`,
+`title`, `accept_label`, `initial_directory`, `suggested_name`,
+`default_suffix`, `filters`, `initially_selected_filter_id`, and
+`confirm_overwrite` (default `true`).
+
+Each `FilePickerFilter` contains `id`, `label`, and `patterns`. Keep `id` stable
+and machine-oriented because a native picker may localize or normalize the
+displayed filter text; the host maps that native selection back to the ID.
+Filter IDs must be non-empty and unique, every filter needs at least one
+non-empty pattern, and a non-empty initial ID must name a filter. The fluent
+writer follows the tree/stacked policy and serializes input without throwing or
+repairing it. The host view validates the entire structured object atomically;
+one invalid filter rejects the whole structured request with a diagnostic.
+
+Legacy host degradation is explicit:
+
+| Structured mode/result | Legacy host or old dispatcher |
+|---|---|
+| `OpenFile` | Existing single-open action and `file_selected` |
+| `OpenFiles` | Degrades to existing single-open action; first selected path only |
+| `SaveFile` | Existing save action and `file_selected` |
+| `SelectDirectory` | Existing folder action and `folder_selected` |
+| `Cancelled` | No legacy key; old dispatcher receives nothing |
+| `Unsupported` | No legacy key; old dispatcher receives nothing |
+| `Error` | No legacy key; old dispatcher receives nothing |
+
+`FilePickerStatus` uses exactly `Selected` / `"selected"`, `Cancelled` /
+`"cancelled"`, `Unsupported` / `"unsupported"`, and `Error` / `"error"`.
+`Unsupported` is the honest answer when a host cannot provide filesystem-path
+semantics. A browser must not return a fake path for directory selection or
+save-to-path; without a concrete implementation it returns `Unsupported`.
+Browser open-file staging may produce opaque synthetic paths, in which case
+`display_names` preserves the user-visible names. Staged paths are host-readable
+but are not durable configuration for a later application session.
+
+For a structured picker click, ordering is fixed: `onClicked()` runs first, the
+host opens the picker, and then `onFilePickerResult()` receives the outcome.
+Do file work in the result callback; `onClicked()` does not have a selection
+yet. The default structured handler forwards the first selected path exactly
+once to the old `onFileSelected()` / `onFolderSelected()` callbacks, so an old
+typed plugin recompiled on 0.21 keeps working. A plugin that overrides
+`onFilePickerResult()` gets only that new callback, never an automatic second
+legacy callback. Cancelled, unsupported, and error results have no legacy
+callback.
 
 ### Save-file picker
 
@@ -1088,7 +1171,7 @@ documentation of this pattern.
 | Overriding `onValueChanged(int)` silently disables the `double` version (or vice versa) | C++ name hiding | Add `using PJ::DialogPluginTyped::onValueChanged;` in the class body |
 | UI does not update after an event | Event handler returned `false`, so the host did not re-read `widget_data()` | Return `true` whenever internal state changed |
 | `setText`/`setValue`/etc. has no visible effect | Wrong `objectName`, or widget type not in the [Widget Reference Table](#widget-reference-table) | Match XML `objectName` exactly; replace `QTextEdit`/`QTableView` with supported widgets |
-| File picker button does nothing | `setFilePicker(...)` not called in `widget_data()` for this `objectName` | Call it once per `widget_data()` so the host wires the click |
+| File picker button does nothing | `setFilePicker(...)` not called in `widget_data()` for this `objectName`, or the structured options failed atomic validation | Emit it on each `widget_data()` build; for structured options check unique non-empty filter IDs, non-empty patterns, and the initially selected ID |
 | Sub-dialog opens repeatedly on every refresh | `requestSubDialog()` left set in `widget_data()` after the request fires | Set a one-shot flag; clear it before calling `requestSubDialog()` |
 | Dialog state lost on layout reload | `loadConfig()` never restored fields, or `saveConfig()` returned `"{}"` | Round-trip every field through `saveConfig()` / `loadConfig()` |
 | Manifest missing `id`/`name`/`version` causes load failure | Host rejects manifests missing required string keys | Validate the manifest in unit tests; the SDK does not assert this for dialogs at build time |

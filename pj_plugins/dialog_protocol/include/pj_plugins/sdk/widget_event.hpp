@@ -2,6 +2,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -87,6 +88,53 @@ class WidgetEvent {
   /// Folder picker: folder selected
   std::optional<std::string> folderSelected() const {
     return getString("folder_selected");
+  }
+
+  /// Structured file-picker outcome. All fields are required and atomically
+  /// validated; status must use a canonical wire value, array members must be
+  /// strings, and Selected requires at least one non-empty path.
+  /// @since 0.21.0
+  std::optional<FilePickerResult> filePickerResult() const {
+    auto result_it = data_.find("file_picker_result");
+    if (result_it == data_.end() || !result_it->is_object()) {
+      return std::nullopt;
+    }
+
+    auto status_it = result_it->find("status");
+    if (status_it == result_it->end() || !status_it->is_string()) {
+      return std::nullopt;
+    }
+    auto status = filePickerStatusFromWireValue(status_it->get_ref<const std::string&>());
+    if (!status.has_value()) {
+      return std::nullopt;
+    }
+
+    auto paths_it = result_it->find("paths");
+    auto display_names_it = result_it->find("display_names");
+    auto selected_filter_it = result_it->find("selected_filter_id");
+    auto error_it = result_it->find("error");
+    if (paths_it == result_it->end() || display_names_it == result_it->end() ||
+        selected_filter_it == result_it->end() || !selected_filter_it->is_string() || error_it == result_it->end() ||
+        !error_it->is_string()) {
+      return std::nullopt;
+    }
+    auto paths = decodeStrictStringArray(*paths_it);
+    auto display_names = decodeStrictStringArray(*display_names_it);
+    if (!paths.has_value() || !display_names.has_value()) {
+      return std::nullopt;
+    }
+    if (std::any_of(paths->begin(), paths->end(), [](const std::string& path) { return path.empty(); }) ||
+        (*status == FilePickerStatus::Selected && paths->empty())) {
+      return std::nullopt;
+    }
+
+    FilePickerResult result;
+    result.status = *status;
+    result.paths = std::move(*paths);
+    result.display_names = std::move(*display_names);
+    result.selected_filter_id = selected_filter_it->get<std::string>();
+    result.error = error_it->get<std::string>();
+    return result;
   }
 
   /// QTabWidget: tab changed
@@ -348,6 +396,21 @@ class WidgetEvent {
 
  private:
   nlohmann::json data_;
+
+  static std::optional<std::vector<std::string>> decodeStrictStringArray(const nlohmann::json& encoded) {
+    if (!encoded.is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> values;
+    values.reserve(encoded.size());
+    for (const auto& value : encoded) {
+      if (!value.is_string()) {
+        return std::nullopt;
+      }
+      values.push_back(value.get<std::string>());
+    }
+    return values;
+  }
 
   std::optional<std::string> getString(const char* key) const {
     auto it = data_.find(key);
