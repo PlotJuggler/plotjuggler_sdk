@@ -119,6 +119,43 @@ TEST(WidgetEventBuilderTest, StackedPageChangedEmitsNameAndIndex) {
   EXPECT_EQ(*ev.stackedPage(), "advanced_page");
 }
 
+TEST(WidgetEventBuilderTest, TreeSelectionChangedRoundTripCarriesCompleteLogicalSet) {
+  const std::vector<std::string> expected = {"visible", "filtered-out"};
+  std::string json = PJ::WidgetEventBuilder::treeSelectionChanged(expected);
+  PJ::WidgetEvent ev(json);
+  auto ids = ev.treeSelectionChanged();
+  ASSERT_TRUE(ids.has_value());
+  EXPECT_EQ(*ids, expected);
+}
+
+TEST(WidgetEventBuilderTest, TreeItemActivatedRoundTrip) {
+  std::string json = PJ::WidgetEventBuilder::treeItemActivated("imu", 1);
+  PJ::WidgetEvent ev(json);
+  auto activation = ev.treeItemActivated();
+  ASSERT_TRUE(activation.has_value());
+  EXPECT_EQ(activation->id, "imu");
+  EXPECT_EQ(activation->column, 1);
+}
+
+TEST(WidgetEventBuilderTest, TreeExpansionChangedRoundTrip) {
+  std::string json = PJ::WidgetEventBuilder::treeExpansionChanged("sensors", true);
+  PJ::WidgetEvent ev(json);
+  auto expansion = ev.treeExpansionChanged();
+  ASSERT_TRUE(expansion.has_value());
+  EXPECT_EQ(expansion->id, "sensors");
+  EXPECT_TRUE(expansion->expanded);
+}
+
+TEST(WidgetEventBuilderTest, TreeCheckStateChangedRoundTripUsesCanonicalWireValue) {
+  std::string json = PJ::WidgetEventBuilder::treeCheckStateChanged("imu", PJ::TreeCheckState::PartiallyChecked);
+  PJ::WidgetEvent ev(json);
+  auto change = ev.treeCheckStateChanged();
+  ASSERT_TRUE(change.has_value());
+  EXPECT_EQ(change->id, "imu");
+  EXPECT_EQ(change->state, PJ::TreeCheckState::PartiallyChecked);
+  EXPECT_EQ(ev.raw()["tree_check_state_changed"]["state"], "partially_checked");
+}
+
 TEST(WidgetEventBuilderTest, DateRangeChanged) {
   std::string json = PJ::WidgetEventBuilder::dateRangeChanged("2016-04-29T00:00:00", "2016-05-01T12:00:00");
   PJ::WidgetEvent ev(json);

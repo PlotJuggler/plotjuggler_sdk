@@ -129,6 +129,49 @@ TEST(WidgetEventTest, StackedPageFieldsParseIndependently) {
   EXPECT_FALSE(index_only.stackedPage().has_value());
 }
 
+// --- Tree events ---
+
+TEST(WidgetEventTest, TreeSelectionParsesCompleteIdSetIncludingEmpty) {
+  WidgetEvent selected(R"({"tree_selection_changed":["visible","filtered-out"]})");
+  EXPECT_EQ(selected.treeSelectionChanged(), (std::vector<std::string>{"visible", "filtered-out"}));
+
+  WidgetEvent cleared(R"({"tree_selection_changed":[]})");
+  ASSERT_TRUE(cleared.treeSelectionChanged().has_value());
+  EXPECT_TRUE(cleared.treeSelectionChanged()->empty());
+}
+
+TEST(WidgetEventTest, TreeItemActivationParsesIdAndColumn) {
+  WidgetEvent event(R"({"tree_item_activated":{"id":"imu","column":1}})");
+  auto activation = event.treeItemActivated();
+  ASSERT_TRUE(activation.has_value());
+  EXPECT_EQ(activation->id, "imu");
+  EXPECT_EQ(activation->column, 1);
+}
+
+TEST(WidgetEventTest, TreeExpansionParsesIdAndState) {
+  WidgetEvent event(R"({"tree_expansion_changed":{"id":"sensors","expanded":false}})");
+  auto expansion = event.treeExpansionChanged();
+  ASSERT_TRUE(expansion.has_value());
+  EXPECT_EQ(expansion->id, "sensors");
+  EXPECT_FALSE(expansion->expanded);
+}
+
+TEST(WidgetEventTest, TreeCheckStateParsesCanonicalState) {
+  WidgetEvent event(R"({"tree_check_state_changed":{"id":"imu","state":"partially_checked"}})");
+  auto change = event.treeCheckStateChanged();
+  ASSERT_TRUE(change.has_value());
+  EXPECT_EQ(change->id, "imu");
+  EXPECT_EQ(change->state, PJ::TreeCheckState::PartiallyChecked);
+}
+
+TEST(WidgetEventTest, MalformedTreeEventsReturnNullopt) {
+  EXPECT_FALSE(WidgetEvent(R"({"tree_selection_changed":["ok",2]})").treeSelectionChanged());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu"}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":-1}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_expansion_changed":{"id":"","expanded":true}})").treeExpansionChanged());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_check_state_changed":{"id":"imu","state":"partial"}})").treeCheckStateChanged());
+}
+
 // --- Has ---
 
 TEST(WidgetEventTest, Has) {

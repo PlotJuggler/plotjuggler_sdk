@@ -96,6 +96,41 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     return true;
   }
 
+  bool onTreeSelectionChanged(std::string_view widget_name, const std::vector<std::string>& ids) override {
+    ++tree_calls;
+    last_handler = "tree_selection_changed";
+    last_widget = std::string(widget_name);
+    last_strings = ids;
+    return true;
+  }
+
+  bool onTreeItemActivated(std::string_view widget_name, std::string_view id, int column) override {
+    ++tree_calls;
+    last_handler = "tree_item_activated";
+    last_widget = std::string(widget_name);
+    last_text = std::string(id);
+    last_int = column;
+    return true;
+  }
+
+  bool onTreeExpansionChanged(std::string_view widget_name, std::string_view id, bool expanded) override {
+    ++tree_calls;
+    last_handler = "tree_expansion_changed";
+    last_widget = std::string(widget_name);
+    last_text = std::string(id);
+    last_bool = expanded;
+    return true;
+  }
+
+  bool onTreeCheckStateChanged(std::string_view widget_name, std::string_view id, PJ::TreeCheckState state) override {
+    ++tree_calls;
+    last_handler = "tree_check_state_changed";
+    last_widget = std::string(widget_name);
+    last_text = std::string(id);
+    last_tree_check_state = state;
+    return true;
+  }
+
   bool onDateRangeChanged(std::string_view widget_name, std::string_view from_iso, std::string_view to_iso) override {
     last_handler = "date_range_changed";
     last_widget = std::string(widget_name);
@@ -135,8 +170,10 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   std::string last_page;
   int last_int = -1;
   int stacked_calls = 0;
+  int tree_calls = 0;
   double last_double = -1.0;
   bool last_bool = false;
+  PJ::TreeCheckState last_tree_check_state = PJ::TreeCheckState::None;
   std::vector<std::string> last_strings;
 
   void reset() {
@@ -148,14 +185,16 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     last_page.clear();
     last_int = -1;
     stacked_calls = 0;
+    tree_calls = 0;
     last_double = -1.0;
     last_bool = false;
+    last_tree_check_state = PJ::TreeCheckState::None;
     last_strings.clear();
   }
 };
 
-/// Leaves onStackedPageChanged at its default while recording every legacy
-/// typed callback, so fail-closed stacked dispatch cannot hide a misroute.
+/// Leaves stacked/tree callbacks at their defaults while recording every
+/// legacy typed callback, so fail-closed dispatch cannot hide a misroute.
 class LegacyHandlerRecordingPlugin : public PJ::DialogPluginTyped {
  public:
   std::string manifest() const override {
@@ -333,6 +372,77 @@ TEST_F(TypedDispatchTest, StackedPageChangedFiresExactlyOnceWithBothValues) {
   EXPECT_EQ(plugin_.last_widget, "configuration_stack");
   EXPECT_EQ(plugin_.last_int, 2);
   EXPECT_EQ(plugin_.last_page, "advanced_page");
+}
+
+TEST_F(TypedDispatchTest, TreeSelectionChangedDispatchesExactlyOnceWithCompleteLogicalSet) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_selection_changed":["visible","filtered-out"]})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_selection_changed");
+  EXPECT_EQ(plugin_.last_widget, "tree");
+  EXPECT_EQ(plugin_.last_strings, (std::vector<std::string>{"visible", "filtered-out"}));
+}
+
+TEST_F(TypedDispatchTest, TreeItemActivatedDispatchesExactlyOnce) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_item_activated":{"id":"imu","column":1}})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_item_activated");
+  EXPECT_EQ(plugin_.last_widget, "tree");
+  EXPECT_EQ(plugin_.last_text, "imu");
+  EXPECT_EQ(plugin_.last_int, 1);
+}
+
+TEST_F(TypedDispatchTest, TreeExpansionChangedDispatchesExactlyOnce) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_expansion_changed":{"id":"sensors","expanded":true}})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_expansion_changed");
+  EXPECT_EQ(plugin_.last_text, "sensors");
+  EXPECT_TRUE(plugin_.last_bool);
+}
+
+TEST_F(TypedDispatchTest, TreeCheckStateChangedDispatchesExactlyOnce) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"checked"}})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_check_state_changed");
+  EXPECT_EQ(plugin_.last_text, "imu");
+  EXPECT_EQ(plugin_.last_tree_check_state, PJ::TreeCheckState::Checked);
+}
+
+TEST_F(TypedDispatchTest, NonTreeEventsNeverTouchTreeCallbacks) {
+  EXPECT_TRUE(dispatch(plugin_, "list", R"({"selected_items":["a"]})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "selection_changed");
+
+  plugin_.reset();
+  EXPECT_TRUE(dispatch(plugin_, "tabs", R"({"tab_index":2})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "tab_changed");
+
+  plugin_.reset();
+  EXPECT_TRUE(dispatch(plugin_, "combo", R"({"current_index":3})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "index_changed");
+}
+
+TEST(TypedDispatchTreeFailClosedTest, MalformedAndMixedTreePayloadsInvokeNoOtherHandler) {
+  LegacyHandlerRecordingPlugin plugin;
+  EXPECT_FALSE(dispatch(plugin, "tree", R"({"tree_selection_changed":["ok",2],"text":"legacy"})"));
+  EXPECT_FALSE(dispatch(plugin, "tree", R"({"tree_item_activated":{"id":"imu"},"clicked":true})"));
+  EXPECT_FALSE(
+      dispatch(plugin, "tree", R"({"tree_expansion_changed":{"id":"sensors","expanded":"yes"},"current_index":2})"));
+  EXPECT_FALSE(
+      dispatch(plugin, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"partial"},"checked":true})"));
+  EXPECT_FALSE(
+      dispatch(plugin, "tree", R"({"tree_selection_changed":["imu"],"tree_item_activated":{"id":"imu","column":0}})"));
+  EXPECT_EQ(plugin.legacy_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, MalformedTreePayloadsInvokeNoTreeCallback) {
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_selection_changed":"imu"})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_item_activated":{"id":"imu","column":-1}})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_expansion_changed":{"id":"","expanded":true}})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"partial"}})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_TRUE(plugin_.last_handler.empty());
 }
 
 TEST_F(TypedDispatchTest, TabAndComboEventsDoNotTriggerStackedPageHandler) {

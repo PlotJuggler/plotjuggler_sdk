@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <nlohmann/json.hpp>
-#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
 #include <string>
 #include <string_view>
 #include <vector>
@@ -98,6 +98,39 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["stacked_index"] = index;
     j["stacked_page"] = page_object_name;
+    return j.dump();
+  }
+
+  /// QTreeWidget: selection changed. `ids` is the complete logical selected-ID
+  /// set, including selected items hidden by the current visibility filter.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeSelectionChanged(const std::vector<std::string>& ids) {
+    nlohmann::json j;
+    j["tree_selection_changed"] = ids;
+    return j.dump();
+  }
+
+  /// QTreeWidget: an item was activated by keyboard or double-click.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeItemActivated(std::string_view id, int column) {
+    nlohmann::json j;
+    j["tree_item_activated"] = {{"id", id}, {"column", column}};
+    return j.dump();
+  }
+
+  /// QTreeWidget: an item's expanded state changed.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeExpansionChanged(std::string_view id, bool expanded) {
+    nlohmann::json j;
+    j["tree_expansion_changed"] = {{"id", id}, {"expanded", expanded}};
+    return j.dump();
+  }
+
+  /// QTreeWidget: an item's column-0 check state changed.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeCheckStateChanged(std::string_view id, TreeCheckState state) {
+    nlohmann::json j;
+    j["tree_check_state_changed"] = {{"id", id}, {"state", treeCheckStateWireValue(state)}};
     return j.dump();
   }
 

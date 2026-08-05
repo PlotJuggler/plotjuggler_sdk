@@ -144,10 +144,68 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// QTreeWidget: complete logical selected-ID set after a user change. The
+  /// set includes selected items hidden by the current visibility filter.
+  /// Appended after onStackedPageChanged so every older virtual keeps its slot.
+  /// @since 0.21.0
+  virtual bool onTreeSelectionChanged(std::string_view /*widget_name*/, const std::vector<std::string>& /*ids*/) {
+    return false;
+  }
+
+  /// QTreeWidget: stable item ID and activated column (keyboard or double-click).
+  /// @since 0.21.0
+  virtual bool onTreeItemActivated(std::string_view /*widget_name*/, std::string_view /*id*/, int /*column*/) {
+    return false;
+  }
+
+  /// QTreeWidget: stable item ID and its new expanded state.
+  /// @since 0.21.0
+  virtual bool onTreeExpansionChanged(std::string_view /*widget_name*/, std::string_view /*id*/, bool /*expanded*/) {
+    return false;
+  }
+
+  /// QTreeWidget: stable item ID and its new column-0 check state.
+  /// @since 0.21.0
+  virtual bool onTreeCheckStateChanged(
+      std::string_view /*widget_name*/, std::string_view /*id*/, TreeCheckState /*state*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
+
+    // Tree event keys claim the payload before every other event channel. The
+    // four shapes are mutually exclusive and each occupies one top-level key;
+    // malformed or mixed payloads fail closed without reaching a legacy,
+    // stacked, or different tree callback.
+    const bool has_tree_selection = event.has("tree_selection_changed");
+    const bool has_tree_activation = event.has("tree_item_activated");
+    const bool has_tree_expansion = event.has("tree_expansion_changed");
+    const bool has_tree_check_state = event.has("tree_check_state_changed");
+    const int tree_channel_count = static_cast<int>(has_tree_selection) + static_cast<int>(has_tree_activation) +
+                                   static_cast<int>(has_tree_expansion) + static_cast<int>(has_tree_check_state);
+    if (tree_channel_count != 0) {
+      if (tree_channel_count != 1 || event.raw().size() != 1) {
+        return false;
+      }
+      if (has_tree_selection) {
+        auto ids = event.treeSelectionChanged();
+        return ids.has_value() ? onTreeSelectionChanged(widget_name, *ids) : false;
+      }
+      if (has_tree_activation) {
+        auto activation = event.treeItemActivated();
+        return activation.has_value() ? onTreeItemActivated(widget_name, activation->id, activation->column) : false;
+      }
+      if (has_tree_expansion) {
+        auto expansion = event.treeExpansionChanged();
+        return expansion.has_value() ? onTreeExpansionChanged(widget_name, expansion->id, expansion->expanded) : false;
+      }
+      auto check_state = event.treeCheckStateChanged();
+      return check_state.has_value() ? onTreeCheckStateChanged(widget_name, check_state->id, check_state->state)
+                                     : false;
+    }
 
     // Either stacked key claims the event before every legacy channel. A host
     // event is valid only when both typed representations are present; partial

@@ -4,7 +4,7 @@
 
 #include <nlohmann/json.hpp>
 #include <optional>
-#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
 #include <string>
 #include <string_view>
 #include <vector>
@@ -105,6 +105,98 @@ class WidgetEvent {
   /// @since 0.21.0
   std::optional<std::string> stackedPage() const {
     return getString("stacked_page");
+  }
+
+  /// QTreeWidget: the complete logical selected-ID set after a user change,
+  /// including selected items currently hidden by an ID visibility filter.
+  /// Empty is a valid cleared selection. Every ID must be a non-empty string.
+  /// @since 0.21.0
+  std::optional<std::vector<std::string>> treeSelectionChanged() const {
+    auto it = data_.find("tree_selection_changed");
+    if (it == data_.end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> ids;
+    ids.reserve(it->size());
+    for (const auto& encoded_id : *it) {
+      if (!encoded_id.is_string()) {
+        return std::nullopt;
+      }
+      auto id = encoded_id.get<std::string>();
+      if (id.empty()) {
+        return std::nullopt;
+      }
+      ids.push_back(std::move(id));
+    }
+    return ids;
+  }
+
+  struct TreeItemActivation {
+    std::string id;
+    int column = 0;
+  };
+
+  /// QTreeWidget: stable item ID and activated column. Activation covers both
+  /// keyboard and double-click activation.
+  /// @since 0.21.0
+  std::optional<TreeItemActivation> treeItemActivated() const {
+    auto it = data_.find("tree_item_activated");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto id = it->find("id");
+    auto column = it->find("column");
+    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || column == it->end() ||
+        !column->is_number_integer() || column->get<int>() < 0) {
+      return std::nullopt;
+    }
+    return TreeItemActivation{id->get<std::string>(), column->get<int>()};
+  }
+
+  struct TreeExpansionChange {
+    std::string id;
+    bool expanded = false;
+  };
+
+  /// QTreeWidget: stable item ID and its new expanded state.
+  /// @since 0.21.0
+  std::optional<TreeExpansionChange> treeExpansionChanged() const {
+    auto it = data_.find("tree_expansion_changed");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto id = it->find("id");
+    auto expanded = it->find("expanded");
+    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || expanded == it->end() ||
+        !expanded->is_boolean()) {
+      return std::nullopt;
+    }
+    return TreeExpansionChange{id->get<std::string>(), expanded->get<bool>()};
+  }
+
+  struct TreeCheckStateChange {
+    std::string id;
+    TreeCheckState state = TreeCheckState::None;
+  };
+
+  /// QTreeWidget: stable item ID and the new canonical column-0 check state.
+  /// @since 0.21.0
+  std::optional<TreeCheckStateChange> treeCheckStateChanged() const {
+    auto it = data_.find("tree_check_state_changed");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto id = it->find("id");
+    auto state = it->find("state");
+    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || state == it->end() ||
+        !state->is_string()) {
+      return std::nullopt;
+    }
+    auto decoded_state = treeCheckStateFromWireValue(state->get_ref<const std::string&>());
+    if (!decoded_state.has_value()) {
+      return std::nullopt;
+    }
+    return TreeCheckStateChange{id->get<std::string>(), *decoded_state};
   }
 
   /// QListWidget: item double-clicked (returns row index)
