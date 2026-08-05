@@ -36,12 +36,20 @@ struct MessageParserPluginBaseLayoutSentinel {
 
 }  // namespace PJ::sdk::testing
 
+// The layout contract is per-platform: a plugin and host only ever disagree
+// when built against different SDK versions on the SAME platform ABI. These
+// numeric pins encode the libstdc++ layout (std::string is 32 bytes there;
+// libc++'s is 24, shifting every subsequent member). The Linux CI leg is the
+// tripwire — an accidental mid-class insertion shifts offsets on every
+// platform, so one pinned ABI suffices.
+#if defined(__GLIBCXX__)
 static_assert(PJ::sdk::testing::MessageParserPluginBaseLayoutSentinel::kBoundTypeName == 8, "v5 prefix moved");
 static_assert(PJ::sdk::testing::MessageParserPluginBaseLayoutSentinel::kServiceRegistry == 40, "v5 prefix moved");
 static_assert(PJ::sdk::testing::MessageParserPluginBaseLayoutSentinel::kWriteHostView == 56, "v5 prefix moved");
 static_assert(PJ::sdk::testing::MessageParserPluginBaseLayoutSentinel::kObjectWriteHostView == 72, "v5 prefix moved");
 static_assert(PJ::sdk::testing::MessageParserPluginBaseLayoutSentinel::kConfigBuffer == 88, "v5 prefix moved");
 static_assert(PJ::sdk::testing::MessageParserPluginBaseLayoutSentinel::kHandlers == 120, "v5 prefix moved");
+#endif  // defined(__GLIBCXX__)
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
