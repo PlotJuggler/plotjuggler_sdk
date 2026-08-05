@@ -25,6 +25,7 @@
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/arrow.hpp"
 #include "pj_base/sdk/object_bytes.hpp"
+#include "pj_base/sdk/object_topic_metadata.hpp"
 #include "pj_base/span.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_base/types.hpp"
@@ -788,7 +789,9 @@ class SourceObjectWriteHostView {
   }
 
   /// Register an object topic with opaque metadata JSON. The JSON is retained
-  /// verbatim by the store; viewers and parsers use it to pick a renderer.
+  /// verbatim by the store. For a built-in renderable object, the canonical
+  /// discovery field is `"builtin_object_type":"<name>"`, where `<name>` is
+  /// the exact string returned by `PJ::sdk::name()` (for example, `"kImage"`).
   [[nodiscard]] Expected<ObjectTopicHandle> registerTopic(std::string_view name, std::string_view metadata_json) const {
     if (!valid()) {
       return unexpected("source object write host is not bound");
@@ -799,6 +802,15 @@ class SourceObjectWriteHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Register a built-in object topic using canonical renderer metadata.
+  /// Custom string fields already present in `extra_metadata` are preserved.
+  /// @since 0.21.0
+  [[nodiscard]] Expected<ObjectTopicHandle> registerTopic(
+      std::string_view name, BuiltinObjectType type, ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const std::string metadata_json = extra_metadata.builtinObjectType(type).build();
+    return registerTopic(name, metadata_json);
   }
 
   /// Eager push — host copies the bytes into its own storage.
@@ -1252,8 +1264,10 @@ class ToolboxHostView {
 
   /// Register an object topic for media payloads (images, point clouds,
   /// annotations) under a previously created data source. `metadata_json`
-  /// is opaque to the store and retained verbatim; viewers and parsers
-  /// read it to pick a renderer.
+  /// is opaque to the store and retained verbatim. For a built-in renderable
+  /// object, the canonical discovery field is
+  /// `"builtin_object_type":"<name>"`, where `<name>` is the exact string
+  /// returned by `PJ::sdk::name()` (for example, `"kImage"`).
   ///
   /// Returns `unexpected` if the host predates this ABI slot — older hosts
   /// can be detected via the ABI's `PJ_HAS_TAIL_SLOT` macro; in this
@@ -1273,6 +1287,16 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Register a built-in object topic using canonical renderer metadata.
+  /// Custom string fields already present in `extra_metadata` are preserved.
+  /// @since 0.21.0
+  [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopic(
+      DataSourceHandle source, std::string_view name, BuiltinObjectType type,
+      ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const std::string metadata_json = extra_metadata.builtinObjectType(type).build();
+    return registerObjectTopic(source, name, metadata_json);
   }
 
   /// Eager push of an object payload — host copies the bytes into its own
@@ -1297,7 +1321,9 @@ class ToolboxHostView {
   /// another source loaded. Idempotent: returns the existing topic's handle if
   /// one with this name already exists on the dataset, so a producer that
   /// republishes its whole set just re-resolves the handle each time. Returns
-  /// `unexpected` on older hosts that don't expose the slot.
+  /// `unexpected` on older hosts that don't expose the slot. Built-in
+  /// renderable objects use the same canonical `builtin_object_type` field and
+  /// `PJ::sdk::name()` values documented by `registerObjectTopic()`.
   [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopicOnDataset(
       DatasetId dataset, std::string_view name, std::string_view metadata_json) const {
     if (!valid()) {
@@ -1315,6 +1341,17 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Register a built-in object topic on an existing dataset using canonical
+  /// renderer metadata. Custom string fields already present in
+  /// `extra_metadata` are preserved.
+  /// @since 0.21.0
+  [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopicOnDataset(
+      DatasetId dataset, std::string_view name, BuiltinObjectType type,
+      ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const std::string metadata_json = extra_metadata.builtinObjectType(type).build();
+    return registerObjectTopicOnDataset(dataset, name, metadata_json);
   }
 
   /// Bound a topic's retention to the last `max_entries` snapshots (0 = unlimited).
