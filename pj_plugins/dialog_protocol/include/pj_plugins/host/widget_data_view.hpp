@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -292,6 +293,7 @@ class WidgetDataView {
 
   /// Compatibility spelling retained for code that names the result through
   /// WidgetDataView; the public result type itself lives at namespace scope.
+  /// @since 0.21.0
   using TreeVisibilityUpdate = PJ::TreeVisibilityUpdate;
 
   /// Tri-state visibility update: nullopt means absent/unchanged, Reset means
@@ -1330,10 +1332,29 @@ class WidgetDataView {
       return std::nullopt;
     }
     auto it = w->find(field);
-    if (it == w->end() || !it->is_number_integer()) {
+    if (it == w->end()) {
       return std::nullopt;
     }
-    return it->get<int>();
+    return decodeInt(*it);
+  }
+
+  static std::optional<int> decodeInt(const nlohmann::json& encoded) {
+    if (encoded.is_number_unsigned()) {
+      const auto value = encoded.get<std::uint64_t>();
+      if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    if (encoded.is_number_integer()) {
+      const auto value = encoded.get<std::int64_t>();
+      if (value < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
+          value > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    return std::nullopt;
   }
 
   std::optional<bool> getBool(std::string_view name, const char* field) const {

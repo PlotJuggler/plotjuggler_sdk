@@ -194,26 +194,31 @@ class DialogPluginTyped : public DialogPluginBase {
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
 
-    // The structured picker key claims the event before tree, stacked, and all
-    // legacy channels. Legacy picker keys are optional compatibility metadata;
-    // when present, each must match the selected first path. Unknown additive
-    // keys are tolerated. Malformed structured or compatibility data fails
-    // closed without falling through.
+    // Normative dispatch ordering and fail-closed rules live in
+    // docs/dialog-sdk-reference.md. The structured picker key claims the event
+    // first; an optional legacy key must be mode-correct and path-consistent.
     if (event.has("file_picker_result")) {
       auto result = event.filePickerResult();
       if (!result.has_value()) {
         return false;
       }
       if (result->status == FilePickerStatus::Selected) {
-        if (event.has("file_selected")) {
-          auto file_path = event.fileSelected();
-          if (!file_path.has_value() || *file_path != result->paths.front()) {
+        auto legacy = detail::filePickerLegacySelection(*result);
+        if (!legacy.has_value()) {
+          return false;
+        }
+        const bool has_file = event.has("file_selected");
+        const bool has_folder = event.has("folder_selected");
+        if (has_file && has_folder) {
+          return false;
+        }
+        if (has_file || has_folder) {
+          const bool expects_folder = legacy->key == "folder_selected";
+          if (has_folder != expects_folder) {
             return false;
           }
-        }
-        if (event.has("folder_selected")) {
-          auto folder_path = event.folderSelected();
-          if (!folder_path.has_value() || *folder_path != result->paths.front()) {
+          const auto compatibility_path = expects_folder ? event.folderSelected() : event.fileSelected();
+          if (!compatibility_path.has_value() || *compatibility_path != legacy->path) {
             return false;
           }
         }
@@ -223,10 +228,9 @@ class DialogPluginTyped : public DialogPluginBase {
       return onFilePickerResult(widget_name, *result);
     }
 
-    // Tree event keys claim the payload before every other event channel. The
-    // four shapes are mutually exclusive and each occupies one top-level key;
-    // malformed or mixed payloads fail closed without reaching a legacy,
-    // stacked, or different tree callback.
+    // After picker results, tree keys claim the payload before stacked and
+    // legacy channels. See docs/dialog-sdk-reference.md for the normative
+    // mixed-event and fail-closed contract.
     const bool has_tree_selection = event.has("tree_selection_changed");
     const bool has_tree_activation = event.has("tree_item_activated");
     const bool has_tree_expansion = event.has("tree_expansion_changed");
@@ -254,14 +258,13 @@ class DialogPluginTyped : public DialogPluginBase {
                                      : false;
     }
 
-    // Either stacked key claims the event before every legacy channel. A host
-    // event is valid only when both typed representations are present; partial
-    // or malformed stacked payloads fail closed instead of being reinterpreted
-    // through unrelated keys such as text, current_index, or tab_index.
+    // Either stacked key claims the event after picker/tree and before legacy.
+    // The normative validation and fallthrough rules are documented in
+    // docs/dialog-sdk-reference.md.
     if (event.has("stacked_index") || event.has("stacked_page")) {
       const auto index = event.stackedIndex();
       const auto page = event.stackedPage();
-      if (!index || !page) {
+      if (!index || *index < 0 || !page || page->empty()) {
         return false;
       }
       return onStackedPageChanged(widget_name, *index, *page);

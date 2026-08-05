@@ -132,9 +132,13 @@ stored strings and the complete capability mask. Plugin code should normally
 observe one delivery before first use; the replacement rule makes re-binding
 deterministic for embedding hosts and tests.
 
-The generated `PJ_SDK_HAS_DIALOG_HOST_INFO` feature-test macro is intentionally
-deferred to the separate SDK-version-header package; this package adds no
-`PJ_SDK_HAS_*` macros.
+The generated SDK version header and all four feature-test macros are deferred
+to their separate 0.21 package: `PJ_SDK_HAS_DIALOG_HOST_INFO`,
+`PJ_SDK_HAS_DIALOG_STACKED_WIDGET`, `PJ_SDK_HAS_DIALOG_TREE`, and
+`PJ_SDK_HAS_STRUCTURED_FILE_PICKER`. The companion PlotJuggler 4 work is also
+deferred: host-info delivery, QStackedWidget and QTreeWidget bindings, and the
+shared picker controller with lease/staging support. This SDK branch defines
+the toolkit-neutral contracts only.
 
 ## Step by Step
 
@@ -460,6 +464,8 @@ writer deliberately preserves an empty page name or negative index on the wire,
 following the other index-based setters; the host diagnoses an empty/unknown
 name or negative/out-of-range index and leaves the current page unchanged.
 Page-change events always report both the current index and page `objectName`.
+The normative typed-event priority and malformed/mixed-event rules are in
+[Dialog SDK Reference → Event dispatch priority and validation](../../docs/dialog-sdk-reference.md#event-dispatch-priority-and-validation-normative).
 
 ## Tree Widgets (since 0.21.0)
 
@@ -826,11 +832,10 @@ but are not durable configuration for a later application session.
 For a structured picker click, ordering is fixed: `onClicked()` runs first, the
 host opens the picker, and then `onFilePickerResult()` receives the outcome.
 Do file work in the result callback; `onClicked()` does not have a selection
-yet. The structured key is authoritative; a legacy `file_selected` or
-`folder_selected` co-key is optional. When present it must match the first path
-or dispatch fails closed, while unknown additional keys are tolerated. A
-malformed structured result never falls through to another callback. The
-default structured handler routes from `result.mode` and forwards the first
+yet. The normative priority, compatibility-key validation, and fail-closed
+rules are defined only in
+[Dialog SDK Reference → Event dispatch priority and validation](../../docs/dialog-sdk-reference.md#event-dispatch-priority-and-validation-normative).
+The default structured handler routes from `result.mode` and forwards the first
 selected path exactly once to the old `onFileSelected()` /
 `onFolderSelected()` callbacks, so an old typed plugin recompiled on 0.21 keeps
 working even when no legacy co-key is present. A plugin that overrides

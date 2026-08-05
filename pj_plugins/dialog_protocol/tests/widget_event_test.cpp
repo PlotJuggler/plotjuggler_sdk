@@ -162,6 +162,14 @@ TEST(WidgetEventTest, StackedPageFieldsParseIndependently) {
   EXPECT_FALSE(index_only.stackedPage().has_value());
 }
 
+TEST(WidgetEventTest, StackedIndexDecodesLosslesslyWithinIntRange) {
+  EXPECT_EQ(WidgetEvent(R"({"stacked_index":2147483647})").stackedIndex(), 2147483647);
+  EXPECT_EQ(WidgetEvent(R"({"stacked_index":-2147483648})").stackedIndex(), (-2147483647 - 1));
+  EXPECT_FALSE(WidgetEvent(R"({"stacked_index":4294967296})").stackedIndex().has_value());
+  EXPECT_FALSE(WidgetEvent(R"({"stacked_index":2147483648})").stackedIndex().has_value());
+  EXPECT_FALSE(WidgetEvent(R"({"stacked_index":-2147483649})").stackedIndex().has_value());
+}
+
 // --- Tree events ---
 
 TEST(WidgetEventTest, TreeSelectionParsesCompleteIdSetIncludingEmpty) {

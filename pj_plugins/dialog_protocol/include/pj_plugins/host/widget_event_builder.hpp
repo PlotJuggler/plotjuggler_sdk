@@ -84,9 +84,9 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
-  /// Structured file-picker result. A successful result co-emits its first path
-  /// as `file_selected`, or `folder_selected` for SelectDirectory. All other
-  /// statuses emit only `file_picker_result`.
+  /// Structured file-picker result. A fully valid Selected result co-emits its
+  /// first path as `file_selected`, or `folder_selected` for SelectDirectory.
+  /// Malformed Selected and all other statuses emit only `file_picker_result`.
   /// @since 0.21.0
   [[nodiscard]] static std::string filePickerResult(const FilePickerResult& result) {
     nlohmann::json j;
@@ -98,9 +98,8 @@ struct WidgetEventBuilder {
         {"selected_filter_id", result.selected_filter_id},
         {"error", result.error},
     };
-    if (result.status == FilePickerStatus::Selected && !result.paths.empty()) {
-      const char* legacy_key = result.mode == FilePickerMode::SelectDirectory ? "folder_selected" : "file_selected";
-      j[legacy_key] = result.paths.front();
+    if (auto legacy = detail::filePickerLegacySelection(result)) {
+      j[std::string(legacy->key)] = legacy->path;
     }
     return j.dump();
   }

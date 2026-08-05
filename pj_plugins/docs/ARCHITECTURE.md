@@ -44,8 +44,9 @@ these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
      reserved as its one growth path — do not add further top-level
      fields.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
-     `PJ_service_registry_vtable_t`. New slots at the tail; read with
-     `PJ_HAS_TAIL_SLOT`.
+     `PJ_service_registry_vtable_t`, and `PJ_dialog_host_info_t`. New fields or
+     slots go at the tail; readers honor the caller-provided size, and vtable
+     slots are read with `PJ_HAS_TAIL_SLOT`.
 
 5. **Compile-time ABI layout sentinels.** `pj_base/tests/abi_layout_sentinels_test.cpp`
    consists entirely of `static_assert`s pinning `sizeof`, `alignof`,

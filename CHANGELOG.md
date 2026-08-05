@@ -40,10 +40,12 @@ version:
   and `stacked_index`; the direct child page's Qt `objectName` is the stable
   identity and wins when both keys are present. Invalid empty/unknown names and
   negative/out-of-range indexes are host warning/no-ops.
-- `WidgetDataView` exposes both optional representations independently.
+- `WidgetDataView` exposes both optional representations independently and
+  rejects integer values outside `INT_MIN..INT_MAX` without narrowing.
 - The host-side `WidgetEventBuilder::stackedPageChanged()` always emits both
   representations; `WidgetEvent` parses either key defensively, and
-  `DialogPluginTyped::onStackedPageChanged()` dispatches the complete pair once.
+  `DialogPluginTyped::onStackedPageChanged()` dispatches the complete pair once;
+  negative indexes and empty page names fail closed.
 
 This package is the SDK surface only; the Qt application, signal blocking, and
 signal connection land in the companion PlotJuggler host package. No
@@ -109,14 +111,17 @@ protocol version, or introducing a `PJ_SDK_HAS_*` macro:
 - Structured result events carry their canonical request mode and preserve
   every selected path, browser display name, selected filter ID, and error.
   Status, mode, and paths are required; absent display names, selected filter
-  ID, and error default to empty. Selected results co-emit the first legacy
-  path; cancelled, unsupported, and error results do not. A binary fixture
+  ID, and error default to empty. Fully valid Selected results co-emit the first
+  mode-correct legacy path; malformed Selected, cancelled, unsupported, and
+  error results do not. A binary fixture
   verifies the previous dispatcher sees selected compatibility keys and
   remains silent for other statuses.
 - `DialogPluginTyped::onFilePickerResult()` is appended after the tree
   callbacks. The structured key is authoritative: its legacy co-key is
-  optional, a present co-key must match the first path, and unknown additive
-  keys are tolerated. Malformed or mismatched events fail closed. The default
+  optional, a present co-key must match both the result mode and first path,
+  and both legacy keys are forbidden. Unknown additive keys are tolerated.
+  Malformed or mismatched events fail closed. The normative cross-channel
+  priority is documented in `docs/dialog-sdk-reference.md`. The default
   handler routes from result mode and forwards the first selected path exactly
   once to the matching legacy callback; an override receives only the
   structured callback.

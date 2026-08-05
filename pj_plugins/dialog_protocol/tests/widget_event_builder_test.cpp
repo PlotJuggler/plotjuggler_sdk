@@ -160,6 +160,37 @@ TEST(WidgetEventBuilderTest, FilePickerSelectedDirectoryCoEmitsFolderPath) {
   EXPECT_EQ(event.raw().size(), 2u);
 }
 
+TEST(WidgetEventBuilderTest, FilePickerMalformedSelectedResultsDoNotEmitLegacyKeys) {
+  const auto expect_no_legacy_key = [](const PJ::FilePickerResult& result) {
+    PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(result));
+    EXPECT_TRUE(event.has("file_picker_result"));
+    EXPECT_FALSE(event.has("file_selected"));
+    EXPECT_FALSE(event.has("folder_selected"));
+    EXPECT_FALSE(event.filePickerResult().has_value());
+  };
+
+  PJ::FilePickerResult invalid_mode;
+  invalid_mode.status = PJ::FilePickerStatus::Selected;
+  invalid_mode.mode = static_cast<PJ::FilePickerMode>(99);
+  invalid_mode.paths = {"/data/a.mcap"};
+  expect_no_legacy_key(invalid_mode);
+
+  PJ::FilePickerResult missing_path;
+  missing_path.status = PJ::FilePickerStatus::Selected;
+  expect_no_legacy_key(missing_path);
+
+  PJ::FilePickerResult empty_path;
+  empty_path.status = PJ::FilePickerStatus::Selected;
+  empty_path.paths = {""};
+  expect_no_legacy_key(empty_path);
+
+  PJ::FilePickerResult empty_later_path;
+  empty_later_path.status = PJ::FilePickerStatus::Selected;
+  empty_later_path.mode = PJ::FilePickerMode::OpenFiles;
+  empty_later_path.paths = {"/data/a.mcap", ""};
+  expect_no_legacy_key(empty_later_path);
+}
+
 TEST(WidgetEventBuilderTest, FilePickerNonSelectedStatusesRoundTripWithoutLegacyKey) {
   const std::vector<std::tuple<PJ::FilePickerStatus, std::string>> cases = {
       {PJ::FilePickerStatus::Cancelled, ""},

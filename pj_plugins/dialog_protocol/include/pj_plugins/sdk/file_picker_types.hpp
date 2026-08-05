@@ -128,4 +128,31 @@ struct FilePickerResult {
   std::string error;
 };
 
+namespace detail {
+
+struct FilePickerLegacySelection {
+  std::string_view key;
+  std::string_view path;
+};
+
+/// Return the one mode-authoritative legacy selection only when the complete
+/// Selected result is valid. This is shared by event writers and dispatchers so
+/// old and new readers cannot be routed to different callbacks.
+[[nodiscard]] inline std::optional<FilePickerLegacySelection> filePickerLegacySelection(
+    const FilePickerResult& result) noexcept {
+  if (result.status != FilePickerStatus::Selected || filePickerModeWireValue(result.mode).empty() ||
+      result.paths.empty()) {
+    return std::nullopt;
+  }
+  for (const auto& path : result.paths) {
+    if (path.empty()) {
+      return std::nullopt;
+    }
+  }
+  return FilePickerLegacySelection{
+      result.mode == FilePickerMode::SelectDirectory ? "folder_selected" : "file_selected", result.paths.front()};
+}
+
+}  // namespace detail
+
 }  // namespace PJ

@@ -6,6 +6,30 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 
 ---
 
+## Runtime Host Information (since 0.21.0)
+
+`DialogPluginBase::hostInfo()` returns an owned `std::optional<DialogHostInfo>`
+with `sdk_version`, `plotjuggler_version`, and a capability mask. An empty
+optional means a pre-0.21 or non-conforming embedding host and is the signal to
+use a compatible fallback. Test capabilities with
+`hostInfo()->has(DialogHostCapability::...)`:
+
+| Capability | Meaning |
+|---|---|
+| `kCanOpenFile` | Single-file selection is available. |
+| `kCanOpenFiles` | Multi-file selection is available. |
+| `kCanSaveFilePath` | Save-to-path selection is available. |
+| `kCanSelectFolder` | Directory selection is available. |
+| `kStagesBrowserFile` | Browser selections are staged to host-readable paths. |
+
+Embedding hosts call `DialogHandle::setHostInfo()` after creating or borrowing
+the dialog and before querying its UI or widget data. The result is
+`SetHostInfoResult::Accepted`, `Rejected`, or `Unsupported`; the latter preserves
+compatibility with old dialog vtables. Successful repeated deliveries are
+last-writer-wins.
+
+---
+
 ## WidgetData Setters
 
 ### QLineEdit
@@ -138,10 +162,11 @@ return `Unsupported` for directory selection or save-to-path unless it has a
 concrete implementation; it must not manufacture a path. Browser-visible names
 belong in `display_names` when staged host-readable `paths` are synthetic.
 
-`WidgetEventBuilder::filePickerResult(result)` serializes `result.mode` and
-co-emits `file_selected` for the first selected file path, or
-`folder_selected` when the mode is `SelectDirectory`. Cancelled, unsupported,
-and error results carry only the structured object.
+`WidgetEventBuilder::filePickerResult(result)` serializes `result.mode`. For a
+fully valid Selected result it co-emits `file_selected` for the first file path,
+or `folder_selected` when the mode is `SelectDirectory`. Invalid modes, missing
+or empty paths, and cancelled/unsupported/error results carry only the
+structured object.
 `WidgetEvent::filePickerResult()` requires canonical `status`, canonical
 `mode`, and a strict string array for `paths`; absent `display_names`,
 `selected_filter_id`, and `error` default to empty. Validation is atomic, and a
@@ -266,7 +291,7 @@ table delta protocol's fresh sequence gate and all-or-nothing application rules.
 |--------|-------------|
 | `setTabIndex(name, int)` | Set active tab index |
 
-### QStackedWidget
+### QStackedWidget (since 0.21.0)
 
 Use the direct child page's Qt `objectName` as its stable identity. A page name
 survives page reordering; an index describes only the current layout. When both
@@ -352,24 +377,42 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
-| `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | New page index and stable Qt `objectName` |
+| `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | New page index and stable Qt `objectName`. Since 0.21.0. |
 | `onTreeSelectionChanged(name, ids)` | QTreeWidget | Complete logical selected-ID set, including filtered-out selections |
 | `onTreeItemActivated(name, id, column)` | QTreeWidget | Stable item ID and activated column (keyboard or double-click) |
 | `onTreeExpansionChanged(name, id, expanded)` | QTreeWidget | Stable item ID and new expansion state |
 | `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | Stable item ID and new column-0 `TreeCheckState` |
 | `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
 
-The structured result key is authoritative and has dispatch priority. Its
-legacy co-key is optional, so a structured-only event dispatches normally. If
-`file_selected` or `folder_selected` is present, it must equal the first
-selected path or dispatch fails closed; unknown additional keys are tolerated.
-A malformed `file_picker_result` never falls through to a co-located legacy,
-tree, or stacked key. The default `onFilePickerResult` uses `result.mode` to
-forward the first selected path exactly once to `onFileSelected` or
-`onFolderSelected`; overriding the new handler suppresses that default bridge,
-so an adopter receives only the new callback. Picker button ordering is always
-`onClicked` → host picker → result callback. Perform file I/O in the result
-callback, not `onClicked`.
+### Event dispatch priority and validation (normative)
+
+`DialogPluginTyped` applies exactly this priority: **structured picker → tree →
+stacked → legacy channels**. A present higher-priority channel claims the event;
+if that channel is malformed, dispatch returns `false` without falling through.
+
+1. `file_picker_result` is authoritative. A Selected result may have no legacy
+   co-key, or exactly one mode-correct co-key whose value equals its first path:
+   `folder_selected` only for `SelectDirectory`, `file_selected` for every file
+   mode. The wrong key, both keys, a mismatched value, an invalid mode, an empty
+   path, or another malformed structured field fails closed. Other additive
+   top-level keys are tolerated and do not receive callbacks.
+2. In the absence of a picker result, any tree event key claims the event.
+   Exactly one of the four tree keys must be the sole top-level key and its
+   payload must validate atomically. Multiple tree keys or any tree/other-key
+   mixture fails closed.
+3. In the absence of picker and tree keys, either stacked key claims the event.
+   Both `stacked_index` and `stacked_page` are required; the index must decode
+   losslessly in `0..INT_MAX` and the page name must be non-empty. Invalid or
+   partial stacked data fails closed. A valid stacked pair takes priority over
+   additional legacy scalar keys.
+4. Only when none of those channels is present does the established legacy
+   typed-dispatch chain run.
+
+The default `onFilePickerResult` uses `result.mode` to forward the first
+selected path exactly once to `onFileSelected` or `onFolderSelected`.
+Overriding the new handler suppresses that bridge, so an adopter receives only
+the new callback. Picker button ordering is always `onClicked` → host picker →
+result callback. Perform file I/O in the result callback, not `onClicked`.
 
 ---
 

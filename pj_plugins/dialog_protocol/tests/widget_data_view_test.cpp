@@ -465,6 +465,18 @@ TEST(WidgetDataViewTest, StackedPageAndIndexRoundTripExposeBothKeys) {
   EXPECT_EQ(v.stackedIndex("configuration_stack"), 2);
 }
 
+TEST(WidgetDataViewTest, StackedIndexDecodesLosslesslyWithinIntRange) {
+  PJ::WidgetDataView boundaries(R"({"min":{"stacked_index":-2147483648},"max":{"stacked_index":2147483647}})");
+  EXPECT_EQ(boundaries.stackedIndex("min"), (-2147483647 - 1));
+  EXPECT_EQ(boundaries.stackedIndex("max"), 2147483647);
+
+  PJ::WidgetDataView overflow(
+      R"({"wide":{"stacked_index":4294967296},"high":{"stacked_index":2147483648},"low":{"stacked_index":-2147483649}})");
+  EXPECT_FALSE(overflow.stackedIndex("wide").has_value());
+  EXPECT_FALSE(overflow.stackedIndex("high").has_value());
+  EXPECT_FALSE(overflow.stackedIndex("low").has_value());
+}
+
 // --- Generic ---
 
 TEST(WidgetDataViewTest, Enabled) {

@@ -231,23 +231,11 @@ class WidgetEvent {
     if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || column == it->end()) {
       return std::nullopt;
     }
-    int decoded_column = 0;
-    if (column->is_number_unsigned()) {
-      const auto value = column->get<std::uint64_t>();
-      if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
-        return std::nullopt;
-      }
-      decoded_column = static_cast<int>(value);
-    } else if (column->is_number_integer()) {
-      const auto value = column->get<std::int64_t>();
-      if (value < 0 || value > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
-        return std::nullopt;
-      }
-      decoded_column = static_cast<int>(value);
-    } else {
+    auto decoded_column = decodeInt(*column);
+    if (!decoded_column.has_value() || *decoded_column < 0) {
       return std::nullopt;
     }
-    return TreeItemActivation{id->get<std::string>(), decoded_column};
+    return TreeItemActivation{id->get<std::string>(), *decoded_column};
   }
 
   /// Parsed QTreeWidget expansion-change payload.
@@ -452,10 +440,29 @@ class WidgetEvent {
 
   std::optional<int> getInt(const char* key) const {
     auto it = data_.find(key);
-    if (it == data_.end() || !it->is_number_integer()) {
+    if (it == data_.end()) {
       return std::nullopt;
     }
-    return it->get<int>();
+    return decodeInt(*it);
+  }
+
+  static std::optional<int> decodeInt(const nlohmann::json& encoded) {
+    if (encoded.is_number_unsigned()) {
+      const auto value = encoded.get<std::uint64_t>();
+      if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    if (encoded.is_number_integer()) {
+      const auto value = encoded.get<std::int64_t>();
+      if (value < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
+          value > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    return std::nullopt;
   }
 
   std::optional<bool> getBool(const char* key) const {

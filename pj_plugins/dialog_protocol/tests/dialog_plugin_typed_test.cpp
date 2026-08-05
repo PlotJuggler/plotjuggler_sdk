@@ -499,6 +499,23 @@ TEST_F(TypedDispatchTest, FilePickerResultToleratesUnknownAdditionalKeys) {
   EXPECT_EQ(plugin_.last_file_picker_result.paths, (std::vector<std::string>{"/new"}));
 }
 
+TEST_F(TypedDispatchTest, FilePickerResultRejectsModeIncorrectOrAmbiguousLegacyKeys) {
+  const std::vector<std::string> malformed = {
+      R"({"file_picker_result":{"status":"selected","mode":"select_directory","paths":["/new"]},"file_selected":"/new"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"folder_selected":"/new"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"file_selected":"/new","folder_selected":"/new"})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    plugin_.reset();
+    EXPECT_FALSE(dispatch(plugin_, "picker", json));
+    EXPECT_EQ(plugin_.file_picker_result_calls, 0);
+    EXPECT_EQ(plugin_.file_selected_calls, 0);
+    EXPECT_EQ(plugin_.folder_selected_calls, 0);
+    EXPECT_TRUE(plugin_.last_handler.empty());
+  }
+}
+
 TEST_F(TypedDispatchTest, FilePickerResultMalformedOrMixedPayloadsFailClosedWithoutFallthrough) {
   const std::vector<std::string> malformed = {
       R"({"file_picker_result":17,"file_selected":"/legacy"})",
@@ -649,6 +666,21 @@ TEST_F(TypedDispatchTest, PartialStackedPayloadsFailClosedBeforeLegacyChannels) 
   EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_page": "advanced_page", "text": "x"})"));
   EXPECT_TRUE(plugin_.last_handler.empty());
   EXPECT_EQ(plugin_.stacked_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, InvalidStackedStateFailsClosedBeforeLegacyChannels) {
+  const std::vector<std::string> malformed = {
+      R"({"stacked_index":4294967296,"stacked_page":"advanced_page","text":"legacy"})",
+      R"({"stacked_index":-1,"stacked_page":"advanced_page","text":"legacy"})",
+      R"({"stacked_index":2,"stacked_page":"","text":"legacy"})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    plugin_.reset();
+    EXPECT_FALSE(dispatch(plugin_, "configuration_stack", json));
+    EXPECT_EQ(plugin_.stacked_calls, 0);
+    EXPECT_TRUE(plugin_.last_handler.empty());
+  }
 }
 
 TEST(TypedDispatchDefaultHandlerTest, DefaultStackedHandlerInvokesNoLegacyHandler) {
