@@ -90,9 +90,10 @@ class WidgetEvent {
     return getString("folder_selected");
   }
 
-  /// Structured file-picker outcome. All fields are required and atomically
-  /// validated; status must use a canonical wire value, array members must be
-  /// strings, and Selected requires at least one non-empty path.
+  /// Structured file-picker outcome. Status, mode, and paths are required and
+  /// atomically validated. Optional display names, selected filter ID, and
+  /// error default to empty when absent. Array members must be strings, and
+  /// Selected requires at least one non-empty path.
   /// @since 0.21.0
   std::optional<FilePickerResult> filePickerResult() const {
     auto result_it = data_.find("file_picker_result");
@@ -109,18 +110,21 @@ class WidgetEvent {
       return std::nullopt;
     }
 
+    auto mode_it = result_it->find("mode");
+    if (mode_it == result_it->end() || !mode_it->is_string()) {
+      return std::nullopt;
+    }
+    auto mode = filePickerModeFromWireValue(mode_it->get_ref<const std::string&>());
+    if (!mode.has_value()) {
+      return std::nullopt;
+    }
+
     auto paths_it = result_it->find("paths");
-    auto display_names_it = result_it->find("display_names");
-    auto selected_filter_it = result_it->find("selected_filter_id");
-    auto error_it = result_it->find("error");
-    if (paths_it == result_it->end() || display_names_it == result_it->end() ||
-        selected_filter_it == result_it->end() || !selected_filter_it->is_string() || error_it == result_it->end() ||
-        !error_it->is_string()) {
+    if (paths_it == result_it->end()) {
       return std::nullopt;
     }
     auto paths = decodeStrictStringArray(*paths_it);
-    auto display_names = decodeStrictStringArray(*display_names_it);
-    if (!paths.has_value() || !display_names.has_value()) {
+    if (!paths.has_value()) {
       return std::nullopt;
     }
     if (std::any_of(paths->begin(), paths->end(), [](const std::string& path) { return path.empty(); }) ||
@@ -128,12 +132,38 @@ class WidgetEvent {
       return std::nullopt;
     }
 
+    std::vector<std::string> display_names;
+    if (auto display_names_it = result_it->find("display_names"); display_names_it != result_it->end()) {
+      auto decoded = decodeStrictStringArray(*display_names_it);
+      if (!decoded.has_value()) {
+        return std::nullopt;
+      }
+      display_names = std::move(*decoded);
+    }
+
+    std::string selected_filter_id;
+    if (auto selected_filter_it = result_it->find("selected_filter_id"); selected_filter_it != result_it->end()) {
+      if (!selected_filter_it->is_string()) {
+        return std::nullopt;
+      }
+      selected_filter_id = selected_filter_it->get<std::string>();
+    }
+
+    std::string error;
+    if (auto error_it = result_it->find("error"); error_it != result_it->end()) {
+      if (!error_it->is_string()) {
+        return std::nullopt;
+      }
+      error = error_it->get<std::string>();
+    }
+
     FilePickerResult result;
     result.status = *status;
+    result.mode = *mode;
     result.paths = std::move(*paths);
-    result.display_names = std::move(*display_names);
-    result.selected_filter_id = selected_filter_it->get<std::string>();
-    result.error = error_it->get<std::string>();
+    result.display_names = std::move(display_names);
+    result.selected_filter_id = std::move(selected_filter_id);
+    result.error = std::move(error);
     return result;
   }
 

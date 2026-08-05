@@ -117,10 +117,10 @@ TEST(DialogLibraryTest, OldBinaryFilePickerDispatcherSeesSelectedLegacyKeyAndOth
 
   PJ::FilePickerResult result;
   result.status = PJ::FilePickerStatus::Selected;
+  result.mode = PJ::FilePickerMode::OpenFiles;
   result.paths = {"/data/a.mcap", "/data/b.mcap"};
   result.display_names = {"a.mcap", "b.mcap"};
-  EXPECT_TRUE(
-      handle.sendEvent("bags", PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::OpenFiles, result)));
+  EXPECT_TRUE(handle.sendEvent("bags", PJ::WidgetEventBuilder::filePickerResult(result)));
   auto observed = nlohmann::json::parse(handle.widget_data());
   EXPECT_EQ(observed["legacy_calls"], 1);
   EXPECT_EQ(observed["callback"], "file_selected");
@@ -128,8 +128,8 @@ TEST(DialogLibraryTest, OldBinaryFilePickerDispatcherSeesSelectedLegacyKeyAndOth
 
   result.paths = {"/data/bags"};
   result.display_names = {"bags"};
-  EXPECT_TRUE(handle.sendEvent(
-      "folder", PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::SelectDirectory, result)));
+  result.mode = PJ::FilePickerMode::SelectDirectory;
+  EXPECT_TRUE(handle.sendEvent("folder", PJ::WidgetEventBuilder::filePickerResult(result)));
   observed = nlohmann::json::parse(handle.widget_data());
   EXPECT_EQ(observed["legacy_calls"], 2);
   EXPECT_EQ(observed["callback"], "folder_selected");

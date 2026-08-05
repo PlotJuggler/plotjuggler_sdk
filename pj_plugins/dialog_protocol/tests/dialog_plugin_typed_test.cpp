@@ -437,13 +437,14 @@ TEST_F(TypedDispatchTest, FolderSelectedLegacyOnlyStillDispatches) {
 TEST_F(TypedDispatchTest, OverriddenFilePickerResultGetsExactlyOneNewCallbackAndNoLegacyCallback) {
   EXPECT_TRUE(dispatch(
       plugin_, "bags",
-      R"({"file_picker_result":{"status":"selected","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""},"file_selected":"/a.mcap"})"));
+      R"({"file_picker_result":{"status":"selected","mode":"open_files","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""},"file_selected":"/a.mcap"})"));
   EXPECT_EQ(plugin_.file_picker_result_calls, 1);
   EXPECT_EQ(plugin_.file_selected_calls, 0);
   EXPECT_EQ(plugin_.folder_selected_calls, 0);
   EXPECT_EQ(plugin_.last_handler, "file_picker_result");
   EXPECT_EQ(plugin_.last_widget, "bags");
   EXPECT_EQ(plugin_.last_file_picker_result.status, PJ::FilePickerStatus::Selected);
+  EXPECT_EQ(plugin_.last_file_picker_result.mode, PJ::FilePickerMode::OpenFiles);
   EXPECT_EQ(plugin_.last_file_picker_result.paths, (std::vector<std::string>{"/a.mcap", "/b.mcap"}));
 }
 
@@ -451,7 +452,7 @@ TEST(TypedDispatchFilePickerBridgeTest, DefaultHandlerForwardsFirstFilePathExact
   DefaultFilePickerBridgePlugin plugin;
   EXPECT_TRUE(dispatch(
       plugin, "bags",
-      R"({"file_picker_result":{"status":"selected","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""},"file_selected":"/a.mcap"})"));
+      R"({"file_picker_result":{"status":"selected","mode":"open_files","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""}})"));
   EXPECT_EQ(plugin.file_calls, 1);
   EXPECT_EQ(plugin.folder_calls, 0);
   EXPECT_EQ(plugin.last_widget, "bags");
@@ -462,7 +463,7 @@ TEST(TypedDispatchFilePickerBridgeTest, DefaultHandlerForwardsDirectoryPathExact
   DefaultFilePickerBridgePlugin plugin;
   EXPECT_TRUE(dispatch(
       plugin, "folder",
-      R"({"file_picker_result":{"status":"selected","paths":["/data"],"display_names":["data"],"selected_filter_id":"","error":""},"folder_selected":"/data"})"));
+      R"({"file_picker_result":{"status":"selected","mode":"select_directory","paths":["/data"],"display_names":["data"],"selected_filter_id":"","error":""}})"));
   EXPECT_EQ(plugin.file_calls, 0);
   EXPECT_EQ(plugin.folder_calls, 1);
   EXPECT_EQ(plugin.last_widget, "folder");
@@ -472,11 +473,11 @@ TEST(TypedDispatchFilePickerBridgeTest, DefaultHandlerForwardsDirectoryPathExact
 TEST(TypedDispatchFilePickerBridgeTest, NonSelectedStatusesReachNewHandlerButDoNotInvokeLegacyHandlers) {
   DelegatingFilePickerBridgePlugin plugin;
   const std::vector<std::pair<std::string, PJ::FilePickerStatus>> cases = {
-      {R"({"file_picker_result":{"status":"cancelled","paths":[],"display_names":[],"selected_filter_id":"","error":""}})",
+      {R"({"file_picker_result":{"status":"cancelled","mode":"open_file","paths":[],"display_names":[],"selected_filter_id":"","error":""}})",
        PJ::FilePickerStatus::Cancelled},
-      {R"({"file_picker_result":{"status":"unsupported","paths":[],"display_names":[],"selected_filter_id":"","error":"not available"}})",
+      {R"({"file_picker_result":{"status":"unsupported","mode":"select_directory","paths":[],"display_names":[],"selected_filter_id":"","error":"not available"}})",
        PJ::FilePickerStatus::Unsupported},
-      {R"({"file_picker_result":{"status":"error","paths":[],"display_names":[],"selected_filter_id":"","error":"failed"}})",
+      {R"({"file_picker_result":{"status":"error","mode":"save_file","paths":[],"display_names":[],"selected_filter_id":"","error":"failed"}})",
        PJ::FilePickerStatus::Error},
   };
   for (const auto& [json, status] : cases) {
@@ -489,15 +490,24 @@ TEST(TypedDispatchFilePickerBridgeTest, NonSelectedStatusesReachNewHandlerButDoN
   EXPECT_EQ(plugin.folder_calls, 0);
 }
 
+TEST_F(TypedDispatchTest, FilePickerResultToleratesUnknownAdditionalKeys) {
+  EXPECT_TRUE(dispatch(
+      plugin_, "picker",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"file_selected":"/new","future_metadata":{"revision":2}})"));
+  EXPECT_EQ(plugin_.file_picker_result_calls, 1);
+  EXPECT_EQ(plugin_.file_selected_calls, 0);
+  EXPECT_EQ(plugin_.last_file_picker_result.paths, (std::vector<std::string>{"/new"}));
+}
+
 TEST_F(TypedDispatchTest, FilePickerResultMalformedOrMixedPayloadsFailClosedWithoutFallthrough) {
   const std::vector<std::string> malformed = {
       R"({"file_picker_result":17,"file_selected":"/legacy"})",
-      R"({"file_picker_result":{"status":"selected","paths":[],"display_names":[],"selected_filter_id":"","error":""},"file_selected":"/legacy"})",
-      R"({"file_picker_result":{"status":"selected","paths":["/new"],"display_names":["new"],"selected_filter_id":"","error":""},"file_selected":"/legacy"})",
-      R"({"file_picker_result":{"status":"selected","paths":["/new"],"display_names":["new"],"selected_filter_id":"","error":""},"file_selected":"/new","folder_selected":"/new"})",
-      R"({"file_picker_result":{"status":"selected","paths":["/new"],"display_names":["new"],"selected_filter_id":"","error":""},"file_selected":"/new","tree_selection_changed":["legacy"]})",
-      R"({"file_picker_result":{"status":"broken","paths":[],"display_names":[],"selected_filter_id":"","error":""},"stacked_index":2,"stacked_page":"legacy"})",
-      R"({"file_picker_result":{"status":"cancelled","paths":[],"display_names":[],"selected_filter_id":"","error":""},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","paths":["/new"]},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":[]},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"folder_selected":17})",
+      R"({"file_picker_result":{"status":"broken","mode":"open_file","paths":[]},"stacked_index":2,"stacked_page":"legacy"})",
+      R"({"file_picker_result":{"status":"cancelled","mode":"open_file","paths":[]},"file_selected":"/legacy"})",
   };
   for (const auto& json : malformed) {
     SCOPED_TRACE(json);

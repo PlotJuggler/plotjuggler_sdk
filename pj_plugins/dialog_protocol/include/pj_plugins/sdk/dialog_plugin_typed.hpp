@@ -173,9 +173,9 @@ class DialogPluginTyped : public DialogPluginBase {
 
   /// Structured picker outcome. The default bridge forwards the first path of
   /// a Selected result exactly once to onFileSelected() or onFolderSelected(),
-  /// according to the compatibility key co-located by the host. Other statuses
-  /// have no legacy callback and return false. Override this new handler to
-  /// consume the structured result without a second legacy callback.
+  /// according to result.mode. Other statuses have no legacy callback and
+  /// return false. Override this new handler to consume the structured result
+  /// without a second legacy callback.
   /// Appended after every tree callback so existing virtual slots retain their
   /// positions.
   /// @since 0.21.0
@@ -183,70 +183,43 @@ class DialogPluginTyped : public DialogPluginBase {
     if (result.status != FilePickerStatus::Selected || result.paths.empty()) {
       return false;
     }
-    if (filePickerResultIsFolder()) {
+    if (result.mode == FilePickerMode::SelectDirectory) {
       return onFolderSelected(widget_name, result.paths.front());
     }
     return onFileSelected(widget_name, result.paths.front());
   }
 
  private:
-  /// FilePickerResult deliberately has no mode field. The selected event's one
-  /// compatibility key supplies the mode only while the default bridge runs.
-  /// Thread-local scoped state preserves object layout/ABI and supports nested
-  /// dispatch without leaking routing between calls.
-  static bool& filePickerResultIsFolder() {
-    static thread_local bool is_folder = false;
-    return is_folder;
-  }
-
-  class FilePickerDispatchScope {
-   public:
-    explicit FilePickerDispatchScope(bool is_folder)
-        : previous_(filePickerResultIsFolder()), target_(filePickerResultIsFolder()) {
-      target_ = is_folder;
-    }
-    ~FilePickerDispatchScope() {
-      target_ = previous_;
-    }
-
-    FilePickerDispatchScope(const FilePickerDispatchScope&) = delete;
-    FilePickerDispatchScope& operator=(const FilePickerDispatchScope&) = delete;
-
-   private:
-    bool previous_;
-    bool& target_;
-  };
-
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
 
     // The structured picker key claims the event before tree, stacked, and all
-    // legacy channels. Selected permits exactly one matching legacy key whose
-    // value equals the first path; other statuses permit no companion key.
-    // Any malformed or mixed shape fails closed without falling through.
+    // legacy channels. Legacy picker keys are optional compatibility metadata;
+    // when present, each must match the selected first path. Unknown additive
+    // keys are tolerated. Malformed structured or compatibility data fails
+    // closed without falling through.
     if (event.has("file_picker_result")) {
       auto result = event.filePickerResult();
       if (!result.has_value()) {
         return false;
       }
       if (result->status == FilePickerStatus::Selected) {
-        auto file_path = event.fileSelected();
-        auto folder_path = event.folderSelected();
-        const int legacy_channel_count =
-            static_cast<int>(file_path.has_value()) + static_cast<int>(folder_path.has_value());
-        if (legacy_channel_count != 1 || event.raw().size() != 2 ||
-            (file_path.has_value() && *file_path != result->paths.front()) ||
-            (folder_path.has_value() && *folder_path != result->paths.front())) {
-          return false;
+        if (event.has("file_selected")) {
+          auto file_path = event.fileSelected();
+          if (!file_path.has_value() || *file_path != result->paths.front()) {
+            return false;
+          }
         }
-        FilePickerDispatchScope scope(folder_path.has_value());
-        return onFilePickerResult(widget_name, *result);
-      }
-      if (event.raw().size() != 1) {
+        if (event.has("folder_selected")) {
+          auto folder_path = event.folderSelected();
+          if (!folder_path.has_value() || *folder_path != result->paths.front()) {
+            return false;
+          }
+        }
+      } else if (event.has("file_selected") || event.has("folder_selected")) {
         return false;
       }
-      FilePickerDispatchScope scope(false);
       return onFilePickerResult(widget_name, *result);
     }
 

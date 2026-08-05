@@ -106,16 +106,20 @@ protocol version, or introducing a `PJ_SDK_HAS_*` macro:
   empty/duplicate filter IDs, missing selected IDs, empty patterns, and
   malformed fields while legacy accessors continue to read the co-serialized
   fields.
-- Structured result events preserve every selected path, browser display name,
-  selected filter ID, and error. Selected results co-emit the first legacy path;
-  cancelled, unsupported, and error results do not. A binary fixture verifies
-  the previous dispatcher sees selected compatibility keys and remains silent
-  for other statuses.
+- Structured result events carry their canonical request mode and preserve
+  every selected path, browser display name, selected filter ID, and error.
+  Status, mode, and paths are required; absent display names, selected filter
+  ID, and error default to empty. Selected results co-emit the first legacy
+  path; cancelled, unsupported, and error results do not. A binary fixture
+  verifies the previous dispatcher sees selected compatibility keys and
+  remains silent for other statuses.
 - `DialogPluginTyped::onFilePickerResult()` is appended after the tree
-  callbacks. Structured keys dispatch first and fail closed when malformed or
-  mixed. The default handler forwards the first selected path exactly once to
-  the matching legacy callback; an override receives only the structured
-  callback.
+  callbacks. The structured key is authoritative: its legacy co-key is
+  optional, a present co-key must match the first path, and unknown additive
+  keys are tolerated. Malformed or mismatched events fail closed. The default
+  handler routes from result mode and forwards the first selected path exactly
+  once to the matching legacy callback; an override receives only the
+  structured callback.
 
 The shared picker controller, staged-file lease ownership, and browser/WASM
 host implementation remain companion PlotJuggler work.

@@ -122,6 +122,7 @@ enum class FilePickerStatus { Selected, Cancelled, Unsupported, Error };
 
 struct FilePickerResult {
   FilePickerStatus status = FilePickerStatus::Cancelled;
+  FilePickerMode mode = FilePickerMode::OpenFile;
   std::vector<std::string> paths;
   std::vector<std::string> display_names;
   std::string selected_filter_id;
@@ -130,18 +131,21 @@ struct FilePickerResult {
 ```
 
 The canonical status strings are `"selected"`, `"cancelled"`,
-`"unsupported"`, and `"error"`. `Unsupported` means the host cannot honestly
-provide the requested filesystem-path operation. In particular, a browser host
-must return `Unsupported` for directory selection or save-to-path unless it has
-a concrete implementation; it must not manufacture a path. Browser-visible
-names belong in `display_names` when staged host-readable `paths` are synthetic.
+`"unsupported"`, and `"error"`; result `mode` uses the same canonical mode
+strings as the request. `Unsupported` means the host cannot honestly provide
+the requested filesystem-path operation. In particular, a browser host must
+return `Unsupported` for directory selection or save-to-path unless it has a
+concrete implementation; it must not manufacture a path. Browser-visible names
+belong in `display_names` when staged host-readable `paths` are synthetic.
 
-`WidgetEventBuilder::filePickerResult(result)` co-emits `file_selected` for the
-first selected file path. Hosts use the mode-aware overload
-`filePickerResult(mode, result)` for `SelectDirectory`, which instead co-emits
-`folder_selected`. Cancelled, unsupported, and error results carry only the
-structured object. `WidgetEvent::filePickerResult()` validates the complete
-payload atomically.
+`WidgetEventBuilder::filePickerResult(result)` serializes `result.mode` and
+co-emits `file_selected` for the first selected file path, or
+`folder_selected` when the mode is `SelectDirectory`. Cancelled, unsupported,
+and error results carry only the structured object.
+`WidgetEvent::filePickerResult()` requires canonical `status`, canonical
+`mode`, and a strict string array for `paths`; absent `display_names`,
+`selected_filter_id`, and `error` default to empty. Validation is atomic, and a
+Selected result requires at least one non-empty path.
 
 ### QListWidget
 
@@ -355,13 +359,17 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | Stable item ID and new column-0 `TreeCheckState` |
 | `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
 
-The structured result key has dispatch priority. A malformed
-`file_picker_result` fails closed without falling through to a co-located legacy,
-tree, or stacked key. The default `onFilePickerResult` forwards the first
-selected path exactly once to `onFileSelected` or `onFolderSelected`; overriding
-the new handler suppresses that default bridge, so an adopter receives only the
-new callback. Picker button ordering is always `onClicked` → host picker →
-result callback. Perform file I/O in the result callback, not `onClicked`.
+The structured result key is authoritative and has dispatch priority. Its
+legacy co-key is optional, so a structured-only event dispatches normally. If
+`file_selected` or `folder_selected` is present, it must equal the first
+selected path or dispatch fails closed; unknown additional keys are tolerated.
+A malformed `file_picker_result` never falls through to a co-located legacy,
+tree, or stacked key. The default `onFilePickerResult` uses `result.mode` to
+forward the first selected path exactly once to `onFileSelected` or
+`onFolderSelected`; overriding the new handler suppresses that default bridge,
+so an adopter receives only the new callback. Picker button ordering is always
+`onClicked` → host picker → result callback. Perform file I/O in the result
+callback, not `onClicked`.
 
 ---
 

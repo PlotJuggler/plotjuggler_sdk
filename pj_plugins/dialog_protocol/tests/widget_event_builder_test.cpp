@@ -116,6 +116,7 @@ TEST(WidgetEventBuilderTest, FilePickerSelectedSingleRoundTripsAndCoEmitsLegacyP
   auto actual = event.filePickerResult();
   ASSERT_TRUE(actual.has_value());
   EXPECT_EQ(actual->status, expected.status);
+  EXPECT_EQ(actual->mode, expected.mode);
   EXPECT_EQ(actual->paths, expected.paths);
   EXPECT_EQ(actual->display_names, expected.display_names);
   EXPECT_EQ(actual->selected_filter_id, expected.selected_filter_id);
@@ -128,13 +129,15 @@ TEST(WidgetEventBuilderTest, FilePickerSelectedSingleRoundTripsAndCoEmitsLegacyP
 TEST(WidgetEventBuilderTest, FilePickerSelectedMultiRoundTripsAndLegacyGetsFirstPathOnly) {
   PJ::FilePickerResult expected;
   expected.status = PJ::FilePickerStatus::Selected;
+  expected.mode = PJ::FilePickerMode::OpenFiles;
   expected.paths = {"/data/a.mcap", "/data/b.mcap"};
   expected.display_names = {"a.mcap", "b.mcap"};
   expected.selected_filter_id = "bags";
 
-  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::OpenFiles, expected));
+  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(expected));
   auto actual = event.filePickerResult();
   ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->mode, PJ::FilePickerMode::OpenFiles);
   EXPECT_EQ(actual->paths, expected.paths);
   EXPECT_EQ(actual->display_names, expected.display_names);
   EXPECT_EQ(event.fileSelected(), "/data/a.mcap");
@@ -144,11 +147,14 @@ TEST(WidgetEventBuilderTest, FilePickerSelectedMultiRoundTripsAndLegacyGetsFirst
 TEST(WidgetEventBuilderTest, FilePickerSelectedDirectoryCoEmitsFolderPath) {
   PJ::FilePickerResult expected;
   expected.status = PJ::FilePickerStatus::Selected;
+  expected.mode = PJ::FilePickerMode::SelectDirectory;
   expected.paths = {"/data/bags"};
   expected.display_names = {"bags"};
 
-  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(PJ::FilePickerMode::SelectDirectory, expected));
-  ASSERT_TRUE(event.filePickerResult().has_value());
+  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(expected));
+  auto actual = event.filePickerResult();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->mode, PJ::FilePickerMode::SelectDirectory);
   EXPECT_EQ(event.folderSelected(), "/data/bags");
   EXPECT_FALSE(event.fileSelected().has_value());
   EXPECT_EQ(event.raw().size(), 2u);
@@ -165,11 +171,13 @@ TEST(WidgetEventBuilderTest, FilePickerNonSelectedStatusesRoundTripWithoutLegacy
     SCOPED_TRACE(static_cast<int>(status));
     PJ::FilePickerResult expected;
     expected.status = status;
+    expected.mode = PJ::FilePickerMode::SaveFile;
     expected.error = error;
     PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(expected));
     auto actual = event.filePickerResult();
     ASSERT_TRUE(actual.has_value());
     EXPECT_EQ(actual->status, status);
+    EXPECT_EQ(actual->mode, PJ::FilePickerMode::SaveFile);
     EXPECT_TRUE(actual->paths.empty());
     EXPECT_TRUE(actual->display_names.empty());
     EXPECT_TRUE(actual->selected_filter_id.empty());

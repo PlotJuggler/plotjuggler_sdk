@@ -113,18 +113,33 @@ TEST(WidgetEventTest, FileSelected) {
 TEST(WidgetEventTest, FilePickerResultRejectsMalformedPayloadsAtomically) {
   const std::vector<std::string> malformed = {
       R"({"file_picker_result":17})",
-      R"({"file_picker_result":{"status":"selected","paths":[],"display_names":[],"selected_filter_id":"","error":""}})",
-      R"({"file_picker_result":{"status":"chosen","paths":["/a"],"display_names":["a"],"selected_filter_id":"","error":""}})",
-      R"({"file_picker_result":{"status":"selected","paths":[""],"display_names":["a"],"selected_filter_id":"","error":""}})",
-      R"({"file_picker_result":{"status":"selected","paths":["/a",2],"display_names":["a"],"selected_filter_id":"","error":""}})",
-      R"({"file_picker_result":{"status":"selected","paths":["/a"],"display_names":[2],"selected_filter_id":"","error":""}})",
-      R"({"file_picker_result":{"status":"selected","paths":["/a"],"display_names":["a"],"selected_filter_id":2,"error":""}})",
-      R"({"file_picker_result":{"status":"selected","paths":["/a"],"display_names":["a"],"selected_filter_id":""}})",
+      R"({"file_picker_result":{"status":"selected","paths":["/a"]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"choose_file","paths":["/a"]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file"}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":[]}})",
+      R"({"file_picker_result":{"status":"chosen","mode":"open_file","paths":["/a"]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":[""]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a",2]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a"],"display_names":[2]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a"],"selected_filter_id":2}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a"],"error":2}})",
   };
   for (const auto& json : malformed) {
     SCOPED_TRACE(json);
     EXPECT_FALSE(WidgetEvent(json).filePickerResult().has_value());
   }
+}
+
+TEST(WidgetEventTest, FilePickerResultOptionalFieldsDefaultToEmptyWhenAbsent) {
+  WidgetEvent event(R"({"file_picker_result":{"status":"selected","mode":"open_files","paths":["/a","/b"]}})");
+  auto result = event.filePickerResult();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->status, PJ::FilePickerStatus::Selected);
+  EXPECT_EQ(result->mode, PJ::FilePickerMode::OpenFiles);
+  EXPECT_EQ(result->paths, (std::vector<std::string>{"/a", "/b"}));
+  EXPECT_TRUE(result->display_names.empty());
+  EXPECT_TRUE(result->selected_filter_id.empty());
+  EXPECT_TRUE(result->error.empty());
 }
 
 // --- TabIndex ---

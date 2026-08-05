@@ -813,6 +813,9 @@ Legacy host degradation is explicit:
 
 `FilePickerStatus` uses exactly `Selected` / `"selected"`, `Cancelled` /
 `"cancelled"`, `Unsupported` / `"unsupported"`, and `Error` / `"error"`.
+Every result also carries the request `mode`, using the canonical mode strings
+above. `status`, `mode`, and the strict string array `paths` are required;
+absent `display_names`, `selected_filter_id`, and `error` default to empty.
 `Unsupported` is the honest answer when a host cannot provide filesystem-path
 semantics. A browser must not return a fake path for directory selection or
 save-to-path; without a concrete implementation it returns `Unsupported`.
@@ -823,9 +826,14 @@ but are not durable configuration for a later application session.
 For a structured picker click, ordering is fixed: `onClicked()` runs first, the
 host opens the picker, and then `onFilePickerResult()` receives the outcome.
 Do file work in the result callback; `onClicked()` does not have a selection
-yet. The default structured handler forwards the first selected path exactly
-once to the old `onFileSelected()` / `onFolderSelected()` callbacks, so an old
-typed plugin recompiled on 0.21 keeps working. A plugin that overrides
+yet. The structured key is authoritative; a legacy `file_selected` or
+`folder_selected` co-key is optional. When present it must match the first path
+or dispatch fails closed, while unknown additional keys are tolerated. A
+malformed structured result never falls through to another callback. The
+default structured handler routes from `result.mode` and forwards the first
+selected path exactly once to the old `onFileSelected()` /
+`onFolderSelected()` callbacks, so an old typed plugin recompiled on 0.21 keeps
+working even when no legacy co-key is present. A plugin that overrides
 `onFilePickerResult()` gets only that new callback, never an automatic second
 legacy callback. Cancelled, unsupported, and error results have no legacy
 callback.

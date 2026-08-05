@@ -84,30 +84,22 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
-  /// Structured result for OpenFile, OpenFiles, or SaveFile. A successful
-  /// result co-emits the first path as `file_selected`; all other statuses emit
-  /// only `file_picker_result`. Use the mode-aware overload for directories.
+  /// Structured file-picker result. A successful result co-emits its first path
+  /// as `file_selected`, or `folder_selected` for SelectDirectory. All other
+  /// statuses emit only `file_picker_result`.
   /// @since 0.21.0
   [[nodiscard]] static std::string filePickerResult(const FilePickerResult& result) {
-    return filePickerResult(FilePickerMode::OpenFile, result);
-  }
-
-  /// Structured result with explicit request mode, needed to co-emit
-  /// `folder_selected` for SelectDirectory without adding mode to the
-  /// contractual FilePickerResult shape. OpenFiles degrades to the first
-  /// `file_selected` path for old readers.
-  /// @since 0.21.0
-  [[nodiscard]] static std::string filePickerResult(FilePickerMode mode, const FilePickerResult& result) {
     nlohmann::json j;
     j["file_picker_result"] = {
         {"status", filePickerStatusWireValue(result.status)},
+        {"mode", filePickerModeWireValue(result.mode)},
         {"paths", result.paths},
         {"display_names", result.display_names},
         {"selected_filter_id", result.selected_filter_id},
         {"error", result.error},
     };
     if (result.status == FilePickerStatus::Selected && !result.paths.empty()) {
-      const char* legacy_key = mode == FilePickerMode::SelectDirectory ? "folder_selected" : "file_selected";
+      const char* legacy_key = result.mode == FilePickerMode::SelectDirectory ? "folder_selected" : "file_selected";
       j[legacy_key] = result.paths.front();
     }
     return j.dump();

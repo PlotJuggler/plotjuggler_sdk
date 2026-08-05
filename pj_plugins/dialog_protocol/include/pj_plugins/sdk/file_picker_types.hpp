@@ -121,6 +121,7 @@ enum class FilePickerStatus { Selected, Cancelled, Unsupported, Error };
 /// @since 0.21.0
 struct FilePickerResult {
   FilePickerStatus status = FilePickerStatus::Cancelled;
+  FilePickerMode mode = FilePickerMode::OpenFile;
   std::vector<std::string> paths;
   std::vector<std::string> display_names;
   std::string selected_filter_id;
