@@ -45,14 +45,14 @@ struct PluginDescriptor {
   std::string name;
   std::string version;
   std::string min_plotjuggler_version;  ///< optional application-release expectation; advisory host policy
-  /// Optional SDK contract floor; "" means undeclared. This is a hard host-side
-  /// load gate, distinct from both the application release and the compile SDK.
-  std::string min_sdk_required;
   std::string description;
   std::string category;
   std::vector<std::string> encoding;         ///< for message parsers (one or more)
   std::vector<std::string> file_extensions;  ///< for data sources
   std::vector<std::string> capabilities;     ///< optional capability tags
+  /// Optional SDK contract floor; "" means undeclared. This is a hard host-side
+  /// load gate, distinct from both the application release and the compile SDK.
+  std::string min_sdk_required;
 };
 
 /// Diagnostic for a candidate DSO that could not produce a valid descriptor.

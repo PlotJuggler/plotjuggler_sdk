@@ -13,8 +13,9 @@ namespace PJ {
 
 /// A parsed Semantic Versioning 2.0.0 version.
 ///
-/// Build metadata is validated during parsing but deliberately excluded from
-/// precedence and equality, as required by the SemVer specification.
+/// Build metadata is validated during parsing and excluded from precedence as
+/// required by SemVer. Equality intentionally follows precedence equivalence,
+/// so versions that differ only in build metadata compare equal.
 class SemVer {
  public:
   /// Parse one concrete MAJOR.MINOR.PATCH[-prerelease][+build] version.

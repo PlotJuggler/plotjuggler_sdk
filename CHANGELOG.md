@@ -3,6 +3,28 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.21.0]
+
+### Feature: SDK version and manifest compatibility foundation (MINOR)
+
+SDK releases now expose a single version identity and shared compatibility
+vocabulary for package consumers and plugin manifests.
+
+- The root `VERSION` file is the single source of truth for CMake, Conan, and
+  release packaging.
+- The generated and installed `pj_base/sdk/version.hpp` header provides
+  `PJ_SDK_VERSION_MAJOR`, `PJ_SDK_VERSION_MINOR`, `PJ_SDK_VERSION_PATCH`,
+  `PJ_SDK_VERSION_AT_LEAST`, and `PJ::sdkVersion()`.
+- The Qt-free `PJ::SemVer` utility strictly parses concrete SemVer 2.0.0
+  versions and compares their precedence; build metadata does not affect
+  precedence, and equality intentionally follows precedence equivalence.
+- Plugin manifests may declare the optional `min_sdk_required` SDK contract
+  floor. Missing or empty values remain undeclared, while malformed values
+  invalidate the manifest. This field is distinct from the advisory
+  `min_plotjuggler_version` application-release expectation.
+
+No C ABI struct, vtable, ABI version, or plugin protocol version changes.
+
 ## [0.20.0]
 
 ### Feature: descriptor import v1 — import a persisted source descriptor, promote the materialized artifact (MINOR)
