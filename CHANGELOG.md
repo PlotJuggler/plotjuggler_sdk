@@ -49,6 +49,40 @@ This package is the SDK surface only; the Qt application, signal blocking, and
 signal connection land in the companion PlotJuggler host package. No
 `PJ_SDK_HAS_*` macro is introduced here.
 
+### Feature: QTreeWidget dialog SDK binding (MINOR)
+
+Dialogs can now publish and observe identity-stable hierarchical trees through
+additive JSON, without changing the dialog C ABI, C vtable, protocol version, or
+introducing a `PJ_SDK_HAS_*` macro:
+
+- New `TreeCheckState`, `TreeCell`, and `TreeItem` SDK types. Items use stable
+  plugin-owned string IDs in a flat `id` / `parent_id` snapshot; array order is
+  preserved as unsorted sibling order. Cells carry display text, optional typed
+  `NumericValue` sort keys, tooltip, and a host semantic icon name. V1 check
+  state applies to column 0.
+- `WidgetData` setters cover headers, complete snapshots, logical selected and
+  expanded IDs, tri-state ID visibility (array filter, empty zero-match filter,
+  JSON-null reset), and single/multi selection mode. Every state channel is an
+  independent additive update.
+- `WidgetDataView::treeItems()` validates a complete snapshot before returning
+  it and rejects empty/duplicate IDs, missing parents, self/longer cycles,
+  malformed cells/sort keys, and invalid check-state strings atomically. It
+  follows the strict table-delta `nullopt` rejection precedent and adds an
+  optional validation-error output for host diagnostics. Unknown state IDs are
+  left for host-side pruning. `TreeVisibilityUpdate` preserves all three states.
+- Four distinct host event objects cover complete logical selection, item
+  activation, expansion, and check-state changes. `DialogPluginTyped` appends
+  the matching virtual callbacks after the stacked callback and claims tree
+  keys before all older channels: exactly one well-formed tree event dispatches;
+  malformed or mixed tree payloads fail closed without fallthrough.
+- `may_have_children` supports host-private lazy placeholders followed by a
+  later complete snapshot. Tree deltas remain deferred; a future delta must
+  reuse the table protocol's fresh sequence and all-or-nothing rules.
+
+This package is the Qt-free SDK surface only. QTreeWidget reconciliation,
+placeholders, signal blocking, selection preservation, ancestor-closure
+filtering, and typed sorting land in the companion PlotJuggler host package.
+
 ## [0.20.0]
 
 ### Feature: descriptor import v1 — import a persisted source descriptor, promote the materialized artifact (MINOR)

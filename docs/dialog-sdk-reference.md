@@ -91,6 +91,63 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 > and the plugin's order loses. See `pj_plugins/docs/dialog-plugin-guide.md` →
 > "Sortable Tables".
 
+### QTreeWidget (since 0.21.0)
+
+Tree items use stable, plugin-supplied string IDs. Never use display text, row
+numbers, or paths through visible labels as identity. `TreeItem` snapshots are a
+flat array linked by `id` / `parent_id` (`""` means top level); filtering that
+array to one `parent_id` preserves the plugin's unsorted sibling order. Ragged
+cell arrays are valid, and missing trailing columns render empty.
+
+```cpp
+struct TreeCell {
+  std::string text;
+  std::optional<NumericValue> sort_value;
+  std::string tooltip;
+  std::string icon;  // host semantic name, not a path
+};
+
+struct TreeItem {
+  std::string id;
+  std::string parent_id;
+  std::vector<TreeCell> cells;
+  bool enabled = true;
+  bool selectable = true;
+  TreeCheckState check_state = TreeCheckState::None;
+  bool may_have_children = false;
+};
+```
+
+`TreeCheckState` uses exactly `None`, `Unchecked`, `PartiallyChecked`, and
+`Checked`, encoded as `"none"`, `"unchecked"`, `"partially_checked"`, and
+`"checked"`. In v1 it applies only to column 0. The initial semantic tree icon
+names are `folder`, `topic`, `schema`, `info`, `warning`, and `error`; an empty
+or unknown name displays no icon.
+
+| Method | Description |
+|--------|-------------|
+| `setTreeHeaders(name, headers)` | Set column headers |
+| `setTreeItems(name, items)` | Publish a complete keyed snapshot; empty clears the tree |
+| `setTreeSelectedIds(name, ids)` | Replace the logical selected-ID set; empty clears selection |
+| `setTreeExpandedIds(name, ids)` | Replace the expanded-ID set; empty collapses all public items |
+| `setTreeVisibleIds(name, ids)` | Replace the ID filter; empty is an active zero-match filter |
+| `clearTreeVisibleIds(name)` | Emit JSON null to remove the filter and restore visible-by-default behavior |
+| `setTreeSelectionMode(name, multi)` | Select single (`false`) or extended multi-selection (`true`) |
+
+These are independent additive channels: any may appear without `tree_items`,
+and absence means unchanged. `WidgetDataView::treeVisibilityUpdate()` preserves
+visibility's three states: `nullopt` = absent, `Filter` = array (including an
+empty array), and `Reset` = JSON null. The host adds every listed item's ancestor
+chain so matches remain reachable. Selected/expanded/visible IDs not in the
+current snapshot are exposed unchanged by the view and pruned with a host
+diagnostic. Invalid `tree_items` data is rejected atomically;
+`treeItems(name, &validation_error)` supplies the reason.
+
+`may_have_children=true` permits a host-only expansion placeholder until the
+plugin publishes a later complete snapshot with real children. V1 always sends
+full keyed snapshots; deltas are deferred. Any future tree delta must reuse the
+table delta protocol's fresh sequence gate and all-or-nothing application rules.
+
 ### QFrame Chart Container
 
 | Method | Description |
@@ -202,6 +259,10 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
 | `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | New page index and stable Qt `objectName` |
+| `onTreeSelectionChanged(name, ids)` | QTreeWidget | Complete logical selected-ID set, including filtered-out selections |
+| `onTreeItemActivated(name, id, column)` | QTreeWidget | Stable item ID and activated column (keyboard or double-click) |
+| `onTreeExpansionChanged(name, id, expanded)` | QTreeWidget | Stable item ID and new expansion state |
+| `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | Stable item ID and new column-0 `TreeCheckState` |
 | `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
 
 ---

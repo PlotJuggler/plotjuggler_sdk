@@ -15,6 +15,14 @@ Local traps not visible from the headers:
   `objectName`, not its label or position. `stacked_page` wins over a simultaneous
   `stacked_index`; empty/unknown names and negative/out-of-range indexes are
   invalid host-side warning/no-ops. See `../docs/dialog-plugin-guide.md`.
+- `QTreeWidget` items are addressed only by stable plugin-supplied string IDs,
+  in a flat `id` / `parent_id` full snapshot. Array order defines unsorted
+  sibling order; check state is column 0 only. Visibility is tri-state:
+  absent/unchanged, ID array/filter (empty hides all), or JSON null/reset; the
+  host adds visible ancestors and keeps selection logical across filtering.
+  `may_have_children` supports a private placeholder followed by a later full
+  snapshot. Tree deltas are deferred; any future delta reuses the table
+  sequence/all-or-nothing contract. See `../docs/dialog-plugin-guide.md`.
 - A table must not combine `sortingEnabled=true` in its `.ui` XML with
   `onHeaderClicked`: Qt sorts the view while the plugin reorders the model and the
   plugin's order loses. Sort keys (`setTableRows` with `TableItem`) or

@@ -314,6 +314,10 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 | `onHeaderClicked(name, section)` | QTableWidget | clicked column index (for plugin-owned sorting) |
 | `onTabChanged(name, index)` | QTabWidget | new tab index |
 | `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | new page index and stable page `objectName` |
+| `onTreeSelectionChanged(name, ids)` | QTreeWidget | complete logical selected-ID set, including filtered-out items |
+| `onTreeItemActivated(name, id, column)` | QTreeWidget | stable item ID and activated column |
+| `onTreeExpansionChanged(name, id, expanded)` | QTreeWidget | stable item ID and new expansion state |
+| `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | stable item ID and new column-0 check state |
 
 All handlers default to returning `false`. Override only the ones you need.
 
@@ -429,6 +433,7 @@ work like polling a server for available topics.
 | DateRangePicker (date range) | `setDateRangePlaceholder` | `onDateRangeChanged(name, from_iso, to_iso)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QStackedWidget | `setStackedPage`, `setStackedIndex` | `onStackedPageChanged(name, index, page_object_name)` |
+| QTreeWidget | `setTreeHeaders`, `setTreeItems`, `setTreeSelectedIds`, `setTreeExpandedIds`, `setTreeVisibleIds`, `clearTreeVisibleIds`, `setTreeSelectionMode` | `onTreeSelectionChanged`, `onTreeItemActivated`, `onTreeExpansionChanged`, `onTreeCheckStateChanged` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
 All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
@@ -453,6 +458,98 @@ writer deliberately preserves an empty page name or negative index on the wire,
 following the other index-based setters; the host diagnoses an empty/unknown
 name or negative/out-of-range index and leaves the current page unchanged.
 Page-change events always report both the current index and page `objectName`.
+
+## Tree Widgets (since 0.21.0)
+
+QTreeWidget binding is keyed by plugin-owned identity. Give every logical node a
+stable, non-empty string `id` and keep it stable across label changes, sorting,
+filtering, and later snapshots. Never identify a node by its displayed text, row
+number, or a path assembled from visible labels. Those are presentation and can
+all change independently.
+
+The public model is a flat `std::vector<PJ::TreeItem>` rather than recursive
+JSON:
+
+```cpp
+std::vector<PJ::TreeItem> topics = {
+    {"sensors", "", {{"Sensors", std::nullopt, "All sensors", "folder"}},
+     true, true, PJ::TreeCheckState::None, true},
+    {"imu", "sensors", {{"/imu", std::nullopt, "", "topic"},
+                         {"sensor_msgs/Imu", std::nullopt, "", "schema"}},
+     true, true, PJ::TreeCheckState::Checked, false},
+};
+
+PJ::WidgetData data;
+data.setTreeHeaders("topicTree", {"Topic", "Type"})
+    .setTreeItems("topicTree", topics)
+    .setTreeSelectedIds("topicTree", {"imu"})
+    .setTreeExpandedIds("topicTree", {"sensors"})
+    .setTreeSelectionMode("topicTree", true);
+```
+
+An empty `parent_id` means top level; every non-empty parent must name an item in
+the same snapshot. Parent-before-child ordering is not required. Array order
+defines the unsorted insertion order within each sibling group: filtering the
+flat array to one `parent_id` gives that group's order. Qt sorting may temporarily
+change visible order, but turning sorting off restores the plugin-declared order.
+Ragged `cells` arrays are valid; missing trailing columns display empty.
+
+`TreeCell::text` is presentation. Its optional `sort_value` is a `NumericValue`
+and provides the typed ordering truth just like `TableItem`; `tooltip` annotates
+the cell. `icon` is a host semantic name, not a filesystem path or a serialized
+QIcon. The initial names are `folder`, `topic`, `schema`, `info`, `warning`, and
+`error`; an empty or unknown name produces no icon. `TreeItem::enabled` and
+`selectable` are independent. `check_state` applies only to column 0 in v1 and
+uses `None`, `Unchecked`, `PartiallyChecked`, or `Checked` (wire spellings:
+`none`, `unchecked`, `partially_checked`, `checked`).
+
+### Independent state channels and filtering
+
+Headers, items, selection, expansion, visibility, and selection mode are
+independent additive updates. Any channel may be sent without `tree_items` in
+the same `WidgetData`; absence means leave that host state unchanged. An empty
+selected-ID or expanded-ID array clears that state. IDs not present in the
+current snapshot are not a malformed tree: the host ignores them with a
+diagnostic, while `WidgetDataView` deliberately exposes them as sent.
+
+Visibility has three states that must not be collapsed into an
+`optional<vector<string>>`:
+
+- absent: leave the current filter unchanged;
+- `setTreeVisibleIds(name, ids)`: replace the active ID filter (an empty array is
+  a real zero-match filter that hides every public item);
+- `clearTreeVisibleIds(name)`: JSON null, remove the filter and restore all-visible,
+  including visible-by-default behavior for later items.
+
+The host computes ancestor closure: listing `imu` also keeps `sensors` visible so
+the match remains reachable; the plugin need not repeat ancestors. A filter
+persists across later snapshots. Surviving IDs keep their visibility and newly
+added IDs remain hidden until a replacement visibility array lists them. Hiding
+does not delete a node or erase its logical selection/expansion state.
+
+Selection is likewise logical rather than limited to rendered rows. The host
+keeps private selected-ID state, and every `onTreeSelectionChanged` call contains
+the complete selected-ID set, including selected nodes hidden by filtering.
+
+### Lazy children and snapshot validation
+
+Set `may_have_children=true` when a node can be expanded before its real children
+are loaded. The host may display a private placeholder, but it has no public ID
+and never appears in callbacks. On expansion, load the children and publish a
+new complete snapshot. Under an active filter, include each matching new child
+in an updated `tree_visible_ids` array in the same state update; otherwise the
+new child remains hidden.
+
+Tree snapshots are validated as one unit before the host mutates Qt state. Empty
+or duplicate IDs, missing parents, parent cycles, invalid cell/sort-value types,
+and invalid check-state strings reject the whole `tree_items` update. There is
+no partial tree. `WidgetDataView::treeItems(name, &validation_error)` returns
+`nullopt` and fills the reason so an embedding host can diagnose the rejection.
+
+V1 deliberately uses complete keyed snapshots; incremental tree deltas are
+deferred until profiling justifies them. A future tree-delta design must reuse
+the table protocol's fresh sequence-number gate and all-or-nothing application
+rules rather than introduce another ordering contract.
 
 > **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
 > widget binding system. Use `QPlainTextEdit` for plain text or code editing,
