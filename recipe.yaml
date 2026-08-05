@@ -1,7 +1,8 @@
 schema_version: 1
 
 context:
-  version: "0.20.0"
+  # The release workflow exports this directly from the root VERSION file.
+  version: ${{ env.get("PJ_SDK_VERSION") }}
 
 package:
   name: plotjuggler_sdk
@@ -58,6 +59,8 @@ tests:
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfig.cmake
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjPluginManifest.cmake
+        - ${{ "include" if unix else "Library/include" }}/pj_base/sdk/version.hpp
+        - ${{ "include" if unix else "Library/include" }}/pj_base/sdk/semver.hpp
   # Actually exercise the package: build the repo's example consumer, which
   # find_package(plotjuggler_sdk COMPONENTS plugin_sdk), links a plugin lib, and
   # runs pj_emit_plugin_manifest(). Catches broken CMake config / find_dependency

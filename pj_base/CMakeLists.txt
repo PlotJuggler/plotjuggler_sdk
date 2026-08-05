@@ -2,6 +2,13 @@
 # pj_base — SDK vocabulary types and ABI surface
 # ---------------------------------------------------------------------------
 
+set(PJ_BASE_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+configure_file(
+  cmake/version.hpp.in
+  "${PJ_BASE_GENERATED_INCLUDE_DIR}/pj_base/sdk/version.hpp"
+  @ONLY
+)
+
 add_library(pj_base STATIC
   src/builtin/camera_info_codec.cpp
   src/builtin/compressed_point_cloud_codec.cpp
@@ -20,6 +27,7 @@ add_library(pj_base STATIC
   src/builtin/video_frame_codec.cpp
   src/builtin/voxel_grid_codec.cpp
   src/number_parse.cpp
+  src/semver.cpp
   src/type_tree.cpp
   src/data_source_host_views.cpp
   src/data_source_patterns.cpp
@@ -30,6 +38,7 @@ add_library(pj_base STATIC
 )
 target_include_directories(pj_base PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PJ_BASE_GENERATED_INCLUDE_DIR}>
   $<INSTALL_INTERFACE:include>
 )
 target_compile_features(pj_base PUBLIC cxx_std_20)
@@ -65,6 +74,10 @@ if(PJ_INSTALL_SDK)
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(FILES
+    "${PJ_BASE_GENERATED_INCLUDE_DIR}/pj_base/sdk/version.hpp"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/pj_base/sdk"
+  )
 endif()
 
 # ---------------------------------------------------------------------------
@@ -77,7 +90,9 @@ if(PJ_BUILD_TESTS)
     tests/type_tree_test.cpp
     tests/span_test.cpp
     tests/expected_test.cpp
+    tests/version_test.cpp
     tests/number_parse_test.cpp
+    tests/semver_test.cpp
     tests/plugin_data_api_test.cpp
     tests/data_processors_api_test.cpp
     tests/settings_store_host_test.cpp
