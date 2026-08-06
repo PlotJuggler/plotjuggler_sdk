@@ -5,6 +5,25 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.21.0]
 
+### Feature: message-parser runtime diagnostics service (MINOR)
+
+MessageParser plugins can now acquire the optional
+`"pj.parser_runtime.v1"` service during `bind()` and report recoverable or
+aggregated parse conditions without failing the current message. The new
+appendable `PJ_parser_runtime_host_vtable_t` carries severity, a machine-stable
+deduplication code, representative text, and an occurrence count. Existing
+family vtables, protocol versions, and minimum-vtable-size constants are
+unchanged.
+
+- `ParserRuntimeHostView::reportDiagnostic()` is a safe no-op when the service
+  is absent; `MessageParserPluginBase` exposes `parserRuntimeHost()` and
+  `parserRuntimeHostBound()` to derived parsers.
+- `ParserRuntimeHost` adapts the C service to an embedder-provided
+  `ParserDiagnosticSink`, and `testing::ParserRuntimeRecorder` captures owning
+  diagnostic records in parser unit tests.
+- Parser diagnostics remain distinct from fatal `Status` failures, and
+  `classifySchema()` remains side-effect free.
+
 ### Feature: SDK version and manifest compatibility foundation (MINOR)
 
 SDK releases now expose a single version identity and shared compatibility

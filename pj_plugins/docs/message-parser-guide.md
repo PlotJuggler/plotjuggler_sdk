@@ -168,7 +168,9 @@ create() -> bind(registry) -> [bind_schema()] -> parse()* -> destroy()
 
 1. **create** — the host calls `create()` to allocate a new parser instance.
 2. **bind** — the host provides a service registry. The SDK default bind
-   resolves `"pj.parser_write.v1"`. Must complete before `parse()`.
+   resolves mandatory `"pj.parser_write.v1"` plus optional
+   `"pj.parser_object_write.v1"` and `"pj.parser_runtime.v1"` services. Must
+   complete before `parse()`; either optional service may be absent.
 3. **bind_schema** (optional) — for parsers that need schema (Protobuf, ROS,
    IDL), the host provides the schema bytes and type name. Parsers that don't
    need schema (JSON, Influx) can ignore this call.
@@ -194,6 +196,49 @@ Most parsers should use `appendRecord()` or `appendBoundRecord()` because one
 when a single payload naturally contains many rows for the parser's already
 bound topic. This keeps parser-shaped batch encodings in the parser family
 without forcing per-row loops.
+
+## Recoverable Runtime Diagnostics
+
+Use the optional `parserRuntimeHost()` view to report a condition that is
+recoverable for the current message or summarizes equivalent problems across
+several messages. The view is always safe to call: when an older or minimal
+host does not provide `"pj.parser_runtime.v1"`, reporting is a no-op.
+`parserRuntimeHostBound()` tells you whether a host sink is present when that
+distinction affects plugin behavior.
+
+```cpp
+parserRuntimeHost().reportDiagnostic(
+    PJ::sdk::ParserDiagnosticLevel::Warning,
+    "integer_overflow",
+    "Some integer values exceeded the target field width",
+    overflow_count);
+```
+
+The arguments have distinct contracts:
+
+- `stable_code` is a plugin-defined, machine-stable deduplication key such as
+  `integer_overflow`. Never put a localized sentence, field value, counter, or
+  other value-filled prose in this key. Put human-readable detail in `message`.
+- `occurrences` is the number of equivalent events represented by this call;
+  it defaults to one. Prefer one report with an accumulated count when the
+  parser already has that count.
+- `Info`, `Warning`, and `Error` describe severity. An `Error` diagnostic still
+  does not fail `parse()` by itself.
+
+`reportDiagnostic()` is thread-safe and `noexcept`, may be called from the
+parse callback thread, and must return without blocking that thread. The host queues and
+aggregates reports by `(parser manifest ID, bound schema/type, level,
+stable_code)`, retaining representative message text; bounded queues, rate
+limiting, UI delivery, and final summaries are host policy.
+
+Diagnostics do not replace parse errors. If the current message cannot be
+parsed, return `PJ::unexpected("reason")` through the existing `Status` path.
+Use runtime diagnostics for recoverable optional-field errors, partial schema
+mismatches, overflow affecting only some values, and similar conditions where
+the parse can still succeed.
+
+`classifySchema()` is a pure, side-effect-free query. It must never report a
+runtime diagnostic; wait until a parse callback has observed the condition.
 
 ### Named vs bound writes
 
@@ -490,18 +535,23 @@ so `ensureField("x")` in the parser creates `"sensor/imu/x"` in the datastore.
 
 Use `PJ::sdk::testing::ParserWriteRecorder` from
 `pj_base/include/pj_base/sdk/testing/parser_write_recorder.hpp` to write
-parser unit tests without re-implementing the fake write-host vtable:
+parser unit tests without re-implementing the fake write-host vtable. Pair it
+with `ParserRuntimeRecorder` when the parser emits diagnostics:
 
 ```cpp
 #include <pj_base/sdk/testing/parser_write_recorder.hpp>
+#include <pj_base/sdk/testing/parser_runtime_recorder.hpp>
 
 TEST(MyParserTest, Basic) {
   auto library = PJ::MessageParserLibrary::load(PJ_MY_PARSER_PLUGIN_PATH);
   auto handle = library->createHandle();
 
   PJ::sdk::testing::ParserWriteRecorder recorder;
+  PJ::sdk::testing::ParserRuntimeRecorder diagnostic_recorder;
   PJ::ServiceRegistryBuilder registry;
   registry.registerService<PJ::sdk::ParserWriteHostService>(recorder.makeHost());
+  registry.registerService<PJ::sdk::ParserRuntimeHostService>(
+      diagnostic_recorder.makeHost());
   ASSERT_TRUE(handle.bind(registry.view()));
 
   const uint8_t payload[] = { /* ... */ };
@@ -510,6 +560,9 @@ TEST(MyParserTest, Basic) {
   ASSERT_EQ(recorder.rows().size(), 1u);
   EXPECT_EQ(recorder.rows()[0].fields[0].name, "temperature");
   EXPECT_DOUBLE_EQ(recorder.rows()[0].fields[0].numeric, 23.5);
+  ASSERT_EQ(diagnostic_recorder.diagnostics().size(), 1u);
+  EXPECT_EQ(diagnostic_recorder.diagnostics()[0].stable_code,
+            "integer_overflow");
 }
 ```
 
@@ -558,6 +611,9 @@ handler.parse_object =
   `kNone`) this schema produces. The host consults the answer **before** it
   ever sees the payload, so it can pick the right `ObjectIngestPolicy` for the
   topic.
+- Classification is side-effect free. `classifySchema` must not emit parser
+  runtime diagnostics; diagnostics belong to parse callbacks that have
+  observed actual message data.
 - `parse_scalars` returns a `ScalarRecord`: small-metadata fields
   (`width`, `height`, `frame_id`, …) plus an optional parser-controlled
   timestamp.

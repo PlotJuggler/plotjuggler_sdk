@@ -51,6 +51,7 @@ static_assert(sizeof(PJ_data_source_message_level_t) == 4, "enum layout pinned")
 static_assert(sizeof(PJ_message_box_type_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_message_box_buttons_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_toolbox_message_level_t) == 4, "enum layout pinned");
+static_assert(sizeof(PJ_parser_diagnostic_level_t) == 4, "parser diagnostic enum layout pinned");
 
 // --- PJ_error_t (ABI-FROZEN) -------------------------------------------------
 static_assert(sizeof(PJ_error_t) == 304, "PJ_error_t size pinned at v4.0 release");
@@ -175,6 +176,13 @@ static_assert(sizeof(PJ_parser_write_host_vtable_t) == 40, "Parser write host si
 static_assert(PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE == 32, "Parser write host min size remains v4.0 baseline");
 static_assert(
     PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE <= sizeof(PJ_parser_write_host_vtable_t), "MIN must never exceed current");
+
+// --- Parser runtime diagnostics service (ABI-APPENDABLE) --------------------
+static_assert(offsetof(PJ_parser_runtime_host_vtable_t, protocol_version) == 0, "parser runtime prefix pinned");
+static_assert(offsetof(PJ_parser_runtime_host_vtable_t, struct_size) == 4, "parser runtime prefix pinned");
+static_assert(offsetof(PJ_parser_runtime_host_vtable_t, report_diagnostic) == 8, "parser runtime slot pinned");
+static_assert(sizeof(PJ_parser_runtime_host_vtable_t) == 16, "Parser runtime host size");
+static_assert(sizeof(PJ_parser_runtime_host_t) == 16, "Parser runtime host fat pointer pinned");
 
 static_assert(offsetof(PJ_toolbox_host_vtable_t, abi_version) == 0, "toolbox host prefix pinned");
 static_assert(offsetof(PJ_toolbox_host_vtable_t, struct_size) == 4, "toolbox host prefix pinned");
