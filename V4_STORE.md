@@ -27,7 +27,11 @@ DataSource plugins resolve `pj.source_object_write.v1` when they need to publish
 object topics. The source-scoped write host supports:
 
 - `registerTopic(name, metadata_json)`: create an object topic under the current
-  dataset. The metadata JSON is opaque to core and is retained verbatim.
+  dataset. The metadata JSON is opaque to core and is retained verbatim. A
+  renderable built-in object uses `builtin_object_type` with the exact
+  `PJ::sdk::name()` value (for example, `"kImage"`). The C++ view also offers
+  `registerTopic(name, BuiltinObjectType, extra_metadata)` to build this
+  canonical field safely.
 - `pushOwned(topic, timestamp, bytes)`: eager write; the store copies the bytes.
 - `pushLazy(topic, timestamp, fetch)`: lazy write; the store keeps a fetch
   closure and resolves bytes on demand.
@@ -89,7 +93,9 @@ to the resolved byte buffer.
 ObjectStore is byte-oriented and domain-agnostic. It does not decode payloads,
 choose renderers, maintain UI state, or define topic-specific presentation
 policy. Metadata is stored as opaque JSON so callers can layer their own
-interpretation above the core store.
+interpretation above the core store. At the SDK/application boundary,
+`builtin_object_type` is the one canonical renderer-discovery key; values are
+the exact names emitted by `PJ::sdk::name()`.
 
 ## Tests
 

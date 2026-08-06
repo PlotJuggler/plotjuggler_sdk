@@ -4,6 +4,7 @@
 
 #include <array>
 #include <charconv>
+#include <concepts>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -25,6 +26,7 @@
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/arrow.hpp"
 #include "pj_base/sdk/object_bytes.hpp"
+#include "pj_base/sdk/object_topic_metadata.hpp"
 #include "pj_base/span.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_base/types.hpp"
@@ -578,6 +580,58 @@ class ParserWriteHostView {
 };
 
 // ---------------------------------------------------------------------------
+// ParserRuntimeHostView — optional non-fatal parser diagnostics
+// ---------------------------------------------------------------------------
+
+/** C++ mirror of PJ_parser_diagnostic_level_t. @since 0.21.0 */
+enum class ParserDiagnosticLevel : uint32_t {
+  Info = PJ_PARSER_DIAGNOSTIC_INFO,
+  Warning = PJ_PARSER_DIAGNOSTIC_WARNING,
+  Error = PJ_PARSER_DIAGNOSTIC_ERROR,
+};
+
+/// Plugin-side view of the optional `pj.parser_runtime.v1` service.
+///
+/// Reporting is noexcept and must be non-blocking for the parse callback
+/// thread. An unbound view safely discards reports. `stable_code` is a
+/// machine-stable deduplication key such as `integer_overflow`, not localized
+/// or value-filled prose; `message` is representative human-readable text.
+/// Fatal inability to parse the current message still uses `Status`.
+///
+/// @since 0.21.0
+class ParserRuntimeHostView {
+ public:
+  ParserRuntimeHostView() = default;
+  explicit ParserRuntimeHostView(PJ_parser_runtime_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
+
+  /// Report one recoverable/aggregated condition to the host. Safe no-op when
+  /// the optional service is absent or does not expose the v1 slot.
+  ///
+  /// @since 0.21.0
+  void reportDiagnostic(
+      ParserDiagnosticLevel level, std::string_view stable_code, std::string_view message,
+      uint64_t occurrences = 1) const noexcept {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_parser_runtime_host_vtable_t, host_.vtable, report_diagnostic)) {
+      return;
+    }
+    host_.vtable->report_diagnostic(
+        host_.ctx, static_cast<PJ_parser_diagnostic_level_t>(level), toAbiString(stable_code), toAbiString(message),
+        occurrences);
+  }
+
+  [[nodiscard]] const PJ_parser_runtime_host_t& raw() const noexcept {
+    return host_;
+  }
+
+ private:
+  PJ_parser_runtime_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
 // Object read host view (protocol v4)
 //
 // Read-only access to `pj_datastore::ObjectStore`. Exposes lookup / list /
@@ -736,7 +790,9 @@ class SourceObjectWriteHostView {
   }
 
   /// Register an object topic with opaque metadata JSON. The JSON is retained
-  /// verbatim by the store; viewers and parsers use it to pick a renderer.
+  /// verbatim by the store. For a built-in renderable object, the canonical
+  /// discovery field is `"builtin_object_type":"<name>"`, where `<name>` is
+  /// the exact string returned by `PJ::sdk::name()` (for example, `"kImage"`).
   [[nodiscard]] Expected<ObjectTopicHandle> registerTopic(std::string_view name, std::string_view metadata_json) const {
     if (!valid()) {
       return unexpected("source object write host is not bound");
@@ -747,6 +803,21 @@ class SourceObjectWriteHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Register a built-in object topic using canonical renderer metadata.
+  /// Custom string fields already present in `extra_metadata` are preserved.
+  /// Invalid metadata returns `unexpected` without calling the raw host slot.
+  /// @since 0.21.0
+  template <typename ObjectType>
+    requires std::same_as<ObjectType, BuiltinObjectType>
+  [[nodiscard]] Expected<ObjectTopicHandle> registerTopic(
+      std::string_view name, ObjectType type, ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const auto metadata_json = extra_metadata.builtinObjectType(type).build();
+    if (!metadata_json) {
+      return unexpected(metadata_json.error());
+    }
+    return registerTopic(name, *metadata_json);
   }
 
   /// Eager push — host copies the bytes into its own storage.
@@ -1200,8 +1271,10 @@ class ToolboxHostView {
 
   /// Register an object topic for media payloads (images, point clouds,
   /// annotations) under a previously created data source. `metadata_json`
-  /// is opaque to the store and retained verbatim; viewers and parsers
-  /// read it to pick a renderer.
+  /// is opaque to the store and retained verbatim. For a built-in renderable
+  /// object, the canonical discovery field is
+  /// `"builtin_object_type":"<name>"`, where `<name>` is the exact string
+  /// returned by `PJ::sdk::name()` (for example, `"kImage"`).
   ///
   /// Returns `unexpected` if the host predates this ABI slot — older hosts
   /// can be detected via the ABI's `PJ_HAS_TAIL_SLOT` macro; in this
@@ -1221,6 +1294,22 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Register a built-in object topic using canonical renderer metadata.
+  /// Custom string fields already present in `extra_metadata` are preserved.
+  /// Invalid metadata returns `unexpected` without calling the raw host slot.
+  /// @since 0.21.0
+  template <typename ObjectType>
+    requires std::same_as<ObjectType, BuiltinObjectType>
+  [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopic(
+      DataSourceHandle source, std::string_view name, ObjectType type,
+      ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const auto metadata_json = extra_metadata.builtinObjectType(type).build();
+    if (!metadata_json) {
+      return unexpected(metadata_json.error());
+    }
+    return registerObjectTopic(source, name, *metadata_json);
   }
 
   /// Eager push of an object payload — host copies the bytes into its own
@@ -1245,7 +1334,9 @@ class ToolboxHostView {
   /// another source loaded. Idempotent: returns the existing topic's handle if
   /// one with this name already exists on the dataset, so a producer that
   /// republishes its whole set just re-resolves the handle each time. Returns
-  /// `unexpected` on older hosts that don't expose the slot.
+  /// `unexpected` on older hosts that don't expose the slot. Built-in
+  /// renderable objects use the same canonical `builtin_object_type` field and
+  /// `PJ::sdk::name()` values documented by `registerObjectTopic()`.
   [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopicOnDataset(
       DatasetId dataset, std::string_view name, std::string_view metadata_json) const {
     if (!valid()) {
@@ -1263,6 +1354,22 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Register a built-in object topic on an existing dataset using canonical
+  /// renderer metadata. Custom string fields already present in
+  /// `extra_metadata` are preserved. Invalid metadata returns `unexpected`
+  /// without calling the raw host slot.
+  /// @since 0.21.0
+  template <typename ObjectType>
+    requires std::same_as<ObjectType, BuiltinObjectType>
+  [[nodiscard]] Expected<ObjectTopicHandle> registerObjectTopicOnDataset(
+      DatasetId dataset, std::string_view name, ObjectType type, ObjectTopicMetadataBuilder extra_metadata = {}) const {
+    const auto metadata_json = extra_metadata.builtinObjectType(type).build();
+    if (!metadata_json) {
+      return unexpected(metadata_json.error());
+    }
+    return registerObjectTopicOnDataset(dataset, name, *metadata_json);
   }
 
   /// Bound a topic's retention to the last `max_entries` snapshots (0 = unlimited).

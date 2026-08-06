@@ -456,6 +456,57 @@ typedef struct {
   const PJ_parser_write_host_vtable_t* vtable;
 } PJ_parser_write_host_t;
 
+/**
+ * Optional parser runtime diagnostics service ("pj.parser_runtime.v1",
+ * protocol_version 1).
+ *
+ * Parsers use this service for recoverable or aggregated conditions that do
+ * not make the current parse fail. Fatal failure of the current message still
+ * travels through the parser's Status/PJ_error_t path.
+ *
+ * The host aggregates reports by parser manifest ID, bound schema/type,
+ * level, and stable_code. stable_code is a plugin-defined, machine-stable
+ * deduplication key (for example "integer_overflow"), never localized or
+ * value-filled prose. All string views are borrowed for the duration of the
+ * call.
+ *
+ * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ *
+ * @since 0.21.0
+ */
+#define PJ_PARSER_RUNTIME_HOST_SERVICE_V1 "pj.parser_runtime.v1"
+
+/** Diagnostic severity reported by a message parser. @since 0.21.0 */
+typedef enum {
+  PJ_PARSER_DIAGNOSTIC_INFO = 0,
+  PJ_PARSER_DIAGNOSTIC_WARNING = 1,
+  PJ_PARSER_DIAGNOSTIC_ERROR = 2,
+  /* Forces a stable 4-byte width across compilers. Not a real level. */
+  PJ_PARSER_DIAGNOSTIC_FORCE_INT32 = 0x7FFFFFFF,
+} PJ_parser_diagnostic_level_t;
+
+/** ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ * @since 0.21.0 */
+typedef struct PJ_parser_runtime_host_vtable_t {
+  uint32_t protocol_version;
+  uint32_t struct_size;
+
+  /* [thread-safe, non-blocking] Report a recoverable parser diagnostic.
+   * The implementation must not throw or block the parse callback thread.
+   * occurrences is the number of equivalent events represented by this
+   * report; the host accumulates it under stable_code. classify_schema is
+   * side-effect free and must never call this slot. */
+  void (*report_diagnostic)(
+      void* ctx, PJ_parser_diagnostic_level_t level, PJ_string_view_t stable_code, PJ_string_view_t message,
+      uint64_t occurrences) PJ_NOEXCEPT;
+} PJ_parser_runtime_host_vtable_t;
+
+/** ABI-FROZEN: fat pointer layout permanent. @since 0.21.0 */
+typedef struct {
+  void* ctx;
+  const PJ_parser_runtime_host_vtable_t* vtable;
+} PJ_parser_runtime_host_t;
+
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  *
  * Toolbox host: multi-source read+write.
@@ -529,10 +580,11 @@ typedef struct PJ_toolbox_host_vtable_t {
   /* [stream-thread] Register an object topic for media payloads (images, point
    * clouds, annotations). The topic is namespaced under the data source
    * previously created via create_data_source. `metadata_json` is opaque to
-   * the host — viewers and parsers read it to pick a renderer (e.g.
-   * {"object_type":"image"} for the MediaViewerWidget). Returns false (with
-   * out_error populated) if the source handle is unknown or a topic with
-   * this name already exists for the data source. */
+   * the host. Built-in renderer discovery uses the canonical key
+   * `builtin_object_type`; its value is the exact C++ PJ::sdk::name() string
+   * for the type (for example, {"builtin_object_type":"kImage"}). Returns
+   * false (with out_error populated) if the source handle is unknown or a
+   * topic with this name already exists for the data source. */
   bool (*register_object_topic)(
       void* ctx, PJ_data_source_handle_t source, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
       PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) PJ_NOEXCEPT;
@@ -552,8 +604,10 @@ typedef struct PJ_toolbox_host_vtable_t {
    * loaded by another source. Idempotent — if a topic with this name already
    * exists on the dataset, its existing handle is returned (so a producer that
    * republishes its whole set just re-resolves the handle each time).
-   * `metadata_json` is opaque (as in register_object_topic). Returns false (with
-   * out_error populated) if the dataset does not exist.
+   * `metadata_json` is opaque (as in register_object_topic); built-in renderer
+   * discovery uses its canonical `builtin_object_type` key and C++
+   * PJ::sdk::name() values. Returns false (with out_error populated) if the
+   * dataset does not exist.
    * ABI-APPENDED slot: gate via struct_size before calling. */
   bool (*register_object_topic_on_dataset)(
       void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
@@ -616,9 +670,11 @@ typedef struct PJ_object_write_host_vtable_t {
 
   /* [stream-thread] Register an object topic under this data source with
    * the given metadata JSON. `metadata_json` is opaque to the store and
-   * retained verbatim; viewers and parsers read it to pick a renderer.
-   * Returns false (with out_error populated) if a topic with this name
-   * already exists for the data source. */
+   * retained verbatim. Built-in renderer discovery uses the canonical key
+   * `builtin_object_type`; its value is the exact C++ PJ::sdk::name() string
+   * for the type (for example, {"builtin_object_type":"kImage"}). Returns
+   * false (with out_error populated) if a topic with this name already exists
+   * for the data source. */
   bool (*register_topic)(
       void* ctx, PJ_string_view_t topic_name, PJ_string_view_t metadata_json, PJ_object_topic_handle_t* out_handle,
       PJ_error_t* out_error) PJ_NOEXCEPT;

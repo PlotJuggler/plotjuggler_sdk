@@ -120,6 +120,20 @@ struct ParserObjectWriteHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Optional non-fatal diagnostics channel for MessageParser plugins.
+/// Absence is safe: ParserRuntimeHostView discards reports from an unbound
+/// view. Fatal parse failures continue to use Status.
+///
+/// @since 0.21.0
+struct ParserRuntimeHostService {
+  static constexpr const char* kName = PJ_PARSER_RUNTIME_HOST_SERVICE_V1;
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_parser_runtime_host_t;
+  using Vtable = PJ_parser_runtime_host_vtable_t;
+  using View = ParserRuntimeHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Object read host for Toolbox plugins — reads from ObjectStore. Optional:
 /// toolboxes that consume only scalar data (via ToolboxHostService) never
 /// resolve this. Transformer-style toolboxes that process bytes from object

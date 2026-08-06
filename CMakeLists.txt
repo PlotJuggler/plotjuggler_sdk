@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
-project(plotjuggler_sdk LANGUAGES CXX)
+file(READ "${CMAKE_CURRENT_LIST_DIR}/VERSION" PJ_SDK_VERSION)
+string(STRIP "${PJ_SDK_VERSION}" PJ_SDK_VERSION)
+project(plotjuggler_sdk VERSION "${PJ_SDK_VERSION}" LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -128,7 +130,6 @@ endif()
 if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
-  set(PJ_PACKAGE_VERSION "0.20.0")
   set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_sdk)
 
   install(EXPORT plotjuggler_sdkTargets
@@ -144,7 +145,7 @@ if(PJ_INSTALL_SDK)
 
   write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
-    VERSION ${PJ_PACKAGE_VERSION}
+    VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
   )
 

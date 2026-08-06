@@ -11,10 +11,11 @@ on:
   # are validated before a release tag (the upload step is skipped — see below).
   pull_request:
     paths:
+      - "VERSION"
       - "recipe.yaml"
       - ".github/workflows/conda-release.yml"
-  # Manual dispatch builds the current conanfile.py/recipe.yaml version (no tag
-  # guard); idempotent via `rattler-build upload --skip-existing`.
+  # Manual dispatch builds the version from VERSION (no tag guard); idempotent
+  # via `rattler-build upload --skip-existing`.
   workflow_dispatch: {}
 
 permissions:
@@ -34,28 +35,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify tag matches all version sources
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Read SDK version and verify tag
+        id: sdk-version
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          # The SDK version is hardcoded in three places that must agree with the tag:
-          #   conanfile.py  version = "..."           (Conan package + the tag guard)
-          #   recipe.yaml   context.version "..."     (embedded in the published .conda)
-          #   CMakeLists.txt PJ_PACKAGE_VERSION "..." (baked into ConfigVersion.cmake,
-          #                                            matched by find_package(... <ver>))
-          conan_ver="$(grep -E '^\s*version\s*=' conanfile.py | head -1 | sed -E 's/.*"(.*)".*/\1/')"
-          recipe_ver="$(grep -E '^[[:space:]]+version:[[:space:]]*"' recipe.yaml | head -1 | sed -E 's/.*"(.*)".*/\1/')"
-          cmake_ver="$(grep -E 'set\(PJ_PACKAGE_VERSION' CMakeLists.txt | head -1 | sed -E 's/.*"(.*)".*/\1/')"
-          echo "tag=$tag  conanfile.py=$conan_ver  recipe.yaml=$recipe_ver  CMakeLists.txt=$cmake_ver"
-          fail=0
-          for pair in "conanfile.py:$conan_ver" "recipe.yaml:$recipe_ver" "CMakeLists.txt:$cmake_ver"; do
-            if [ "$tag" != "${pair#*:}" ]; then
-              echo "::error::Tag v$tag does not match ${pair%%:*} version (${pair#*:})"
-              fail=1
+          sdk_version="$(tr -d '\r\n' < VERSION)"
+          echo "sdk_version=$sdk_version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [[ "$tag" != "$sdk_version" ]]; then
+              echo "::error::Tag v$tag does not match VERSION ($sdk_version)"
+              exit 1
             fi
-          done
-          [ "$fail" -eq 0 ]
+          fi
 
       - name: Install rattler-build
         uses: prefix-dev/rattler-build-action@v0.2.38
@@ -70,6 +62,7 @@ jobs:
         env:
           # Belt-and-braces with the variant config below (see that file's comment).
           MACOSX_DEPLOYMENT_TARGET: "13.0"
+          PJ_SDK_VERSION: ${{ steps.sdk-version.outputs.sdk_version }}
         run: |
           extra=()
           if [[ "$RUNNER_OS" == "macOS" ]]; then

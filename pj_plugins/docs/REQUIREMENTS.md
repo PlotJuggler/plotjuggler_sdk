@@ -38,6 +38,43 @@ Four plugin families exist:
 5. **Instance isolation.** Multiple instances of the same plugin type run
    concurrently with instance-local state.
 
+### 2.1 Compatibility vocabulary
+
+Plugin compatibility uses three separate values. They are not aliases and a
+manifest must not substitute one for another:
+
+| Value | Meaning | Enforcement |
+|---|---|---|
+| `min_sdk_required` | Minimum PlotJuggler SDK contract whose features the plugin actually requires | Hard host-side load gate before plugin instantiation |
+| `min_plotjuggler_version` | Minimum PlotJuggler application release expected by the plugin | Existing application-level advisory policy |
+| ABI/dialog protocol version | Binary C ABI and dialog C/wire contract compatibility | Existing strict vtable, `struct_size`, and protocol validation |
+
+`min_sdk_required` is not automatically the SDK version used to compile the
+plugin. A plugin compiled with a newer SDK declares the oldest SDK contract
+that provides every feature it actually uses.
+
+Manifest rules for `min_sdk_required`:
+
+- The key is optional. Missing or an empty string means no SDK floor was
+  declared and remains loadable.
+- A present value must be a JSON string containing one concrete, three-part
+  SemVer 2.0.0 version: `MAJOR.MINOR.PATCH`, optionally followed by a
+  pre-release and/or build suffix. Ranges and wildcards are not supported
+  because the field already expresses a minimum.
+- A present non-string or malformed version invalidates the manifest. A valid
+  value newer than the host SDK is hard-rejected by the host before plugin
+  instantiation.
+- Precedence follows SemVer 2.0.0. A pre-release sorts below its corresponding
+  release (`0.21.0-pre < 0.21.0`); numeric pre-release identifiers compare
+  numerically and sort below alphanumeric identifiers; a shorter identifier
+  list sorts first when the shared prefix is equal. Build metadata never
+  affects precedence (`0.21.0+linux == 0.21.0+windows`).
+
+The SDK exposes its configured contract identity in
+`pj_base/sdk/version.hpp` (`PJ_SDK_VERSION_*`,
+`PJ_SDK_VERSION_AT_LEAST()`, and `PJ::sdkVersion()`) and provides the shared
+Qt-free `PJ::SemVer` parser/comparator in `pj_base/sdk/semver.hpp`.
+
 ## 3. Plugin Families and Their Roles
 
 ### DataSource

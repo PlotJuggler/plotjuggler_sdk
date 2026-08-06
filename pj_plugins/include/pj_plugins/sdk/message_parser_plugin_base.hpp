@@ -6,7 +6,8 @@
  * export with PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest).
  *
  * The default `bind()` implementation acquires the parser write host from
- * the service registry. Override to additionally acquire optional services.
+ * the service registry plus optional object-write and parser-runtime services.
+ * Override to additionally acquire optional services.
  * All trampolines are noexcept at the ABI boundary.
  */
 // Copyright 2026 Davide Faconti
@@ -61,10 +62,24 @@ struct SchemaHandler {
   std::function<Expected<ObjectRecord>(Timestamp, PayloadView)> parse_object;
 };
 
+namespace testing {
+struct MessageParserPluginBaseLayoutSentinel;
+}
+
 }  // namespace sdk
 
 /**
  * Base class for MessageParser plugins (protocol v4).
+ *
+ * ABI LAYOUT CONTRACT: PJ4 treats the plugin-created context as a
+ * MessageParserPluginBase pointer and directly calls classifySchema(),
+ * parseScalars(), and parseObject() across the DSO boundary. Consequently,
+ * this class's member layout is cross-DSO ABI within one PJ_ABI_VERSION.
+ * Existing data members must never move: new members are APPEND-ONLY at the
+ * data-member tail. The host-invoked final methods above must never access an
+ * appended member, because an older plugin instance does not contain it. The
+ * host owns only a pointer obtained from create() and never allocates or copies
+ * this object.
  */
 class MessageParserPluginBase {
  public:
@@ -75,6 +90,7 @@ class MessageParserPluginBase {
   /// Default implementation pulls:
   ///   - "pj.parser_write.v1"        → ParserWriteHost       (mandatory)
   ///   - "pj.parser_object_write.v1" → ObjectWriteHost       (optional)
+  ///   - "pj.parser_runtime.v1"      → ParserRuntimeHost     (optional)
   ///
   /// A media-capable parser checks `objectWriteHost()` inside parse() and
   /// writes the scalar portion of the message to `writeHost()` and the
@@ -90,6 +106,13 @@ class MessageParserPluginBase {
     // parser is bound to a media topic alongside a scalar one.
     if (auto obj = services.get<sdk::ParserObjectWriteHostService>()) {
       object_write_host_view_ = *obj;
+    }
+
+    // Runtime diagnostics are optional. Older/minimal hosts omit the service;
+    // ParserRuntimeHostView then remains a safe no-op view.
+    parser_runtime_host_view_ = {};
+    if (auto runtime = services.get<sdk::ParserRuntimeHostService>()) {
+      parser_runtime_host_view_ = *runtime;
     }
 
     service_registry_ = services;
@@ -220,6 +243,8 @@ class MessageParserPluginBase {
   /// The C ABI trampolines call this on MessageParserPluginBase*; a derived
   /// override would never be invoked, so the compiler rejects it explicitly.
   /// Returns kNone when no handler is registered for this type name.
+  /// Classification is side-effect free: implementations must not report
+  /// parser runtime diagnostics from this path.
   ///
   /// `type_name` is passed as a parameter (rather than using bound_type_name_)
   /// because classification may be queried for any schema this parser handles,
@@ -316,8 +341,25 @@ class MessageParserPluginBase {
     return object_write_host_view_.valid() ? &object_write_host_view_ : nullptr;
   }
 
+  /// Optional non-fatal diagnostics channel. The returned view is always safe
+  /// to call; when `pj.parser_runtime.v1` is absent, reports are discarded.
+  /// Use diagnostics for recoverable/aggregated conditions inside parse(),
+  /// never from classifySchema(); fatal parse failure still uses Status.
+  ///
+  /// @since 0.21.0
+  [[nodiscard]] const sdk::ParserRuntimeHostView& parserRuntimeHost() const noexcept {
+    return parser_runtime_host_view_;
+  }
+
   [[nodiscard]] bool writeHostBound() const {
     return write_host_view_.valid();
+  }
+
+  /// Whether the host supplied `pj.parser_runtime.v1` for this binding.
+  ///
+  /// @since 0.21.0
+  [[nodiscard]] bool parserRuntimeHostBound() const noexcept {
+    return parser_runtime_host_view_.valid();
   }
 
  protected:
@@ -332,6 +374,8 @@ class MessageParserPluginBase {
   std::string bound_type_name_;
 
  private:
+  friend struct sdk::testing::MessageParserPluginBaseLayoutSentinel;
+
   sdk::ServiceRegistry service_registry_{};
   sdk::ParserWriteHostView write_host_view_{PJ_parser_write_host_t{}};
   sdk::ParserObjectWriteHostView object_write_host_view_{};
@@ -339,6 +383,10 @@ class MessageParserPluginBase {
 
   // Schema handler table populated by the plugin via registerSchemaHandler().
   std::unordered_map<std::string, sdk::SchemaHandler> handlers_;
+
+  // ABI-APPENDED in 0.21.0. New data members must be appended after this one;
+  // never insert into the frozen prefix above.
+  sdk::ParserRuntimeHostView parser_runtime_host_view_{};
 
   static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {
     sdk::fillError(out_error, code, domain, message);

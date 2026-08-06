@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 
 namespace PJ {
 namespace {
@@ -22,6 +23,11 @@ std::string pluginFileName(const std::string& stem) {
 #else
   return stem + ".so";
 #endif
+}
+
+std::string manifestWithMinSdk(std::string_view json_value) {
+  return std::string(R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","min_sdk_required":)") +
+         std::string(json_value) + "}";
 }
 
 class PluginCatalogTest : public ::testing::Test {
@@ -118,6 +124,62 @@ TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {
   auto descriptor = inspectPluginDso(PJ_MISSING_ID_PLUGIN_PATH);
   ASSERT_FALSE(descriptor.has_value());
   EXPECT_NE(descriptor.error().find("id"), std::string::npos);
+}
+
+TEST_F(PluginCatalogTest, MinSdkRequiredDefaultsToEmptyWhenAbsent) {
+  auto descriptor = decodeManifest(
+      "static:sdk-test", PluginFamily::kDataSource, R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0"})");
+
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_TRUE(descriptor->min_sdk_required.empty());
+}
+
+TEST_F(PluginCatalogTest, MinSdkRequiredAcceptsEmptyString) {
+  auto descriptor = decodeManifest(
+      "static:sdk-test", PluginFamily::kDataSource,
+      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","min_sdk_required":""})");
+
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_TRUE(descriptor->min_sdk_required.empty());
+}
+
+TEST_F(PluginCatalogTest, MinSdkRequiredAcceptsConcreteSemVer) {
+  auto descriptor = decodeManifest(
+      "static:sdk-test", PluginFamily::kDataSource,
+      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","min_sdk_required":"0.21.0"})");
+
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->min_sdk_required, "0.21.0");
+}
+
+TEST_F(PluginCatalogTest, MinSdkRequiredAcceptsPrerelease) {
+  auto descriptor = decodeManifest(
+      "static:sdk-test", PluginFamily::kDataSource,
+      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","min_sdk_required":"0.21.0-rc.1+build.7"})");
+
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->min_sdk_required, "0.21.0-rc.1+build.7");
+}
+
+TEST_F(PluginCatalogTest, MinSdkRequiredRejectsNonString) {
+  auto descriptor = decodeManifest(
+      "static:sdk-test", PluginFamily::kDataSource,
+      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","min_sdk_required":21})");
+
+  ASSERT_FALSE(descriptor.has_value());
+  EXPECT_NE(descriptor.error().find("min_sdk_required"), std::string::npos);
+  EXPECT_NE(descriptor.error().find("must be a string"), std::string::npos);
+}
+
+TEST_F(PluginCatalogTest, MinSdkRequiredRejectsMalformedVersions) {
+  for (const std::string_view value : {"1.0", "garbage", ">=0.21.0", "^0.21.0", "0.21.x"}) {
+    auto descriptor = decodeManifest(
+        "static:sdk-test", PluginFamily::kDataSource, manifestWithMinSdk("\"" + std::string(value) + "\""));
+
+    ASSERT_FALSE(descriptor.has_value()) << value;
+    EXPECT_NE(descriptor.error().find("min_sdk_required"), std::string::npos) << value;
+    EXPECT_NE(descriptor.error().find(value), std::string::npos) << value;
+  }
 }
 
 TEST_F(PluginCatalogTest, InvalidOptionalManifestFieldIsReportedAsDiagnostic) {

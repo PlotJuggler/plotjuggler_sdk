@@ -139,6 +139,61 @@ structured multi-file picker with distinct selected/cancelled/unsupported
 handling. Protocol-level tests drive the example through `DialogHandle`,
 `WidgetDataView`, and `WidgetEventBuilder`, including static-manifest and tree
 validation checks.
+### Feature: canonical object-topic renderer metadata (MINOR)
+
+- Added `PJ::sdk::ObjectTopicMetadataBuilder`. Its typed
+  `builtinObjectType()` method emits the canonical `builtin_object_type` key
+  using the exact `PJ::sdk::name()` value, while custom string metadata is
+  escaped and emitted in deterministic key order. `build()` returns
+  `Expected<std::string>` so invalid/reserved types and attempts to insert the
+  canonical key as custom metadata remain errors even when assertions are
+  disabled.
+- Added typed C++ registration overloads on `SourceObjectWriteHostView` and
+  `ToolboxHostView` (including existing-dataset registration). Existing raw
+  JSON overloads remain source-compatible—including calls with `{}`—and
+  invalid typed metadata is returned without calling the raw host slot. No C
+  ABI struct, vtable, or protocol changed.
+- Clarified that `MediaMetadataBuilder::mediaClass()` supplies supplemental
+  media metadata and does not select a canonical built-in renderer.
+
+### Feature: message-parser runtime diagnostics service (MINOR)
+
+MessageParser plugins can now acquire the optional
+`"pj.parser_runtime.v1"` service during `bind()` and report recoverable or
+aggregated parse conditions without failing the current message. The new
+appendable `PJ_parser_runtime_host_vtable_t` carries severity, a machine-stable
+deduplication code, representative text, and an occurrence count. Existing
+family vtables, protocol versions, and minimum-vtable-size constants are
+unchanged.
+
+- `ParserRuntimeHostView::reportDiagnostic()` is a safe no-op when the service
+  is absent; `MessageParserPluginBase` exposes `parserRuntimeHost()` and
+  `parserRuntimeHostBound()` to derived parsers.
+- `ParserRuntimeHost` adapts the C service to an embedder-provided
+  `ParserDiagnosticSink`, and `testing::ParserRuntimeRecorder` captures owning
+  diagnostic records in parser unit tests.
+- Parser diagnostics remain distinct from fatal `Status` failures, and
+  `classifySchema()` remains side-effect free.
+
+### Feature: SDK version and manifest compatibility foundation (MINOR)
+
+SDK releases now expose a single version identity and shared compatibility
+vocabulary for package consumers and plugin manifests.
+
+- The root `VERSION` file is the single source of truth for CMake, Conan, and
+  release packaging.
+- The generated and installed `pj_base/sdk/version.hpp` header provides
+  `PJ_SDK_VERSION_MAJOR`, `PJ_SDK_VERSION_MINOR`, `PJ_SDK_VERSION_PATCH`,
+  `PJ_SDK_VERSION_AT_LEAST`, and `PJ::sdkVersion()`.
+- The Qt-free `PJ::SemVer` utility strictly parses concrete SemVer 2.0.0
+  versions and compares their precedence; build metadata does not affect
+  precedence, and equality intentionally follows precedence equivalence.
+- Plugin manifests may declare the optional `min_sdk_required` SDK contract
+  floor. Missing or empty values remain undeclared, while malformed values
+  invalidate the manifest. This field is distinct from the advisory
+  `min_plotjuggler_version` application-release expectation.
+
+No C ABI struct, vtable, ABI version, or plugin protocol version changes.
 
 ## [0.20.0]
 

@@ -140,9 +140,13 @@ previously-circulated pre-v4 design included):
   Host-side `PJ::scanPluginDsos(dir)` (in
   `pj_plugins/host/plugin_catalog.hpp`) walks platform plugin libraries,
   loads each candidate, validates the ABI and protocol vtable, and parses
-  `id`, `name`, `version`, family-specific fields, and optional metadata
-  directly from the embedded manifest. Broken or incompatible candidates
-  are reported as diagnostics while discovery continues.
+  `id`, `name`, `version`, the optional compatibility fields
+  `min_sdk_required` and `min_plotjuggler_version`, family-specific fields,
+  and optional metadata directly from the embedded manifest. The former is a
+  concrete SemVer SDK-contract floor and the latter retains its distinct
+  application-release meaning; see `REQUIREMENTS.md` section 2.1 for the full
+  compatibility vocabulary and manifest rules. Broken or incompatible
+  candidates are reported as diagnostics while discovery continues.
 - **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
   only (DEEPBIND was a documented ASAN/allocator-interposition trap).
   Plugin-local symbol isolation is left to `-fvisibility=hidden`.
@@ -154,7 +158,7 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   a single `bind(ctx, registry, err)` slot. The host registers all services
   (write hosts, runtime hosts, colormap, settings, etc.) under canonical
   reverse-DNS-style names (e.g. `"pj.source_write.v1"`,
-  `"pj.runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`,
+  `"pj.runtime.v1"`, `"pj.parser_runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`,
   `"pj.settings.v1"`, `"pj.data_processors.v1"`, `"pj.source_promotion.v1"`).
   Plugins acquire only the services they use. `"pj.source_promotion.v1"`
   (optional, bound per plugin instance) lets a descriptor-import provider hand
@@ -176,6 +180,10 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   backend fault surfaces instead of silently masquerading as a missing key); the
   host backs it (QSettings in the GUI app, JSON in a headless host) and
   namespaces keys per plugin.
+  `"pj.parser_runtime.v1"` (optional) gives message parsers a non-fatal,
+  non-blocking diagnostics channel. Parsers report severity, a machine-stable
+  code, representative text, and an occurrence count; the host aggregates by
+  parser identity and bound schema/type without changing parse success.
 - **Structured errors everywhere.** All fallible ABI calls take a
   `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
   slot is gone.

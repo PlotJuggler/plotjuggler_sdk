@@ -5,13 +5,15 @@
 #include <string>
 #include <string_view>
 
+#include "pj_base/sdk/detail/json.hpp"
+
 namespace PJ::sdk {
 
-/// Builder for the `metadata_json` string attached to an ObjectStore topic
-/// at registration time. Viewers and parsers read this to pick a renderer
-/// or decoder. The builder emits minimal valid JSON with no external
-/// dependency; the three documented keys from OBJECT_STORE_DESIGN.md §4
-/// become typed methods so typos fail to compile.
+/// Builder for supplemental media fields in the `metadata_json` string
+/// attached to an ObjectStore topic at registration time. `media_class`,
+/// `encoding`, and `schema` describe media or decoder details; they do not
+/// select a canonical built-in renderer. In particular, `media_class` is not
+/// an alias for the canonical `builtin_object_type` discovery key.
 ///
 /// Example:
 ///   auto meta = MediaMetadataBuilder()
@@ -21,9 +23,14 @@ namespace PJ::sdk {
 ///       .build();
 ///   host.registerTopic(name, meta);
 ///
-/// Custom keys via `extra()` for format-specific metadata.
+/// For a renderable built-in object, use `ObjectTopicMetadataBuilder`, call
+/// `builtinObjectType()`, and compose supplemental fields with its `string()`
+/// method. Custom, untyped object topics may continue to use this builder.
+/// Custom keys are available through `extra()` for format-specific metadata.
 class MediaMetadataBuilder {
  public:
+  /// Set a supplemental media classification. This does not select a built-in
+  /// renderer; use `ObjectTopicMetadataBuilder::builtinObjectType()` for that.
   MediaMetadataBuilder& mediaClass(std::string_view v) {
     media_class_ = v;
     return *this;
@@ -70,7 +77,7 @@ class MediaMetadataBuilder {
       out.push_back('"');
       out.append(key);
       out.append("\":\"");
-      appendEscaped(out, value);
+      detail::appendJsonEscaped(out, value);
       out.push_back('"');
     };
     kv_string("media_class", media_class_);
@@ -103,49 +110,10 @@ class MediaMetadataBuilder {
     extras_.append("\":");
     if (quoted) {
       extras_.push_back('"');
-      appendEscaped(extras_, value);
+      detail::appendJsonEscaped(extras_, value);
       extras_.push_back('"');
     } else {
       extras_.append(value);
-    }
-  }
-
-  /// Minimal JSON-string escape for ", \, and control chars < 0x20.
-  static void appendEscaped(std::string& out, std::string_view s) {
-    for (char c : s) {
-      switch (c) {
-        case '"':
-          out.append("\\\"");
-          break;
-        case '\\':
-          out.append("\\\\");
-          break;
-        case '\b':
-          out.append("\\b");
-          break;
-        case '\f':
-          out.append("\\f");
-          break;
-        case '\n':
-          out.append("\\n");
-          break;
-        case '\r':
-          out.append("\\r");
-          break;
-        case '\t':
-          out.append("\\t");
-          break;
-        default:
-          if (static_cast<unsigned char>(c) < 0x20) {
-            static constexpr char kHex[] = "0123456789abcdef";
-            out.append("\\u00");
-            out.push_back(kHex[(c >> 4) & 0xF]);
-            out.push_back(kHex[c & 0xF]);
-          } else {
-            out.push_back(c);
-          }
-          break;
-      }
     }
   }
 };
