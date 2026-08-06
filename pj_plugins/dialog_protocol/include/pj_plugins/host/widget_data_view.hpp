@@ -5,12 +5,14 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -18,6 +20,16 @@
 #include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark
 
 namespace PJ {
+
+/// A QTreeWidget visibility-channel update. Filter carries the exact ID set
+/// supplied by the plugin (including an empty, active zero-match filter), while
+/// Reset removes the current filter.
+/// @since 0.21.0
+struct TreeVisibilityUpdate {
+  enum class Mode { Filter, Reset };
+  Mode mode = Mode::Filter;
+  std::vector<std::string> ids;
+};
 
 /// Read-only view of the JSON returned by get_widget_data().
 /// Each getter takes a widget name and reads the corresponding property.
@@ -92,6 +104,231 @@ class WidgetDataView {
   }
   [[nodiscard]] std::optional<bool> listMultiSelect(std::string_view name) const {
     return getBool(name, "list_multi_select");
+  }
+
+  // --- QTreeWidget ---
+
+  /// Tree column labels. This state channel is independent of treeItems().
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<std::string>> treeHeaders(std::string_view name) const {
+    return getStrictStringArray(name, "tree_headers");
+  }
+
+  /// Decode one complete tree_items snapshot, preserving its flat array order
+  /// exactly (and therefore plugin-declared sibling insertion order). Ragged
+  /// cell arrays are valid; the host renders missing trailing cells as empty.
+  ///
+  /// Like the strict tableDelta() reader, any malformed member rejects the
+  /// entire update and returns nullopt. If `validation_error` is non-null it is
+  /// cleared for an absent/valid update and populated with the rejection reason
+  /// for an invalid update, giving embedding hosts a diagnostic to report.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<TreeItem>> treeItems(
+      std::string_view name, std::string* validation_error = nullptr) const {
+    if (validation_error != nullptr) {
+      validation_error->clear();
+    }
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto items_it = w->find("tree_items");
+    if (items_it == w->end()) {
+      return std::nullopt;
+    }
+    if (!items_it->is_array()) {
+      return rejectTreeItems(validation_error, "tree_items must be an array");
+    }
+
+    std::vector<TreeItem> items;
+    items.reserve(items_it->size());
+    std::unordered_map<std::string, std::size_t> id_indexes;
+    id_indexes.reserve(items_it->size());
+
+    for (std::size_t item_index = 0; item_index < items_it->size(); ++item_index) {
+      const auto& encoded_item = (*items_it)[item_index];
+      const std::string item_prefix = "tree_items[" + std::to_string(item_index) + "]";
+      if (!encoded_item.is_object()) {
+        return rejectTreeItems(validation_error, item_prefix + " must be an object");
+      }
+
+      TreeItem item;
+      auto id_it = encoded_item.find("id");
+      if (id_it == encoded_item.end() || !id_it->is_string()) {
+        return rejectTreeItems(validation_error, item_prefix + ".id must be a string");
+      }
+      item.id = id_it->get<std::string>();
+      if (item.id.empty()) {
+        return rejectTreeItems(validation_error, item_prefix + ".id must not be empty");
+      }
+      if (id_indexes.find(item.id) != id_indexes.end()) {
+        return rejectTreeItems(validation_error, "tree_items contains duplicate id '" + item.id + "'");
+      }
+
+      auto parent_it = encoded_item.find("parent_id");
+      if (parent_it == encoded_item.end() || !parent_it->is_string()) {
+        return rejectTreeItems(validation_error, item_prefix + ".parent_id must be a string");
+      }
+      item.parent_id = parent_it->get<std::string>();
+      if (item.parent_id == item.id) {
+        return rejectTreeItems(validation_error, "tree item '" + item.id + "' must not be its own parent");
+      }
+
+      auto cells_it = encoded_item.find("cells");
+      if (cells_it == encoded_item.end() || !cells_it->is_array()) {
+        return rejectTreeItems(validation_error, item_prefix + ".cells must be an array");
+      }
+      item.cells.reserve(cells_it->size());
+      for (std::size_t cell_index = 0; cell_index < cells_it->size(); ++cell_index) {
+        const auto& encoded_cell = (*cells_it)[cell_index];
+        const std::string cell_prefix = item_prefix + ".cells[" + std::to_string(cell_index) + "]";
+        if (!encoded_cell.is_object()) {
+          return rejectTreeItems(validation_error, cell_prefix + " must be an object");
+        }
+
+        TreeCell cell;
+        auto text_it = encoded_cell.find("text");
+        if (text_it == encoded_cell.end() || !text_it->is_string()) {
+          return rejectTreeItems(validation_error, cell_prefix + ".text must be a string");
+        }
+        cell.text = text_it->get<std::string>();
+
+        if (auto sort_it = encoded_cell.find("sort_value"); sort_it != encoded_cell.end() && !sort_it->is_null()) {
+          cell.sort_value = numericFromJson(*sort_it);
+          if (!cell.sort_value.has_value()) {
+            return rejectTreeItems(validation_error, cell_prefix + ".sort_value must be a number or null");
+          }
+        }
+
+        if (auto tooltip_it = encoded_cell.find("tooltip"); tooltip_it != encoded_cell.end()) {
+          if (!tooltip_it->is_string()) {
+            return rejectTreeItems(validation_error, cell_prefix + ".tooltip must be a string");
+          }
+          cell.tooltip = tooltip_it->get<std::string>();
+        }
+        if (auto icon_it = encoded_cell.find("icon"); icon_it != encoded_cell.end()) {
+          if (!icon_it->is_string()) {
+            return rejectTreeItems(validation_error, cell_prefix + ".icon must be a string");
+          }
+          cell.icon = icon_it->get<std::string>();
+        }
+        item.cells.push_back(std::move(cell));
+      }
+
+      if (!decodeOptionalBool(encoded_item, "enabled", item.enabled)) {
+        return rejectTreeItems(validation_error, item_prefix + ".enabled must be a boolean");
+      }
+      if (!decodeOptionalBool(encoded_item, "selectable", item.selectable)) {
+        return rejectTreeItems(validation_error, item_prefix + ".selectable must be a boolean");
+      }
+      if (!decodeOptionalBool(encoded_item, "may_have_children", item.may_have_children)) {
+        return rejectTreeItems(validation_error, item_prefix + ".may_have_children must be a boolean");
+      }
+
+      if (auto state_it = encoded_item.find("check_state"); state_it != encoded_item.end()) {
+        if (!state_it->is_string()) {
+          return rejectTreeItems(validation_error, item_prefix + ".check_state must be a string");
+        }
+        auto state = treeCheckStateFromWireValue(state_it->get_ref<const std::string&>());
+        if (!state.has_value()) {
+          return rejectTreeItems(
+              validation_error, item_prefix + ".check_state has invalid value '" + state_it->get<std::string>() + "'");
+        }
+        item.check_state = *state;
+      }
+
+      id_indexes.emplace(item.id, items.size());
+      items.push_back(std::move(item));
+    }
+
+    for (const auto& item : items) {
+      if (!item.parent_id.empty() && id_indexes.find(item.parent_id) == id_indexes.end()) {
+        return rejectTreeItems(
+            validation_error, "tree item '" + item.id + "' references missing parent '" + item.parent_id + "'");
+      }
+    }
+
+    // Every item has at most one outgoing parent edge, so an iterative color
+    // walk detects cycles without recursion depth depending on the tree size.
+    std::vector<unsigned char> visit_state(items.size(), 0);
+    for (std::size_t start = 0; start < items.size(); ++start) {
+      if (visit_state[start] == 2) {
+        continue;
+      }
+      std::vector<std::size_t> path;
+      std::size_t current = start;
+      while (visit_state[current] == 0) {
+        visit_state[current] = 1;
+        path.push_back(current);
+        if (items[current].parent_id.empty()) {
+          break;
+        }
+        current = id_indexes.at(items[current].parent_id);
+      }
+      if (visit_state[current] == 1 && !items[current].parent_id.empty()) {
+        return rejectTreeItems(
+            validation_error, "tree_items contains a parent cycle involving '" + items[current].id + "'");
+      }
+      for (const std::size_t index : path) {
+        visit_state[index] = 2;
+      }
+    }
+
+    return items;
+  }
+
+  /// IDs absent from the current snapshot are intentionally preserved here;
+  /// pruning and its diagnostic are host-side. An empty array clears selection.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<std::string>> treeSelectedIds(std::string_view name) const {
+    return getStrictStringArray(name, "tree_selected_ids");
+  }
+
+  /// IDs absent from the current snapshot are intentionally preserved here;
+  /// pruning and its diagnostic are host-side. An empty array clears expansion.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::vector<std::string>> treeExpandedIds(std::string_view name) const {
+    return getStrictStringArray(name, "tree_expanded_ids");
+  }
+
+  /// Compatibility spelling retained for code that names the result through
+  /// WidgetDataView; the public result type itself lives at namespace scope.
+  /// @since 0.21.0
+  using TreeVisibilityUpdate = PJ::TreeVisibilityUpdate;
+
+  /// Tri-state visibility update: nullopt means absent/unchanged, Reset means
+  /// JSON null/remove the filter, and Filter means an ID array. A Filter with
+  /// no IDs is an active zero-match filter. Unknown IDs remain exposed for the
+  /// host to prune; the host also computes the visible ancestors of matches.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<TreeVisibilityUpdate> treeVisibilityUpdate(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto it = w->find("tree_visible_ids");
+    if (it == w->end()) {
+      return std::nullopt;
+    }
+    if (it->is_null()) {
+      return TreeVisibilityUpdate{TreeVisibilityUpdate::Mode::Reset, {}};
+    }
+    if (!it->is_array()) {
+      return std::nullopt;
+    }
+    auto ids = decodeStrictStringArray(*it);
+    if (!ids.has_value()) {
+      return std::nullopt;
+    }
+    TreeVisibilityUpdate update;
+    update.ids = std::move(*ids);
+    return update;
+  }
+
+  /// false selects single-selection mode; true selects extended selection.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<bool> treeMultiSelection(std::string_view name) const {
+    return getBool(name, "tree_multi_selection");
   }
 
   // --- QTableWidget ---
@@ -526,6 +763,115 @@ class WidgetDataView {
   }
 
   // --- File picker ---
+  /// Whether the widget contains the structured `file_picker` channel. Key
+  /// presence claims the channel even when its payload is malformed; call
+  /// filePickerOptions() to validate and decode it atomically.
+  /// @since 0.21.0
+  [[nodiscard]] bool isStructuredFilePicker(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    return w != nullptr && w->contains("file_picker");
+  }
+
+  /// Decode one complete structured picker request. Every field is required
+  /// and strictly typed. Filter IDs must be non-empty and unique, every filter
+  /// must carry at least one non-empty pattern, and a non-empty initially
+  /// selected ID must name one of those filters. Any failure rejects the whole
+  /// object; co-serialized legacy fields remain available to legacy accessors.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<FilePickerOptions> filePickerOptions(
+      std::string_view name, std::string* validation_error = nullptr) const {
+    if (validation_error != nullptr) {
+      validation_error->clear();
+    }
+    const nlohmann::json* w = widget(name);
+    if (w == nullptr) {
+      return std::nullopt;
+    }
+    auto picker_it = w->find("file_picker");
+    if (picker_it == w->end()) {
+      return std::nullopt;
+    }
+    if (!picker_it->is_object()) {
+      return rejectFilePickerOptions(validation_error, "file_picker must be an object");
+    }
+
+    FilePickerOptions options;
+    auto mode_it = picker_it->find("mode");
+    if (mode_it == picker_it->end() || !mode_it->is_string()) {
+      return rejectFilePickerOptions(validation_error, "file_picker.mode must be a string");
+    }
+    auto mode = filePickerModeFromWireValue(mode_it->get_ref<const std::string&>());
+    if (!mode.has_value()) {
+      return rejectFilePickerOptions(
+          validation_error, "file_picker.mode has invalid value '" + mode_it->get<std::string>() + "'");
+    }
+    options.mode = *mode;
+
+    if (!decodeRequiredString(*picker_it, "title", options.title) ||
+        !decodeRequiredString(*picker_it, "accept_label", options.accept_label) ||
+        !decodeRequiredString(*picker_it, "initial_directory", options.initial_directory) ||
+        !decodeRequiredString(*picker_it, "suggested_name", options.suggested_name) ||
+        !decodeRequiredString(*picker_it, "default_suffix", options.default_suffix) ||
+        !decodeRequiredString(*picker_it, "initially_selected_filter_id", options.initially_selected_filter_id)) {
+      return rejectFilePickerOptions(validation_error, "file_picker string fields must all be present and strings");
+    }
+
+    auto overwrite_it = picker_it->find("confirm_overwrite");
+    if (overwrite_it == picker_it->end() || !overwrite_it->is_boolean()) {
+      return rejectFilePickerOptions(validation_error, "file_picker.confirm_overwrite must be a boolean");
+    }
+    options.confirm_overwrite = overwrite_it->get<bool>();
+
+    auto filters_it = picker_it->find("filters");
+    if (filters_it == picker_it->end() || !filters_it->is_array()) {
+      return rejectFilePickerOptions(validation_error, "file_picker.filters must be an array");
+    }
+    std::unordered_map<std::string, bool> filter_ids;
+    filter_ids.reserve(filters_it->size());
+    options.filters.reserve(filters_it->size());
+    for (std::size_t filter_index = 0; filter_index < filters_it->size(); ++filter_index) {
+      const auto& encoded_filter = (*filters_it)[filter_index];
+      const std::string prefix = "file_picker.filters[" + std::to_string(filter_index) + "]";
+      if (!encoded_filter.is_object()) {
+        return rejectFilePickerOptions(validation_error, prefix + " must be an object");
+      }
+      FilePickerFilter filter;
+      if (!decodeRequiredString(encoded_filter, "id", filter.id) ||
+          !decodeRequiredString(encoded_filter, "label", filter.label)) {
+        return rejectFilePickerOptions(validation_error, prefix + ".id and .label must be strings");
+      }
+      if (filter.id.empty()) {
+        return rejectFilePickerOptions(validation_error, prefix + ".id must not be empty");
+      }
+      if (!filter_ids.emplace(filter.id, true).second) {
+        return rejectFilePickerOptions(
+            validation_error, "file_picker.filters contains duplicate id '" + filter.id + "'");
+      }
+      auto patterns_it = encoded_filter.find("patterns");
+      if (patterns_it == encoded_filter.end() || !patterns_it->is_array() || patterns_it->empty()) {
+        return rejectFilePickerOptions(validation_error, prefix + ".patterns must be a non-empty array");
+      }
+      filter.patterns.reserve(patterns_it->size());
+      for (std::size_t pattern_index = 0; pattern_index < patterns_it->size(); ++pattern_index) {
+        const auto& pattern = (*patterns_it)[pattern_index];
+        if (!pattern.is_string() || pattern.get_ref<const std::string&>().empty()) {
+          return rejectFilePickerOptions(
+              validation_error, prefix + ".patterns[" + std::to_string(pattern_index) + "] must be a non-empty string");
+        }
+        filter.patterns.push_back(pattern.get<std::string>());
+      }
+      options.filters.push_back(std::move(filter));
+    }
+
+    if (!options.initially_selected_filter_id.empty() &&
+        filter_ids.find(options.initially_selected_filter_id) == filter_ids.end()) {
+      return rejectFilePickerOptions(
+          validation_error, "file_picker.initially_selected_filter_id references missing filter '" +
+                                options.initially_selected_filter_id + "'");
+    }
+    return options;
+  }
+
   [[nodiscard]] bool isFilePicker(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
@@ -694,6 +1040,23 @@ class WidgetDataView {
   // --- QTabWidget ---
   [[nodiscard]] std::optional<int> tabIndex(std::string_view name) const {
     return getInt(name, "tab_index");
+  }
+
+  // --- QStackedWidget ---
+  /// Page objectName requested by WidgetData::setStackedPage. Applying the page
+  /// name instead of stackedIndex() when both are present is the host contract;
+  /// its binding behavior is covered by companion PJ4 host tests.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<std::string> stackedPage(std::string_view name) const {
+    return getString(name, "stacked_page");
+  }
+
+  /// Numeric page requested by WidgetData::setStackedIndex. Embedding hosts
+  /// must ignore this value when stackedPage() is also present; that application
+  /// priority is covered by companion PJ4 host tests.
+  /// @since 0.21.0
+  [[nodiscard]] std::optional<int> stackedIndex(std::string_view name) const {
+    return getInt(name, "stacked_index");
   }
 
   // --- Drop target ---
@@ -908,6 +1271,41 @@ class WidgetDataView {
     return std::nullopt;
   }
 
+  static bool decodeOptionalBool(const nlohmann::json& object, const char* key, bool& value) {
+    auto it = object.find(key);
+    if (it == object.end()) {
+      return true;
+    }
+    if (!it->is_boolean()) {
+      return false;
+    }
+    value = it->get<bool>();
+    return true;
+  }
+
+  static std::optional<std::vector<TreeItem>> rejectTreeItems(std::string* validation_error, std::string reason) {
+    if (validation_error != nullptr) {
+      *validation_error = std::move(reason);
+    }
+    return std::nullopt;
+  }
+
+  static std::optional<FilePickerOptions> rejectFilePickerOptions(std::string* validation_error, std::string reason) {
+    if (validation_error != nullptr) {
+      *validation_error = std::move(reason);
+    }
+    return std::nullopt;
+  }
+
+  static bool decodeRequiredString(const nlohmann::json& object, const char* key, std::string& value) {
+    auto it = object.find(key);
+    if (it == object.end() || !it->is_string()) {
+      return false;
+    }
+    value = it->get<std::string>();
+    return true;
+  }
+
   const nlohmann::json* widget(std::string_view name) const {
     auto it = data_.find(std::string(name));
     if (it == data_.end() || !it->is_object()) {
@@ -934,10 +1332,29 @@ class WidgetDataView {
       return std::nullopt;
     }
     auto it = w->find(field);
-    if (it == w->end() || !it->is_number_integer()) {
+    if (it == w->end()) {
       return std::nullopt;
     }
-    return it->get<int>();
+    return decodeInt(*it);
+  }
+
+  static std::optional<int> decodeInt(const nlohmann::json& encoded) {
+    if (encoded.is_number_unsigned()) {
+      const auto value = encoded.get<std::uint64_t>();
+      if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    if (encoded.is_number_integer()) {
+      const auto value = encoded.get<std::int64_t>();
+      if (value < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
+          value > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    return std::nullopt;
   }
 
   std::optional<bool> getBool(std::string_view name, const char* field) const {
@@ -981,6 +1398,33 @@ class WidgetDataView {
       }
     }
     return result;
+  }
+
+  static std::optional<std::vector<std::string>> decodeStrictStringArray(const nlohmann::json& encoded) {
+    if (!encoded.is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> result;
+    result.reserve(encoded.size());
+    for (const auto& item : encoded) {
+      if (!item.is_string()) {
+        return std::nullopt;
+      }
+      result.push_back(item.get<std::string>());
+    }
+    return result;
+  }
+
+  std::optional<std::vector<std::string>> getStrictStringArray(std::string_view name, const char* field) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find(field);
+    if (it == w->end()) {
+      return std::nullopt;
+    }
+    return decodeStrictStringArray(*it);
   }
 };
 

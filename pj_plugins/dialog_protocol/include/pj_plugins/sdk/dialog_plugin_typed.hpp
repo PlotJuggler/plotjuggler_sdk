@@ -134,10 +134,141 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// QStackedWidget: the current page changed. `page_object_name` is the
+  /// stable identity; `index` describes the widget's current layout. Kept at
+  /// the tail of the callback list so existing virtual slots retain their
+  /// positions.
+  /// @since 0.21.0
+  virtual bool onStackedPageChanged(
+      std::string_view /*widget_name*/, int /*index*/, std::string_view /*page_object_name*/) {
+    return false;
+  }
+
+  /// QTreeWidget: complete logical selected-ID set after a user change. The
+  /// set includes selected items hidden by the current visibility filter.
+  /// Appended after onStackedPageChanged so every older virtual keeps its slot.
+  /// @since 0.21.0
+  virtual bool onTreeSelectionChanged(std::string_view /*widget_name*/, const std::vector<std::string>& /*ids*/) {
+    return false;
+  }
+
+  /// QTreeWidget: stable item ID and activated column (keyboard or double-click).
+  /// @since 0.21.0
+  virtual bool onTreeItemActivated(std::string_view /*widget_name*/, std::string_view /*id*/, int /*column*/) {
+    return false;
+  }
+
+  /// QTreeWidget: stable item ID and its new expanded state.
+  /// @since 0.21.0
+  virtual bool onTreeExpansionChanged(std::string_view /*widget_name*/, std::string_view /*id*/, bool /*expanded*/) {
+    return false;
+  }
+
+  /// QTreeWidget: stable item ID and its new column-0 check state.
+  /// @since 0.21.0
+  virtual bool onTreeCheckStateChanged(
+      std::string_view /*widget_name*/, std::string_view /*id*/, TreeCheckState /*state*/) {
+    return false;
+  }
+
+  /// Structured picker outcome. The default bridge forwards the first path of
+  /// a Selected result exactly once to onFileSelected() or onFolderSelected(),
+  /// according to result.mode. Other statuses have no legacy callback and
+  /// return false. Override this new handler to consume the structured result
+  /// without a second legacy callback.
+  /// Appended after every tree callback so existing virtual slots retain their
+  /// positions.
+  /// @since 0.21.0
+  virtual bool onFilePickerResult(std::string_view widget_name, const FilePickerResult& result) {
+    if (result.status != FilePickerStatus::Selected || result.paths.empty()) {
+      return false;
+    }
+    if (result.mode == FilePickerMode::SelectDirectory) {
+      return onFolderSelected(widget_name, result.paths.front());
+    }
+    return onFileSelected(widget_name, result.paths.front());
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
+
+    // Normative dispatch ordering and fail-closed rules live in
+    // docs/dialog-sdk-reference.md. The structured picker key claims the event
+    // first; an optional legacy key must be mode-correct and path-consistent.
+    if (event.has("file_picker_result")) {
+      auto result = event.filePickerResult();
+      if (!result.has_value()) {
+        return false;
+      }
+      if (result->status == FilePickerStatus::Selected) {
+        auto legacy = detail::filePickerLegacySelection(*result);
+        if (!legacy.has_value()) {
+          return false;
+        }
+        const bool has_file = event.has("file_selected");
+        const bool has_folder = event.has("folder_selected");
+        if (has_file && has_folder) {
+          return false;
+        }
+        if (has_file || has_folder) {
+          const bool expects_folder = legacy->key == "folder_selected";
+          if (has_folder != expects_folder) {
+            return false;
+          }
+          const auto compatibility_path = expects_folder ? event.folderSelected() : event.fileSelected();
+          if (!compatibility_path.has_value() || *compatibility_path != legacy->path) {
+            return false;
+          }
+        }
+      } else if (event.has("file_selected") || event.has("folder_selected")) {
+        return false;
+      }
+      return onFilePickerResult(widget_name, *result);
+    }
+
+    // After picker results, tree keys claim the payload before stacked and
+    // legacy channels. See docs/dialog-sdk-reference.md for the normative
+    // mixed-event and fail-closed contract.
+    const bool has_tree_selection = event.has("tree_selection_changed");
+    const bool has_tree_activation = event.has("tree_item_activated");
+    const bool has_tree_expansion = event.has("tree_expansion_changed");
+    const bool has_tree_check_state = event.has("tree_check_state_changed");
+    const int tree_channel_count = static_cast<int>(has_tree_selection) + static_cast<int>(has_tree_activation) +
+                                   static_cast<int>(has_tree_expansion) + static_cast<int>(has_tree_check_state);
+    if (tree_channel_count != 0) {
+      if (tree_channel_count != 1 || event.raw().size() != 1) {
+        return false;
+      }
+      if (has_tree_selection) {
+        auto ids = event.treeSelectionChanged();
+        return ids.has_value() ? onTreeSelectionChanged(widget_name, *ids) : false;
+      }
+      if (has_tree_activation) {
+        auto activation = event.treeItemActivated();
+        return activation.has_value() ? onTreeItemActivated(widget_name, activation->id, activation->column) : false;
+      }
+      if (has_tree_expansion) {
+        auto expansion = event.treeExpansionChanged();
+        return expansion.has_value() ? onTreeExpansionChanged(widget_name, expansion->id, expansion->expanded) : false;
+      }
+      auto check_state = event.treeCheckStateChanged();
+      return check_state.has_value() ? onTreeCheckStateChanged(widget_name, check_state->id, check_state->state)
+                                     : false;
+    }
+
+    // Either stacked key claims the event after picker/tree and before legacy.
+    // The normative validation and fallthrough rules are documented in
+    // docs/dialog-sdk-reference.md.
+    if (event.has("stacked_index") || event.has("stacked_page")) {
+      const auto index = event.stackedIndex();
+      const auto page = event.stackedPage();
+      if (!index || *index < 0 || !page || page->empty()) {
+        return false;
+      }
+      return onStackedPageChanged(widget_name, *index, *page);
+    }
 
     if (auto v = event.chartViewChanged()) {
       return onChartViewChanged(widget_name, v->x_min, v->x_max, v->y_min, v->y_max);

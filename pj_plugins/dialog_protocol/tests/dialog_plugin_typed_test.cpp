@@ -6,6 +6,7 @@
 #include <pj_plugins/sdk/dialog_plugin_typed.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -74,7 +75,16 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   }
 
   bool onFileSelected(std::string_view widget_name, std::string_view path) override {
+    ++file_selected_calls;
     last_handler = "file_selected";
+    last_widget = std::string(widget_name);
+    last_text = std::string(path);
+    return true;
+  }
+
+  bool onFolderSelected(std::string_view widget_name, std::string_view path) override {
+    ++folder_selected_calls;
+    last_handler = "folder_selected";
     last_widget = std::string(widget_name);
     last_text = std::string(path);
     return true;
@@ -84,6 +94,58 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     last_handler = "tab_changed";
     last_widget = std::string(widget_name);
     last_int = index;
+    return true;
+  }
+
+  bool onStackedPageChanged(std::string_view widget_name, int index, std::string_view page_object_name) override {
+    ++stacked_calls;
+    last_handler = "stacked_page_changed";
+    last_widget = std::string(widget_name);
+    last_int = index;
+    last_page = std::string(page_object_name);
+    return true;
+  }
+
+  bool onTreeSelectionChanged(std::string_view widget_name, const std::vector<std::string>& ids) override {
+    ++tree_calls;
+    last_handler = "tree_selection_changed";
+    last_widget = std::string(widget_name);
+    last_strings = ids;
+    return true;
+  }
+
+  bool onTreeItemActivated(std::string_view widget_name, std::string_view id, int column) override {
+    ++tree_calls;
+    last_handler = "tree_item_activated";
+    last_widget = std::string(widget_name);
+    last_text = std::string(id);
+    last_int = column;
+    return true;
+  }
+
+  bool onTreeExpansionChanged(std::string_view widget_name, std::string_view id, bool expanded) override {
+    ++tree_calls;
+    last_handler = "tree_expansion_changed";
+    last_widget = std::string(widget_name);
+    last_text = std::string(id);
+    last_bool = expanded;
+    return true;
+  }
+
+  bool onTreeCheckStateChanged(std::string_view widget_name, std::string_view id, PJ::TreeCheckState state) override {
+    ++tree_calls;
+    last_handler = "tree_check_state_changed";
+    last_widget = std::string(widget_name);
+    last_text = std::string(id);
+    last_tree_check_state = state;
+    return true;
+  }
+
+  bool onFilePickerResult(std::string_view widget_name, const PJ::FilePickerResult& result) override {
+    ++file_picker_result_calls;
+    last_handler = "file_picker_result";
+    last_widget = std::string(widget_name);
+    last_file_picker_result = result;
     return true;
   }
 
@@ -123,9 +185,17 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   std::string last_text;
   std::string last_date_from;
   std::string last_date_to;
+  std::string last_page;
   int last_int = -1;
+  int stacked_calls = 0;
+  int tree_calls = 0;
+  int file_picker_result_calls = 0;
+  int file_selected_calls = 0;
+  int folder_selected_calls = 0;
   double last_double = -1.0;
   bool last_bool = false;
+  PJ::TreeCheckState last_tree_check_state = PJ::TreeCheckState::None;
+  PJ::FilePickerResult last_file_picker_result;
   std::vector<std::string> last_strings;
 
   void reset() {
@@ -134,11 +204,162 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
     last_text.clear();
     last_date_from.clear();
     last_date_to.clear();
+    last_page.clear();
     last_int = -1;
+    stacked_calls = 0;
+    tree_calls = 0;
+    file_picker_result_calls = 0;
+    file_selected_calls = 0;
+    folder_selected_calls = 0;
     last_double = -1.0;
     last_bool = false;
+    last_tree_check_state = PJ::TreeCheckState::None;
+    last_file_picker_result = {};
     last_strings.clear();
   }
+};
+
+/// Leaves stacked/tree callbacks at their defaults while recording every
+/// legacy typed callback, so fail-closed dispatch cannot hide a misroute.
+class LegacyHandlerRecordingPlugin : public PJ::DialogPluginTyped {
+ public:
+  std::string manifest() const override {
+    return R"({"name":"legacy-handler-recording-test"})";
+  }
+  std::string ui_content() const override {
+    return "<ui/>";
+  }
+  std::string widget_data() override {
+    return "{}";
+  }
+
+  bool onTextChanged(std::string_view /*widget_name*/, std::string_view /*text*/) override {
+    return recordLegacyCall();
+  }
+  bool onIndexChanged(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onToggled(std::string_view /*widget_name*/, bool /*checked*/) override {
+    return recordLegacyCall();
+  }
+  bool onValueChanged(std::string_view /*widget_name*/, int /*value*/) override {
+    return recordLegacyCall();
+  }
+  bool onValueChanged(std::string_view /*widget_name*/, double /*value*/) override {
+    return recordLegacyCall();
+  }
+  bool onSelectionChanged(std::string_view /*widget_name*/, const std::vector<std::string>& /*selected*/) override {
+    return recordLegacyCall();
+  }
+  bool onClicked(std::string_view /*widget_name*/) override {
+    return recordLegacyCall();
+  }
+  bool onFileSelected(std::string_view /*widget_name*/, std::string_view /*path*/) override {
+    return recordLegacyCall();
+  }
+  bool onFolderSelected(std::string_view /*widget_name*/, std::string_view /*path*/) override {
+    return recordLegacyCall();
+  }
+  bool onTabChanged(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onItemDoubleClicked(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onItemDeleteRequested(std::string_view /*widget_name*/, int /*index*/) override {
+    return recordLegacyCall();
+  }
+  bool onHeaderClicked(std::string_view /*widget_name*/, int /*section*/) override {
+    return recordLegacyCall();
+  }
+  bool onTableRadioSelected(std::string_view /*widget_name*/, int /*row*/) override {
+    return recordLegacyCall();
+  }
+  bool onCodeChanged(std::string_view /*widget_name*/, std::string_view /*code*/) override {
+    return recordLegacyCall();
+  }
+  bool onCodeChangedWithCursor(std::string_view /*widget_name*/, std::string_view /*code*/, int /*cursor*/) override {
+    return recordLegacyCall();
+  }
+  bool onItemsDropped(std::string_view /*widget_name*/, const std::vector<std::string>& /*items*/) override {
+    return recordLegacyCall();
+  }
+  bool onChartViewChanged(
+      std::string_view /*widget_name*/, double /*x_min*/, double /*x_max*/, double /*y_min*/,
+      double /*y_max*/) override {
+    return recordLegacyCall();
+  }
+  bool onRangeChanged(std::string_view /*widget_name*/, int /*lower*/, int /*upper*/) override {
+    return recordLegacyCall();
+  }
+  bool onMarkerTimelineChanged(
+      std::string_view /*widget_name*/, const std::vector<PJ::TimelineMark>& /*marks*/) override {
+    return recordLegacyCall();
+  }
+  bool onDateRangeChanged(
+      std::string_view /*widget_name*/, std::string_view /*from_iso*/, std::string_view /*to_iso*/) override {
+    return recordLegacyCall();
+  }
+  bool onDateTimeChanged(std::string_view /*widget_name*/, std::string_view /*iso8601*/) override {
+    return recordLegacyCall();
+  }
+
+  int legacy_calls = 0;
+
+ private:
+  bool recordLegacyCall() {
+    ++legacy_calls;
+    return true;
+  }
+};
+
+/// Uses the SDK's default onFilePickerResult bridge and records only the two
+/// legacy destinations, matching a typed plugin recompiled without adopting
+/// the new callback.
+class DefaultFilePickerBridgePlugin : public PJ::DialogPluginTyped {
+ public:
+  std::string manifest() const override {
+    return R"({"name":"default-file-picker-bridge-test"})";
+  }
+  std::string ui_content() const override {
+    return "<ui/>";
+  }
+  std::string widget_data() override {
+    return "{}";
+  }
+
+  bool onFileSelected(std::string_view widget_name, std::string_view path) override {
+    ++file_calls;
+    last_widget = std::string(widget_name);
+    last_path = std::string(path);
+    return true;
+  }
+
+  bool onFolderSelected(std::string_view widget_name, std::string_view path) override {
+    ++folder_calls;
+    last_widget = std::string(widget_name);
+    last_path = std::string(path);
+    return true;
+  }
+
+  int file_calls = 0;
+  int folder_calls = 0;
+  std::string last_widget;
+  std::string last_path;
+};
+
+/// Observes every structured callback, then explicitly delegates to the SDK
+/// default so non-selected status tests can prove that no legacy callback runs.
+class DelegatingFilePickerBridgePlugin : public DefaultFilePickerBridgePlugin {
+ public:
+  bool onFilePickerResult(std::string_view widget_name, const PJ::FilePickerResult& result) override {
+    ++result_calls;
+    last_status = result.status;
+    return PJ::DialogPluginTyped::onFilePickerResult(widget_name, result);
+  }
+
+  int result_calls = 0;
+  PJ::FilePickerStatus last_status = PJ::FilePickerStatus::Selected;
 };
 
 // Helper: call the base class on_widget_event through the public interface.
@@ -205,6 +426,119 @@ TEST_F(TypedDispatchTest, FileSelected) {
   EXPECT_EQ(plugin_.last_text, "/tmp/data.csv");
 }
 
+TEST_F(TypedDispatchTest, FolderSelectedLegacyOnlyStillDispatches) {
+  EXPECT_TRUE(dispatch(plugin_, "folder_btn", R"({"folder_selected": "/tmp/data"})"));
+  EXPECT_EQ(plugin_.last_handler, "folder_selected");
+  EXPECT_EQ(plugin_.last_text, "/tmp/data");
+  EXPECT_EQ(plugin_.folder_selected_calls, 1);
+  EXPECT_EQ(plugin_.file_picker_result_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, OverriddenFilePickerResultGetsExactlyOneNewCallbackAndNoLegacyCallback) {
+  EXPECT_TRUE(dispatch(
+      plugin_, "bags",
+      R"({"file_picker_result":{"status":"selected","mode":"open_files","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""},"file_selected":"/a.mcap"})"));
+  EXPECT_EQ(plugin_.file_picker_result_calls, 1);
+  EXPECT_EQ(plugin_.file_selected_calls, 0);
+  EXPECT_EQ(plugin_.folder_selected_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "file_picker_result");
+  EXPECT_EQ(plugin_.last_widget, "bags");
+  EXPECT_EQ(plugin_.last_file_picker_result.status, PJ::FilePickerStatus::Selected);
+  EXPECT_EQ(plugin_.last_file_picker_result.mode, PJ::FilePickerMode::OpenFiles);
+  EXPECT_EQ(plugin_.last_file_picker_result.paths, (std::vector<std::string>{"/a.mcap", "/b.mcap"}));
+}
+
+TEST(TypedDispatchFilePickerBridgeTest, DefaultHandlerForwardsFirstFilePathExactlyOnce) {
+  DefaultFilePickerBridgePlugin plugin;
+  EXPECT_TRUE(dispatch(
+      plugin, "bags",
+      R"({"file_picker_result":{"status":"selected","mode":"open_files","paths":["/a.mcap","/b.mcap"],"display_names":["a.mcap","b.mcap"],"selected_filter_id":"bags","error":""}})"));
+  EXPECT_EQ(plugin.file_calls, 1);
+  EXPECT_EQ(plugin.folder_calls, 0);
+  EXPECT_EQ(plugin.last_widget, "bags");
+  EXPECT_EQ(plugin.last_path, "/a.mcap");
+}
+
+TEST(TypedDispatchFilePickerBridgeTest, DefaultHandlerForwardsDirectoryPathExactlyOnce) {
+  DefaultFilePickerBridgePlugin plugin;
+  EXPECT_TRUE(dispatch(
+      plugin, "folder",
+      R"({"file_picker_result":{"status":"selected","mode":"select_directory","paths":["/data"],"display_names":["data"],"selected_filter_id":"","error":""}})"));
+  EXPECT_EQ(plugin.file_calls, 0);
+  EXPECT_EQ(plugin.folder_calls, 1);
+  EXPECT_EQ(plugin.last_widget, "folder");
+  EXPECT_EQ(plugin.last_path, "/data");
+}
+
+TEST(TypedDispatchFilePickerBridgeTest, NonSelectedStatusesReachNewHandlerButDoNotInvokeLegacyHandlers) {
+  DelegatingFilePickerBridgePlugin plugin;
+  const std::vector<std::pair<std::string, PJ::FilePickerStatus>> cases = {
+      {R"({"file_picker_result":{"status":"cancelled","mode":"open_file","paths":[],"display_names":[],"selected_filter_id":"","error":""}})",
+       PJ::FilePickerStatus::Cancelled},
+      {R"({"file_picker_result":{"status":"unsupported","mode":"select_directory","paths":[],"display_names":[],"selected_filter_id":"","error":"not available"}})",
+       PJ::FilePickerStatus::Unsupported},
+      {R"({"file_picker_result":{"status":"error","mode":"save_file","paths":[],"display_names":[],"selected_filter_id":"","error":"failed"}})",
+       PJ::FilePickerStatus::Error},
+  };
+  for (const auto& [json, status] : cases) {
+    SCOPED_TRACE(json);
+    EXPECT_FALSE(dispatch(plugin, "picker", json));
+    EXPECT_EQ(plugin.last_status, status);
+  }
+  EXPECT_EQ(plugin.result_calls, 3);
+  EXPECT_EQ(plugin.file_calls, 0);
+  EXPECT_EQ(plugin.folder_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, FilePickerResultToleratesUnknownAdditionalKeys) {
+  EXPECT_TRUE(dispatch(
+      plugin_, "picker",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"file_selected":"/new","future_metadata":{"revision":2}})"));
+  EXPECT_EQ(plugin_.file_picker_result_calls, 1);
+  EXPECT_EQ(plugin_.file_selected_calls, 0);
+  EXPECT_EQ(plugin_.last_file_picker_result.paths, (std::vector<std::string>{"/new"}));
+}
+
+TEST_F(TypedDispatchTest, FilePickerResultRejectsModeIncorrectOrAmbiguousLegacyKeys) {
+  const std::vector<std::string> malformed = {
+      R"({"file_picker_result":{"status":"selected","mode":"select_directory","paths":["/new"]},"file_selected":"/new"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"folder_selected":"/new"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"file_selected":"/new","folder_selected":"/new"})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    plugin_.reset();
+    EXPECT_FALSE(dispatch(plugin_, "picker", json));
+    EXPECT_EQ(plugin_.file_picker_result_calls, 0);
+    EXPECT_EQ(plugin_.file_selected_calls, 0);
+    EXPECT_EQ(plugin_.folder_selected_calls, 0);
+    EXPECT_TRUE(plugin_.last_handler.empty());
+  }
+}
+
+TEST_F(TypedDispatchTest, FilePickerResultMalformedOrMixedPayloadsFailClosedWithoutFallthrough) {
+  const std::vector<std::string> malformed = {
+      R"({"file_picker_result":17,"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","paths":["/new"]},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":[]},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"file_selected":"/legacy"})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/new"]},"folder_selected":17})",
+      R"({"file_picker_result":{"status":"broken","mode":"open_file","paths":[]},"stacked_index":2,"stacked_page":"legacy"})",
+      R"({"file_picker_result":{"status":"cancelled","mode":"open_file","paths":[]},"file_selected":"/legacy"})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    plugin_.reset();
+    EXPECT_FALSE(dispatch(plugin_, "picker", json));
+    EXPECT_EQ(plugin_.file_picker_result_calls, 0);
+    EXPECT_EQ(plugin_.file_selected_calls, 0);
+    EXPECT_EQ(plugin_.folder_selected_calls, 0);
+    EXPECT_EQ(plugin_.tree_calls, 0);
+    EXPECT_EQ(plugin_.stacked_calls, 0);
+    EXPECT_TRUE(plugin_.last_handler.empty());
+  }
+}
+
 TEST_F(TypedDispatchTest, SelectionChanged) {
   EXPECT_TRUE(dispatch(plugin_, "list", R"({"selected_items": ["a", "b"]})"));
   EXPECT_EQ(plugin_.last_handler, "selection_changed");
@@ -217,6 +551,142 @@ TEST_F(TypedDispatchTest, TabChanged) {
   EXPECT_TRUE(dispatch(plugin_, "tabs", R"({"tab_index": 2})"));
   EXPECT_EQ(plugin_.last_handler, "tab_changed");
   EXPECT_EQ(plugin_.last_int, 2);
+}
+
+TEST_F(TypedDispatchTest, StackedPageChangedFiresExactlyOnceWithBothValues) {
+  EXPECT_TRUE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "advanced_page"})"));
+  EXPECT_EQ(plugin_.stacked_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "stacked_page_changed");
+  EXPECT_EQ(plugin_.last_widget, "configuration_stack");
+  EXPECT_EQ(plugin_.last_int, 2);
+  EXPECT_EQ(plugin_.last_page, "advanced_page");
+}
+
+TEST_F(TypedDispatchTest, TreeSelectionChangedDispatchesExactlyOnceWithCompleteLogicalSet) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_selection_changed":["visible","filtered-out"]})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_selection_changed");
+  EXPECT_EQ(plugin_.last_widget, "tree");
+  EXPECT_EQ(plugin_.last_strings, (std::vector<std::string>{"visible", "filtered-out"}));
+}
+
+TEST_F(TypedDispatchTest, TreeItemActivatedDispatchesExactlyOnce) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_item_activated":{"id":"imu","column":1}})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_item_activated");
+  EXPECT_EQ(plugin_.last_widget, "tree");
+  EXPECT_EQ(plugin_.last_text, "imu");
+  EXPECT_EQ(plugin_.last_int, 1);
+}
+
+TEST_F(TypedDispatchTest, TreeExpansionChangedDispatchesExactlyOnce) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_expansion_changed":{"id":"sensors","expanded":true}})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_expansion_changed");
+  EXPECT_EQ(plugin_.last_text, "sensors");
+  EXPECT_TRUE(plugin_.last_bool);
+}
+
+TEST_F(TypedDispatchTest, TreeCheckStateChangedDispatchesExactlyOnce) {
+  EXPECT_TRUE(dispatch(plugin_, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"checked"}})"));
+  EXPECT_EQ(plugin_.tree_calls, 1);
+  EXPECT_EQ(plugin_.last_handler, "tree_check_state_changed");
+  EXPECT_EQ(plugin_.last_text, "imu");
+  EXPECT_EQ(plugin_.last_tree_check_state, PJ::TreeCheckState::Checked);
+}
+
+TEST_F(TypedDispatchTest, NonTreeEventsNeverTouchTreeCallbacks) {
+  EXPECT_TRUE(dispatch(plugin_, "list", R"({"selected_items":["a"]})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "selection_changed");
+
+  plugin_.reset();
+  EXPECT_TRUE(dispatch(plugin_, "tabs", R"({"tab_index":2})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "tab_changed");
+
+  plugin_.reset();
+  EXPECT_TRUE(dispatch(plugin_, "combo", R"({"current_index":3})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.last_handler, "index_changed");
+}
+
+TEST(TypedDispatchTreeFailClosedTest, MalformedAndMixedTreePayloadsInvokeNoOtherHandler) {
+  LegacyHandlerRecordingPlugin plugin;
+  EXPECT_FALSE(dispatch(plugin, "tree", R"({"tree_selection_changed":["ok",2],"text":"legacy"})"));
+  EXPECT_FALSE(dispatch(plugin, "tree", R"({"tree_item_activated":{"id":"imu"},"clicked":true})"));
+  EXPECT_FALSE(
+      dispatch(plugin, "tree", R"({"tree_expansion_changed":{"id":"sensors","expanded":"yes"},"current_index":2})"));
+  EXPECT_FALSE(
+      dispatch(plugin, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"partial"},"checked":true})"));
+  EXPECT_FALSE(
+      dispatch(plugin, "tree", R"({"tree_selection_changed":["imu"],"tree_item_activated":{"id":"imu","column":0}})"));
+  EXPECT_FALSE(dispatch(
+      plugin, "tree",
+      R"({"tree_item_activated":{"id":"imu","column":0},"stacked_index":2,"stacked_page":"advanced"})"));
+  EXPECT_EQ(plugin.legacy_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, MalformedTreePayloadsInvokeNoTreeCallback) {
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_selection_changed":"imu"})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_item_activated":{"id":"imu","column":-1}})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_item_activated":{"id":"imu","column":4294967296}})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_expansion_changed":{"id":"","expanded":true}})"));
+  EXPECT_FALSE(dispatch(plugin_, "tree", R"({"tree_check_state_changed":{"id":"imu","state":"partial"}})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_TRUE(plugin_.last_handler.empty());
+}
+
+TEST_F(TypedDispatchTest, CombinedTreeAndStackedPayloadInvokesNeitherCallback) {
+  EXPECT_FALSE(dispatch(
+      plugin_, "tree",
+      R"({"tree_item_activated":{"id":"imu","column":0},"stacked_index":2,"stacked_page":"advanced"})"));
+  EXPECT_EQ(plugin_.tree_calls, 0);
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+  EXPECT_TRUE(plugin_.last_handler.empty());
+}
+
+TEST_F(TypedDispatchTest, TabAndComboEventsDoNotTriggerStackedPageHandler) {
+  EXPECT_TRUE(dispatch(plugin_, "tabs", R"({"tab_index": 1})"));
+  EXPECT_EQ(plugin_.last_handler, "tab_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+
+  plugin_.reset();
+  EXPECT_TRUE(dispatch(plugin_, "combo", R"({"current_index": 3})"));
+  EXPECT_EQ(plugin_.last_handler, "index_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, PartialStackedPayloadsFailClosedBeforeLegacyChannels) {
+  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2, "current_index": 7})"));
+  EXPECT_TRUE(plugin_.last_handler.empty());
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+
+  plugin_.reset();
+  EXPECT_FALSE(dispatch(plugin_, "configuration_stack", R"({"stacked_page": "advanced_page", "text": "x"})"));
+  EXPECT_TRUE(plugin_.last_handler.empty());
+  EXPECT_EQ(plugin_.stacked_calls, 0);
+}
+
+TEST_F(TypedDispatchTest, InvalidStackedStateFailsClosedBeforeLegacyChannels) {
+  const std::vector<std::string> malformed = {
+      R"({"stacked_index":4294967296,"stacked_page":"advanced_page","text":"legacy"})",
+      R"({"stacked_index":-1,"stacked_page":"advanced_page","text":"legacy"})",
+      R"({"stacked_index":2,"stacked_page":"","text":"legacy"})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    plugin_.reset();
+    EXPECT_FALSE(dispatch(plugin_, "configuration_stack", json));
+    EXPECT_EQ(plugin_.stacked_calls, 0);
+    EXPECT_TRUE(plugin_.last_handler.empty());
+  }
+}
+
+TEST(TypedDispatchDefaultHandlerTest, DefaultStackedHandlerInvokesNoLegacyHandler) {
+  LegacyHandlerRecordingPlugin plugin;
+  EXPECT_FALSE(dispatch(plugin, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "p", "text": "x"})"));
+  EXPECT_EQ(plugin.legacy_calls, 0);
 }
 
 TEST_F(TypedDispatchTest, DateRangeChanged) {
@@ -269,6 +739,24 @@ TEST_F(TypedDispatchTest, CurrentIndexTakesPriorityOverValue) {
   // current_index is checked before value
   EXPECT_TRUE(dispatch(plugin_, "w", R"({"current_index": 1, "value": 5})"));
   EXPECT_EQ(plugin_.last_handler, "index_changed");
+}
+
+TEST_F(TypedDispatchTest, StackedPagePairClaimsEventBeforeText) {
+  EXPECT_TRUE(dispatch(plugin_, "configuration_stack", R"({"stacked_index": 2, "stacked_page": "p", "text": "x"})"));
+  EXPECT_EQ(plugin_.last_handler, "stacked_page_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 1);
+  EXPECT_EQ(plugin_.last_int, 2);
+  EXPECT_EQ(plugin_.last_page, "p");
+}
+
+TEST_F(TypedDispatchTest, StackedPagePairTakesPriorityOverScalarIndexChannels) {
+  EXPECT_TRUE(dispatch(
+      plugin_, "configuration_stack",
+      R"({"stacked_index": 2, "stacked_page": "advanced_page", "current_index": 7, "tab_index": 8})"));
+  EXPECT_EQ(plugin_.last_handler, "stacked_page_changed");
+  EXPECT_EQ(plugin_.stacked_calls, 1);
+  EXPECT_EQ(plugin_.last_int, 2);
+  EXPECT_EQ(plugin_.last_page, "advanced_page");
 }
 
 TEST_F(TypedDispatchTest, CodeChangedCarriesCursorToTypedHandler) {

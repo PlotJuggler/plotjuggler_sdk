@@ -5,6 +5,140 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.21.0]
 
+### Feature: dialog host-information tail slot (MINOR)
+
+Dialogs can now observe the embedding host's SDK version, PlotJuggler version,
+and runtime dialog capabilities through a backward-compatible optional vtable
+tail slot:
+
+- New C ABI types `PJ_dialog_host_capability_t` (width-pinned) and appendable
+  `PJ_dialog_host_info_t`, whose string views are call-duration-only.
+- Optional `PJ_dialog_vtable_t::set_host_info` after `manifest_json`.
+  `PJ_DIALOG_PROTOCOL_VERSION` remains 4, `PJ_DIALOG_MIN_VTABLE_SIZE` remains
+  pinned to the required prefix, and old vtables are accepted unchanged.
+- `DialogHandle::setHostInfo()` owns the runtime `PJ_HAS_TAIL_SLOT` gate and
+  returns an explicit `Unsupported`/`Accepted`/`Rejected` result. Unsupported
+  slots are never called and leave the error output untouched; rejection may
+  optionally carry a plugin error.
+- `DialogPluginBase` copies host information, exposes protected `hostInfo()` and
+  typed `DialogHostCapability` checks, accepts appendable partial host-info
+  structs with zero/empty defaults, and uses last-writer-wins replacement after
+  successful deliveries. Empty `hostInfo()` is the fallback signal for a
+  pre-0.21 or non-conforming embedding host.
+
+The generated SDK version header and `PJ_SDK_HAS_DIALOG_HOST_INFO` feature-test
+macro are deferred to their separate 0.21 package; no `PJ_SDK_HAS_*` macro is
+introduced here. PlotJuggler host wiring also lands separately.
+
+### Feature: QStackedWidget dialog SDK binding (MINOR)
+
+Dialogs can now describe and observe `QStackedWidget` state through additive
+JSON, without changing the dialog C ABI, `PJ_dialog_vtable_t`, or protocol
+version:
+
+- `WidgetData::setStackedPage()` and `setStackedIndex()` emit `stacked_page`
+  and `stacked_index`; the direct child page's Qt `objectName` is the stable
+  identity and wins when both keys are present. Invalid empty/unknown names and
+  negative/out-of-range indexes are host warning/no-ops.
+- `WidgetDataView` exposes both optional representations independently and
+  rejects integer values outside `INT_MIN..INT_MAX` without narrowing.
+- The host-side `WidgetEventBuilder::stackedPageChanged()` always emits both
+  representations; `WidgetEvent` parses either key defensively, and
+  `DialogPluginTyped::onStackedPageChanged()` dispatches the complete pair once;
+  negative indexes and empty page names fail closed.
+
+This package is the SDK surface only; the Qt application, signal blocking, and
+signal connection land in the companion PlotJuggler host package. No
+`PJ_SDK_HAS_*` macro is introduced here.
+
+### Feature: QTreeWidget dialog SDK binding (MINOR)
+
+Dialogs can now publish and observe identity-stable hierarchical trees through
+additive JSON, without changing the dialog C ABI, C vtable, protocol version, or
+introducing a `PJ_SDK_HAS_*` macro:
+
+- New `TreeCheckState`, `TreeCell`, and `TreeItem` SDK types. Items use stable
+  plugin-owned string IDs in a flat `id` / `parent_id` snapshot; array order is
+  preserved as unsorted sibling order. Cells carry display text, optional typed
+  `NumericValue` sort keys, tooltip, and a host semantic icon name. V1 check
+  state applies to column 0.
+- `WidgetData` setters cover headers, complete snapshots, logical selected and
+  expanded IDs, tri-state ID visibility (array filter, empty zero-match filter,
+  JSON-null reset), and single/multi selection mode. Every state channel is an
+  independent additive update.
+- `WidgetDataView::treeItems()` validates a complete snapshot before returning
+  it and rejects empty/duplicate IDs, missing parents, self/longer cycles,
+  malformed cells/sort keys, and invalid check-state strings atomically. It
+  follows the strict table-delta `nullopt` rejection precedent and adds an
+  optional validation-error output for host diagnostics. Unknown state IDs are
+  left for host-side pruning. `TreeVisibilityUpdate` preserves all three states.
+  Tree header/ID arrays also reject their whole channel on any non-string member,
+  so malformed input cannot be misread as a destructive empty update.
+- Four distinct host event objects cover complete logical selection, item
+  activation, expansion, and check-state changes. `DialogPluginTyped` appends
+  the matching virtual callbacks after the stacked callback and claims tree
+  keys before all older channels: exactly one well-formed tree event dispatches;
+  malformed or mixed tree payloads fail closed without fallthrough. Activation
+  columns are decoded losslessly and accepted only in `0..INT_MAX`.
+- `may_have_children` supports host-private lazy placeholders followed by a
+  later complete snapshot. Tree deltas remain deferred; a future delta must
+  reuse the table protocol's fresh sequence and all-or-nothing rules.
+
+This package is the Qt-free SDK surface only. QTreeWidget reconciliation,
+placeholders, signal blocking, selection preservation, ancestor-closure
+filtering, and typed sorting land in the companion PlotJuggler host package.
+
+### Feature: structured file-picker dialog SDK binding (MINOR)
+
+Dialogs can now request and observe structured single/multiple-open, save, and
+directory pickers through additive JSON, without changing the dialog C ABI,
+protocol version, or introducing a `PJ_SDK_HAS_*` macro:
+
+- New `FilePickerMode`, `FilePickerFilter`, `FilePickerOptions`,
+  `FilePickerStatus`, and `FilePickerResult` types with documented canonical
+  wire strings. Stable filter IDs survive localized or normalized native filter
+  text.
+- `WidgetData::setFilePicker(..., FilePickerOptions)` emits the complete
+  structured object plus the closest legacy action, title, Qt filter string,
+  and save suffix. Multiple-open deliberately degrades to legacy single-open;
+  directory mode degrades to the legacy folder action. Existing picker
+  overloads remain unchanged.
+- The writer preserves caller input, following tree/stacked precedent;
+  `WidgetDataView::filePickerOptions()` atomically rejects invalid modes,
+  empty/duplicate filter IDs, missing selected IDs, empty patterns, and
+  malformed fields while legacy accessors continue to read the co-serialized
+  fields.
+- Structured result events carry their canonical request mode and preserve
+  every selected path, browser display name, selected filter ID, and error.
+  Status, mode, and paths are required; absent display names, selected filter
+  ID, and error default to empty. Fully valid Selected results co-emit the first
+  mode-correct legacy path; malformed Selected, cancelled, unsupported, and
+  error results do not. A binary fixture
+  verifies the previous dispatcher sees selected compatibility keys and
+  remains silent for other statuses.
+- `DialogPluginTyped::onFilePickerResult()` is appended after the tree
+  callbacks. The structured key is authoritative: its legacy co-key is
+  optional, a present co-key must match both the result mode and first path,
+  and both legacy keys are forbidden. Unknown additive keys are tolerated.
+  Malformed or mismatched events fail closed. The normative cross-channel
+  priority is documented in `docs/dialog-sdk-reference.md`. The default
+  handler routes from result mode and forwards the first selected path exactly
+  once to the matching legacy callback; an override receives only the
+  structured callback.
+
+The shared picker controller, staged-file lease ownership, and browser/WASM
+host implementation remain companion PlotJuggler work.
+
+### Example: canonical SDK 0.21 dialog controls
+
+The installed-SDK consumer now builds one Qt-free `DialogPluginTyped` example
+that composes the 0.21 dialog additions: graceful host-info fallback,
+object-name-keyed stacked pages, a stable-ID topic tree with independent
+visibility filtering and lazy snapshot publication, and a capability-gated
+structured multi-file picker with distinct selected/cancelled/unsupported
+handling. Protocol-level tests drive the example through `DialogHandle`,
+`WidgetDataView`, and `WidgetEventBuilder`, including static-manifest and tree
+validation checks.
 ### Feature: canonical object-topic renderer metadata (MINOR)
 
 - Added `PJ::sdk::ObjectTopicMetadataBuilder`. Its typed

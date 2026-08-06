@@ -14,6 +14,8 @@
 #include <vector>
 
 #include "pj_base/types.hpp"
+#include "pj_plugins/sdk/file_picker_types.hpp"
+#include "pj_plugins/sdk/tree_types.hpp"
 
 namespace PJ {
 
@@ -480,6 +482,88 @@ class WidgetData {
     return *this;
   }
 
+  // --- QTreeWidget ---
+
+  /// Set the tree's column labels. This channel is independent of tree_items.
+  /// @since 0.21.0
+  WidgetData& setTreeHeaders(std::string_view name, const std::vector<std::string>& headers) {
+    entry(name)["tree_headers"] = headers;
+    return *this;
+  }
+
+  /// Publish a complete flat, keyed tree snapshot. Array order is preserved
+  /// and defines insertion order among items with the same parent_id. V1
+  /// check_state applies to column 0 only.
+  /// @since 0.21.0
+  WidgetData& setTreeItems(std::string_view name, const std::vector<TreeItem>& items) {
+    nlohmann::json encoded = nlohmann::json::array();
+    for (const auto& item : items) {
+      nlohmann::json cells = nlohmann::json::array();
+      for (const auto& cell : item.cells) {
+        nlohmann::json encoded_cell = {{"text", cell.text}};
+        if (cell.sort_value.has_value()) {
+          std::visit([&encoded_cell](auto value) { encoded_cell["sort_value"] = value; }, *cell.sort_value);
+        }
+        if (!cell.tooltip.empty()) {
+          encoded_cell["tooltip"] = cell.tooltip;
+        }
+        if (!cell.icon.empty()) {
+          encoded_cell["icon"] = cell.icon;
+        }
+        cells.push_back(std::move(encoded_cell));
+      }
+      encoded.push_back(
+          {{"id", item.id},
+           {"parent_id", item.parent_id},
+           {"cells", std::move(cells)},
+           {"enabled", item.enabled},
+           {"selectable", item.selectable},
+           {"check_state", treeCheckStateWireValue(item.check_state)},
+           {"may_have_children", item.may_have_children}});
+    }
+    entry(name)["tree_items"] = std::move(encoded);
+    return *this;
+  }
+
+  /// Replace the complete logical selection. An empty array clears it. IDs
+  /// not present in the current snapshot remain on the wire for host pruning.
+  /// @since 0.21.0
+  WidgetData& setTreeSelectedIds(std::string_view name, const std::vector<std::string>& ids) {
+    entry(name)["tree_selected_ids"] = ids;
+    return *this;
+  }
+
+  /// Replace the expanded-ID set. An empty array collapses every public item.
+  /// IDs not present in the current snapshot remain on the wire for host pruning.
+  /// @since 0.21.0
+  WidgetData& setTreeExpandedIds(std::string_view name, const std::vector<std::string>& ids) {
+    entry(name)["tree_expanded_ids"] = ids;
+    return *this;
+  }
+
+  /// Install an ID-keyed visibility filter. An empty array is an active
+  /// zero-match filter; use clearTreeVisibleIds() to remove the filter.
+  /// @since 0.21.0
+  WidgetData& setTreeVisibleIds(std::string_view name, const std::vector<std::string>& ids) {
+    entry(name)["tree_visible_ids"] = ids;
+    return *this;
+  }
+
+  /// Remove the active ID-keyed visibility filter (JSON null), restoring
+  /// visible-by-default behavior for current and future tree items.
+  /// @since 0.21.0
+  WidgetData& clearTreeVisibleIds(std::string_view name) {
+    entry(name)["tree_visible_ids"] = nullptr;
+    return *this;
+  }
+
+  /// Select single (false) or extended multi-selection (true) behavior.
+  /// @since 0.21.0
+  WidgetData& setTreeSelectionMode(std::string_view name, bool multi) {
+    entry(name)["tree_multi_selection"] = multi;
+    return *this;
+  }
+
   // --- Chart (QFrame used as chart container) ---
 
   /// Set chart series data on a QFrame widget. The host creates or updates a Qwt
@@ -625,6 +709,70 @@ class WidgetData {
     e["action"] = "file_picker";
     e["filter"] = filter;
     e["title"] = title;
+    return *this;
+  }
+
+  /// Turn a QPushButton into a structured picker while co-serializing the
+  /// closest legacy action. OpenFiles deliberately degrades to the old
+  /// single-open action. Filters become a Qt filter string such as
+  /// "Images (*.png *.jpg);;All files (*)" for older hosts.
+  ///
+  /// Like the tree and stacked writers, this setter is a lossless serializer:
+  /// it does not throw or repair invalid IDs/patterns. WidgetDataView validates
+  /// the complete file_picker object atomically and reports a diagnostic.
+  /// @since 0.21.0
+  WidgetData& setFilePicker(std::string_view name, std::string_view button_text, const FilePickerOptions& options) {
+    nlohmann::json encoded_filters = nlohmann::json::array();
+    std::string legacy_filter;
+    for (const auto& filter : options.filters) {
+      encoded_filters.push_back({{"id", filter.id}, {"label", filter.label}, {"patterns", filter.patterns}});
+      if (!legacy_filter.empty()) {
+        legacy_filter += ";;";
+      }
+      legacy_filter += filter.label;
+      legacy_filter += " (";
+      for (std::size_t index = 0; index < filter.patterns.size(); ++index) {
+        if (index != 0) {
+          legacy_filter += ' ';
+        }
+        legacy_filter += filter.patterns[index];
+      }
+      legacy_filter += ')';
+    }
+
+    auto& e = entry(name);
+    e["button_text"] = button_text;
+    e["file_picker"] = {
+        {"mode", filePickerModeWireValue(options.mode)},
+        {"title", options.title},
+        {"accept_label", options.accept_label},
+        {"initial_directory", options.initial_directory},
+        {"suggested_name", options.suggested_name},
+        {"default_suffix", options.default_suffix},
+        {"filters", std::move(encoded_filters)},
+        {"initially_selected_filter_id", options.initially_selected_filter_id},
+        {"confirm_overwrite", options.confirm_overwrite},
+    };
+    e["title"] = options.title;
+
+    switch (options.mode) {
+      case FilePickerMode::OpenFile:
+      case FilePickerMode::OpenFiles:
+        e["action"] = "file_picker";
+        e["filter"] = legacy_filter;
+        e.erase("default_suffix");
+        break;
+      case FilePickerMode::SaveFile:
+        e["action"] = "save_file_picker";
+        e["filter"] = legacy_filter;
+        e["default_suffix"] = options.default_suffix;
+        break;
+      case FilePickerMode::SelectDirectory:
+        e["action"] = "folder_picker";
+        e.erase("filter");
+        e.erase("default_suffix");
+        break;
+    }
     return *this;
   }
 
@@ -790,6 +938,28 @@ class WidgetData {
   // --- QTabWidget ---
   WidgetData& setTabIndex(std::string_view name, int index) {
     entry(name)["tab_index"] = index;
+    return *this;
+  }
+
+  // --- QStackedWidget ---
+
+  /// Select a page by its direct child widget's Qt objectName, which remains
+  /// stable when pages are reordered. When both stacked_page and stacked_index
+  /// are present, stacked_page wins. An empty name is invalid; it is serialized
+  /// so the host can warn and leave the current page unchanged.
+  /// @since 0.21.0
+  WidgetData& setStackedPage(std::string_view name, std::string_view page_object_name) {
+    entry(name)["stacked_page"] = std::string(page_object_name);
+    return *this;
+  }
+
+  /// Select a page by its current numeric index. Prefer setStackedPage for
+  /// persisted state: stacked_page wins when both keys are present. A negative
+  /// index is serialized for host validation and leaves the current page
+  /// unchanged.
+  /// @since 0.21.0
+  WidgetData& setStackedIndex(std::string_view name, int index) {
+    entry(name)["stacked_index"] = index;
     return *this;
   }
 

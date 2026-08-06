@@ -95,6 +95,16 @@ add_library(missing_dialog_required_slots_plugin SHARED tests/missing_dialog_req
 target_compile_options(missing_dialog_required_slots_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(missing_dialog_required_slots_plugin PRIVATE pj_dialog_protocol)
 
+add_library(old_dialog_vtable_plugin SHARED tests/old_dialog_vtable_plugin.cpp)
+target_compile_options(old_dialog_vtable_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(old_dialog_vtable_plugin PRIVATE pj_dialog_protocol)
+
+# Binary fixture whose event reader predates file_picker_result and therefore
+# observes only the co-serialized file_selected/folder_selected compatibility key.
+add_library(old_file_picker_dispatcher_plugin SHARED tests/old_file_picker_dispatcher_plugin.cpp)
+target_compile_options(old_file_picker_dispatcher_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(old_file_picker_dispatcher_plugin PRIVATE pj_dialog_protocol nlohmann_json::nlohmann_json)
+
 # --- Tests ---
 
 enable_testing()
@@ -102,9 +112,11 @@ enable_testing()
 set(PJ_PLUGIN_TESTS
   widget_data_test
   widget_event_test
+  dialog_plugin_base_test
   dialog_plugin_typed_test
   plugin_lifecycle_test
   dialog_handle_test
+  dialog_controls_example_test
   widget_data_view_test
   widget_event_builder_test
   dialog_library_test
@@ -122,6 +134,10 @@ add_executable(dialog_plugin_typed_test tests/dialog_plugin_typed_test.cpp)
 target_link_libraries(dialog_plugin_typed_test PRIVATE pj_dialog_sdk GTest::gtest_main)
 add_test(NAME dialog_plugin_typed_test COMMAND dialog_plugin_typed_test)
 
+add_executable(dialog_plugin_base_test tests/dialog_plugin_base_test.cpp)
+target_link_libraries(dialog_plugin_base_test PRIVATE pj_dialog_sdk GTest::gtest_main)
+add_test(NAME dialog_plugin_base_test COMMAND dialog_plugin_base_test)
+
 # Links mock_dialog.cpp statically (no dlopen) for lifecycle testing
 add_executable(plugin_lifecycle_test tests/plugin_lifecycle_test.cpp examples/mock_dialog.cpp)
 target_link_libraries(plugin_lifecycle_test PRIVATE pj_dialog_sdk GTest::gtest_main)
@@ -133,6 +149,16 @@ add_test(NAME plugin_lifecycle_test COMMAND plugin_lifecycle_test)
 add_executable(dialog_handle_test tests/dialog_handle_test.cpp examples/mock_dialog.cpp)
 target_link_libraries(dialog_handle_test PRIVATE pj_dialog_host pj_dialog_sdk GTest::gtest_main)
 add_test(NAME dialog_handle_test COMMAND dialog_handle_test)
+
+# Protocol-level validation of the canonical installed-SDK example. Compiling
+# the same Qt-free source into the test exercises its exported static manifest
+# and vtable directly, without loading Qt or opening a native picker.
+add_executable(dialog_controls_example_test
+  tests/dialog_controls_example_test.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/sdk_consumer/dialog_controls.cpp
+)
+target_link_libraries(dialog_controls_example_test PRIVATE pj_dialog_host pj_dialog_sdk GTest::gtest_main)
+add_test(NAME dialog_controls_example_test COMMAND dialog_controls_example_test)
 
 add_executable(widget_data_view_test tests/widget_data_view_test.cpp)
 target_link_libraries(widget_data_view_test PRIVATE pj_dialog_host GTest::gtest_main)
@@ -149,6 +175,8 @@ target_compile_definitions(dialog_library_test PRIVATE
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
   PJ_MISSING_DIALOG_ABI_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_abi_plugin>"
   PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_required_slots_plugin>"
+  PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH="$<TARGET_FILE:old_dialog_vtable_plugin>"
+  PJ_OLD_FILE_PICKER_DISPATCHER_PLUGIN_PATH="$<TARGET_FILE:old_file_picker_dispatcher_plugin>"
 )
 target_link_libraries(dialog_library_test PRIVATE
   pj_dialog_library pj_dialog_host pj_dialog_sdk GTest::gtest_main
@@ -157,6 +185,8 @@ add_dependencies(dialog_library_test
   mock_dialog_plugin
   missing_dialog_abi_plugin
   missing_dialog_required_slots_plugin
+  old_dialog_vtable_plugin
+  old_file_picker_dispatcher_plugin
 )
 add_test(NAME dialog_library_test COMMAND dialog_library_test)
 

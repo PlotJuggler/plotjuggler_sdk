@@ -48,8 +48,13 @@ For a namespaced class in a static build, provide the getter-symbol token
 separately: `PJ_DIALOG_PLUGIN_NAMED(my::Dialog, MyDialog, kManifestJson)`.
 Dynamic builds may use either form.
 
-A complete example lives at
-`pj_plugins/dialog_protocol/examples/mock_dialog.cpp`.
+The [SDK dialog controls example](../../examples/sdk_consumer/dialog_controls.cpp)
+is the canonical 0.21 usage sample. It composes runtime host-info fallback,
+object-name-keyed `QStackedWidget` pages, a filtered/lazy stable-ID
+`QTreeWidget`, and a capability-gated structured multi-file picker in one
+Qt-free `DialogPluginTyped`. The smaller
+`pj_plugins/dialog_protocol/examples/mock_dialog.cpp` remains the minimal
+fixture for basic controls.
 
 ## Plugin Contract
 
@@ -80,6 +85,65 @@ others prevent runtime failures that are silent at compile time.
   or `QLabel`, `QListWidget`, and `QTableWidget` for display/table cases.
 - Retain the JSON string returned by `widget_data()` on the host side past
   the next `widget_data()` call on the same dialog.
+
+### Host information and graceful fallback
+
+Since SDK 0.21.0, a conforming host supplies immutable version and capability
+information to every standalone or borrowed dialog context after creation (or
+borrowing) and before the first `ui_content()`, `loadConfig()`, or
+`widget_data()` call. `DialogPluginBase` copies the two version strings and the
+capability bits during delivery, so plugins may safely retain the returned
+information even though the C string views are valid only during the ABI call.
+The host-info struct is independently appendable: fields not wholly covered by
+its `struct_size` are treated as empty strings or zero capability bits. Each
+successful delivery atomically replaces the previous snapshot (last writer
+wins); a rejected delivery leaves the previous snapshot intact.
+
+Derived dialogs inspect the protected `hostInfo()` accessor:
+
+```cpp
+std::string widget_data() override {
+  const auto& host = hostInfo();
+  if (!host || !host->has(PJ::DialogHostCapability::kStagesBrowserFile)) {
+    return PJ::WidgetData{}
+        .setLabel("compatibilityMessage",
+                  "This dialog needs a newer PlotJuggler host")
+        .toJson();
+  }
+  // Build the normal dialog state.
+  return buildNormalWidgetData();
+}
+```
+
+`hostInfo()` is empty when the dialog runs on a pre-0.21 host or a
+non-conforming embedding host. Treat that as the graceful-fallback signal:
+keep a meaningful legacy JSON path when possible, or return a small
+incompatibility UI instead of emitting state that an older host cannot apply.
+It cannot make a non-dialog plugin feature self-reject on an already-shipped
+pre-0.21 loader; that requires a protocol/ABI bump.
+
+Available `DialogHostCapability` values are:
+
+| Capability | Meaning |
+|---|---|
+| `kCanOpenFile` | The host can open a single-file picker. |
+| `kCanOpenFiles` | The host can open a multi-file picker. |
+| `kCanSaveFilePath` | The host can choose a destination file path. |
+| `kCanSelectFolder` | The host can select a folder. |
+| `kStagesBrowserFile` | A browser-selected file is staged to a host-accessible path before delivery. |
+
+Delivery is last-writer-wins: a later successful host-info call replaces both
+stored strings and the complete capability mask. Plugin code should normally
+observe one delivery before first use; the replacement rule makes re-binding
+deterministic for embedding hosts and tests.
+
+The generated SDK version header and all four feature-test macros are deferred
+to their separate 0.21 package: `PJ_SDK_HAS_DIALOG_HOST_INFO`,
+`PJ_SDK_HAS_DIALOG_STACKED_WIDGET`, `PJ_SDK_HAS_DIALOG_TREE`, and
+`PJ_SDK_HAS_STRUCTURED_FILE_PICKER`. The companion PlotJuggler 4 work is also
+deferred: host-info delivery, QStackedWidget and QTreeWidget bindings, and the
+shared picker controller with lease/staging support. This SDK branch defines
+the toolkit-neutral contracts only.
 
 ## Step by Step
 
@@ -254,10 +318,16 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 | `onValueChanged(name, double)` | QDoubleSpinBox | new double value |
 | `onClicked(name)` | QPushButton | (no payload) |
 | `onFileSelected(name, path)` | QPushButton (file picker) | selected file path |
+| `onFilePickerResult(name, result)` | QPushButton (structured file picker, since 0.21.0) | complete selected/cancelled/unsupported/error result |
 | `onSelectionChanged(name, items)` | QListWidget | vector of selected item texts |
 | `onItemDoubleClicked(name, index)` | QListWidget | row index of double-clicked item |
 | `onHeaderClicked(name, section)` | QTableWidget | clicked column index (for plugin-owned sorting) |
 | `onTabChanged(name, index)` | QTabWidget | new tab index |
+| `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | new page index and stable page `objectName` |
+| `onTreeSelectionChanged(name, ids)` | QTreeWidget | complete logical selected-ID set, including filtered-out items |
+| `onTreeItemActivated(name, id, column)` | QTreeWidget | stable item ID and activated column |
+| `onTreeExpansionChanged(name, id, expanded)` | QTreeWidget | stable item ID and new expansion state |
+| `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | stable item ID and new column-0 check state |
 
 All handlers default to returning `false`. Override only the ones you need.
 
@@ -361,6 +431,7 @@ work like polling a server for available topics.
 | QDoubleSpinBox | `setValue(double)` | `onValueChanged(name, double)` |
 | QPushButton | `setButtonText` | `onClicked(name)` |
 | QPushButton (file picker) | `setFilePicker` | `onFileSelected(name, path)` |
+| QPushButton (structured file picker, since 0.21.0) | `setFilePicker` with `FilePickerOptions` | `onFilePickerResult(name, result)` |
 | QPushButton (save-file picker) | `setSaveFilePicker` | `onFileSelected(name, path)` |
 | QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
@@ -372,6 +443,8 @@ work like polling a server for available topics.
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
 | DateRangePicker (date range) | `setDateRangePlaceholder` | `onDateRangeChanged(name, from_iso, to_iso)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
+| QStackedWidget | `setStackedPage`, `setStackedIndex` | `onStackedPageChanged(name, index, page_object_name)` |
+| QTreeWidget | `setTreeHeaders`, `setTreeItems`, `setTreeSelectedIds`, `setTreeExpandedIds`, `setTreeVisibleIds`, `clearTreeVisibleIds`, `setTreeSelectionMode` | `onTreeSelectionChanged`, `onTreeItemActivated`, `onTreeExpansionChanged`, `onTreeCheckStateChanged` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
 All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
@@ -387,6 +460,114 @@ Sorting has its own section below.
 
 For `DateRangePicker`, the `from_iso` / `to_iso` strings are ISO-8601 datetimes
 and are empty when that side of the range is unbounded.
+
+For `QStackedWidget`, prefer `setStackedPage(name, page_object_name)`: the
+`page_object_name` is the direct child page widget's Qt `objectName`, so it stays
+stable if pages are inserted or reordered. If `setStackedPage` and
+`setStackedIndex` both contribute keys to one widget, the page name wins. The
+writer deliberately preserves an empty page name or negative index on the wire,
+following the other index-based setters; the host diagnoses an empty/unknown
+name or negative/out-of-range index and leaves the current page unchanged.
+Page-change events always report both the current index and page `objectName`.
+The normative typed-event priority and malformed/mixed-event rules are in
+[Dialog SDK Reference → Event dispatch priority and validation](../../docs/dialog-sdk-reference.md#event-dispatch-priority-and-validation-normative).
+
+## Tree Widgets (since 0.21.0)
+
+QTreeWidget binding is keyed by plugin-owned identity. Give every logical node a
+stable, non-empty string `id` and keep it stable across label changes, sorting,
+filtering, and later snapshots. Never identify a node by its displayed text, row
+number, or a path assembled from visible labels. Those are presentation and can
+all change independently.
+
+The public model is a flat `std::vector<PJ::TreeItem>` rather than recursive
+JSON:
+
+```cpp
+std::vector<PJ::TreeItem> topics = {
+    {"sensors", "", {{"Sensors", std::nullopt, "All sensors", "folder"}},
+     true, true, PJ::TreeCheckState::None, true},
+    {"imu", "sensors", {{"/imu", std::nullopt, "", "topic"},
+                         {"sensor_msgs/Imu", std::nullopt, "", "schema"}},
+     true, true, PJ::TreeCheckState::Checked, false},
+};
+
+PJ::WidgetData data;
+data.setTreeHeaders("topicTree", {"Topic", "Type"})
+    .setTreeItems("topicTree", topics)
+    .setTreeSelectedIds("topicTree", {"imu"})
+    .setTreeExpandedIds("topicTree", {"sensors"})
+    .setTreeSelectionMode("topicTree", true);
+```
+
+An empty `parent_id` means top level; every non-empty parent must name an item in
+the same snapshot. Parent-before-child ordering is not required. Array order
+defines the unsorted insertion order within each sibling group: filtering the
+flat array to one `parent_id` gives that group's order. Qt sorting may temporarily
+change visible order, but turning sorting off restores the plugin-declared order.
+Ragged `cells` arrays are valid; missing trailing columns display empty.
+
+`TreeCell::text` is presentation. Its optional `sort_value` is a `NumericValue`
+and provides the typed ordering truth just like `TableItem`; `tooltip` annotates
+the cell. `icon` is a host semantic name, not a filesystem path or a serialized
+QIcon. The initial names are `folder`, `topic`, `schema`, `info`, `warning`, and
+`error`; an empty or unknown name produces no icon. `TreeItem::enabled` and
+`selectable` are independent. `check_state` applies only to column 0 in v1 and
+uses `None`, `Unchecked`, `PartiallyChecked`, or `Checked` (wire spellings:
+`none`, `unchecked`, `partially_checked`, `checked`).
+
+### Independent state channels and filtering
+
+Headers, items, selection, expansion, visibility, and selection mode are
+independent additive updates. Any channel may be sent without `tree_items` in
+the same `WidgetData`; absence means leave that host state unchanged. An empty
+selected-ID or expanded-ID array clears that state. IDs not present in the
+current snapshot are not a malformed tree: the host ignores them with a
+diagnostic, while `WidgetDataView` deliberately exposes them as sent.
+Headers and every ID-array channel decode strictly: one non-string member makes
+that whole channel invalid/unchanged, rather than partially applying it or
+mistaking it for an empty clear.
+
+Visibility has three states that must not be collapsed into an
+`optional<vector<string>>`:
+
+- absent: leave the current filter unchanged;
+- `setTreeVisibleIds(name, ids)`: replace the active ID filter (an empty array is
+  a real zero-match filter that hides every public item);
+- `clearTreeVisibleIds(name)`: JSON null, remove the filter and restore all-visible,
+  including visible-by-default behavior for later items.
+
+The host computes ancestor closure: listing `imu` also keeps `sensors` visible so
+the match remains reachable; the plugin need not repeat ancestors. A filter
+persists across later snapshots. Surviving IDs keep their visibility and newly
+added IDs remain hidden until a replacement visibility array lists them. Hiding
+does not delete a node or erase its logical selection/expansion state.
+
+Selection is likewise logical rather than limited to rendered rows. The host
+keeps private selected-ID state, and every `onTreeSelectionChanged` call contains
+the complete selected-ID set, including selected nodes hidden by filtering.
+Item-activation columns are accepted only as integers in `0..INT_MAX`; an
+out-of-range value makes the event malformed and it is not dispatched.
+
+### Lazy children and snapshot validation
+
+Set `may_have_children=true` when a node can be expanded before its real children
+are loaded. The host may display a private placeholder, but it has no public ID
+and never appears in callbacks. On expansion, load the children and publish a
+new complete snapshot. Under an active filter, include each matching new child
+in an updated `tree_visible_ids` array in the same state update; otherwise the
+new child remains hidden.
+
+Tree snapshots are validated as one unit before the host mutates Qt state. Empty
+or duplicate IDs, missing parents, parent cycles, invalid cell/sort-value types,
+and invalid check-state strings reject the whole `tree_items` update. There is
+no partial tree. `WidgetDataView::treeItems(name, &validation_error)` returns
+`nullopt` and fills the reason so an embedding host can diagnose the rejection.
+
+V1 deliberately uses complete keyed snapshots; incremental tree deltas are
+deferred until profiling justifies them. A future tree-delta design must reuse
+the table protocol's fresh sequence-number gate and all-or-nothing application
+rules rather than introduce another ordering contract.
 
 > **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
 > widget binding system. Use `QPlainTextEdit` for plain text or code editing,
@@ -578,6 +759,94 @@ bool onFileSelected(std::string_view name, std::string_view path) override {
   return false;
 }
 ```
+
+### Structured file picker (since 0.21.0)
+
+Use the `FilePickerOptions` overload when a dialog needs multiple selection,
+stable filters, a suggested name or initial directory, an explicit accept
+label, overwrite policy, or structured cancellation/error reporting:
+
+```cpp
+PJ::FilePickerOptions options;
+options.mode = PJ::FilePickerMode::OpenFiles;
+options.title = "Select ROS bag files";
+options.accept_label = "Open";
+options.initial_directory = "/data/bags";
+options.filters = {
+    {"bags", "ROS bag files", {"*.bag", "*.db3", "*.mcap"}},
+    {"all", "All files", {"*"}},
+};
+options.initially_selected_filter_id = "bags";
+
+wd.setFilePicker("openBags", "Open bags...", options);
+
+bool onFilePickerResult(
+    std::string_view name, const PJ::FilePickerResult& result) override {
+  if (name != "openBags") {
+    return false;
+  }
+  if (result.status == PJ::FilePickerStatus::Selected) {
+    importBags(result.paths);  // All selected paths, not only the legacy first.
+  } else if (result.status == PJ::FilePickerStatus::Error) {
+    picker_error_ = result.error;
+  }
+  return true;
+}
+```
+
+`FilePickerMode` has four canonical wire values: `OpenFile` / `"open_file"`,
+`OpenFiles` / `"open_files"`, `SaveFile` / `"save_file"`, and
+`SelectDirectory` / `"select_directory"`. The option fields are `mode`,
+`title`, `accept_label`, `initial_directory`, `suggested_name`,
+`default_suffix`, `filters`, `initially_selected_filter_id`, and
+`confirm_overwrite` (default `true`).
+
+Each `FilePickerFilter` contains `id`, `label`, and `patterns`. Keep `id` stable
+and machine-oriented because a native picker may localize or normalize the
+displayed filter text; the host maps that native selection back to the ID.
+Filter IDs must be non-empty and unique, every filter needs at least one
+non-empty pattern, and a non-empty initial ID must name a filter. The fluent
+writer follows the tree/stacked policy and serializes input without throwing or
+repairing it. The host view validates the entire structured object atomically;
+one invalid filter rejects the whole structured request with a diagnostic.
+
+Legacy host degradation is explicit:
+
+| Structured mode/result | Legacy host or old dispatcher |
+|---|---|
+| `OpenFile` | Existing single-open action and `file_selected` |
+| `OpenFiles` | Degrades to existing single-open action; first selected path only |
+| `SaveFile` | Existing save action and `file_selected` |
+| `SelectDirectory` | Existing folder action and `folder_selected` |
+| `Cancelled` | No legacy key; old dispatcher receives nothing |
+| `Unsupported` | No legacy key; old dispatcher receives nothing |
+| `Error` | No legacy key; old dispatcher receives nothing |
+
+`FilePickerStatus` uses exactly `Selected` / `"selected"`, `Cancelled` /
+`"cancelled"`, `Unsupported` / `"unsupported"`, and `Error` / `"error"`.
+Every result also carries the request `mode`, using the canonical mode strings
+above. `status`, `mode`, and the strict string array `paths` are required;
+absent `display_names`, `selected_filter_id`, and `error` default to empty.
+`Unsupported` is the honest answer when a host cannot provide filesystem-path
+semantics. A browser must not return a fake path for directory selection or
+save-to-path; without a concrete implementation it returns `Unsupported`.
+Browser open-file staging may produce opaque synthetic paths, in which case
+`display_names` preserves the user-visible names. Staged paths are host-readable
+but are not durable configuration for a later application session.
+
+For a structured picker click, ordering is fixed: `onClicked()` runs first, the
+host opens the picker, and then `onFilePickerResult()` receives the outcome.
+Do file work in the result callback; `onClicked()` does not have a selection
+yet. The normative priority, compatibility-key validation, and fail-closed
+rules are defined only in
+[Dialog SDK Reference → Event dispatch priority and validation](../../docs/dialog-sdk-reference.md#event-dispatch-priority-and-validation-normative).
+The default structured handler routes from `result.mode` and forwards the first
+selected path exactly once to the old `onFileSelected()` /
+`onFolderSelected()` callbacks, so an old typed plugin recompiled on 0.21 keeps
+working even when no legacy co-key is present. A plugin that overrides
+`onFilePickerResult()` gets only that new callback, never an automatic second
+legacy callback. Cancelled, unsupported, and error results have no legacy
+callback.
 
 ### Save-file picker
 
@@ -920,7 +1189,7 @@ documentation of this pattern.
 | Overriding `onValueChanged(int)` silently disables the `double` version (or vice versa) | C++ name hiding | Add `using PJ::DialogPluginTyped::onValueChanged;` in the class body |
 | UI does not update after an event | Event handler returned `false`, so the host did not re-read `widget_data()` | Return `true` whenever internal state changed |
 | `setText`/`setValue`/etc. has no visible effect | Wrong `objectName`, or widget type not in the [Widget Reference Table](#widget-reference-table) | Match XML `objectName` exactly; replace `QTextEdit`/`QTableView` with supported widgets |
-| File picker button does nothing | `setFilePicker(...)` not called in `widget_data()` for this `objectName` | Call it once per `widget_data()` so the host wires the click |
+| File picker button does nothing | `setFilePicker(...)` not called in `widget_data()` for this `objectName`, or the structured options failed atomic validation | Emit it on each `widget_data()` build; for structured options check unique non-empty filter IDs, non-empty patterns, and the initially selected ID |
 | Sub-dialog opens repeatedly on every refresh | `requestSubDialog()` left set in `widget_data()` after the request fires | Set a one-shot flag; clear it before calling `requestSubDialog()` |
 | Dialog state lost on layout reload | `loadConfig()` never restored fields, or `saveConfig()` returned `"{}"` | Round-trip every field through `saveConfig()` / `loadConfig()` |
 | Manifest missing `id`/`name`/`version` causes load failure | Host rejects manifests missing required string keys | Validate the manifest in unit tests; the SDK does not assert this for dialogs at build time |

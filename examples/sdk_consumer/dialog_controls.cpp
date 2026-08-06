@@ -1,0 +1,681 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <pj_plugins/sdk/dialog_plugin_typed.hpp>
+#include <pj_plugins/sdk/widget_data.hpp>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+namespace {
+
+constexpr const char* kManifestJson = R"({
+  "id": "sdk-dialog-controls-example",
+  "name": "SDK Dialog Controls Example",
+  "version": "0.1.0",
+  "description": "Canonical PlotJuggler SDK 0.21 dialog controls example.",
+  "min_sdk_required": "0.21.0"
+})";
+
+// This example follows the SDK dialog-fixture convention and embeds the
+// Designer XML directly. The plugin remains Qt-free: QUiLoader in the host
+// creates these widgets and binds them by objectName.
+constexpr const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DialogControlsExample</class>
+ <widget class="QWidget" name="DialogControlsExample">
+  <property name="windowTitle">
+   <string>SDK 0.21 Dialog Controls</string>
+  </property>
+  <layout class="QVBoxLayout" name="root_layout">
+   <item>
+    <layout class="QHBoxLayout" name="page_navigation_layout">
+     <item>
+      <widget class="QLabel" name="page_selector_label">
+       <property name="text">
+        <string>Example page:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="page_selector"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="example_stack">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="host_too_old_page">
+      <layout class="QVBoxLayout" name="host_too_old_layout">
+       <item>
+        <spacer name="host_too_old_top_spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="host_too_old_label">
+         <property name="text">
+          <string>This example needs PlotJuggler SDK 0.21 or newer.</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="host_too_old_bottom_spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="basic_page">
+      <layout class="QVBoxLayout" name="basic_page_layout">
+       <item>
+        <widget class="QLabel" name="tree_help_label">
+         <property name="text">
+          <string>Filter the static topic catalog, select topics, check column 0, or expand Diagnostics to load its children.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="topic_filter">
+         <property name="placeholderText">
+          <string>Filter topics...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTreeWidget" name="topic_tree">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="rootIsDecorated">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="selection_label">
+         <property name="text">
+          <string>No topics selected.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="advanced_page">
+      <layout class="QVBoxLayout" name="advanced_page_layout">
+       <item>
+        <widget class="QLabel" name="picker_help_label">
+         <property name="text">
+          <string>The structured picker requests multiple files and reports cancellation or unsupported operations honestly.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="open_files_button">
+         <property name="text">
+          <string>Open sample data...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="picker_status_label">
+         <property name="text">
+          <string>No files selected.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="stack_event_label">
+         <property name="text">
+          <string>The basic page is active.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="advanced_page_spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+)";
+
+constexpr std::string_view kStack = "example_stack";
+constexpr std::string_view kCompatibilityPage = "host_too_old_page";
+constexpr std::string_view kBasicPage = "basic_page";
+constexpr std::string_view kAdvancedPage = "advanced_page";
+constexpr std::string_view kTree = "topic_tree";
+constexpr std::string_view kPicker = "open_files_button";
+constexpr std::string_view kLazyGroupId = "group:/diagnostics";
+
+struct CatalogEntry {
+  std::string_view topic;
+  std::string_view type;
+  bool lazy;
+};
+
+// Slash-separated input is intentionally the source of truth. The tree builder
+// derives every group and stable ID instead of snapshotting visible labels.
+constexpr std::array<CatalogEntry, 7> kCatalog = {{
+    {"/sensors/imu", "sensor_msgs/msg/Imu", false},
+    {"/sensors/gps/fix", "sensor_msgs/msg/NavSatFix", false},
+    {"/sensors/camera/front/image", "sensor_msgs/msg/Image", false},
+    {"/vehicle/speed", "std_msgs/msg/Float64", false},
+    {"/vehicle/steering", "std_msgs/msg/Float64", false},
+    {"/diagnostics/cpu", "diagnostic_msgs/msg/DiagnosticStatus", true},
+    {"/diagnostics/memory", "diagnostic_msgs/msg/DiagnosticStatus", true},
+}};
+
+struct ParsedVersion {
+  std::uint64_t major = 0;
+  std::uint64_t minor = 0;
+  std::uint64_t patch = 0;
+  bool prerelease = false;
+};
+
+std::optional<ParsedVersion> parseThreePartVersion(std::string_view text) {
+  ParsedVersion result;
+  std::array<std::uint64_t*, 3> parts = {&result.major, &result.minor, &result.patch};
+  std::size_t offset = 0;
+  for (std::size_t part_index = 0; part_index < parts.size(); ++part_index) {
+    if (offset == text.size() || !std::isdigit(static_cast<unsigned char>(text[offset]))) {
+      return std::nullopt;
+    }
+    std::uint64_t value = 0;
+    while (offset < text.size() && std::isdigit(static_cast<unsigned char>(text[offset]))) {
+      const auto digit = static_cast<std::uint64_t>(text[offset] - '0');
+      if (value > (std::numeric_limits<std::uint64_t>::max() - digit) / 10) {
+        return std::nullopt;
+      }
+      value = value * 10 + digit;
+      ++offset;
+    }
+    *parts[part_index] = value;
+    if (part_index + 1 < parts.size()) {
+      if (offset == text.size() || text[offset] != '.') {
+        return std::nullopt;
+      }
+      ++offset;
+    }
+  }
+  if (offset == text.size()) {
+    return result;
+  }
+  if (text[offset] == '+') {
+    return offset + 1 < text.size() ? std::optional<ParsedVersion>(result) : std::nullopt;
+  }
+  if (text[offset] == '-') {
+    result.prerelease = true;
+    return offset + 1 < text.size() ? std::optional<ParsedVersion>(result) : std::nullopt;
+  }
+  return std::nullopt;
+}
+
+bool versionHasDialogControls(std::string_view sdk_version) {
+  const auto version = parseThreePartVersion(sdk_version);
+  if (!version) {
+    return false;
+  }
+  const auto actual = std::tie(version->major, version->minor, version->patch);
+  constexpr std::uint64_t kRequiredMajor = 0;
+  constexpr std::uint64_t kRequiredMinor = 21;
+  constexpr std::uint64_t kRequiredPatch = 0;
+  const auto required = std::tie(kRequiredMajor, kRequiredMinor, kRequiredPatch);
+  return actual > required || (actual == required && !version->prerelease);
+}
+
+std::string lowerCopy(std::string_view text) {
+  std::string result(text);
+  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char character) {
+    return static_cast<char>(std::tolower(character));
+  });
+  return result;
+}
+
+std::vector<std::string_view> topicSegments(std::string_view topic) {
+  std::vector<std::string_view> segments;
+  std::size_t begin = !topic.empty() && topic.front() == '/' ? 1 : 0;
+  while (begin < topic.size()) {
+    const std::size_t end = topic.find('/', begin);
+    segments.push_back(topic.substr(begin, end == std::string_view::npos ? topic.size() - begin : end - begin));
+    if (end == std::string_view::npos) {
+      break;
+    }
+    begin = end + 1;
+  }
+  return segments;
+}
+
+std::string join(const std::vector<std::string>& values, std::string_view separator) {
+  std::string result;
+  for (const auto& value : values) {
+    if (!result.empty()) {
+      result += separator;
+    }
+    result += value;
+  }
+  return result;
+}
+
+class DialogControlsExample : public PJ::DialogPluginTyped {
+ public:
+  std::string manifest() const override {
+    return kManifestJson;
+  }
+
+  std::string ui_content() const override {
+    return kUiContent;
+  }
+
+  std::string widget_data() override {
+    PJ::WidgetData data;
+    if (!supportsDialogControls()) {
+      // The .ui defaults to this page as a second line of defense for old hosts
+      // that do not understand stacked_page. Do not publish tree or picker state
+      // that such a host cannot apply.
+      data.setStackedPage(kStack, kCompatibilityPage)
+          .setLabel(
+              "host_too_old_label",
+              "This example needs a conforming PlotJuggler SDK 0.21 host. The advanced controls were not emitted.")
+          .setVisible("page_selector_label", false)
+          .setVisible("page_selector", false)
+          .setEnabled(kPicker, false)
+          .setOkEnabled(false);
+      return data.toJson();
+    }
+
+    data.setVisible("page_selector_label", true)
+        .setVisible("page_selector", true)
+        .setItems("page_selector", {"Basic tree", "Advanced picker"})
+        .setCurrentIndex("page_selector", active_page_ == kBasicPage ? 0 : 1)
+        // Page objectName, not a transient numeric index, is the stable key.
+        .setStackedPage(kStack, active_page_)
+        .setText("topic_filter", filter_)
+        .setPlaceholder("topic_filter", "Filter topics...")
+        .setTreeSelectedIds(kTree, selected_ids_)
+        .setTreeExpandedIds(kTree, expanded_ids_)
+        .setTreeSelectionMode(kTree, true)
+        .setLabel("selection_label", selectionSummary())
+        .setLabel("stack_event_label", stack_event_status_);
+
+    if (tree_snapshot_dirty_) {
+      // QTreeWidget v1 uses complete keyed snapshots. Filtering below is an
+      // independent channel and deliberately does not make this snapshot dirty.
+      data.setTreeHeaders(kTree, {"Topic", "Type"}).setTreeItems(kTree, buildTreeSnapshot());
+      tree_snapshot_dirty_ = false;
+    }
+
+    if (filter_.empty()) {
+      data.clearTreeVisibleIds(kTree);
+    } else {
+      // Only matching stable IDs are sent. The host computes their ancestor
+      // closure, so filtering never republishes or rewrites the tree snapshot.
+      data.setTreeVisibleIds(kTree, filteredIds());
+    }
+
+    PJ::FilePickerOptions picker_options;
+    picker_options.mode = PJ::FilePickerMode::OpenFiles;
+    picker_options.title = "Select PlotJuggler sample data";
+    picker_options.accept_label = "Open";
+    picker_options.filters = {
+        {"plot_data", "Plot data", {"*.mcap", "*.bag", "*.db3"}},
+        {"all_files", "All files", {"*"}},
+    };
+    picker_options.initially_selected_filter_id = "plot_data";
+    data.setFilePicker(kPicker, "Open sample data...", picker_options)
+        // Capability gating prevents presenting a multi-open action that the
+        // embedding host already told us it cannot honor.
+        .setEnabled(kPicker, canOpenMultipleFiles() && !picker_unsupported_)
+        .setLabel("picker_status_label", pickerStatus());
+
+    data.setOkEnabled(true);
+    return data.toJson();
+  }
+
+  bool onTextChanged(std::string_view widget_name, std::string_view text) override {
+    if (widget_name != "topic_filter" || filter_ == text) {
+      return false;
+    }
+    filter_ = std::string(text);
+    return true;
+  }
+
+  bool onIndexChanged(std::string_view widget_name, int index) override {
+    if (widget_name != "page_selector" || !supportsDialogControls() || (index != 0 && index != 1)) {
+      return false;
+    }
+    const std::string_view requested_page = index == 0 ? kBasicPage : kAdvancedPage;
+    if (active_page_ == requested_page) {
+      return false;
+    }
+    active_page_ = std::string(requested_page);
+    return true;
+  }
+
+  bool onStackedPageChanged(std::string_view widget_name, int index, std::string_view page_object_name) override {
+    if (widget_name != kStack || !supportsDialogControls() ||
+        (page_object_name != kBasicPage && page_object_name != kAdvancedPage)) {
+      return false;
+    }
+    const std::string status =
+        "Host reported page '" + std::string(page_object_name) + "' at index " + std::to_string(index) + ".";
+    const bool changed = active_page_ != page_object_name || stack_event_status_ != status;
+    active_page_ = std::string(page_object_name);
+    stack_event_status_ = status;
+    return changed;
+  }
+
+  bool onTreeSelectionChanged(std::string_view widget_name, const std::vector<std::string>& selected_ids) override {
+    if (widget_name != kTree || selected_ids_ == selected_ids) {
+      return false;
+    }
+    selected_ids_ = selected_ids;
+    return true;
+  }
+
+  bool onTreeExpansionChanged(std::string_view widget_name, std::string_view id, bool expanded) override {
+    if (widget_name != kTree || !treeContains(id)) {
+      return false;
+    }
+    auto existing = std::find(expanded_ids_.begin(), expanded_ids_.end(), id);
+    bool changed = false;
+    if (expanded && existing == expanded_ids_.end()) {
+      expanded_ids_.emplace_back(id);
+      changed = true;
+    } else if (!expanded && existing != expanded_ids_.end()) {
+      expanded_ids_.erase(existing);
+      changed = true;
+    }
+
+    if (expanded && id == kLazyGroupId && !lazy_diagnostics_loaded_) {
+      // may_have_children supplied the expansion affordance. Expansion now
+      // materializes the static catalog entries and republishes one full keyed
+      // snapshot, as required by the v1 lazy-child contract.
+      lazy_diagnostics_loaded_ = true;
+      tree_snapshot_dirty_ = true;
+      changed = true;
+    }
+    return changed;
+  }
+
+  bool onTreeCheckStateChanged(std::string_view widget_name, std::string_view id, PJ::TreeCheckState state) override {
+    if (widget_name != kTree || id.rfind("topic:", 0) != 0 || !treeContains(id)) {
+      return false;
+    }
+    if (checkState(id) == state) {
+      return false;
+    }
+    auto existing =
+        std::find_if(check_states_.begin(), check_states_.end(), [id](const auto& entry) { return entry.first == id; });
+    if (existing == check_states_.end()) {
+      check_states_.emplace_back(id, state);
+    } else {
+      existing->second = state;
+    }
+    // Check state is part of each TreeItem in v1, so this state change needs a
+    // new complete snapshot (unlike selection, expansion, and visibility).
+    tree_snapshot_dirty_ = true;
+    return true;
+  }
+
+  bool onFilePickerResult(std::string_view widget_name, const PJ::FilePickerResult& result) override {
+    if (widget_name != kPicker || result.mode != PJ::FilePickerMode::OpenFiles) {
+      return false;
+    }
+    bool changed = false;
+    switch (result.status) {
+      case PJ::FilePickerStatus::Selected:
+        changed = selected_paths_ != result.paths || selected_display_names_ != result.display_names ||
+                  selected_filter_id_ != result.selected_filter_id || picker_message_ != "selected" ||
+                  !picker_error_.empty();
+        selected_paths_ = result.paths;
+        selected_display_names_ = result.display_names;
+        selected_filter_id_ = result.selected_filter_id;
+        picker_message_ = "selected";
+        picker_error_.clear();
+        break;
+      case PJ::FilePickerStatus::Cancelled:
+        // Cancellation is not an error and does not discard the last accepted
+        // paths. Keeping it distinct makes that behavior visible to the user.
+        changed = picker_message_ != "cancelled" || !picker_error_.empty();
+        picker_message_ = "cancelled";
+        picker_error_.clear();
+        break;
+      case PJ::FilePickerStatus::Unsupported:
+        // Honest browser hosts report Unsupported when they cannot return
+        // host-readable filesystem paths. Disable the action after learning it.
+        changed = !picker_unsupported_ || picker_message_ != "unsupported" || !picker_error_.empty();
+        picker_unsupported_ = true;
+        picker_message_ = "unsupported";
+        picker_error_.clear();
+        break;
+      case PJ::FilePickerStatus::Error:
+        changed = picker_message_ != "error" || picker_error_ != result.error;
+        picker_error_ = result.error;
+        picker_message_ = "error";
+        break;
+    }
+    return changed;
+  }
+
+ private:
+  bool supportsDialogControls() const {
+    const auto& host = hostInfo();
+    return host.has_value() && versionHasDialogControls(host->sdk_version);
+  }
+
+  bool canOpenMultipleFiles() const {
+    const auto& host = hostInfo();
+    return host.has_value() && host->has(PJ::DialogHostCapability::kCanOpenFiles);
+  }
+
+  PJ::TreeCheckState checkState(std::string_view id) const {
+    const auto existing =
+        std::find_if(check_states_.begin(), check_states_.end(), [id](const auto& entry) { return entry.first == id; });
+    return existing == check_states_.end() ? PJ::TreeCheckState::Unchecked : existing->second;
+  }
+
+  std::vector<PJ::TreeItem> buildTreeSnapshot() const {
+    std::vector<PJ::TreeItem> items;
+    auto ensure_group = [&items](std::string_view path, std::string_view parent_id, std::string_view label, bool lazy) {
+      const std::string id = "group:" + std::string(path);
+      auto existing =
+          std::find_if(items.begin(), items.end(), [&id](const PJ::TreeItem& item) { return item.id == id; });
+      if (existing != items.end()) {
+        existing->may_have_children = existing->may_have_children || lazy;
+        return id;
+      }
+      items.push_back(
+          {id,
+           std::string(parent_id),
+           {{std::string(label), std::nullopt, "Topic namespace " + std::string(path), "folder"},
+            {"Group", std::nullopt, "Generated from the slash-separated catalog", "schema"}},
+           true,
+           false,
+           PJ::TreeCheckState::None,
+           lazy});
+      return id;
+    };
+
+    for (const auto& catalog_entry : kCatalog) {
+      const auto segments = topicSegments(catalog_entry.topic);
+      if (segments.size() < 2) {
+        continue;
+      }
+
+      std::string group_path;
+      std::string parent_id;
+      for (std::size_t index = 0; index + 1 < segments.size(); ++index) {
+        group_path += "/";
+        group_path += segments[index];
+        const bool defer_children = catalog_entry.lazy && !lazy_diagnostics_loaded_;
+        parent_id = ensure_group(group_path, parent_id, segments[index], defer_children);
+        if (defer_children) {
+          break;
+        }
+      }
+      if (catalog_entry.lazy && !lazy_diagnostics_loaded_) {
+        continue;
+      }
+
+      const std::string topic_id = "topic:" + std::string(catalog_entry.topic);
+      items.push_back(
+          {topic_id,
+           parent_id,
+           {{std::string(catalog_entry.topic), std::nullopt, "Stable topic path", "topic"},
+            {std::string(catalog_entry.type), std::nullopt, "Static sample type", "schema"}},
+           true,
+           true,
+           checkState(topic_id),
+           false});
+    }
+    return items;
+  }
+
+  bool treeContains(std::string_view id) const {
+    const auto items = buildTreeSnapshot();
+    return std::any_of(items.begin(), items.end(), [id](const PJ::TreeItem& item) { return item.id == id; });
+  }
+
+  std::vector<std::string> filteredIds() const {
+    const std::string needle = lowerCopy(filter_);
+    std::vector<std::string> ids;
+    for (const auto& item : buildTreeSnapshot()) {
+      bool matches = lowerCopy(item.id).find(needle) != std::string::npos;
+      for (const auto& cell : item.cells) {
+        matches = matches || lowerCopy(cell.text).find(needle) != std::string::npos;
+      }
+      if (matches) {
+        ids.push_back(item.id);
+      }
+    }
+    return ids;
+  }
+
+  std::string selectionSummary() const {
+    if (selected_ids_.empty()) {
+      return "No topics selected.";
+    }
+    std::vector<std::string> labels;
+    labels.reserve(selected_ids_.size());
+    for (const auto& id : selected_ids_) {
+      labels.push_back(id.rfind("topic:", 0) == 0 ? id.substr(6) : id);
+    }
+    return "Selected: " + join(labels, ", ");
+  }
+
+  std::string pickerStatus() const {
+    if (!canOpenMultipleFiles()) {
+      return "This host does not advertise multi-file selection; the picker is disabled.";
+    }
+    if (picker_message_ == "unsupported") {
+      return "The host reported multi-file selection as unsupported; the picker is now disabled.";
+    }
+    if (picker_message_ == "cancelled") {
+      return "Selection cancelled; the previous accepted selection was kept.";
+    }
+    if (picker_message_ == "error") {
+      return picker_error_.empty() ? "The picker reported an error." : "Picker error: " + picker_error_;
+    }
+    if (picker_message_ == "selected") {
+      const auto& names = selected_display_names_.size() == selected_paths_.size() && !selected_display_names_.empty()
+                              ? selected_display_names_
+                              : selected_paths_;
+      std::string status = "Selected " + std::to_string(selected_paths_.size()) + " file(s): " + join(names, ", ");
+      if (!selected_filter_id_.empty()) {
+        status += " [filter: " + selected_filter_id_ + "]";
+      }
+      return status;
+    }
+    return "Ready to select multiple files.";
+  }
+
+  std::string active_page_ = std::string(kBasicPage);
+  std::string filter_;
+  std::vector<std::string> selected_ids_ = {"topic:/sensors/imu"};
+  std::vector<std::string> expanded_ids_ = {"group:/sensors"};
+  std::vector<std::pair<std::string, PJ::TreeCheckState>> check_states_;
+  bool lazy_diagnostics_loaded_ = false;
+  bool tree_snapshot_dirty_ = true;
+
+  std::string stack_event_status_ = "The basic page is active (stable objectName: basic_page).";
+  std::vector<std::string> selected_paths_;
+  std::vector<std::string> selected_display_names_;
+  std::string selected_filter_id_;
+  std::string picker_message_;
+  std::string picker_error_;
+  bool picker_unsupported_ = false;
+};
+
+}  // namespace
+
+PJ_DIALOG_PLUGIN(DialogControlsExample, kManifestJson)

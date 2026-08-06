@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <pj_plugins/sdk/widget_event.hpp>
 
 using PJ::WidgetEvent;
@@ -109,12 +110,117 @@ TEST(WidgetEventTest, FileSelected) {
   EXPECT_EQ(ev.fileSelected().value(), "/path/to/cert.pem");
 }
 
+TEST(WidgetEventTest, FilePickerResultRejectsMalformedPayloadsAtomically) {
+  const std::vector<std::string> malformed = {
+      R"({"file_picker_result":17})",
+      R"({"file_picker_result":{"status":"selected","paths":["/a"]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"choose_file","paths":["/a"]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file"}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":[]}})",
+      R"({"file_picker_result":{"status":"chosen","mode":"open_file","paths":["/a"]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":[""]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a",2]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a"],"display_names":[2]}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a"],"selected_filter_id":2}})",
+      R"({"file_picker_result":{"status":"selected","mode":"open_file","paths":["/a"],"error":2}})",
+  };
+  for (const auto& json : malformed) {
+    SCOPED_TRACE(json);
+    EXPECT_FALSE(WidgetEvent(json).filePickerResult().has_value());
+  }
+}
+
+TEST(WidgetEventTest, FilePickerResultOptionalFieldsDefaultToEmptyWhenAbsent) {
+  WidgetEvent event(R"({"file_picker_result":{"status":"selected","mode":"open_files","paths":["/a","/b"]}})");
+  auto result = event.filePickerResult();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->status, PJ::FilePickerStatus::Selected);
+  EXPECT_EQ(result->mode, PJ::FilePickerMode::OpenFiles);
+  EXPECT_EQ(result->paths, (std::vector<std::string>{"/a", "/b"}));
+  EXPECT_TRUE(result->display_names.empty());
+  EXPECT_TRUE(result->selected_filter_id.empty());
+  EXPECT_TRUE(result->error.empty());
+}
+
 // --- TabIndex ---
 
 TEST(WidgetEventTest, TabIndex) {
   WidgetEvent ev(R"({"tab_index": 1})");
   ASSERT_TRUE(ev.tabIndex().has_value());
   EXPECT_EQ(ev.tabIndex().value(), 1);
+}
+
+// --- Stacked page ---
+
+TEST(WidgetEventTest, StackedPageFieldsParseIndependently) {
+  WidgetEvent page_only(R"({"stacked_page": "advanced_page"})");
+  EXPECT_EQ(page_only.stackedPage(), "advanced_page");
+  EXPECT_FALSE(page_only.stackedIndex().has_value());
+
+  WidgetEvent index_only(R"({"stacked_index": 2})");
+  EXPECT_EQ(index_only.stackedIndex(), 2);
+  EXPECT_FALSE(index_only.stackedPage().has_value());
+}
+
+TEST(WidgetEventTest, StackedIndexDecodesLosslesslyWithinIntRange) {
+  EXPECT_EQ(WidgetEvent(R"({"stacked_index":2147483647})").stackedIndex(), 2147483647);
+  EXPECT_EQ(WidgetEvent(R"({"stacked_index":-2147483648})").stackedIndex(), (-2147483647 - 1));
+  EXPECT_FALSE(WidgetEvent(R"({"stacked_index":4294967296})").stackedIndex().has_value());
+  EXPECT_FALSE(WidgetEvent(R"({"stacked_index":2147483648})").stackedIndex().has_value());
+  EXPECT_FALSE(WidgetEvent(R"({"stacked_index":-2147483649})").stackedIndex().has_value());
+}
+
+// --- Tree events ---
+
+TEST(WidgetEventTest, TreeSelectionParsesCompleteIdSetIncludingEmpty) {
+  WidgetEvent selected(R"({"tree_selection_changed":["visible","filtered-out"]})");
+  EXPECT_EQ(selected.treeSelectionChanged(), (std::vector<std::string>{"visible", "filtered-out"}));
+
+  WidgetEvent cleared(R"({"tree_selection_changed":[]})");
+  ASSERT_TRUE(cleared.treeSelectionChanged().has_value());
+  EXPECT_TRUE(cleared.treeSelectionChanged()->empty());
+}
+
+TEST(WidgetEventTest, TreeItemActivationParsesIdAndColumn) {
+  WidgetEvent event(R"({"tree_item_activated":{"id":"imu","column":1}})");
+  auto activation = event.treeItemActivated();
+  ASSERT_TRUE(activation.has_value());
+  EXPECT_EQ(activation->id, "imu");
+  EXPECT_EQ(activation->column, 1);
+
+  WidgetEvent maximum(
+      std::string(R"({"tree_item_activated":{"id":"imu","column":)") + std::to_string(std::numeric_limits<int>::max()) +
+      "}}");
+  ASSERT_TRUE(maximum.treeItemActivated().has_value());
+  EXPECT_EQ(maximum.treeItemActivated()->column, std::numeric_limits<int>::max());
+}
+
+TEST(WidgetEventTest, TreeExpansionParsesIdAndState) {
+  WidgetEvent event(R"({"tree_expansion_changed":{"id":"sensors","expanded":false}})");
+  auto expansion = event.treeExpansionChanged();
+  ASSERT_TRUE(expansion.has_value());
+  EXPECT_EQ(expansion->id, "sensors");
+  EXPECT_FALSE(expansion->expanded);
+}
+
+TEST(WidgetEventTest, TreeCheckStateParsesCanonicalState) {
+  WidgetEvent event(R"({"tree_check_state_changed":{"id":"imu","state":"partially_checked"}})");
+  auto change = event.treeCheckStateChanged();
+  ASSERT_TRUE(change.has_value());
+  EXPECT_EQ(change->id, "imu");
+  EXPECT_EQ(change->state, PJ::TreeCheckState::PartiallyChecked);
+}
+
+TEST(WidgetEventTest, MalformedTreeEventsReturnNullopt) {
+  EXPECT_FALSE(WidgetEvent(R"({"tree_selection_changed":["ok",2]})").treeSelectionChanged());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu"}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":-1}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":2147483648}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":4294967296}})").treeItemActivated());
+  EXPECT_FALSE(
+      WidgetEvent(R"({"tree_item_activated":{"id":"imu","column":18446744073709551615}})").treeItemActivated());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_expansion_changed":{"id":"","expanded":true}})").treeExpansionChanged());
+  EXPECT_FALSE(WidgetEvent(R"({"tree_check_state_changed":{"id":"imu","state":"partial"}})").treeCheckStateChanged());
 }
 
 // --- Has ---

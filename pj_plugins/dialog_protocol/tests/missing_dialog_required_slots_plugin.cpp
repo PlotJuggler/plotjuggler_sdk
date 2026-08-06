@@ -64,6 +64,7 @@ extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noe
       .save_config = saveConfig,
       .load_config = loadConfig,
       .manifest_json = R"({"id":"missing-dialog-slot","name":"Missing Dialog Slot","version":"1.0.0"})",
+      .set_host_info = nullptr,
   };
   return &vt;
 }

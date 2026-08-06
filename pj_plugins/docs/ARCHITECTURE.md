@@ -44,8 +44,9 @@ these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
      reserved as its one growth path — do not add further top-level
      fields.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
-     `PJ_service_registry_vtable_t`. New slots at the tail; read with
-     `PJ_HAS_TAIL_SLOT`.
+     `PJ_service_registry_vtable_t`, and `PJ_dialog_host_info_t`. New fields or
+     slots go at the tail; readers honor the caller-provided size, and vtable
+     slots are read with `PJ_HAS_TAIL_SLOT`.
 
 5. **Compile-time ABI layout sentinels.** `pj_base/tests/abi_layout_sentinels_test.cpp`
    consists entirely of `static_assert`s pinning `sizeof`, `alignof`,
@@ -203,7 +204,9 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   slots are family-specific. For example, DataSource and Toolbox have
   `capabilities`, while MessageParser has `bind_schema`. Dialogs expose a
   GUI-oriented protocol with `get_manifest()`/`get_ui_content()` and an
-  optional static `manifest_json` tail slot for metadata-only discovery.
+  optional static `manifest_json` tail slot for metadata-only discovery. Their
+  optional runtime `set_host_info` tail slot delivers host versions and dialog
+  capabilities after create/borrow and before first UI/config/widget-data use.
 
 Service traits (`pj_base/sdk/service_traits.hpp`,
 `sdk/toolbox_plugin_base.hpp`) map canonical names to their ABI type and
@@ -419,17 +422,25 @@ application supplies the concrete renderer/reactive loop for its UI toolkit.
 ### Reactive loop
 
 ```
-1. Read widget_data() from plugin → JSON
-2. Parse JSON into WidgetDataView
-3. Apply WidgetDataView to host widgets
-4. Wait for user interaction or tick timer
-5. On widget signal → build event JSON → call on_widget_event()
-6. If returns true → goto 1 (re-read widget_data)
-7. On tick timer → call on_tick()
-8. If returns true → goto 1
-9. On accept → call on_accepted(final_state_json)
-10. On reject → call on_rejected()
+1. After create/borrow, call DialogHandle::setHostInfo()
+2. Read widget_data() from plugin → JSON
+3. Parse JSON into WidgetDataView
+4. Apply WidgetDataView to host widgets
+5. Wait for user interaction or tick timer
+6. On widget signal → build event JSON → call on_widget_event()
+7. If returns true → goto 2 (re-read widget_data)
+8. On tick timer → call on_tick()
+9. If returns true → goto 2
+10. On accept → call on_accepted(final_state_json)
+11. On reject → call on_rejected()
 ```
+
+`DialogHandle::setHostInfo()` is the only runtime layer that inspects the
+optional vtable slot: it gates the read with `PJ_HAS_TAIL_SLOT`, and concrete
+dialog/panel engines do not access the field directly. Its tri-state result
+distinguishes an absent pre-0.21 slot (`Unsupported`, with no plugin call) from
+a plugin accepting or rejecting the information (`Accepted`/`Rejected`). A
+rejected call may populate `PJ_error_t`, but the C contract does not require it.
 
 ### Widget binding
 

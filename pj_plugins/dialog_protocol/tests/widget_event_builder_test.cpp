@@ -6,6 +6,7 @@
 #include <pj_plugins/host/widget_event_builder.hpp>
 #include <pj_plugins/sdk/widget_event.hpp>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // Round-trip pattern: build JSON with WidgetEventBuilder, parse with WidgetEvent.
@@ -103,11 +104,172 @@ TEST(WidgetEventBuilderTest, FileSelected) {
   EXPECT_EQ(*ev.fileSelected(), "/tmp/cert.pem");
 }
 
+TEST(WidgetEventBuilderTest, FilePickerSelectedSingleRoundTripsAndCoEmitsLegacyPath) {
+  PJ::FilePickerResult expected;
+  expected.status = PJ::FilePickerStatus::Selected;
+  expected.paths = {"/data/a.mcap"};
+  expected.display_names = {"a.mcap"};
+  expected.selected_filter_id = "bags";
+
+  const std::string json = PJ::WidgetEventBuilder::filePickerResult(expected);
+  PJ::WidgetEvent event(json);
+  auto actual = event.filePickerResult();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->status, expected.status);
+  EXPECT_EQ(actual->mode, expected.mode);
+  EXPECT_EQ(actual->paths, expected.paths);
+  EXPECT_EQ(actual->display_names, expected.display_names);
+  EXPECT_EQ(actual->selected_filter_id, expected.selected_filter_id);
+  EXPECT_EQ(actual->error, expected.error);
+  EXPECT_EQ(event.fileSelected(), expected.paths.front());
+  EXPECT_FALSE(event.folderSelected().has_value());
+  EXPECT_EQ(event.raw().size(), 2u);
+}
+
+TEST(WidgetEventBuilderTest, FilePickerSelectedMultiRoundTripsAndLegacyGetsFirstPathOnly) {
+  PJ::FilePickerResult expected;
+  expected.status = PJ::FilePickerStatus::Selected;
+  expected.mode = PJ::FilePickerMode::OpenFiles;
+  expected.paths = {"/data/a.mcap", "/data/b.mcap"};
+  expected.display_names = {"a.mcap", "b.mcap"};
+  expected.selected_filter_id = "bags";
+
+  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(expected));
+  auto actual = event.filePickerResult();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->mode, PJ::FilePickerMode::OpenFiles);
+  EXPECT_EQ(actual->paths, expected.paths);
+  EXPECT_EQ(actual->display_names, expected.display_names);
+  EXPECT_EQ(event.fileSelected(), "/data/a.mcap");
+  EXPECT_FALSE(event.folderSelected().has_value());
+}
+
+TEST(WidgetEventBuilderTest, FilePickerSelectedDirectoryCoEmitsFolderPath) {
+  PJ::FilePickerResult expected;
+  expected.status = PJ::FilePickerStatus::Selected;
+  expected.mode = PJ::FilePickerMode::SelectDirectory;
+  expected.paths = {"/data/bags"};
+  expected.display_names = {"bags"};
+
+  PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(expected));
+  auto actual = event.filePickerResult();
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(actual->mode, PJ::FilePickerMode::SelectDirectory);
+  EXPECT_EQ(event.folderSelected(), "/data/bags");
+  EXPECT_FALSE(event.fileSelected().has_value());
+  EXPECT_EQ(event.raw().size(), 2u);
+}
+
+TEST(WidgetEventBuilderTest, FilePickerMalformedSelectedResultsDoNotEmitLegacyKeys) {
+  const auto expect_no_legacy_key = [](const PJ::FilePickerResult& result) {
+    PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(result));
+    EXPECT_TRUE(event.has("file_picker_result"));
+    EXPECT_FALSE(event.has("file_selected"));
+    EXPECT_FALSE(event.has("folder_selected"));
+    EXPECT_FALSE(event.filePickerResult().has_value());
+  };
+
+  PJ::FilePickerResult invalid_mode;
+  invalid_mode.status = PJ::FilePickerStatus::Selected;
+  invalid_mode.mode = static_cast<PJ::FilePickerMode>(99);
+  invalid_mode.paths = {"/data/a.mcap"};
+  expect_no_legacy_key(invalid_mode);
+
+  PJ::FilePickerResult missing_path;
+  missing_path.status = PJ::FilePickerStatus::Selected;
+  expect_no_legacy_key(missing_path);
+
+  PJ::FilePickerResult empty_path;
+  empty_path.status = PJ::FilePickerStatus::Selected;
+  empty_path.paths = {""};
+  expect_no_legacy_key(empty_path);
+
+  PJ::FilePickerResult empty_later_path;
+  empty_later_path.status = PJ::FilePickerStatus::Selected;
+  empty_later_path.mode = PJ::FilePickerMode::OpenFiles;
+  empty_later_path.paths = {"/data/a.mcap", ""};
+  expect_no_legacy_key(empty_later_path);
+}
+
+TEST(WidgetEventBuilderTest, FilePickerNonSelectedStatusesRoundTripWithoutLegacyKey) {
+  const std::vector<std::tuple<PJ::FilePickerStatus, std::string>> cases = {
+      {PJ::FilePickerStatus::Cancelled, ""},
+      {PJ::FilePickerStatus::Unsupported, "Directory selection is unavailable"},
+      {PJ::FilePickerStatus::Error, "Native picker failed"},
+  };
+
+  for (const auto& [status, error] : cases) {
+    SCOPED_TRACE(static_cast<int>(status));
+    PJ::FilePickerResult expected;
+    expected.status = status;
+    expected.mode = PJ::FilePickerMode::SaveFile;
+    expected.error = error;
+    PJ::WidgetEvent event(PJ::WidgetEventBuilder::filePickerResult(expected));
+    auto actual = event.filePickerResult();
+    ASSERT_TRUE(actual.has_value());
+    EXPECT_EQ(actual->status, status);
+    EXPECT_EQ(actual->mode, PJ::FilePickerMode::SaveFile);
+    EXPECT_TRUE(actual->paths.empty());
+    EXPECT_TRUE(actual->display_names.empty());
+    EXPECT_TRUE(actual->selected_filter_id.empty());
+    EXPECT_EQ(actual->error, error);
+    EXPECT_FALSE(event.has("file_selected"));
+    EXPECT_FALSE(event.has("folder_selected"));
+    EXPECT_EQ(event.raw().size(), 1u);
+  }
+}
+
 TEST(WidgetEventBuilderTest, TabChanged) {
   std::string json = PJ::WidgetEventBuilder::tabChanged(2);
   PJ::WidgetEvent ev(json);
   ASSERT_TRUE(ev.tabIndex().has_value());
   EXPECT_EQ(*ev.tabIndex(), 2);
+}
+
+TEST(WidgetEventBuilderTest, StackedPageChangedEmitsNameAndIndex) {
+  std::string json = PJ::WidgetEventBuilder::stackedPageChanged(2, "advanced_page");
+  PJ::WidgetEvent ev(json);
+  ASSERT_TRUE(ev.stackedIndex().has_value());
+  EXPECT_EQ(*ev.stackedIndex(), 2);
+  ASSERT_TRUE(ev.stackedPage().has_value());
+  EXPECT_EQ(*ev.stackedPage(), "advanced_page");
+}
+
+TEST(WidgetEventBuilderTest, TreeSelectionChangedRoundTripCarriesCompleteLogicalSet) {
+  const std::vector<std::string> expected = {"visible", "filtered-out"};
+  std::string json = PJ::WidgetEventBuilder::treeSelectionChanged(expected);
+  PJ::WidgetEvent ev(json);
+  auto ids = ev.treeSelectionChanged();
+  ASSERT_TRUE(ids.has_value());
+  EXPECT_EQ(*ids, expected);
+}
+
+TEST(WidgetEventBuilderTest, TreeItemActivatedRoundTrip) {
+  std::string json = PJ::WidgetEventBuilder::treeItemActivated("imu", 1);
+  PJ::WidgetEvent ev(json);
+  auto activation = ev.treeItemActivated();
+  ASSERT_TRUE(activation.has_value());
+  EXPECT_EQ(activation->id, "imu");
+  EXPECT_EQ(activation->column, 1);
+}
+
+TEST(WidgetEventBuilderTest, TreeExpansionChangedRoundTrip) {
+  std::string json = PJ::WidgetEventBuilder::treeExpansionChanged("sensors", true);
+  PJ::WidgetEvent ev(json);
+  auto expansion = ev.treeExpansionChanged();
+  ASSERT_TRUE(expansion.has_value());
+  EXPECT_EQ(expansion->id, "sensors");
+  EXPECT_TRUE(expansion->expanded);
+}
+
+TEST(WidgetEventBuilderTest, TreeCheckStateChangedRoundTripUsesCanonicalWireValue) {
+  std::string json = PJ::WidgetEventBuilder::treeCheckStateChanged("imu", PJ::TreeCheckState::PartiallyChecked);
+  PJ::WidgetEvent ev(json);
+  auto change = ev.treeCheckStateChanged();
+  ASSERT_TRUE(change.has_value());
+  EXPECT_EQ(change->id, "imu");
+  EXPECT_EQ(change->state, PJ::TreeCheckState::PartiallyChecked);
+  EXPECT_EQ(ev.raw()["tree_check_state_changed"]["state"], "partially_checked");
 }
 
 TEST(WidgetEventBuilderTest, DateRangeChanged) {

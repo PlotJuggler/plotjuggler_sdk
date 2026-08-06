@@ -1,0 +1,7 @@
+{
+  "id": "sdk-dialog-controls-example",
+  "name": "SDK Dialog Controls Example",
+  "version": "0.1.0",
+  "description": "Canonical PlotJuggler SDK 0.21 dialog controls example.",
+  "min_sdk_required": "0.21.0"
+}

@@ -352,6 +352,60 @@ TEST(WidgetDataTest, SetFilePicker) {
   EXPECT_EQ(j["cert_btn"]["button_text"], "Browse...");
 }
 
+TEST(WidgetDataTest, SetStructuredFilePickerSerializesEveryFieldAndLegacyEquivalent) {
+  PJ::FilePickerOptions options;
+  options.mode = PJ::FilePickerMode::OpenFiles;
+  options.title = "Select ROS bag files";
+  options.accept_label = "Open";
+  options.initial_directory = "/data/bags";
+  options.suggested_name = "recording.mcap";
+  options.default_suffix = "mcap";
+  options.filters = {{"bags", "ROS bag files", {"*.bag", "*.db3", "*.mcap"}}, {"all", "All files", {"*"}}};
+  options.initially_selected_filter_id = "bags";
+  options.confirm_overwrite = false;
+
+  WidgetData wd;
+  wd.setFilePicker("openBags", "Open bags...", options);
+  auto j = parse(wd);
+
+  EXPECT_EQ(j["openBags"]["button_text"], "Open bags...");
+  EXPECT_EQ(j["openBags"]["file_picker"], json::parse(R"({
+    "mode": "open_files",
+    "title": "Select ROS bag files",
+    "accept_label": "Open",
+    "initial_directory": "/data/bags",
+    "suggested_name": "recording.mcap",
+    "default_suffix": "mcap",
+    "filters": [
+      {"id": "bags", "label": "ROS bag files", "patterns": ["*.bag", "*.db3", "*.mcap"]},
+      {"id": "all", "label": "All files", "patterns": ["*"]}
+    ],
+    "initially_selected_filter_id": "bags",
+    "confirm_overwrite": false
+  })"));
+  EXPECT_EQ(j["openBags"]["action"], "file_picker");
+  EXPECT_EQ(j["openBags"]["filter"], "ROS bag files (*.bag *.db3 *.mcap);;All files (*)");
+  EXPECT_EQ(j["openBags"]["title"], options.title);
+  EXPECT_FALSE(j["openBags"].contains("default_suffix"));
+}
+
+TEST(WidgetDataTest, LegacySaveAndFolderPickerOverloadsRemainUnchanged) {
+  WidgetData wd;
+  wd.setSaveFilePicker("save", "Save...", "JSON (*.json)", "Save configuration", "json");
+  wd.setFolderPicker("folder", "Choose...", "Select output folder");
+  auto j = parse(wd);
+
+  EXPECT_EQ(
+      j["save"],
+      json::parse(
+          R"json({"action":"save_file_picker","button_text":"Save...","default_suffix":"json","filter":"JSON (*.json)","title":"Save configuration"})json"));
+  EXPECT_EQ(
+      j["folder"],
+      json::parse(R"({"action":"folder_picker","button_text":"Choose...","title":"Select output folder"})"));
+  EXPECT_FALSE(j["save"].contains("file_picker"));
+  EXPECT_FALSE(j["folder"].contains("file_picker"));
+}
+
 // --- DialogButtonBox ---
 
 TEST(WidgetDataTest, SetOkEnabled) {
@@ -368,6 +422,30 @@ TEST(WidgetDataTest, SetTabIndex) {
   wd.setTabIndex("tab_widget", 1);
   auto j = parse(wd);
   EXPECT_EQ(j["tab_widget"]["tab_index"], 1);
+}
+
+// --- StackedWidget ---
+
+TEST(WidgetDataTest, SetStackedPage) {
+  WidgetData wd;
+  wd.setStackedPage("configuration_stack", "advanced_page");
+  auto j = parse(wd);
+  EXPECT_EQ(j["configuration_stack"]["stacked_page"], "advanced_page");
+}
+
+TEST(WidgetDataTest, SetStackedIndex) {
+  WidgetData wd;
+  wd.setStackedIndex("configuration_stack", 2);
+  auto j = parse(wd);
+  EXPECT_EQ(j["configuration_stack"]["stacked_index"], 2);
+}
+
+TEST(WidgetDataTest, InvalidStackedSelectionIsSerializedForHostValidation) {
+  WidgetData wd;
+  wd.setStackedPage("configuration_stack", "").setStackedIndex("configuration_stack", -1);
+  auto j = parse(wd);
+  EXPECT_EQ(j["configuration_stack"]["stacked_page"], "");
+  EXPECT_EQ(j["configuration_stack"]["stacked_index"], -1);
 }
 
 // --- Generic ---
@@ -503,4 +581,66 @@ TEST(WidgetDataTest, TypedUpdateCellCarriesValue) {
   // A keyless cell stays 3-element: update is a full cell replacement, so no
   // fourth element means the cell's sort key is cleared, not preserved.
   EXPECT_EQ(cells[1].size(), 3U);
+}
+
+// --- QTreeWidget ---
+
+TEST(WidgetDataTest, TreeSnapshotAndStateChannelsUseCanonicalWireShape) {
+  PJ::TreeCell root_cell{"Sensors", PJ::NumericValue(std::uint64_t{1} << 60), "All sensor topics", "folder"};
+  PJ::TreeCell child_cell{"/imu", PJ::NumericValue(-2.5), "IMU stream", "topic"};
+  std::vector<PJ::TreeItem> items = {
+      {"sensors", "", {root_cell}, false, false, PJ::TreeCheckState::PartiallyChecked, true},
+      {"imu",
+       "sensors",
+       {child_cell, PJ::TreeCell{"sensor_msgs/Imu", std::nullopt, "", ""}},
+       true,
+       true,
+       PJ::TreeCheckState::Checked,
+       false},
+      {"unchecked", "", {}, true, true, PJ::TreeCheckState::Unchecked, false},
+      {"plain", "", {}, true, true, PJ::TreeCheckState::None, false},
+  };
+
+  WidgetData wd;
+  wd.setTreeHeaders("topicTree", {"Topic", "Type"})
+      .setTreeItems("topicTree", items)
+      .setTreeSelectedIds("topicTree", {"imu"})
+      .setTreeExpandedIds("topicTree", {"sensors"})
+      .setTreeVisibleIds("topicTree", {"imu", "unknown-yet"})
+      .setTreeSelectionMode("topicTree", true);
+
+  const auto j = parse(wd);
+  const auto& tree = j["topicTree"];
+  EXPECT_EQ(tree["tree_headers"], nlohmann::json({"Topic", "Type"}));
+  ASSERT_EQ(tree["tree_items"].size(), 4U);
+  const auto& root = tree["tree_items"][0];
+  EXPECT_EQ(root["id"], "sensors");
+  EXPECT_EQ(root["parent_id"], "");
+  EXPECT_FALSE(root["enabled"]);
+  EXPECT_FALSE(root["selectable"]);
+  EXPECT_TRUE(root["may_have_children"]);
+  EXPECT_EQ(root["check_state"], "partially_checked");
+  EXPECT_EQ(root["cells"][0]["text"], "Sensors");
+  EXPECT_EQ(root["cells"][0]["sort_value"], std::uint64_t{1} << 60);
+  EXPECT_EQ(root["cells"][0]["tooltip"], "All sensor topics");
+  EXPECT_EQ(root["cells"][0]["icon"], "folder");
+  EXPECT_EQ(tree["tree_items"][1]["check_state"], "checked");
+  EXPECT_EQ(tree["tree_items"][2]["check_state"], "unchecked");
+  EXPECT_EQ(tree["tree_items"][3]["check_state"], "none");
+  EXPECT_EQ(tree["tree_selected_ids"], nlohmann::json({"imu"}));
+  EXPECT_EQ(tree["tree_expanded_ids"], nlohmann::json({"sensors"}));
+  EXPECT_EQ(tree["tree_visible_ids"], nlohmann::json({"imu", "unknown-yet"}));
+  EXPECT_TRUE(tree["tree_multi_selection"]);
+}
+
+TEST(WidgetDataTest, ClearTreeVisibleIdsEmitsJsonNull) {
+  WidgetData wd;
+  wd.clearTreeVisibleIds("topicTree");
+  EXPECT_TRUE(parse(wd)["topicTree"]["tree_visible_ids"].is_null());
+}
+
+TEST(WidgetDataTest, SetTreeVisibleIdsAfterClearReEmitsFilterInSameBuilder) {
+  WidgetData wd;
+  wd.clearTreeVisibleIds("topicTree").setTreeVisibleIds("topicTree", {"imu", "gps"});
+  EXPECT_EQ(parse(wd)["topicTree"]["tree_visible_ids"], nlohmann::json({"imu", "gps"}));
 }

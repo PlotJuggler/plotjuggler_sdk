@@ -13,3 +13,11 @@ pj_emit_plugin_manifest(minimal_data_source
   FAMILY        data_source
   MANIFEST_FILE ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
 )
+
+add_library(dialog_controls_example SHARED dialog_controls.cpp)
+target_link_libraries(dialog_controls_example PRIVATE plotjuggler_sdk::plugin_sdk)
+
+pj_emit_plugin_manifest(dialog_controls_example
+  FAMILY        dialog
+  MANIFEST_FILE ${CMAKE_CURRENT_SOURCE_DIR}/dialog_manifest.json
+)

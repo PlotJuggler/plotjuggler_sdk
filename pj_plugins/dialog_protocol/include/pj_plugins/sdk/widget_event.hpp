@@ -2,9 +2,12 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <optional>
-#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
 #include <string>
 #include <string_view>
 #include <vector>
@@ -87,9 +90,202 @@ class WidgetEvent {
     return getString("folder_selected");
   }
 
+  /// Structured file-picker outcome. Status, mode, and paths are required and
+  /// atomically validated. Optional display names, selected filter ID, and
+  /// error default to empty when absent. Array members must be strings, and
+  /// Selected requires at least one non-empty path.
+  /// @since 0.21.0
+  std::optional<FilePickerResult> filePickerResult() const {
+    auto result_it = data_.find("file_picker_result");
+    if (result_it == data_.end() || !result_it->is_object()) {
+      return std::nullopt;
+    }
+
+    auto status_it = result_it->find("status");
+    if (status_it == result_it->end() || !status_it->is_string()) {
+      return std::nullopt;
+    }
+    auto status = filePickerStatusFromWireValue(status_it->get_ref<const std::string&>());
+    if (!status.has_value()) {
+      return std::nullopt;
+    }
+
+    auto mode_it = result_it->find("mode");
+    if (mode_it == result_it->end() || !mode_it->is_string()) {
+      return std::nullopt;
+    }
+    auto mode = filePickerModeFromWireValue(mode_it->get_ref<const std::string&>());
+    if (!mode.has_value()) {
+      return std::nullopt;
+    }
+
+    auto paths_it = result_it->find("paths");
+    if (paths_it == result_it->end()) {
+      return std::nullopt;
+    }
+    auto paths = decodeStrictStringArray(*paths_it);
+    if (!paths.has_value()) {
+      return std::nullopt;
+    }
+    if (std::any_of(paths->begin(), paths->end(), [](const std::string& path) { return path.empty(); }) ||
+        (*status == FilePickerStatus::Selected && paths->empty())) {
+      return std::nullopt;
+    }
+
+    std::vector<std::string> display_names;
+    if (auto display_names_it = result_it->find("display_names"); display_names_it != result_it->end()) {
+      auto decoded = decodeStrictStringArray(*display_names_it);
+      if (!decoded.has_value()) {
+        return std::nullopt;
+      }
+      display_names = std::move(*decoded);
+    }
+
+    std::string selected_filter_id;
+    if (auto selected_filter_it = result_it->find("selected_filter_id"); selected_filter_it != result_it->end()) {
+      if (!selected_filter_it->is_string()) {
+        return std::nullopt;
+      }
+      selected_filter_id = selected_filter_it->get<std::string>();
+    }
+
+    std::string error;
+    if (auto error_it = result_it->find("error"); error_it != result_it->end()) {
+      if (!error_it->is_string()) {
+        return std::nullopt;
+      }
+      error = error_it->get<std::string>();
+    }
+
+    FilePickerResult result;
+    result.status = *status;
+    result.mode = *mode;
+    result.paths = std::move(*paths);
+    result.display_names = std::move(display_names);
+    result.selected_filter_id = std::move(selected_filter_id);
+    result.error = std::move(error);
+    return result;
+  }
+
   /// QTabWidget: tab changed
   std::optional<int> tabIndex() const {
     return getInt("tab_index");
+  }
+
+  /// QStackedWidget: current page index. Hosts normally emit this together
+  /// with stackedPage(); each accessor remains independently defensive.
+  /// @since 0.21.0
+  std::optional<int> stackedIndex() const {
+    return getInt("stacked_index");
+  }
+
+  /// QStackedWidget: current page's stable Qt objectName. Hosts normally emit
+  /// this together with stackedIndex(); each accessor remains independently
+  /// defensive.
+  /// @since 0.21.0
+  std::optional<std::string> stackedPage() const {
+    return getString("stacked_page");
+  }
+
+  /// QTreeWidget: the complete logical selected-ID set after a user change,
+  /// including selected items currently hidden by an ID visibility filter.
+  /// Empty is a valid cleared selection. Every ID must be a non-empty string.
+  /// @since 0.21.0
+  std::optional<std::vector<std::string>> treeSelectionChanged() const {
+    auto it = data_.find("tree_selection_changed");
+    if (it == data_.end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> ids;
+    ids.reserve(it->size());
+    for (const auto& encoded_id : *it) {
+      if (!encoded_id.is_string()) {
+        return std::nullopt;
+      }
+      auto id = encoded_id.get<std::string>();
+      if (id.empty()) {
+        return std::nullopt;
+      }
+      ids.push_back(std::move(id));
+    }
+    return ids;
+  }
+
+  /// Parsed QTreeWidget item-activation payload.
+  /// @since 0.21.0
+  struct TreeItemActivation {
+    std::string id;
+    int column = 0;
+  };
+
+  /// QTreeWidget: stable item ID and activated column. Activation covers both
+  /// keyboard and double-click activation.
+  /// @since 0.21.0
+  std::optional<TreeItemActivation> treeItemActivated() const {
+    auto it = data_.find("tree_item_activated");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto id = it->find("id");
+    auto column = it->find("column");
+    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || column == it->end()) {
+      return std::nullopt;
+    }
+    auto decoded_column = decodeInt(*column);
+    if (!decoded_column.has_value() || *decoded_column < 0) {
+      return std::nullopt;
+    }
+    return TreeItemActivation{id->get<std::string>(), *decoded_column};
+  }
+
+  /// Parsed QTreeWidget expansion-change payload.
+  /// @since 0.21.0
+  struct TreeExpansionChange {
+    std::string id;
+    bool expanded = false;
+  };
+
+  /// QTreeWidget: stable item ID and its new expanded state.
+  /// @since 0.21.0
+  std::optional<TreeExpansionChange> treeExpansionChanged() const {
+    auto it = data_.find("tree_expansion_changed");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto id = it->find("id");
+    auto expanded = it->find("expanded");
+    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || expanded == it->end() ||
+        !expanded->is_boolean()) {
+      return std::nullopt;
+    }
+    return TreeExpansionChange{id->get<std::string>(), expanded->get<bool>()};
+  }
+
+  /// Parsed QTreeWidget column-0 check-state-change payload.
+  /// @since 0.21.0
+  struct TreeCheckStateChange {
+    std::string id;
+    TreeCheckState state = TreeCheckState::None;
+  };
+
+  /// QTreeWidget: stable item ID and the new canonical column-0 check state.
+  /// @since 0.21.0
+  std::optional<TreeCheckStateChange> treeCheckStateChanged() const {
+    auto it = data_.find("tree_check_state_changed");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto id = it->find("id");
+    auto state = it->find("state");
+    if (id == it->end() || !id->is_string() || id->get_ref<const std::string&>().empty() || state == it->end() ||
+        !state->is_string()) {
+      return std::nullopt;
+    }
+    auto decoded_state = treeCheckStateFromWireValue(state->get_ref<const std::string&>());
+    if (!decoded_state.has_value()) {
+      return std::nullopt;
+    }
+    return TreeCheckStateChange{id->get<std::string>(), *decoded_state};
   }
 
   /// QListWidget: item double-clicked (returns row index)
@@ -219,6 +415,21 @@ class WidgetEvent {
  private:
   nlohmann::json data_;
 
+  static std::optional<std::vector<std::string>> decodeStrictStringArray(const nlohmann::json& encoded) {
+    if (!encoded.is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> values;
+    values.reserve(encoded.size());
+    for (const auto& value : encoded) {
+      if (!value.is_string()) {
+        return std::nullopt;
+      }
+      values.push_back(value.get<std::string>());
+    }
+    return values;
+  }
+
   std::optional<std::string> getString(const char* key) const {
     auto it = data_.find(key);
     if (it == data_.end() || !it->is_string()) {
@@ -229,10 +440,29 @@ class WidgetEvent {
 
   std::optional<int> getInt(const char* key) const {
     auto it = data_.find(key);
-    if (it == data_.end() || !it->is_number_integer()) {
+    if (it == data_.end()) {
       return std::nullopt;
     }
-    return it->get<int>();
+    return decodeInt(*it);
+  }
+
+  static std::optional<int> decodeInt(const nlohmann::json& encoded) {
+    if (encoded.is_number_unsigned()) {
+      const auto value = encoded.get<std::uint64_t>();
+      if (value > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    if (encoded.is_number_integer()) {
+      const auto value = encoded.get<std::int64_t>();
+      if (value < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
+          value > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      return static_cast<int>(value);
+    }
+    return std::nullopt;
   }
 
   std::optional<bool> getBool(const char* key) const {

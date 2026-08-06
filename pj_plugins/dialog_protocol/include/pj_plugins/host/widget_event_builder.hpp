@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <nlohmann/json.hpp>
-#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
 #include <string>
 #include <string_view>
 #include <vector>
@@ -84,10 +84,73 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// Structured file-picker result. A fully valid Selected result co-emits its
+  /// first path as `file_selected`, or `folder_selected` for SelectDirectory.
+  /// Malformed Selected and all other statuses emit only `file_picker_result`.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string filePickerResult(const FilePickerResult& result) {
+    nlohmann::json j;
+    j["file_picker_result"] = {
+        {"status", filePickerStatusWireValue(result.status)},
+        {"mode", filePickerModeWireValue(result.mode)},
+        {"paths", result.paths},
+        {"display_names", result.display_names},
+        {"selected_filter_id", result.selected_filter_id},
+        {"error", result.error},
+    };
+    if (auto legacy = detail::filePickerLegacySelection(result)) {
+      j[std::string(legacy->key)] = legacy->path;
+    }
+    return j.dump();
+  }
+
   /// QTabWidget: tab changed
   [[nodiscard]] static std::string tabChanged(int index) {
     nlohmann::json j;
     j["tab_index"] = index;
+    return j.dump();
+  }
+
+  /// QStackedWidget: current page changed. Always emits both the transient
+  /// index and the page's stable Qt objectName.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string stackedPageChanged(int index, std::string_view page_object_name) {
+    nlohmann::json j;
+    j["stacked_index"] = index;
+    j["stacked_page"] = page_object_name;
+    return j.dump();
+  }
+
+  /// QTreeWidget: selection changed. `ids` is the complete logical selected-ID
+  /// set, including selected items hidden by the current visibility filter.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeSelectionChanged(const std::vector<std::string>& ids) {
+    nlohmann::json j;
+    j["tree_selection_changed"] = ids;
+    return j.dump();
+  }
+
+  /// QTreeWidget: an item was activated by keyboard or double-click.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeItemActivated(std::string_view id, int column) {
+    nlohmann::json j;
+    j["tree_item_activated"] = {{"id", id}, {"column", column}};
+    return j.dump();
+  }
+
+  /// QTreeWidget: an item's expanded state changed.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeExpansionChanged(std::string_view id, bool expanded) {
+    nlohmann::json j;
+    j["tree_expansion_changed"] = {{"id", id}, {"expanded", expanded}};
+    return j.dump();
+  }
+
+  /// QTreeWidget: an item's column-0 check state changed.
+  /// @since 0.21.0
+  [[nodiscard]] static std::string treeCheckStateChanged(std::string_view id, TreeCheckState state) {
+    nlohmann::json j;
+    j["tree_check_state_changed"] = {{"id", id}, {"state", treeCheckStateWireValue(state)}};
     return j.dump();
   }
 

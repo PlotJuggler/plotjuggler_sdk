@@ -6,6 +6,30 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 
 ---
 
+## Runtime Host Information (since 0.21.0)
+
+`DialogPluginBase::hostInfo()` returns an owned `std::optional<DialogHostInfo>`
+with `sdk_version`, `plotjuggler_version`, and a capability mask. An empty
+optional means a pre-0.21 or non-conforming embedding host and is the signal to
+use a compatible fallback. Test capabilities with
+`hostInfo()->has(DialogHostCapability::...)`:
+
+| Capability | Meaning |
+|---|---|
+| `kCanOpenFile` | Single-file selection is available. |
+| `kCanOpenFiles` | Multi-file selection is available. |
+| `kCanSaveFilePath` | Save-to-path selection is available. |
+| `kCanSelectFolder` | Directory selection is available. |
+| `kStagesBrowserFile` | Browser selections are staged to host-readable paths. |
+
+Embedding hosts call `DialogHandle::setHostInfo()` after creating or borrowing
+the dialog and before querying its UI or widget data. The result is
+`SetHostInfoResult::Accepted`, `Rejected`, or `Unsupported`; the latter preserves
+compatibility with old dialog vtables. Successful repeated deliveries are
+last-writer-wins.
+
+---
+
 ## WidgetData Setters
 
 ### QLineEdit
@@ -57,8 +81,96 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setButtonIconNamed(name, icon_id)` | Set a button icon by id, resolved from the host's themed icon set (consistent tinting; unknown id → no icon) |
 | `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) |
 | `setFilePicker(name, text, filter, title)` | Turn into an **open** file picker (existing file) |
+| `setFilePicker(name, text, FilePickerOptions)` | Configure a structured single/multiple-open, save, or directory picker; also emits the closest legacy action for older hosts. Since 0.21.0. |
 | `setSaveFilePicker(name, text, filter, title, default_suffix="")` | Turn into a **save-as** file picker (navigate + type a new filename); reports via `onFileSelected`. `default_suffix` is appended when the typed name has none |
 | `setFolderPicker(name, text, title)` | Turn into folder picker |
+
+### Structured file pickers (since 0.21.0)
+
+Structured pickers use these shared SDK types:
+
+```cpp
+enum class FilePickerMode { OpenFile, OpenFiles, SaveFile, SelectDirectory };
+
+struct FilePickerFilter {
+  std::string id;
+  std::string label;
+  std::vector<std::string> patterns;
+};
+
+struct FilePickerOptions {
+  FilePickerMode mode = FilePickerMode::OpenFile;
+  std::string title;
+  std::string accept_label;
+  std::string initial_directory;
+  std::string suggested_name;
+  std::string default_suffix;
+  std::vector<FilePickerFilter> filters;
+  std::string initially_selected_filter_id;
+  bool confirm_overwrite = true;
+};
+```
+
+Modes have exactly these canonical wire strings: `OpenFile` → `"open_file"`,
+`OpenFiles` → `"open_files"`, `SaveFile` → `"save_file"`, and
+`SelectDirectory` → `"select_directory"`. Filter IDs are stable plugin-owned
+identities. Do not use the displayed label as an ID: native filter text can be
+localized, normalized, or otherwise changed by the host.
+
+Every filter ID must be non-empty and unique, each filter needs at least one
+non-empty pattern, and a non-empty `initially_selected_filter_id` must name one
+of the filters. Following the tree/stacked precedent, `WidgetData` serializes
+caller input without throwing or repairing it; `WidgetDataView::filePickerOptions`
+validates the complete object atomically and optionally reports the reason.
+`isStructuredFilePicker` reports key presence, so malformed structured data is
+not silently reinterpreted as its co-serialized legacy action. The legacy
+`isFilePicker`, `isSaveFilePicker`, `isFolderPicker`, filter, title, and suffix
+accessors continue to work on valid structured widgets.
+
+Legacy host degradation is explicit:
+
+| Structured mode/result | Legacy host or old dispatcher |
+|---|---|
+| `OpenFile` | Existing single-open action and `file_selected` |
+| `OpenFiles` | Degrades to existing single-open action; first selected path only |
+| `SaveFile` | Existing save action and `file_selected` |
+| `SelectDirectory` | Existing folder action and `folder_selected` |
+| `Cancelled` | No legacy key; old dispatcher receives nothing |
+| `Unsupported` | No legacy key; old dispatcher receives nothing |
+| `Error` | No legacy key; old dispatcher receives nothing |
+
+Results use the following shape:
+
+```cpp
+enum class FilePickerStatus { Selected, Cancelled, Unsupported, Error };
+
+struct FilePickerResult {
+  FilePickerStatus status = FilePickerStatus::Cancelled;
+  FilePickerMode mode = FilePickerMode::OpenFile;
+  std::vector<std::string> paths;
+  std::vector<std::string> display_names;
+  std::string selected_filter_id;
+  std::string error;
+};
+```
+
+The canonical status strings are `"selected"`, `"cancelled"`,
+`"unsupported"`, and `"error"`; result `mode` uses the same canonical mode
+strings as the request. `Unsupported` means the host cannot honestly provide
+the requested filesystem-path operation. In particular, a browser host must
+return `Unsupported` for directory selection or save-to-path unless it has a
+concrete implementation; it must not manufacture a path. Browser-visible names
+belong in `display_names` when staged host-readable `paths` are synthetic.
+
+`WidgetEventBuilder::filePickerResult(result)` serializes `result.mode`. For a
+fully valid Selected result it co-emits `file_selected` for the first file path,
+or `folder_selected` when the mode is `SelectDirectory`. Invalid modes, missing
+or empty paths, and cancelled/unsupported/error results carry only the
+structured object.
+`WidgetEvent::filePickerResult()` requires canonical `status`, canonical
+`mode`, and a strict string array for `paths`; absent `display_names`,
+`selected_filter_id`, and `error` default to empty. Validation is atomic, and a
+Selected result requires at least one non-empty path.
 
 ### QListWidget
 
@@ -91,6 +203,69 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 > and the plugin's order loses. See `pj_plugins/docs/dialog-plugin-guide.md` →
 > "Sortable Tables".
 
+### QTreeWidget (since 0.21.0)
+
+Tree items use stable, plugin-supplied string IDs. Never use display text, row
+numbers, or paths through visible labels as identity. `TreeItem` snapshots are a
+flat array linked by `id` / `parent_id` (`""` means top level); filtering that
+array to one `parent_id` preserves the plugin's unsorted sibling order. Ragged
+cell arrays are valid, and missing trailing columns render empty.
+
+```cpp
+struct TreeCell {
+  std::string text;
+  std::optional<NumericValue> sort_value;
+  std::string tooltip;
+  std::string icon;  // host semantic name, not a path
+};
+
+struct TreeItem {
+  std::string id;
+  std::string parent_id;
+  std::vector<TreeCell> cells;
+  bool enabled = true;
+  bool selectable = true;
+  TreeCheckState check_state = TreeCheckState::None;
+  bool may_have_children = false;
+};
+```
+
+`TreeCheckState` uses exactly `None`, `Unchecked`, `PartiallyChecked`, and
+`Checked`, encoded as `"none"`, `"unchecked"`, `"partially_checked"`, and
+`"checked"`. In v1 it applies only to column 0. The initial semantic tree icon
+names are `folder`, `topic`, `schema`, `info`, `warning`, and `error`; an empty
+or unknown name displays no icon.
+
+| Method | Description |
+|--------|-------------|
+| `setTreeHeaders(name, headers)` | Set column headers |
+| `setTreeItems(name, items)` | Publish a complete keyed snapshot; empty clears the tree |
+| `setTreeSelectedIds(name, ids)` | Replace the logical selected-ID set; empty clears selection |
+| `setTreeExpandedIds(name, ids)` | Replace the expanded-ID set; empty collapses all public items |
+| `setTreeVisibleIds(name, ids)` | Replace the ID filter; empty is an active zero-match filter |
+| `clearTreeVisibleIds(name)` | Emit JSON null to remove the filter and restore visible-by-default behavior |
+| `setTreeSelectionMode(name, multi)` | Select single (`false`) or extended multi-selection (`true`) |
+
+These are independent additive channels: any may appear without `tree_items`,
+and absence means unchanged. `WidgetDataView::treeVisibilityUpdate()` preserves
+visibility's three states: `nullopt` = absent, `Filter` = array (including an
+empty array), and `Reset` = JSON null. The host adds every listed item's ancestor
+chain so matches remain reachable. Selected/expanded/visible IDs not in the
+current snapshot are exposed unchanged by the view and pruned with a host
+diagnostic. Invalid `tree_items` data is rejected atomically;
+`treeItems(name, &validation_error)` supplies the reason.
+
+All four string-array view channels (headers, selected IDs, expanded IDs, and a
+visibility filter) decode strictly: if any array member is not a string, that
+whole channel returns `nullopt` and remains unchanged. A malformed array is
+never interpreted as an empty destructive update. Activation columns likewise
+must be integers in the inclusive range `0..INT_MAX`.
+
+`may_have_children=true` permits a host-only expansion placeholder until the
+plugin publishes a later complete snapshot with real children. V1 always sends
+full keyed snapshots; deltas are deferred. Any future tree delta must reuse the
+table delta protocol's fresh sequence gate and all-or-nothing application rules.
+
 ### QFrame Chart Container
 
 | Method | Description |
@@ -115,6 +290,19 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | Method | Description |
 |--------|-------------|
 | `setTabIndex(name, int)` | Set active tab index |
+
+### QStackedWidget (since 0.21.0)
+
+Use the direct child page's Qt `objectName` as its stable identity. A page name
+survives page reordering; an index describes only the current layout. When both
+keys are emitted, the page name wins. Empty/unknown names and negative or
+out-of-range indexes are invalid: writers preserve them on the wire so the host
+can warn and leave the current page unchanged.
+
+| Method | Description |
+|--------|-------------|
+| `setStackedPage(name, page_object_name)` | Select a page by stable Qt `objectName` (preferred) |
+| `setStackedIndex(name, int)` | Select a page by its current index |
 
 ### QDateTimeEdit
 
@@ -178,6 +366,7 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onClicked(name)` | QPushButton | (no payload) |
 | `onFileSelected(name, path)` | QPushButton (file picker or save-file picker) | Selected file path |
 | `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path |
+| `onFilePickerResult(name, result)` | QPushButton (structured file picker) | Complete `FilePickerResult`, including cancellation/unsupported/error. Since 0.21.0. |
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts (table: column-0 text) |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
 | `onItemDeleteRequested(name, index)` | QListWidget (deletable) | Row whose trash button was clicked (see `setListItemsDeletable`) |
@@ -188,7 +377,42 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
+| `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | New page index and stable Qt `objectName`. Since 0.21.0. |
+| `onTreeSelectionChanged(name, ids)` | QTreeWidget | Complete logical selected-ID set, including filtered-out selections |
+| `onTreeItemActivated(name, id, column)` | QTreeWidget | Stable item ID and activated column (keyboard or double-click) |
+| `onTreeExpansionChanged(name, id, expanded)` | QTreeWidget | Stable item ID and new expansion state |
+| `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | Stable item ID and new column-0 `TreeCheckState` |
 | `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
+
+### Event dispatch priority and validation (normative)
+
+`DialogPluginTyped` applies exactly this priority: **structured picker → tree →
+stacked → legacy channels**. A present higher-priority channel claims the event;
+if that channel is malformed, dispatch returns `false` without falling through.
+
+1. `file_picker_result` is authoritative. A Selected result may have no legacy
+   co-key, or exactly one mode-correct co-key whose value equals its first path:
+   `folder_selected` only for `SelectDirectory`, `file_selected` for every file
+   mode. The wrong key, both keys, a mismatched value, an invalid mode, an empty
+   path, or another malformed structured field fails closed. Other additive
+   top-level keys are tolerated and do not receive callbacks.
+2. In the absence of a picker result, any tree event key claims the event.
+   Exactly one of the four tree keys must be the sole top-level key and its
+   payload must validate atomically. Multiple tree keys or any tree/other-key
+   mixture fails closed.
+3. In the absence of picker and tree keys, either stacked key claims the event.
+   Both `stacked_index` and `stacked_page` are required; the index must decode
+   losslessly in `0..INT_MAX` and the page name must be non-empty. Invalid or
+   partial stacked data fails closed. A valid stacked pair takes priority over
+   additional legacy scalar keys.
+4. Only when none of those channels is present does the established legacy
+   typed-dispatch chain run.
+
+The default `onFilePickerResult` uses `result.mode` to forward the first
+selected path exactly once to `onFileSelected` or `onFolderSelected`.
+Overriding the new handler suppresses that bridge, so an adopter receives only
+the new callback. Picker button ordering is always `onClicked` → host picker →
+result callback. Perform file I/O in the result callback, not `onClicked`.
 
 ---
 
