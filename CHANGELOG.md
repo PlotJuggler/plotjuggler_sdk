@@ -23,7 +23,7 @@ unchanged.
   diagnostic records in parser unit tests.
 - Parser diagnostics remain distinct from fatal `Status` failures, and
   `classifySchema()` remains side-effect free.
-  
+
 ### Feature: SDK version and manifest compatibility foundation (MINOR)
 
 SDK releases now expose a single version identity and shared compatibility
