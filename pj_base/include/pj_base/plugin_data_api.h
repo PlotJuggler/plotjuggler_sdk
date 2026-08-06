@@ -580,10 +580,11 @@ typedef struct PJ_toolbox_host_vtable_t {
   /* [stream-thread] Register an object topic for media payloads (images, point
    * clouds, annotations). The topic is namespaced under the data source
    * previously created via create_data_source. `metadata_json` is opaque to
-   * the host — viewers and parsers read it to pick a renderer (e.g.
-   * {"object_type":"image"} for the MediaViewerWidget). Returns false (with
-   * out_error populated) if the source handle is unknown or a topic with
-   * this name already exists for the data source. */
+   * the host. Built-in renderer discovery uses the canonical key
+   * `builtin_object_type`; its value is the exact C++ PJ::sdk::name() string
+   * for the type (for example, {"builtin_object_type":"kImage"}). Returns
+   * false (with out_error populated) if the source handle is unknown or a
+   * topic with this name already exists for the data source. */
   bool (*register_object_topic)(
       void* ctx, PJ_data_source_handle_t source, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
       PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) PJ_NOEXCEPT;
@@ -603,8 +604,10 @@ typedef struct PJ_toolbox_host_vtable_t {
    * loaded by another source. Idempotent — if a topic with this name already
    * exists on the dataset, its existing handle is returned (so a producer that
    * republishes its whole set just re-resolves the handle each time).
-   * `metadata_json` is opaque (as in register_object_topic). Returns false (with
-   * out_error populated) if the dataset does not exist.
+   * `metadata_json` is opaque (as in register_object_topic); built-in renderer
+   * discovery uses its canonical `builtin_object_type` key and C++
+   * PJ::sdk::name() values. Returns false (with out_error populated) if the
+   * dataset does not exist.
    * ABI-APPENDED slot: gate via struct_size before calling. */
   bool (*register_object_topic_on_dataset)(
       void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
@@ -667,9 +670,11 @@ typedef struct PJ_object_write_host_vtable_t {
 
   /* [stream-thread] Register an object topic under this data source with
    * the given metadata JSON. `metadata_json` is opaque to the store and
-   * retained verbatim; viewers and parsers read it to pick a renderer.
-   * Returns false (with out_error populated) if a topic with this name
-   * already exists for the data source. */
+   * retained verbatim. Built-in renderer discovery uses the canonical key
+   * `builtin_object_type`; its value is the exact C++ PJ::sdk::name() string
+   * for the type (for example, {"builtin_object_type":"kImage"}). Returns
+   * false (with out_error populated) if a topic with this name already exists
+   * for the data source. */
   bool (*register_topic)(
       void* ctx, PJ_string_view_t topic_name, PJ_string_view_t metadata_json, PJ_object_topic_handle_t* out_handle,
       PJ_error_t* out_error) PJ_NOEXCEPT;

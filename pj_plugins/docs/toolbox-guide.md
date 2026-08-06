@@ -201,7 +201,8 @@ data store.
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
 | `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
-| `registerObjectTopic(source, name, metadata_json)` | Register a media/object topic under a data source. `metadata_json` is opaque to the store and retained verbatim; viewers and parsers read it to pick a renderer. Returns an `ObjectTopicHandle`. |
+| `registerObjectTopic(source, name, type[, extra_metadata])` | Register a built-in media/object topic under a data source. The typed overload emits the canonical `builtin_object_type` renderer metadata and returns an `ObjectTopicHandle`. |
+| `registerObjectTopic(source, name, metadata_json)` | Raw-metadata overload for custom or untyped object topics. The store retains the JSON verbatim. |
 | `pushOwnedObject(topic, ts, payload)` | Eager-push serialized object bytes into the ObjectStore under an object topic; the host copies the bytes, so the plugin's buffer is free immediately after the call returns. |
 
 ### Runtime host — control plane
@@ -262,10 +263,11 @@ auto status = toolboxHost().appendArrowStream(
 overlay — use the object-write surface, which routes to the host `ObjectStore`
 rather than the columnar engine:
 
-1. `registerObjectTopic(source, name, metadata_json)` declares a topic under a
-   data source you created. The `metadata_json` is opaque to the store; viewers
-   and parsers read it to choose a renderer (e.g. `{"object_type":"image"}` for
-   the MediaViewer). It returns an `ObjectTopicHandle`.
+1. `registerObjectTopic(source, name, type[, extra_metadata])` declares a topic
+   under a data source you created. The typed overload writes the canonical
+   `builtin_object_type` metadata key with the exact `PJ::sdk::name()` value
+   (for example, `"kImage"`). It returns an `ObjectTopicHandle`. The raw
+   `metadata_json` overload remains available for custom or untyped topics.
 2. `pushOwnedObject(topic, ts, payload)` pushes serialized bytes (e.g. a
    `PJ.Image` produced via `serializeImage()` from `pj_base/builtin/image_codec.hpp`).
    The push is **eager**: the host copies the bytes immediately, so your buffer
@@ -274,8 +276,11 @@ rather than the columnar engine:
    time it writes them.
 
 ```cpp
+PJ::sdk::ObjectTopicMetadataBuilder metadata;
+metadata.string("image_codec", "pj_image_v1");
+
 auto topic = toolboxHost().registerObjectTopic(
-    source, "mosaic/preview", R"({"object_type":"image"})");
+    source, "mosaic/preview", PJ::sdk::BuiltinObjectType::kImage, metadata);
 if (!topic) {
   runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError, topic.error());
   return;
