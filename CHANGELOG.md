@@ -5,6 +5,17 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.21.0]
 
+### Fix: convenience registerService honors its documented assertion (PATCH)
+
+The non-returning `ServiceRegistryBuilder::registerService` overloads documented
+a debug assertion but discarded the `tryRegisterService` status in every build
+type, so duplicate or null registrations were silent. A rejection now trips
+`PJ_ASSERT`, and the doc-comments state the exact NDEBUG behavior (status
+dropped; callers that must report failures use `tryRegisterService`). Adds the
+first regression tests for the builder's registration rules
+(`service_registry_builder_test`, built with `PJ_ASSERT_THROWS` so the
+invariant is observable in every build type).
+
 ### Feature: pure-functional MessageParser C extension (MINOR)
 
 MessageParser scalar/object results no longer require new hosts to cast an
