@@ -344,6 +344,18 @@ target_link_libraries(object_ingest_policy_test PRIVATE
 target_include_directories(object_ingest_policy_test PRIVATE include)
 add_test(NAME object_ingest_policy_test COMMAND object_ingest_policy_test)
 
+# Unit test: ServiceRegistryBuilder registration rules. PJ_ASSERT_THROWS makes
+# the convenience overload's invariant observable in every build type — a plain
+# assert() is compiled away under NDEBUG, which is where it would go unchecked.
+add_executable(service_registry_builder_test tests/service_registry_builder_test.cpp)
+target_compile_definitions(service_registry_builder_test PRIVATE PJ_ASSERT_THROWS)
+target_compile_options(service_registry_builder_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(service_registry_builder_test PRIVATE
+  pj_base GTest::gtest_main
+)
+target_include_directories(service_registry_builder_test PRIVATE include)
+add_test(NAME service_registry_builder_test COMMAND service_registry_builder_test)
+
 # TODO(v3-port): delegated_ingest_integration_test.cpp uses old bindWriteHost /
 # bindRuntimeHost methods and get_last_error slots removed in v3. Pending port
 # to the service registry + PJ_error_t* pattern. Its coverage (parser binding +

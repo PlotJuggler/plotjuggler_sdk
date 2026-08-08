@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "pj_base/assert.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
 
@@ -58,16 +59,21 @@ class ServiceRegistryBuilder {
   }
 
   /// Non-returning convenience overload for callers that know the inputs are
-  /// valid (mocks, tests). Asserts in debug builds; no-op on failure in
-  /// release (i.e. do NOT rely on this for untrusted inputs — use
-  /// tryRegisterService instead).
+  /// valid (mocks, tests). A rejection trips `PJ_ASSERT`, which aborts while
+  /// `assert()` is live and throws under `PJ_ASSERT_THROWS` — but NDEBUG
+  /// compiles it away, so in a release build the registration is silently
+  /// dropped and the reason is lost. Anything whose inputs are not statically
+  /// known must call tryRegisterService and handle the Status.
   void registerService(std::string_view name, uint32_t protocol_version, PJ_service_t service) {
-    auto status = tryRegisterService(name, protocol_version, service);
-    (void)status;
+    [[maybe_unused]] const ::PJ::Status status = tryRegisterService(name, protocol_version, service);
+    PJ_ASSERT(status.has_value(), "registerService: rejected (duplicate name, or null ctx/vtable)");
   }
 
   /// Typed overload using a service-traits class (see sdk/service_traits.hpp).
   /// The traits provide the canonical name and a default protocol version.
+  /// Inherits the overload above's release-build behavior: a rejection is
+  /// dropped without a trace, so a host that must report it registers through
+  /// tryRegisterService with the same expansion.
   template <class Traits>
   void registerService(typename Traits::Raw service) {
     registerService(
