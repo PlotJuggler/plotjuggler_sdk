@@ -2,17 +2,26 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "detail/native_parser_module_loader.hpp"
 #include "pj_base/parser_module_abi.h"
+#include "pj_plugins/host/parser_module_session_budget.hpp"
 
 namespace PJ::detail {
 
 struct NativeParserModuleState {
+  ~NativeParserModuleState();
+
   NativeModuleHandle handle = nullptr;
   std::string path;
   std::string manifest_json;
+  std::string module_id;
+  std::vector<std::string> claim_ids;
+  std::shared_ptr<ParserModuleSessionBudgetTracker> session_budget;
+  bool module_budget_reserved = false;
 
   PJ_module_abi_fn_t abi = nullptr;
   PJ_module_create_fn_t create = nullptr;

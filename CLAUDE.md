@@ -21,11 +21,14 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
   VoxelGrid, PlotMarkers) and their canonical wire codecs, the C-ABI protocol headers for
   DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them, the
   standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), the host-side
-  wasm parser-module manifest custom-section codec, and the test-only static WASI ABI auditor. The
-  0.22 authoring helper builds native parser modules only; wasm loading/execution is not present.
+  wasm parser-module manifest custom-section codec + static wasm ABI inspector, and the installed
+  `pj-wasm-embed-manifest` CLI. `pj_add_parser_module(... TARGETS native wasm)` builds both
+  artifacts from one source (wasm needs `PJ_WASI_SDK_ROOT`, wasi-sdk 27).
 - **pj_plugins** — host-side loaders + RAII handles + plugin **discovery** (directory scan +
   embedded-manifest inspection) for four plugin families (DataSource, MessageParser, Dialog, Toolbox),
-  parser claim admission/resolution and native functional parser-module execution,
+  parser claim admission/resolution, native functional parser-module execution, the optional
+  sandboxed wasm parser-module loader/runtime (Wasmer 7.0.1, gated on `PJ_WASMER_ROOT`, only the
+  `plugin_host` component depends on it) with session budgets,
   config-envelope helpers, and the **dialog C ABI** (`pj_plugins/dialog_protocol/`). The
   duplicate-resolution *catalog* (which copy wins by priority/version/compatibility) is host policy
   and lives in the app (`pj_runtime`), built on these discovery primitives. Note the split: the DataSource/MessageParser/Toolbox C-ABI

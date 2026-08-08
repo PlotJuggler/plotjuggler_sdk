@@ -169,14 +169,50 @@ matching is bounded, so allocation failure is returned as data error rather
 than escaping as a trap. `PJ_FUNCTIONAL_PARSER` supplies the complete native
 export set, uses synchronized index+generation instance tokens to reject stale
 handles, and catches user exceptions at the C boundary.
-`pj_add_parser_module(... TARGETS native)` builds a hidden-visibility module and
-embeds its JSON manifest behind the native metadata exports. `TARGETS wasm` is
-not available in SDK 0.22. The shared host codec can append and read the exact
-JSON bytes in a wasm `pj_parser_module_manifest` custom section; the conditional
-wasi-sdk 27 compile gate builds the toy source with C++17 and exceptions
-disabled, then statically audits the reactor model and every operational export
-signature. This is structural conformance only: no wasm loader or execution
-runtime ships in this release.
+`pj_add_parser_module(... TARGETS native wasm)` builds hidden-visibility native
+and wasi-sdk 27 reactor artifacts from one source. It embeds the JSON manifest
+behind the native metadata exports and in the wasm custom section. Wasm
+reactors omit those two metadata exports and carry the exact JSON bytes in the
+`pj_parser_module_manifest` custom section. The shared host codec appends and
+reads that section; the conditional wasi-sdk 27 compile gate builds the same
+toy module with C++17 and exceptions disabled, then statically audits the
+reactor model and every operational export signature without executing wasm.
+
+When `PJ_WASMER_ROOT` selects the pinned Wasmer 7.0.1 C API, the optional
+`WasmParserModule` loader applies that static audit before compilation and
+requires exported memory plus an empty import set. The fixture supplies its
+unreachable WASI I/O fallbacks internally, so no fd, path, socket, clock,
+random, environment, or scheduler capability enters the frozen v1 allow-list.
+An engine-owned compiled module is instantiated in one independent store per
+bound instance. Store calls may migrate between threads sequentially, but the
+host must serialize calls on an instance. The runtime reacquires linear memory
+after every guest call, validates every returned range, and resolves splices
+against the original host payload. Per-call Wasmer instruction metering is the
+enforceable execution deadline; the pinned archive exposes no public interrupt
+or epoch API. Artifacts must declare a bounded memory maximum, and a separate
+session tracker admits module count, file size, total claims, active instances,
+and aggregate per-instance declared memory. Guest traps and metering exhaustion
+join malformed descriptors and bad offsets in the contract-violation strike
+path; module-reported parse errors remain strike-free data errors.
+
+### Wasmer pin rationale (7.0.1, evaluated against 7.2.1 on 2026-08-09)
+
+The 7.0.1 pin was re-evaluated symbol-by-symbol against the 7.2.x line:
+
+- 7.2.x adds nothing the loader needs: `wasm_module_share/obtain` are still
+  absent from the static archive, the exported metering symbol set is
+  identical, and the "interruptable computation" work remains internal Rust
+  surface with no public C interrupt/epoch API. The only C-API additions are
+  `wasmer_features_*` toggles the loader does not require.
+- The WASI-syscall CVEs fixed in 7.2.0 (unbounded host allocation in
+  `getcwd`/`random_get`, `poll_oneoff`, `sock_recv`/`sock_recv_from`) are
+  structurally unreachable here: the frozen empty import allow-list rejects
+  any module importing those syscalls before instantiation. **Re-evaluate the
+  pin before ever widening the import allow-list** — no release currently
+  combines those fixes with x86_64-darwin support.
+- 7.2.0 dropped the x86_64-darwin target, so moving the pin would end wasm
+  parser-module support on Intel macOS while the SDK still ships x86_64
+  macOS artifacts.
 
 ## 0. C protocol v4 (current under ABI v5)
 
@@ -383,7 +419,8 @@ pj_plugins/
     toolbox_library.cpp
 
 cmake/
-  PjParserModule.cmake             ← pj_add_parser_module native target helper
+  PjParserModule.cmake             ← pj_add_parser_module native/wasm target helper
+  parser_module_wasi_no_io_stubs.cpp ← closes the v1 empty wasm import set
 
 (PlotJuggler application repo — not part of this SDK submodule)
 pj_datastore/

@@ -1,5 +1,40 @@
 find_package(nlohmann_json REQUIRED)
 
+set(PJ_WASMER_ROOT "$ENV{PJ_WASMER_ROOT}" CACHE PATH
+  "Wasmer 7.0.1 C-API root used for wasm parser-module execution")
+set(_pj_wasmer_include "${PJ_WASMER_ROOT}/include")
+find_file(_pj_wasmer_library
+  NAMES libwasmer.a libwasmer.lib wasmer.lib
+  PATHS "${PJ_WASMER_ROOT}/lib"
+  NO_DEFAULT_PATH
+  NO_CACHE)
+set(PJ_WASMER_AVAILABLE OFF)
+if(NOT PJ_WASMER_ROOT)
+  message(STATUS
+    "Wasm parser-module loader skipped: PJ_WASMER_ROOT cache/env variable is not set")
+elseif(NOT EXISTS "${_pj_wasmer_include}/wasm.h" OR
+       NOT EXISTS "${_pj_wasmer_include}/wasmer.h" OR
+       NOT _pj_wasmer_library)
+  message(STATUS
+    "Wasm parser-module loader skipped: Wasmer C-API is missing under PJ_WASMER_ROOT=${PJ_WASMER_ROOT}")
+else()
+  file(STRINGS "${_pj_wasmer_include}/wasmer.h" _pj_wasmer_version_line
+    REGEX "^#define WASMER_VERSION ")
+  if(NOT _pj_wasmer_version_line MATCHES "\"7\\.0\\.1\"")
+    message(FATAL_ERROR
+      "Wasm parser-module loader requires Wasmer 7.0.1; found '${_pj_wasmer_version_line}'")
+  endif()
+  find_package(Threads REQUIRED)
+  add_library(pj_wasmer_static UNKNOWN IMPORTED)
+  set_target_properties(pj_wasmer_static PROPERTIES
+    IMPORTED_LOCATION "${_pj_wasmer_library}"
+    INTERFACE_INCLUDE_DIRECTORIES "${_pj_wasmer_include}"
+  )
+  set(PJ_WASMER_AVAILABLE ON)
+  message(STATUS "Wasm parser-module loader enabled with Wasmer 7.0.1: ${PJ_WASMER_ROOT}")
+endif()
+set(PJ_SDK_WITH_WASMER ${PJ_WASMER_AVAILABLE} PARENT_SCOPE)
+
 add_library(pj_plugin_loader_detail STATIC
   src/detail/vtable_validation.cpp
 )
@@ -94,6 +129,7 @@ add_library(plotjuggler_sdk::parser_claim_catalog ALIAS pj_parser_claim_catalog)
 add_library(pj_parser_module_host STATIC
   src/native_parser_module.cpp
   src/parser_module_runtime.cpp
+  src/parser_module_session_budget.cpp
 )
 target_include_directories(pj_parser_module_host
   PUBLIC
@@ -112,9 +148,42 @@ target_link_libraries(pj_parser_module_host
   PUBLIC
     pj_base
   PRIVATE
+    pj_parser_claim_catalog
     ${CMAKE_DL_LIBS}
 )
 add_library(plotjuggler_sdk::parser_module_host ALIAS pj_parser_module_host)
+
+if(PJ_WASMER_AVAILABLE)
+  add_library(pj_wasm_parser_module_host STATIC
+    src/wasm_parser_module.cpp
+    src/wasm_parser_module_runtime.cpp
+  )
+  target_include_directories(pj_wasm_parser_module_host
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+  )
+  target_compile_features(pj_wasm_parser_module_host PUBLIC cxx_std_20)
+  target_compile_options(pj_wasm_parser_module_host PRIVATE ${PJ_WARNING_FLAGS})
+  set_target_properties(pj_wasm_parser_module_host PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    EXPORT_NAME wasm_parser_module_host
+  )
+  target_link_libraries(pj_wasm_parser_module_host
+    PUBLIC
+      pj_parser_module_host
+    PRIVATE
+      pj_wasmer_static
+      Threads::Threads
+      ${CMAKE_DL_LIBS}
+  )
+  if(UNIX)
+    target_link_libraries(pj_wasm_parser_module_host PRIVATE m)
+  endif()
+  add_library(plotjuggler_sdk::wasm_parser_module_host ALIAS pj_wasm_parser_module_host)
+endif()
 
 # ---------------------------------------------------------------------------
 # pj_data_source_host — host-side DataSource library loader
@@ -291,6 +360,9 @@ target_link_libraries(pj_plugin_host INTERFACE
   pj_parser_claim_catalog
   pj_parser_module_host
 )
+if(PJ_WASMER_AVAILABLE)
+  target_link_libraries(pj_plugin_host INTERFACE pj_wasm_parser_module_host)
+endif()
 set_target_properties(pj_plugin_host PROPERTIES EXPORT_NAME plugin_host)
 add_library(plotjuggler_sdk::plugin_host ALIAS pj_plugin_host)
 
@@ -318,6 +390,53 @@ function(pj_add_native_parser_module_fixture target)
     target_link_options(${target} PRIVATE "LINKER:-z,defs" "LINKER:--exclude-libs,ALL")
   endif()
 endfunction()
+
+if(PJ_WASMER_AVAILABLE)
+  add_executable(wasmer_shared_module_prototype_test tests/wasmer_shared_module_prototype_test.cpp)
+  target_compile_options(wasmer_shared_module_prototype_test PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(wasmer_shared_module_prototype_test PRIVATE
+    pj_wasmer_static Threads::Threads ${CMAKE_DL_LIBS} GTest::gtest_main)
+  if(UNIX)
+    target_link_libraries(wasmer_shared_module_prototype_test PRIVATE m)
+  endif()
+  add_test(NAME wasmer_shared_module_prototype_test COMMAND wasmer_shared_module_prototype_test)
+  set_tests_properties(wasmer_shared_module_prototype_test PROPERTIES LABELS "parser_module;wasmer")
+
+  if(TARGET parser_module_wasm_conformance_fixture)
+    get_property(_pj_toy_wasm_path TARGET parser_module_wasm_conformance_fixture
+      PROPERTY PJ_PARSER_MODULE_WASM_FIXTURE_PATH)
+    add_executable(wasm_parser_module_test tests/wasm_parser_module_test.cpp)
+    add_dependencies(wasm_parser_module_test parser_module_wasm_conformance_fixture)
+    target_compile_definitions(wasm_parser_module_test PRIVATE
+      PJ_TOY_CDR_POINTCLOUD_WASM_PATH="${_pj_toy_wasm_path}")
+    target_compile_options(wasm_parser_module_test PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(wasm_parser_module_test PRIVATE
+      pj_wasm_parser_module_host pj_parser_claim_catalog GTest::gtest_main)
+    add_test(NAME wasm_parser_module_test COMMAND wasm_parser_module_test)
+    set_tests_properties(wasm_parser_module_test PROPERTIES LABELS "parser_module;wasmer;wasi")
+
+    pj_add_parser_module(adversarial_wasm_parser_module
+      SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/adversarial_wasm_parser_module.cpp"
+      MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/tests/adversarial_wasm_parser_module.module.json"
+      TARGETS wasm
+    )
+    get_property(_pj_adversarial_wasm_path TARGET adversarial_wasm_parser_module_wasm
+      PROPERTY PJ_PARSER_MODULE_WASM_PATH)
+    add_executable(wasm_parser_module_hardening_test
+      tests/wasm_parser_module_hardening_test.cpp)
+    add_dependencies(wasm_parser_module_hardening_test adversarial_wasm_parser_module_wasm)
+    target_compile_definitions(wasm_parser_module_hardening_test PRIVATE
+      PJ_ADVERSARIAL_WASM_PATH="${_pj_adversarial_wasm_path}")
+    target_compile_options(wasm_parser_module_hardening_test PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(wasm_parser_module_hardening_test PRIVATE
+      pj_wasm_parser_module_host GTest::gtest_main)
+    add_test(NAME wasm_parser_module_hardening_test COMMAND wasm_parser_module_hardening_test)
+    set_tests_properties(wasm_parser_module_hardening_test PROPERTIES
+      LABELS "parser_module;wasmer;wasi")
+  else()
+    message(STATUS "Wasm parser-module E2E skipped: the wasi-sdk fixture target is unavailable")
+  endif()
+endif()
 
 pj_add_native_parser_module_fixture(native_parser_module_fixture)
 pj_add_native_parser_module_fixture(native_parser_module_missing_export PJ_FIXTURE_OMIT_FREE)
@@ -570,6 +689,11 @@ target_link_libraries(parser_module_runtime_test PRIVATE
 )
 add_test(NAME parser_module_runtime_test COMMAND parser_module_runtime_test)
 
+add_executable(parser_module_session_budget_test tests/parser_module_session_budget_test.cpp)
+target_compile_options(parser_module_session_budget_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(parser_module_session_budget_test PRIVATE pj_parser_module_host GTest::gtest_main)
+add_test(NAME parser_module_session_budget_test COMMAND parser_module_session_budget_test)
+
 # Keystone integration: a C++17 module authored and built only with the
 # header-only kit, then exercised through the production native loader/runtime.
 add_executable(parser_module_authoring_e2e_test tests/parser_module_authoring_e2e_test.cpp)
@@ -686,6 +810,10 @@ endif() # PJ_BUILD_TESTS
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
+  set(_pj_plugin_host_install_targets)
+  if(PJ_WASMER_AVAILABLE)
+    list(APPEND _pj_plugin_host_install_targets pj_wasm_parser_module_host)
+  endif()
   install(TARGETS
       pj_plugin_loader_detail
       pj_plugin_sdk
@@ -696,6 +824,7 @@ if(PJ_INSTALL_SDK)
       pj_message_parser_host
       pj_toolbox_host
       pj_plugin_host
+      ${_pj_plugin_host_install_targets}
     EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
