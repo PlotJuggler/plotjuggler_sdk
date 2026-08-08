@@ -140,20 +140,8 @@ typedef struct {
   uint32_t id;
 } PJ_parser_binding_handle_t;
 
-/**
- * Ownership token kept alive while a non-owning byte buffer is in use.
- * `ctx` is opaque to the host; `release(ctx)` is invoked once when the host
- * no longer needs the bytes referenced by the buffer. `ctx` MAY be NULL —
- * meaning the buffer was static / borrowed from an external lifetime — in
- * which case `release` is also expected to be NULL.
- */
-typedef struct PJ_payload_anchor_t {
-  void* ctx;
-  void (*release)(void* ctx);
-} PJ_payload_anchor_t;
-
-/**
- * Payload bytes plus an ownership anchor. The host treats `data` as a
+/*
+ * PJ_payload_t is declared by plugin_data_api.h. The host treats `data` as a
  * non-owning view, valid until `anchor.release(anchor.ctx)` is invoked.
  *
  * For zero-copy ingest, the producer (DataSource plugin) returns a payload
@@ -162,11 +150,6 @@ typedef struct PJ_payload_anchor_t {
  * objects holding spans into the buffer) and only releases the anchor when
  * everyone done with the bytes.
  */
-typedef struct PJ_payload_t {
-  const uint8_t* data;
-  uint64_t size;
-  PJ_payload_anchor_t anchor;
-} PJ_payload_t;
 
 /**
  * Idempotent FetchMessageData callable for one message's payload bytes.

@@ -3,6 +3,9 @@
 > **Tracks the v5 plugin ABI** (`PJ_ABI_VERSION == 5`). The parser
 > write-host supports per-record writes and an optional Arrow stream
 > batch path for parser-shaped formats that naturally decode batches.
+> SchemaHandler-based parsers additionally expose the
+> `pj.parser_functional.v1` C extension introduced in SDK 0.21; no C++ result
+> object crosses the plugin boundary.
 > For ABI evolution rules, error semantics, and noexcept discipline see
 > `ARCHITECTURE.md`.
 
@@ -46,9 +49,11 @@ the host, which routes them to the appropriate parser based on encoding name.
 
 ## Quick Start
 
-1. Subclass `PJ::MessageParserPluginBase`
-2. Override `parse()` (required) and optionally `bindSchema()`, `saveConfig()`,
-   `loadConfig()`
+1. Subclass `PJ::MessageParserPluginBase`.
+2. For new parsers, register `SchemaHandler` entries for functional scalar
+   and/or builtin-object output. For a legacy push-only parser, override
+   `parse()` instead. Optionally override `bindSchema()`, `saveConfig()`, and
+   `loadConfig()`.
 3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"...","encoding":["..."]})")`
 4. Build as a shared library linking `pj_base`
 
@@ -57,6 +62,11 @@ separately: `PJ_MESSAGE_PARSER_PLUGIN_NAMED(my::Parser, MyParser, kManifest)`.
 Dynamic builds may use either form.
 
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
+
+`parse()` remains supported for scalar push ingestion, but it does not by
+itself advertise functional parsing. A 0.21 rebuild of a legacy parser therefore
+stays on the host's compatibility path until it registers a `SchemaHandler`;
+there is no false capability claim and no flag to maintain manually.
 
 ## Plugin Contract
 
@@ -578,18 +588,19 @@ dispatch code.
 - `pj_plugins/examples/mock_schema_parser.cpp` — richer parser demonstrating
   the high-throughput pattern: `ensureField()` + `appendBoundRecord()`, schema
   binding, config persistence, and error handling.
-- `pj_base/tests/message_parser_plugin_base_test.cpp` — comprehensive test
-  fixture exercising the full SDK surface: vtable generation, bind/parse
-  round-trip, schema binding, config persistence, and exception safety.
+- `pj_plugins/tests/message_parser_functional_extension_test.cpp` — functional
+  C-extension contract, exact-once sinks, exception containment, truthful
+  migration detection, malformed providers, and anchor release.
+- `pj_plugins/tests/functional_image_parser_plugin.cpp` plus
+  `message_parser_library_test.cpp` — real-DSO ownership test proving a decoded
+  object survives parser destruction and plugin unload.
 
 ## Builtin-object pipeline (PR #86)
 
 Beyond the scalar-column output that `parse()` and the
 `sdk::ParserWriteHostService` cover, the SDK adds a second, narrow
-output channel for media-like payloads: a *builtin object* (image,
-depth image, point cloud, image annotations, frame transforms) returned by name
-from the parser, decoded once, and visualised by widgets that never learn the
-wire format.
+output channel for canonical builtin objects returned by the parser and
+visualised by widgets that never learn the source-specific wire format.
 
 The table-driven `SchemaHandler` routes on `MessageParserPluginBase`
 participate:
@@ -622,8 +633,42 @@ handler.parse_object =
   optional parser-controlled timestamp. The host downcasts with
   `std::any_cast<PJ::sdk::Image>(&obj)` to dispatch to the matching viewer.
 
-Builtin types live under `pj_base/builtin/`, one header per
-type. `sdk::Image` carries an open-ended `std::string encoding`
+The types above are plugin-author C++ conveniences, not the binary boundary.
+After `bindSchema`, `MessageParserPluginBase` advertises
+`pj.parser_functional.v1` when at least one handler exists. Its trampoline:
+
+1. invokes `parseScalars` / `parseObject` inside the plugin DSO;
+2. delivers scalar fields through one synchronous caller-owned C sink, or
+   serializes the builtin to canonical `PJ.*` protobuf wire bytes and delivers
+   `(type, optional timestamp, bytes)` through one object sink;
+3. destroys every plugin-side C++ result before returning.
+
+`MessageParserHandle::parseScalarsFunctional()` copies or consumes scalar
+views only during the callback. `parseObjectFunctional()` decodes canonical
+bytes synchronously into a host-owned `ObjectRecord`; that value remains safe
+after both the parser instance and shared library are gone. Provider/sink
+exceptions, unknown object tags, malformed tables, and zero/multiple sink calls
+fail closed.
+
+For large objects, pass the `sdk::PayloadView` overload rather than a bare
+`Span` when an ownership anchor already exists. The C extension transfers one
+`PJ_payload_t` anchor reference into the plugin and releases it exactly once,
+allowing handlers to propagate the input buffer without an initial copy. The
+DSO boundary still performs one canonical serialization and one host decode;
+that explicit cost is the price of not exporting plugin allocators,
+destructors, RTTI, STL layout, or `std::any` manager functions. Measure this
+path for image/point-cloud workloads instead of bypassing it with direct C++
+calls.
+
+Parsers built before SDK 0.21 expose no functional extension. PlotJuggler 0.21
+may use a deprecated, isolated direct-C++ bridge only for those binaries. New
+host code must not cast an opaque parser context; SDK 1.0 removes the bridge.
+
+Builtin types and their canonical codecs live under `pj_base/builtin/`, one
+header per type. `serializeBuiltinObject()` / `deserializeBuiltinObject()`
+cover every stable builtin tag; `RobotDescription` now has a canonical wire
+codec as well. A zero-byte payload is the valid proto3 default message when the
+separate type tag is known. `sdk::Image` carries an open-ended `std::string encoding`
 (`"rgb8"`, `"bgr8"`, `"mono8"`, `"jpeg"`, `"png"`, `"compressedDepth"`,
 …) so raw and compressed images share a single type. New types are
 appended without changing the `BuiltinObject` type (its `std::any`

@@ -32,6 +32,7 @@
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/descriptor_import_protocol.h"
 #include "pj_base/message_parser_protocol.h"
+#include "pj_base/parser_functional_protocol.h"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/toolbox_protocol.h"
 
@@ -128,6 +129,24 @@ static_assert(PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS == 19, "PlotMarkers type id pi
 static_assert(sizeof(PJ_schema_classification_t) == 4, "PJ_schema_classification_t layout pinned");
 static_assert(offsetof(PJ_schema_classification_t, object_type) == 0, "object_type at offset 0");
 static_assert(offsetof(PJ_schema_classification_t, reserved) == 2, "reserved at offset 2");
+
+// Parser functional extension v1. These caller-owned sink tables are the
+// only values crossing the new parser result boundary; freeze their first
+// published layout independently of the C++ convenience wrappers.
+#if INTPTR_MAX == INT64_MAX
+static_assert(offsetof(PJ_parser_scalar_sink_v1_t, struct_size) == 0, "scalar sink prefix pinned");
+static_assert(offsetof(PJ_parser_scalar_sink_v1_t, ctx) == 8, "scalar sink context pinned");
+static_assert(offsetof(PJ_parser_scalar_sink_v1_t, accept_record) == 16, "scalar sink callback pinned");
+static_assert(sizeof(PJ_parser_scalar_sink_v1_t) == 24, "scalar sink size pinned");
+static_assert(offsetof(PJ_parser_object_sink_v1_t, struct_size) == 0, "object sink prefix pinned");
+static_assert(offsetof(PJ_parser_object_sink_v1_t, ctx) == 8, "object sink context pinned");
+static_assert(offsetof(PJ_parser_object_sink_v1_t, accept_object) == 16, "object sink callback pinned");
+static_assert(sizeof(PJ_parser_object_sink_v1_t) == 24, "object sink size pinned");
+static_assert(offsetof(PJ_parser_functional_v1_t, struct_size) == 0, "functional extension prefix pinned");
+static_assert(offsetof(PJ_parser_functional_v1_t, parse_scalars) == 8, "functional scalar slot pinned");
+static_assert(offsetof(PJ_parser_functional_v1_t, parse_object) == 16, "functional object slot pinned");
+static_assert(sizeof(PJ_parser_functional_v1_t) == 24, "functional extension size pinned");
+#endif
 
 static_assert(sizeof(PJ_payload_anchor_t) == 16, "PJ_payload_anchor_t pinned (ctx + release fn ptr)");
 static_assert(offsetof(PJ_payload_anchor_t, ctx) == 0, "ctx at offset 0");

@@ -9,12 +9,13 @@
  *     per-record, with an optional append_arrow_stream tail slot for
  *     parser-shaped formats that naturally decode batches.
  *
- * Pure-functional production (scalars by value, canonical objects by
- * value with BufferAnchor) is a C++ SDK contract: parsers inheriting from
- * MessageParserPluginBase register handlers in SchemaHandler and the
- * in-process host calls parseScalars() / parseObject() directly on the
- * C++ pointer. Pure-C plugins use the parse() slot to write scalars to
- * writeHost.
+ * Pure-functional production is the additive `pj.parser_functional.v1`
+ * extension declared in parser_functional_protocol.h. Scalar fields cross as
+ * synchronous borrowed C values; canonical objects cross as a stable type tag
+ * plus canonical wire bytes. No C++ parser class or STL value crosses the new
+ * path. Parsers built before SDK 0.21 do not expose the extension and may use a
+ * deprecated host compatibility bridge until the next SDK major version.
+ * Pure-C plugins may continue using parse() to write scalars to writeHost.
  *
  * The host obtains the plugin's vtable via `PJ_get_message_parser_vtable()`
  * and drives the plugin through: create -> bind(registry) ->

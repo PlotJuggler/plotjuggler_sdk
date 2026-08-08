@@ -124,9 +124,118 @@ inline const void* MessageParserPluginBase::trampoline_get_plugin_extension(void
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     std::string_view sv = id.data == nullptr ? std::string_view{} : std::string_view(id.data, id.size);
+    // Do not falsely advertise the functional route for a newly rebuilt
+    // plugin that still implements only legacy parse(). Schema handlers may
+    // be registered in the constructor or bindSchema(); hosts query again
+    // after binding and do not cache an earlier absence.
+    if (sv == PJ_PARSER_FUNCTIONAL_EXTENSION_V1 && !self->handlers_.empty()) {
+      static const PJ_parser_functional_v1_t extension{
+          .struct_size = sizeof(PJ_parser_functional_v1_t),
+          .parse_scalars = trampoline_parse_scalars_functional,
+          .parse_object = trampoline_parse_object_functional,
+      };
+      return &extension;
+    }
     return self->pluginExtension(sv);
   } catch (...) {
     return nullptr;
+  }
+}
+
+inline bool MessageParserPluginBase::trampoline_parse_scalars_functional(
+    void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, const PJ_parser_scalar_sink_v1_t* sink,
+    PJ_error_t* out_error) noexcept {
+  if (ctx == nullptr) {
+    storeError(out_error, 2, "plugin", "parse_scalars called with null plugin context");
+    return false;
+  }
+  auto* self = static_cast<MessageParserPluginBase*>(ctx);
+  if (sink == nullptr || sink->struct_size < PJ_PARSER_SCALAR_SINK_V1_MIN_SIZE || sink->accept_record == nullptr) {
+    self->storeError(out_error, 2, "plugin", "parse_scalars called with invalid scalar sink");
+    return false;
+  }
+  if (payload.data == nullptr && payload.size != 0) {
+    self->storeError(out_error, 2, "plugin", "parse_scalars called with invalid payload");
+    return false;
+  }
+
+  try {
+    auto record = self->parseScalars(timestamp_ns, Span<const uint8_t>(payload.data, payload.size));
+    if (!record) {
+      self->storeError(out_error, 1, "plugin", std::move(record).error());
+      return false;
+    }
+    const auto fields = sdk::toAbiNamed(Span<const sdk::NamedFieldValue>(record->fields));
+    return sink->accept_record(
+        sink->ctx, record->ts.has_value(), record->ts.value_or(0), fields.data(), fields.size(), out_error);
+  } catch (const std::exception& e) {
+    self->storeError(out_error, 1, "plugin", std::string("parse_scalars threw: ") + e.what());
+    return false;
+  } catch (...) {
+    self->storeError(out_error, 1, "plugin", "unknown exception in parse_scalars");
+    return false;
+  }
+}
+
+inline bool MessageParserPluginBase::trampoline_parse_object_functional(
+    void* ctx, int64_t timestamp_ns, PJ_payload_t payload, const PJ_parser_object_sink_v1_t* sink,
+    PJ_error_t* out_error) noexcept {
+  if (payload.anchor.ctx != nullptr && payload.anchor.release == nullptr) {
+    storeError(out_error, 2, "plugin", "parse_object payload anchor has context without release callback");
+    return false;
+  }
+
+  // parse_object consumes the one C anchor reference on every path. Copies of
+  // this shared_ptr remain entirely inside the plugin DSO and keep the host
+  // payload alive until the returned object has been serialized.
+  std::shared_ptr<void> payload_owner;
+  if (payload.anchor.release != nullptr) {
+    try {
+      payload_owner = std::shared_ptr<void>(payload.anchor.ctx, payload.anchor.release);
+    } catch (const std::exception& e) {
+      storeError(out_error, 1, "plugin", std::string("payload anchor adoption failed: ") + e.what());
+      return false;
+    } catch (...) {
+      storeError(out_error, 1, "plugin", "unknown exception adopting payload anchor");
+      return false;
+    }
+  }
+  if (ctx == nullptr) {
+    storeError(out_error, 2, "plugin", "parse_object called with null plugin context");
+    return false;
+  }
+  auto* self = static_cast<MessageParserPluginBase*>(ctx);
+  if (sink == nullptr || sink->struct_size < PJ_PARSER_OBJECT_SINK_V1_MIN_SIZE || sink->accept_object == nullptr) {
+    self->storeError(out_error, 2, "plugin", "parse_object called with invalid object sink");
+    return false;
+  }
+  if (payload.data == nullptr && payload.size != 0) {
+    self->storeError(out_error, 2, "plugin", "parse_object called with invalid payload");
+    return false;
+  }
+
+  try {
+    sdk::PayloadView payload_view{Span<const uint8_t>(payload.data, payload.size), std::move(payload_owner)};
+    auto record = self->parseObject(timestamp_ns, std::move(payload_view));
+    if (!record) {
+      self->storeError(out_error, 1, "plugin", std::move(record).error());
+      return false;
+    }
+    const auto object_type = sdk::typeOf(record->object);
+    auto canonical_wire = serializeBuiltinObject(record->object);
+    if (!canonical_wire) {
+      self->storeError(out_error, 1, "plugin", std::move(canonical_wire).error());
+      return false;
+    }
+    return sink->accept_object(
+        sink->ctx, record->ts.has_value(), record->ts.value_or(0), static_cast<uint16_t>(object_type),
+        PJ_bytes_view_t{canonical_wire->data(), canonical_wire->size()}, out_error);
+  } catch (const std::exception& e) {
+    self->storeError(out_error, 1, "plugin", std::string("parse_object threw: ") + e.what());
+    return false;
+  } catch (...) {
+    self->storeError(out_error, 1, "plugin", "unknown exception in parse_object");
+    return false;
   }
 }
 
