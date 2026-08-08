@@ -20,6 +20,7 @@ The public headers live under:
 #include <pj_base/builtin/point_cloud.hpp>
 #include <pj_base/builtin/compressed_point_cloud.hpp>
 #include <pj_base/builtin/occupancy_grid.hpp>
+#include <pj_base/builtin/occupancy_grid_update.hpp>
 #include <pj_base/builtin/mesh3d.hpp>
 #include <pj_base/builtin/video_frame.hpp>
 #include <pj_base/builtin/scene_entities.hpp>
@@ -27,18 +28,29 @@ The public headers live under:
 #include <pj_base/builtin/image_annotations.hpp>
 #include <pj_base/builtin/frame_transforms.hpp>
 #include <pj_base/builtin/poses_in_frame.hpp>
+#include <pj_base/builtin/camera_info.hpp>
+#include <pj_base/builtin/log.hpp>
+#include <pj_base/builtin/voxel_grid.hpp>
+#include <pj_base/builtin/plot_markers.hpp>
 // Codecs — one per type, all share the canonical PJ.<Type> wire format under pj_base/proto/pj/.
+#include <pj_base/builtin/builtin_object_codec.hpp>
 #include <pj_base/builtin/image_codec.hpp>
 #include <pj_base/builtin/depth_image_codec.hpp>
 #include <pj_base/builtin/point_cloud_codec.hpp>
 #include <pj_base/builtin/compressed_point_cloud_codec.hpp>
 #include <pj_base/builtin/occupancy_grid_codec.hpp>
+#include <pj_base/builtin/occupancy_grid_update_codec.hpp>
 #include <pj_base/builtin/mesh3d_codec.hpp>
 #include <pj_base/builtin/video_frame_codec.hpp>
 #include <pj_base/builtin/scene_entities_codec.hpp>
 #include <pj_base/builtin/image_annotations_codec.hpp>
 #include <pj_base/builtin/frame_transforms_codec.hpp>
 #include <pj_base/builtin/poses_in_frame_codec.hpp>
+#include <pj_base/builtin/robot_description_codec.hpp>
+#include <pj_base/builtin/camera_info_codec.hpp>
+#include <pj_base/builtin/log_codec.hpp>
+#include <pj_base/builtin/voxel_grid_codec.hpp>
+#include <pj_base/builtin/plot_markers_codec.hpp>
 ```
 
 ## Design Principles
@@ -69,13 +81,13 @@ their vectors, strings, and scalar fields directly. Future marker types should
 follow the same pattern unless they grow payload-sized byte arrays. These values
 are small enough that the zero-copy anchor pattern is unnecessary.
 
-**Do not force one serialization path on every builtin.** Large byte-backed
-types are views over source-native payload bytes whenever possible; they should
-not be repacked just to produce a canonical blob. Small owned types may define
-canonical codecs when storage or replay needs bytes. Those codecs serialize the
-owned SDK value directly to the canonical protobuf-wire payload described by the
-`.proto` contract. The schema and wire-format details stay private; public SDK
-headers expose only SDK structs.
+**Serialize only at an explicit boundary.** Large byte-backed types remain
+views over source-native payload bytes while they are inside one component and
+an ownership anchor is available. Every stable builtin also has a canonical
+codec for storage/replay and for the `pj.parser_functional.v1` DSO boundary.
+That boundary deliberately serializes the value rather than sharing C++ class,
+allocator, RTTI, or destructor state with the host. The schema and wire-format
+details stay private; public SDK headers expose only SDK structs.
 
 ## Serialization Families
 
@@ -83,8 +95,8 @@ Builtin objects fall into two serialization families:
 
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
-| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `VoxelGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `RobotDescription`, `CameraInfo`, `PosesInFrame`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription` carries source-format text as-is (no canonical codec) — the format hint distinguishes URDF / SDF / MJCF. |
+| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `VoxelGrid`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | Preserve zero-copy views while in-process; use the canonical codec at storage or C ABI boundaries. If no source anchor exists, materialize before returning a long-lived view. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `RobotDescription`, `CameraInfo`, `Log`, `PosesInFrame`, `PlotMarkers` | SDK structs own their vectors/strings/scalars directly. | Canonical codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription.text` remains raw URDF/SDF/MJCF source inside its small canonical envelope. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
 format contract. One file per top-level message, each named after its message
@@ -490,10 +502,10 @@ description format.
 
 Design notes:
 
-- **No canonical codec.** The format space is open and growing; embedding a
-  format-specific codec in the SDK would multiply schemas without payoff.
-  Consumers parse the text directly with format-specific libraries (e.g.
-  TinyXML for URDF / SDF / COLLADA, mjcf parsers for MJCF).
+- **Small canonical envelope, raw model text.** `PJ.RobotDescription` encodes
+  timestamp, topic, format hint, and the source document verbatim. It does not
+  parse or normalize URDF/SDF/MJCF, so the open format space does not multiply
+  SDK schemas. Consumers still parse `text` with format-specific libraries.
 - **No embedded mesh bytes.** URDF/SDF reference meshes via `package://` URIs
   or relative paths; mesh resolution is consumer-side (search paths, MCAP
   attachments, sidecar directories). Embedding meshes in the SDK type would

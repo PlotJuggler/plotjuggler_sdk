@@ -7,14 +7,11 @@
  * produce for that schema. The parser returns a PJ_schema_classification_t
  * carrying a PJ_builtin_object_type_t.
  *
- * Canonical-object production (any concrete sdk::* type listed in
- * BuiltinObjectType — see pj_base/builtin/builtin_object.hpp) and the
- * pure-functional scalar production (Expected<ObjectRecord> /
- * Expected<ScalarRecord>) are C++ SDK contracts: plugins inheriting from
- * MessageParserPluginBase register handlers in SchemaHandler, and the
- * in-process host consumes them via MessageParserPluginBase::parseObject()
- * and parseScalars() called directly on the C++ pointer. Pure-C plugins
- * emit scalars via the parse() slot (writing to writeHost).
+ * Canonical-object and pure-functional scalar production use the additive
+ * `pj.parser_functional.v1` C extension. MessageParserPluginBase keeps the
+ * plugin-author-facing ObjectRecord/ScalarRecord API inside the plugin DSO;
+ * its trampolines emit only POD scalar views or canonical wire bytes. The
+ * concrete host-owned C++ object is reconstructed on the host side.
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0

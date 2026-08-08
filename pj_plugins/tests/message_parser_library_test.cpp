@@ -5,10 +5,16 @@
 
 #include <gtest/gtest.h>
 
+#include <any>
+#include <atomic>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
+#include "functional_image_parser_test_protocol.h"
+#include "pj_base/builtin/image.hpp"
 #include "pj_base/sdk/service_traits.hpp"
 #include "pj_base/sdk/testing/parser_write_recorder.hpp"
 #include "pj_plugins/host/service_registry_builder.hpp"
@@ -19,8 +25,13 @@
 #ifndef PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH
 #error "PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
 #endif
+#ifndef PJ_FUNCTIONAL_IMAGE_PARSER_PLUGIN_PATH
+#error "PJ_FUNCTIONAL_IMAGE_PARSER_PLUGIN_PATH must be defined"
+#endif
 
 namespace {
+
+std::atomic_bool functional_plugin_unloaded = false;
 
 TEST(MessageParserLibraryTest, LoadMockPlugin) {
   auto library = PJ::MessageParserLibrary::load(PJ_MOCK_JSON_PARSER_PLUGIN_PATH);
@@ -91,6 +102,43 @@ TEST(MessageParserLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectD
   std::string cfg;
   EXPECT_TRUE(handle->saveConfig(cfg));
   handle.reset();
+}
+
+TEST(MessageParserLibraryTest, FunctionalObjectRemainsHostOwnedAfterPluginAndLibraryDie) {
+  functional_plugin_unloaded = false;
+  std::optional<PJ::sdk::ObjectRecord> record;
+  {
+    auto library = PJ::MessageParserLibrary::load(PJ_FUNCTIONAL_IMAGE_PARSER_PLUGIN_PATH);
+    ASSERT_TRUE(library) << library.error();
+    auto handle = library->createHandle();
+    ASSERT_TRUE(handle.supportsFunctionalParsing());
+    ASSERT_TRUE(handle.bindSchema("test/Image", {}));
+    const auto* unload_observer = static_cast<const PJ_test_unload_observer_v1_t*>(
+        handle.getPluginExtension(PJ_FUNCTIONAL_IMAGE_PARSER_UNLOAD_OBSERVER_V1));
+    ASSERT_NE(unload_observer, nullptr);
+    ASSERT_GE(unload_observer->struct_size, sizeof(PJ_test_unload_observer_v1_t));
+    ASSERT_NE(unload_observer->observe, nullptr);
+    unload_observer->observe(
+        &functional_plugin_unloaded, [](void* ctx) noexcept { static_cast<std::atomic_bool*>(ctx)->store(true); });
+
+    auto payload = PJ::sdk::makePayloadView(std::vector<uint8_t>{4, 3, 2, 1});
+    auto parsed = handle.parseObjectFunctional(777, std::move(payload));
+    ASSERT_TRUE(parsed) << parsed.error();
+    record = std::move(*parsed);
+  }  // destroys the plugin instance, handle, library owner, and its dlopen lease
+
+  ASSERT_TRUE(functional_plugin_unloaded.load()) << "test plugin DSO was retained instead of being unloaded";
+  ASSERT_TRUE(record.has_value());
+  EXPECT_FALSE(record->ts.has_value());
+  const auto* image = std::any_cast<PJ::sdk::Image>(&record->object);
+  ASSERT_NE(image, nullptr);
+  EXPECT_EQ(image->timestamp_ns, 777);
+  EXPECT_EQ(image->frame_id, "plugin-owned-frame");
+  ASSERT_EQ(image->data.size(), 4U);
+  EXPECT_EQ(image->data[0], 4U);
+  EXPECT_EQ(image->data[3], 1U);
+
+  record.reset();  // host-side destruction must not jump into the unloaded DSO
 }
 
 TEST(MessageParserLibraryTest, LoadNonexistentFails) {

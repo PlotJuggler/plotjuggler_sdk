@@ -18,6 +18,7 @@
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -25,8 +26,10 @@
 #include <vector>
 
 #include "pj_base/builtin/builtin_object.hpp"
+#include "pj_base/builtin/builtin_object_codec.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
+#include "pj_base/parser_functional_protocol.h"
 #include "pj_base/plugin_abi_export.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
@@ -68,18 +71,22 @@ struct MessageParserPluginBaseLayoutSentinel;
 
 }  // namespace sdk
 
+#if defined(__GNUC__) || defined(__clang__)
+#define PJ_MESSAGE_PARSER_DSO_LOCAL __attribute__((visibility("hidden")))
+#else
+#define PJ_MESSAGE_PARSER_DSO_LOCAL
+#endif
+
 /**
  * Base class for MessageParser plugins (protocol v4).
  *
- * ABI LAYOUT CONTRACT: PJ4 treats the plugin-created context as a
- * MessageParserPluginBase pointer and directly calls classifySchema(),
- * parseScalars(), and parseObject() across the DSO boundary. Consequently,
- * this class's member layout is cross-DSO ABI within one PJ_ABI_VERSION.
- * Existing data members must never move: new members are APPEND-ONLY at the
- * data-member tail. The host-invoked final methods above must never access an
- * appended member, because an older plugin instance does not contain it. The
- * host owns only a pointer obtained from create() and never allocates or copies
- * this object.
+ * TRANSITIONAL ABI LAYOUT CONTRACT: SDK 0.21 hosts use the
+ * `pj.parser_functional.v1` C extension and never cast a newly-built plugin's
+ * opaque context to this class. Hosts may retain a deprecated direct-C++
+ * bridge only for pre-0.21 plugins that do not expose the extension. Therefore
+ * the existing member prefix remains frozen within PJ_ABI_VERSION 5: members
+ * must not move, and additions are tail-only. SDK 1.0 may remove that bridge
+ * and this layout constraint together.
  */
 class MessageParserPluginBase {
  public:
@@ -169,10 +176,11 @@ class MessageParserPluginBase {
   ///
   /// This entry point exists for compatibility with the legacy v4 ingest
   /// path (host calls parser.parse() directly to push fields to writeHost).
-  /// New host code should prefer pushing through parseScalars() / parseObject()
-  /// — the pure-functional pair enables lazy materialization, because the
-  /// caller (DataSource / app) needs the result returned, not pushed. Once
-  /// every host migrates to that path, parse() will be deprecated.
+  /// New host code invokes the pure-functional pair through
+  /// MessageParserHandle and `pj.parser_functional.v1`, never by casting the
+  /// opaque plugin context. The pair enables lazy materialization because the
+  /// caller (DataSource / app) receives the result rather than a side effect.
+  /// Once every plugin migrates to SchemaHandler, parse() can be deprecated.
   virtual Status parse(Timestamp timestamp_ns, Span<const uint8_t> payload) {
     if (!writeHostBound()) {
       return unexpected(std::string("write host not bound"));
@@ -204,8 +212,8 @@ class MessageParserPluginBase {
   // Plugins extend the parser by populating a per-schema handler table in
   // the constructor (registerSchemaHandler). The base class implements
   // classifySchema / parseScalars / parseObject as `final` lookups into that
-  // table, invoked by the host directly on a MessageParserPluginBase* pointer
-  // (no vtable indirection, no cross-ABI copy).
+  // table. The functional C trampolines invoke these methods inside the plugin
+  // DSO, then synchronously translate results to C ABI sinks.
 
   /// Register a handler for one schema type name. Typically called once per
   /// supported schema in the plugin's constructor.
@@ -293,7 +301,9 @@ class MessageParserPluginBase {
   }
 
   /// Return a pointer to a static plugin-exposed extension for @p id, or
-  /// nullptr if unknown. Default returns nullptr.
+  /// nullptr if unknown. Default returns nullptr. The SDK reserves
+  /// `pj.parser_functional.v1`, which is advertised automatically only after
+  /// at least one SchemaHandler has been registered.
   virtual const void* pluginExtension(std::string_view id) {
     (void)id;
     return nullptr;
@@ -400,13 +410,22 @@ class MessageParserPluginBase {
   static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept;
   static bool trampoline_parse(
       void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) noexcept;
-  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
+  PJ_MESSAGE_PARSER_DSO_LOCAL static const void* trampoline_get_plugin_extension(
+      void* ctx, PJ_string_view_t id) noexcept;
+  PJ_MESSAGE_PARSER_DSO_LOCAL static bool trampoline_parse_scalars_functional(
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, const PJ_parser_scalar_sink_v1_t* sink,
+      PJ_error_t* out_error) noexcept;
+  PJ_MESSAGE_PARSER_DSO_LOCAL static bool trampoline_parse_object_functional(
+      void* ctx, int64_t timestamp_ns, PJ_payload_t payload, const PJ_parser_object_sink_v1_t* sink,
+      PJ_error_t* out_error) noexcept;
   static bool trampoline_classify_schema(
       void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
       PJ_error_t* out_error) noexcept;
 };
 
 }  // namespace PJ
+
+#undef PJ_MESSAGE_PARSER_DSO_LOCAL
 
 #include "pj_plugins/sdk/detail/message_parser_trampolines.hpp"
 

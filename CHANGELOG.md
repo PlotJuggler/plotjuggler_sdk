@@ -5,6 +5,51 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.21.0]
 
+### Feature: pure-functional MessageParser C extension (MINOR)
+
+MessageParser scalar/object results no longer require new hosts to cast an
+opaque plugin context to `MessageParserPluginBase*` and call C++ methods across
+the DSO boundary:
+
+- New installed C header `pj_base/parser_functional_protocol.h` defines the
+  stable `pj.parser_functional.v1` extension and appendable caller-owned scalar
+  and object sink tables. Calls are synchronous and exact-once; borrowed scalar
+  and canonical-wire views expire when their sink callback returns. All
+  malformed tables, parser/sink exceptions, unknown object tags, and missing or
+  duplicate sink calls fail closed through `PJ_error_t`.
+- `MessageParserPluginBase` exposes the extension automatically only after at
+  least one `SchemaHandler` is registered. A newly rebuilt legacy `parse()`-only
+  plugin does not falsely advertise functional support; a handler registered
+  during `bindSchema()` becomes visible to a later uncached query. Existing
+  custom extension IDs remain available.
+- Object input reuses `PJ_payload_t`: the extension consumes one ownership
+  anchor and releases it exactly once on every path, preserving zero-copy input
+  for an already-anchored `PayloadView`. Plugin-side `ObjectRecord`/`std::any`
+  values are serialized to canonical bytes before returning; the host decodes
+  them into allocations whose destructors and type-erasure managers are wholly
+  host-owned. The already-frozen `PJ_payload_t` / `PJ_payload_anchor_t`
+  declarations now live in shared `plugin_data_api.h` (and remain transitively
+  available from `data_source_protocol.h`) so parser and data-source protocols
+  do not import one another.
+- `MessageParserHandle` adds `supportsFunctionalParsing()`,
+  `parseScalarsFunctional()`, and bare-span/anchored
+  `parseObjectFunctional()` overloads. Pre-0.21 plugins remain detectable by
+  extension absence so PlotJuggler 0.21 can use its isolated deprecated bridge
+  during migration; removal is deferred to SDK 1.0.
+- New `serializeBuiltinObject()` / `deserializeBuiltinObject()` dispatch every
+  stable builtin tag and accept zero-byte proto3 default messages when the tag
+  is known. `RobotDescription` gains its missing canonical schema and codec.
+- The built-in extension table and trampolines are DSO-local. This prevents ELF
+  `STB_GNU_UNIQUE`/symbol interposition from sharing one inline table across
+  plugins and leaving function pointers into the wrong or unloaded DSO.
+- Tests pin the C layouts, all builtin dispatch routes, exact-once/error rules,
+  anchor release, truthful legacy detection, and a real `dlopen`/`dlclose`
+  lifecycle where the host-owned object remains valid after plugin unload.
+
+This is additions-only for the unreleased 0.21 line. `PJ_ABI_VERSION` remains
+5, `PJ_MESSAGE_PARSER_PROTOCOL_VERSION` remains 4, the family vtable and
+minimum-vtable floor do not grow, and the existing ABI baseline is unchanged.
+
 ### Feature: dialog host-information tail slot (MINOR)
 
 Dialogs can now observe the embedding host's SDK version, PlotJuggler version,

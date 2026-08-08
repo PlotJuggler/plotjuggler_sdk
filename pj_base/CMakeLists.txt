@@ -10,6 +10,7 @@ configure_file(
 )
 
 add_library(pj_base STATIC
+  src/builtin/builtin_object_codec.cpp
   src/builtin/camera_info_codec.cpp
   src/builtin/compressed_point_cloud_codec.cpp
   src/builtin/depth_image_codec.cpp
@@ -23,6 +24,7 @@ add_library(pj_base STATIC
   src/builtin/plot_markers_codec.cpp
   src/builtin/point_cloud_codec.cpp
   src/builtin/poses_in_frame_codec.cpp
+  src/builtin/robot_description_codec.cpp
   src/builtin/scene_entities_codec.cpp
   src/builtin/video_frame_codec.cpp
   src/builtin/voxel_grid_codec.cpp
@@ -109,6 +111,7 @@ if(PJ_BUILD_TESTS)
     tests/platform_test.cpp
     tests/arrow_holders_test.cpp
     tests/builtin_object_test.cpp
+    tests/builtin_object_codec_test.cpp
     tests/frame_transforms_codec_test.cpp
     tests/image_annotations_codec_test.cpp
     tests/image_annotations_decoder_test.cpp

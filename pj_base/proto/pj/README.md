@@ -58,6 +58,8 @@ rationale.
   - Batch: `SceneEntities`
 - **`Mesh3D.proto`** — 3D mesh asset delivered in its native binary format (GLTF/GLB/STL/PLY/OBJ/USD/DAE) for URDF-style or scene-mesh visualization.
   - `Mesh3D`
+- **`RobotDescription.proto`** — raw URDF/SDF/MJCF-style robot-model document plus topic and open-ended format hint.
+  - `RobotDescription`
 - **`PosesInFrame.proto`** — array of poses in a single reference frame at one instant (`geometry_msgs/PoseArray`, particle clouds); mirrors `foxglove.PosesInFrame` field-for-field and carries no styling — rendering is viewer-side.
   - `PosesInFrame`
 - **`VoxelGrid.proto`** — dense 3D voxel grid (the volumetric sibling of `OccupancyGrid`); reuses `PointField` for the per-voxel channel layout and mirrors `foxglove.VoxelGrid`'s Z-Y-X byte layout so `data` stays a zero-copy view. Serves occupancy/cost/ESDF/semantic grids; the draw predicate is viewer-side.

@@ -44,9 +44,10 @@ these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
      reserved as its one growth path — do not add further top-level
      fields.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
-     `PJ_service_registry_vtable_t`, and `PJ_dialog_host_info_t`. New fields or
-     slots go at the tail; readers honor the caller-provided size, and vtable
-     slots are read with `PJ_HAS_TAIL_SLOT`.
+     `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`, and the
+     `pj.parser_functional.v1` extension/sink tables. New fields or slots go at
+     the tail; readers honor the caller-provided size, and vtable slots are
+     read with `PJ_HAS_TAIL_SLOT`.
 
 5. **Compile-time ABI layout sentinels.** `pj_base/tests/abi_layout_sentinels_test.cpp`
    consists entirely of `static_assert`s pinning `sizeof`, `alignof`,
@@ -112,6 +113,15 @@ plugin instance. C++ wrappers (`DescriptorImportProviderView`, `JoinableJob`,
 `SourcePromotionHostView`) live in `pj_base/sdk/descriptor_import.hpp`.
 See `docs/toolbox-guide.md` → "Descriptor import and source promotion" for
 the plugin-author walkthrough.
+
+Stable MessageParser-specific example: `"pj.parser_functional.v1"`
+(`PJ_parser_functional_v1_t` in
+`pj_base/parser_functional_protocol.h`). SDK 0.21's
+`MessageParserPluginBase` exposes it automatically after a plugin registers at
+least one `SchemaHandler`. Hosts must query after `bind_schema` and must not
+cache an earlier absence because schema-generic plugins may register their
+handler while binding. A parser that still implements only legacy `parse()`
+does not advertise the extension merely because it was rebuilt with 0.21.
 
 ## 0. C protocol v4 (current under ABI v5)
 
@@ -243,11 +253,15 @@ pj_base/
   include/pj_base/
     data_source_protocol.h        ← C ABI
     message_parser_protocol.h     ← C ABI
+    parser_functional_protocol.h  ← C ABI: pj.parser_functional.v1 sinks
     toolbox_protocol.h            ← C ABI
     plugin_data_api.h             ← shared data-plane ABI (write hosts)
     descriptor_import_protocol.h  ← C ABI: pj.descriptor_import.v1 extension +
                                      pj.source_promotion.v1 host service
                                      (family-neutral)
+    builtin/
+      builtin_object_codec.hpp    ← type-erased canonical-wire dispatcher
+      robot_description_codec.hpp ← canonical RobotDescription codec
     sdk/
       data_source_plugin_base.hpp   ← C++ SDK
       data_source_patterns.hpp      ← FileSourceBase, StreamSourceBase
@@ -612,18 +626,49 @@ that cascades `topic > source > type > default`:
 - `kPureLazy`: skip the callable at ingest, register a lazy
   ObjectStore entry only.
 
-Parsers participate via three optional virtual entry points on
-`MessageParserPluginBase` — `classifySchema`, `parseScalars`,
-`parseObject` — that map to the per-schema slots in the
-`SchemaHandler` table. The shape that crosses both ABI boundaries (C
-struct on the DataSource side, in-process variant on the parser side)
-is opaque-payload-by-default: `BuiltinObject` is `std::any`, so
-appending a new builtin type does not change the public type and
-forward compatibility is automatic. Concrete builtins live under
-`pj_base/builtin/` (`Image`, `DepthImage`, `PointCloud`,
-`ImageAnnotations`, `FrameTransforms`); see `docs/builtin_type.md` for the type
-catalog and `docs/image_annotations_format.md` for the canonical annotation
-wire format.
+Parsers participate through `classifySchema`, `parseScalars`, and
+`parseObject`, backed by the per-schema `SchemaHandler` table. Those C++
+methods and their `ScalarRecord` / `ObjectRecord` / `std::any` values stay
+inside the plugin DSO. SDK 0.21 translates the two functional results through
+`pj.parser_functional.v1`:
+
+- `parse_scalars` calls one caller-owned sink exactly once. Field/name/string
+  views are borrowed only for that callback; the host copies anything it
+  retains.
+- `parse_object` accepts `PJ_payload_t`, taking one ownership-anchor reference
+  and releasing it on every path. That preserves the existing zero-copy input
+  into parsers that propagate `PayloadView::anchor`. It serializes the plugin's
+  concrete builtin to its canonical `PJ.*` protobuf wire contract and calls one
+  object sink with `(BuiltinObjectType, optional timestamp, bytes)`.
+- `MessageParserHandle::parseObjectFunctional` decodes those bytes before the
+  callback returns, producing an entirely host-owned `ObjectRecord`. Its
+  destructor and `std::any` manager contain no plugin function pointer, so the
+  value remains safe after the parser and DSO lease are destroyed.
+- Provider exceptions, consumer exceptions, malformed/undersized sinks,
+  unknown object tags, missing calls, and duplicate calls fail closed through
+  `PJ_error_t`. The built-in extension table and trampolines have DSO-local
+  symbol visibility so ELF `STB_GNU_UNIQUE`/interposition cannot make one
+  plugin borrow another plugin's table.
+
+This deliberately pays one canonical serialization at the DSO boundary and a
+host-side decode. It avoids the more fragile alternative of sharing STL object
+layouts, allocators, destructors, or release callbacks for each concrete C++
+type. Large input buffers need not be copied before parsing when the host has a
+`PayloadView` anchor. Benchmark the serialize/decode cost for image and point
+cloud workloads before removing the deprecated fallback; a future optimization
+must preserve the same C ownership boundary rather than reintroduce C++ object
+sharing.
+
+`serializeBuiltinObject` / `deserializeBuiltinObject` dispatch every stable
+builtin type, including the newly canonicalized `RobotDescription`. A
+zero-length canonical payload is accepted as the valid proto3 default message
+when the separate type tag is known. Concrete builtins and codecs live under
+`pj_base/builtin/`; see `docs/builtin_type.md` for the catalog.
+
+Pre-0.21 parsers expose no functional extension. PlotJuggler 0.21 may retain a
+clearly isolated, deprecated direct-C++ bridge for those already-built DSOs.
+New plugins and new host code use the C extension; SDK 1.0 can remove the bridge
+and the frozen `MessageParserPluginBase` layout constraint.
 
 ## Per-topic pause (demand-driven subscription)
 

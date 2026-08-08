@@ -180,6 +180,16 @@ target_compile_features(mock_schema_parser_plugin PRIVATE cxx_std_20)
 target_compile_options(mock_schema_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_schema_parser_plugin PRIVATE pj_plugin_sdk)
 
+add_library(functional_image_parser_plugin SHARED tests/functional_image_parser_plugin.cpp)
+target_compile_features(functional_image_parser_plugin PRIVATE cxx_std_20)
+target_compile_options(functional_image_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
+# Make the lifecycle test prove a real dlclose. GNU-unique C++ symbols cause
+# glibc to retain a DSO even after its last explicit loader lease is gone.
+target_compile_options(functional_image_parser_plugin PRIVATE
+  $<$<AND:$<CXX_COMPILER_ID:GNU>,$<PLATFORM_ID:Linux>>:-fno-gnu-unique>
+)
+target_link_libraries(functional_image_parser_plugin PRIVATE pj_plugin_sdk)
+
 endif() # PJ_BUILD_TESTS
 
 # ---------------------------------------------------------------------------
@@ -289,8 +299,10 @@ add_test(NAME file_source_integration_test COMMAND file_source_integration_test)
 
 # Integration test: MessageParser library loader
 add_executable(message_parser_library_test tests/message_parser_library_test.cpp)
+add_dependencies(message_parser_library_test functional_image_parser_plugin)
 target_compile_definitions(message_parser_library_test PRIVATE
   PJ_MOCK_JSON_PARSER_PLUGIN_PATH="$<TARGET_FILE:mock_json_parser_plugin>"
+  PJ_FUNCTIONAL_IMAGE_PARSER_PLUGIN_PATH="$<TARGET_FILE:functional_image_parser_plugin>"
   PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
 )
 target_compile_options(message_parser_library_test PRIVATE ${PJ_WARNING_FLAGS})
@@ -306,6 +318,14 @@ target_link_libraries(message_parser_runtime_test PRIVATE
   pj_plugin_sdk GTest::gtest_main
 )
 add_test(NAME message_parser_runtime_test COMMAND message_parser_runtime_test)
+
+# Unit test: additions-only pure-functional parser C extension.
+add_executable(message_parser_functional_extension_test tests/message_parser_functional_extension_test.cpp)
+target_compile_options(message_parser_functional_extension_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(message_parser_functional_extension_test PRIVATE
+  pj_message_parser_host pj_plugin_sdk GTest::gtest_main
+)
+add_test(NAME message_parser_functional_extension_test COMMAND message_parser_functional_extension_test)
 
 # Compile-time pins for the cross-DSO MessageParserPluginBase member layout.
 add_executable(message_parser_abi_layout_sentinels_test tests/message_parser_abi_layout_sentinels_test.cpp)

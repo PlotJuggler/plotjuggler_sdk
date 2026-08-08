@@ -48,7 +48,9 @@ extern "C" {
  * v5 plugins advertise version 5. Relative to v4, this bump rejects
  * pre-v5 parser DSOs because the C++ MessageParserPluginBase
  * pure-functional contract changed parseScalars()/parseObject() return
- * types to ScalarRecord/ObjectRecord.
+ * types to ScalarRecord/ObjectRecord. SDK 0.21 subsequently placed those
+ * results behind the additive `pj.parser_functional.v1` C extension; direct
+ * host calls on the C++ base remain only as a temporary old-plugin bridge.
  *
  * The C data-plane layout remains the v4 layout:
  *   - Arrow C Data Interface replaces Arrow IPC bytes at the boundary
@@ -110,6 +112,28 @@ typedef struct {
   const uint8_t* data;
   uint64_t size;
 } PJ_bytes_view_t;
+
+/**
+ * Ownership token kept alive while a non-owning byte buffer is in use.
+ * `ctx` is opaque to the consumer; `release(ctx)` is invoked exactly once by
+ * the API that accepts ownership. A null ctx + null release represents a
+ * borrowed call-duration-only buffer.
+ *
+ * ABI-FROZEN: this shared data-plane type was originally declared by
+ * data_source_protocol.h. It lives here so multiple plugin families can use
+ * anchored payloads without importing one another's protocol headers.
+ */
+typedef struct PJ_payload_anchor_t {
+  void* ctx;
+  void (*release)(void* ctx);
+} PJ_payload_anchor_t;
+
+/** Non-owning payload bytes plus one optional ownership-anchor reference. */
+typedef struct PJ_payload_t {
+  const uint8_t* data;
+  uint64_t size;
+  PJ_payload_anchor_t anchor;
+} PJ_payload_t;
 
 /* ==========================================================================
  * Apache Arrow C Data Interface.
