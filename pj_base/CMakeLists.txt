@@ -29,6 +29,8 @@ add_library(pj_base STATIC
   src/builtin/video_frame_codec.cpp
   src/builtin/voxel_grid_codec.cpp
   src/number_parse.cpp
+  src/parser_module_abi.cpp
+  src/parser_module_manifest.cpp
   src/semver.cpp
   src/type_tree.cpp
   src/data_source_host_views.cpp
@@ -66,12 +68,24 @@ if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_base PUBLIC PJ_ASSERT_THROWS)
 endif()
 
+# Standalone, header-only functional parser-module authoring kit. This target
+# intentionally carries include paths and a C++ floor only: modules link no SDK
+# library and remain suitable for native and WASI reactor builds.
+add_library(pj_parser_module INTERFACE)
+target_include_directories(pj_parser_module INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(pj_parser_module INTERFACE cxx_std_17)
+set_target_properties(pj_parser_module PROPERTIES EXPORT_NAME parser_module)
+add_library(plotjuggler_sdk::parser_module ALIAS pj_parser_module)
+
 # ---------------------------------------------------------------------------
 # Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt)
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_base EXPORT plotjuggler_sdkTargets
+  install(TARGETS pj_base pj_parser_module EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
@@ -96,6 +110,8 @@ if(PJ_BUILD_TESTS)
     tests/number_parse_test.cpp
     tests/semver_test.cpp
     tests/plugin_data_api_test.cpp
+    tests/parser_module_abi_test.cpp
+    tests/parser_module_manifest_test.cpp
     tests/data_processors_api_test.cpp
     tests/settings_store_host_test.cpp
     tests/parser_runtime_host_test.cpp
@@ -145,4 +161,108 @@ if(PJ_BUILD_TESTS)
     target_link_libraries(${test_name} PRIVATE pj_base GTest::gtest_main)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
+
+  # C++17 standalone authoring-kit gate. This target intentionally does not
+  # link pj_base; GTest is test infrastructure only.
+  add_executable(parser_module_kit_test tests/parser_module_kit_test.cpp)
+  set_target_properties(parser_module_kit_test PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+  )
+  target_compile_options(parser_module_kit_test PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(parser_module_kit_test PRIVATE pj_parser_module GTest::gtest_main)
+  add_test(NAME parser_module_kit_test COMMAND parser_module_kit_test)
+
+  add_executable(parser_module_object_writer_test tests/parser_module_object_writer_test.cpp)
+  target_compile_definitions(parser_module_object_writer_test PRIVATE PJ_PARSER_MODULE_CLAIM_COUNT=1)
+  target_compile_options(parser_module_object_writer_test PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(parser_module_object_writer_test PRIVATE pj_parser_module pj_base GTest::gtest_main)
+  add_test(NAME parser_module_object_writer_test COMMAND parser_module_object_writer_test)
+
+  # Static wasm ABI conformance. The authoring source is compiled directly by
+  # wasi-sdk, then a host-side auditor embeds and validates the final module.
+  set(PJ_WASI_SDK_ROOT "$ENV{PJ_WASI_SDK_ROOT}" CACHE PATH
+    "wasi-sdk 27 root used for parser-module conformance tests")
+  set(_pj_wasi_clang "${PJ_WASI_SDK_ROOT}/bin/clang++")
+  set(_pj_wasi_sysroot "${PJ_WASI_SDK_ROOT}/share/wasi-sysroot")
+  if(NOT PJ_WASI_SDK_ROOT)
+    message(STATUS
+      "Parser-module WASI conformance skipped: PJ_WASI_SDK_ROOT cache/env variable is not set")
+  elseif(NOT EXISTS "${_pj_wasi_clang}" OR NOT IS_DIRECTORY "${_pj_wasi_sysroot}")
+    message(STATUS
+      "Parser-module WASI conformance skipped: wasi-sdk is missing under PJ_WASI_SDK_ROOT=${PJ_WASI_SDK_ROOT}")
+  else()
+    file(STRINGS "${PJ_WASI_SDK_ROOT}/VERSION" _pj_wasi_version LIMIT_COUNT 1)
+    if(NOT _pj_wasi_version MATCHES "^27\\.")
+      message(FATAL_ERROR
+        "Parser-module WASI conformance requires wasi-sdk 27; found '${_pj_wasi_version}'")
+    endif()
+    message(STATUS
+      "Parser-module WASI conformance enabled with wasi-sdk ${_pj_wasi_version}: ${PJ_WASI_SDK_ROOT}")
+
+    add_executable(parser_module_wasm_audit tests/parser_module_wasm_audit.cpp)
+    target_compile_options(parser_module_wasm_audit PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(parser_module_wasm_audit PRIVATE pj_base)
+
+    file(GLOB _pj_parser_module_headers CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/include/pj_base/parser_module/*.hpp")
+    set(_pj_wasm_dir "${CMAKE_CURRENT_BINARY_DIR}/parser_module_wasm_conformance")
+    set(_pj_wasm_raw "${_pj_wasm_dir}/toy_cdr_pointcloud.raw.wasm")
+    set(_pj_wasm_embedded "${_pj_wasm_dir}/toy_cdr_pointcloud.wasm")
+    set(_pj_wasm_source "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud_module.cpp")
+    set(_pj_wasm_manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud.module.json")
+
+    add_custom_command(
+      OUTPUT "${_pj_wasm_raw}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${_pj_wasm_dir}"
+      COMMAND "${_pj_wasi_clang}"
+        --target=wasm32-wasip1
+        --sysroot=${_pj_wasi_sysroot}
+        -mexec-model=reactor
+        -std=c++17
+        -fno-exceptions
+        -fno-rtti
+        -fvisibility=hidden
+        -O1
+        -Wall -Wextra -Werror
+        -DPJ_PARSER_MODULE_CLAIM_COUNT=2
+        -I${CMAKE_CURRENT_SOURCE_DIR}/include
+        "${_pj_wasm_source}"
+        -Wl,--export=pj_module_abi
+        -Wl,--export=pj_module_create
+        -Wl,--export=pj_module_destroy
+        -Wl,--export=pj_module_bind
+        -Wl,--export=pj_module_parse
+        -Wl,--export=pj_module_last_error
+        -Wl,--export=pj_module_alloc
+        -Wl,--export=pj_module_free
+        -o "${_pj_wasm_raw}"
+      DEPENDS "${_pj_wasm_source}" ${_pj_parser_module_headers}
+      COMMENT "Compiling C++17 parser-module WASI reactor fixture"
+      VERBATIM
+    )
+    add_custom_command(
+      OUTPUT "${_pj_wasm_embedded}"
+      COMMAND ${CMAKE_COMMAND} -E env ASAN_OPTIONS=detect_leaks=0
+        $<TARGET_FILE:parser_module_wasm_audit>
+        --embed "${_pj_wasm_raw}" "${_pj_wasm_manifest}" "${_pj_wasm_embedded}"
+      DEPENDS "${_pj_wasm_raw}" "${_pj_wasm_manifest}" parser_module_wasm_audit
+      COMMENT "Embedding parser-module wasm manifest with the shared codec"
+      VERBATIM
+    )
+    add_custom_target(parser_module_wasm_conformance_fixture ALL
+      DEPENDS "${_pj_wasm_embedded}")
+    add_test(NAME parser_module_wasm_conformance_test
+      COMMAND parser_module_wasm_audit --audit "${_pj_wasm_embedded}" "${_pj_wasm_manifest}")
+    set_tests_properties(parser_module_wasm_conformance_test PROPERTIES
+      LABELS "parser_module;wasi"
+      REQUIRED_FILES "${_pj_wasm_embedded}")
+  endif()
+
+  pj_add_parser_module(toy_cdr_pointcloud_module
+    SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud_module.cpp"
+    MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud.module.json"
+    TARGETS native
+  )
 endif()

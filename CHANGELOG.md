@@ -3,6 +3,34 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.22.0]
+
+### Feature: extensible parser routing and functional parser modules (MINOR)
+
+Parser selection can now be described, resolved, and executed through stable,
+additive SDK contracts:
+
+- The new `pj.parser_route_claims.v1` extension reports exact scalar/object
+  handler claims, while `pj.parser_functional.v2` adds the object splice sink
+  without changing the frozen v1 declarations.
+- The parser-module ABI defines lifecycle exports, little-endian binding/input/
+  output codecs, canonical-object splice eligibility, and native or wasm
+  manifest delivery.
+- The host claim catalog validates module manifests and synthesized plugin
+  claims. Its deterministic resolver applies exact/wildcard, provenance,
+  priority, pin, probe-cache, and fail-closed selection policy.
+- The native loader and per-instance runtime validate exports, lifecycle
+  results, descriptors, and splices, with contract-strike quarantine and
+  session-disable behavior.
+- The standalone header-only C++17 authoring kit provides bounded CDR/protobuf
+  readers and field locators, time normalization, canonical PointCloud/Image
+  output builders, and the complete native functional-module export wrapper.
+- A shared wasm custom-section codec embeds exact manifest bytes. The wasi-sdk
+  27 compile gate statically audits reactor exports and their frozen wasm
+  signatures, manifest delivery, and absence of native-only metadata exports.
+
+All additions preserve the existing plugin ABI and protocol versions.
+
 ## [0.21.0]
 
 ### Fix: convenience registerService honors its documented assertion (PATCH)

@@ -1,0 +1,24 @@
+{
+  "module_abi": 1,
+  "id": "org.plotjuggler.test.kit-cdr-pointcloud",
+  "name": "Authoring kit CDR PointCloud fixture",
+  "version": "1.0.0",
+  "claims": [
+    {
+      "claim_id": "full-wire",
+      "encoding": "ros2msg",
+      "type_name": "toy_msgs/msg/Cloud",
+      "routes": ["object"],
+      "object_type": "kPointCloud",
+      "priority": 0
+    },
+    {
+      "claim_id": "spliced",
+      "encoding": "ros2msg",
+      "type_name": "toy_msgs/msg/CloudSplice",
+      "routes": ["object"],
+      "object_type": "kPointCloud",
+      "priority": 0
+    }
+  ]
+}

@@ -19,9 +19,12 @@ two modules below have no own CLAUDE.md.
   PointCloud, CompressedPointCloud, OccupancyGrid(+Update), Mesh3D, VideoFrame,
   SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms, PosesInFrame, VoxelGrid) and their 15
   wire codecs (RobotDescription carries source text as-is — no codec), the C-ABI protocol headers for
-  DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them.
+  DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them, the
+  standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), and the host-side
+  wasm parser-module manifest custom-section codec.
 - **pj_plugins** — host-side loaders + RAII handles + plugin **discovery** (directory scan +
   embedded-manifest inspection) for four plugin families (DataSource, MessageParser, Dialog, Toolbox),
+  parser claim admission/resolution and native functional parser-module execution,
   config-envelope helpers, and the **dialog C ABI** (`pj_plugins/dialog_protocol/`). The
   duplicate-resolution *catalog* (which copy wins by priority/version/compatibility) is host policy
   and lives in the app (`pj_runtime`), built on these discovery primitives. Note the split: the DataSource/MessageParser/Toolbox C-ABI

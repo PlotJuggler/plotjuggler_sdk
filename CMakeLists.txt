@@ -10,6 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPluginManifest
 include(PjPluginManifest)
+include(PjParserModule)
 
 # ---------------------------------------------------------------------------
 # Options
@@ -122,6 +123,7 @@ endif()
 # Exported CMake namespace: plotjuggler_sdk::
 # Components:
 #   base         — vocabulary types (always available)
+#   parser_module — standalone header-only functional module authoring kit
 #   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
 #   plugin_host  — host-side loaders (data_source, message_parser, toolbox,
 #                  dialog, catalogs)
@@ -153,6 +155,7 @@ if(PJ_INSTALL_SDK)
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
     cmake/PjPluginManifest.cmake
+    cmake/PjParserModule.cmake
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 endif()
