@@ -126,6 +126,7 @@ class NativeParserModuleInstance {
   parser_module::Route bound_route_ = parser_module::Route::kScalar;
   uint16_t expected_object_type_ = 0;
   bool bound_ = false;
+  bool instance_budget_reserved_ = false;
 };
 
 struct ParserModuleClaimKey {

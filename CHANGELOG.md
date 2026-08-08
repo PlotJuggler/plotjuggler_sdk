@@ -3,6 +3,32 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.23.0]
+
+### Feature: sandboxed wasm parser modules and authoring preset (MINOR)
+
+Functional parser modules can now be validated, compiled once, and executed as
+WASI reactors through the pinned Wasmer 7.0.1 C API:
+
+- The wasm loader admits only reactors with the frozen operational signatures,
+  `_initialize`, exactly one manifest section, bounded exported memory, no
+  start function, and the v1 empty import allow-list.
+- Store-per-instance execution copies ABI blocks through guest allocation,
+  revalidates linear-memory ranges after every guest call, preserves host
+  payload splice semantics, and classifies traps or metering exhaustion as
+  contract violations.
+- Instruction metering, declared-memory caps, and pure session admission
+  budgets bound calls, artifact size, modules, claims, instances, and aggregate
+  declared memory. Adversarial trap, infinite-loop, memory-growth, and
+  quarantine-replay fixtures pin the failure behavior.
+- The installed `pj-wasm-embed-manifest` frontend embeds or verifies exact
+  manifest bytes and performs the shared static ABI audit.
+- `pj_add_parser_module(... TARGETS wasm)` provides the wasi-sdk 27 C++17
+  reactor preset, manifest embedding, and post-link audit; `TARGETS native wasm`
+  emits both artifacts from one author source.
+
+The wasm execution libraries remain optional when `PJ_WASMER_ROOT` is unset.
+
 ## [0.22.0]
 
 ### Feature: extensible parser routing and functional parser modules (MINOR)

@@ -16,10 +16,16 @@ The umbrella include for module authors is:
 #include <pj_base/parser_module/module.hpp>
 ```
 
-Native modules are built with `pj_add_parser_module`. The target links no SDK
-library; it receives this subtree only as an include path.
+Native and wasm modules are built with `pj_add_parser_module` using `TARGETS
+native`, `TARGETS wasm`, or both. Each target links no SDK library; it receives
+this subtree only as an include path. Wasm targets require `PJ_WASI_SDK_ROOT`
+to select wasi-sdk 27 and are post-linked through the installed
+`pj-wasm-embed-manifest` embed-and-audit frontend.
 
 WASI reactor modules use the same operational exports and compile with
 exceptions disabled. Their manifest is delivered in the
 `pj_parser_module_manifest` custom section, so the native-only manifest address
-and length exports are omitted automatically when targeting wasm.
+and length exports are omitted automatically when targeting wasm. Authored
+reactors have an empty import set and a declared linear-memory maximum; the
+default maximum is 256 MiB and can be configured with
+`PJ_PARSER_MODULE_WASM_MAX_MEMORY_BYTES`.

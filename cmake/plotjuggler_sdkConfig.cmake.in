@@ -8,6 +8,45 @@ if(NOT plotjuggler_sdk_FIND_COMPONENTS)
   set(plotjuggler_sdk_FIND_COMPONENTS plugin_sdk)
 endif()
 
+# A package built with wasm parser-module execution retains its pinned Wasmer
+# dependency. Define the imported dependency before loading the exported SDK
+# targets, whose static archive link interface refers to it.
+if(@PJ_SDK_WITH_WASMER@ AND "plugin_host" IN_LIST plotjuggler_sdk_FIND_COMPONENTS)
+  set(PJ_WASMER_ROOT "$ENV{PJ_WASMER_ROOT}" CACHE PATH
+    "Wasmer 7.0.1 C-API root used for wasm parser-module execution")
+  set(_pj_wasmer_include "${PJ_WASMER_ROOT}/include")
+  find_file(_pj_wasmer_library
+    NAMES libwasmer.a libwasmer.lib wasmer.lib
+    PATHS "${PJ_WASMER_ROOT}/lib"
+    NO_DEFAULT_PATH
+    NO_CACHE)
+  if(NOT PJ_WASMER_ROOT OR
+     NOT EXISTS "${_pj_wasmer_include}/wasm.h" OR
+     NOT EXISTS "${_pj_wasmer_include}/wasmer.h" OR
+     NOT _pj_wasmer_library)
+    set(plotjuggler_sdk_FOUND FALSE)
+    set(plotjuggler_sdk_NOT_FOUND_MESSAGE
+      "plotjuggler_sdk was built with wasm parser-module execution; set PJ_WASMER_ROOT to a Wasmer 7.0.1 C-API installation")
+    return()
+  endif()
+  file(STRINGS "${_pj_wasmer_include}/wasmer.h" _pj_wasmer_version_line
+    REGEX "^#define WASMER_VERSION ")
+  if(NOT _pj_wasmer_version_line MATCHES "\"7\\.0\\.1\"")
+    set(plotjuggler_sdk_FOUND FALSE)
+    set(plotjuggler_sdk_NOT_FOUND_MESSAGE
+      "plotjuggler_sdk wasm parser-module execution requires Wasmer 7.0.1; found '${_pj_wasmer_version_line}'")
+    return()
+  endif()
+  find_dependency(Threads)
+  if(NOT TARGET pj_wasmer_static)
+    add_library(pj_wasmer_static UNKNOWN IMPORTED)
+    set_target_properties(pj_wasmer_static PROPERTIES
+      IMPORTED_LOCATION "${_pj_wasmer_library}"
+      INTERFACE_INCLUDE_DIRECTORIES "${_pj_wasmer_include}"
+    )
+  endif()
+endif()
+
 # Include the exported targets (defines plotjuggler_sdk::base, etc.).
 include("${CMAKE_CURRENT_LIST_DIR}/plotjuggler_sdkTargets.cmake")
 

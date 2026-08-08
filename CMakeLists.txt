@@ -105,6 +105,8 @@ find_package(FastFloat REQUIRED)
 # Modules
 # ---------------------------------------------------------------------------
 
+set(PJ_SDK_WITH_WASMER OFF)
+
 if(PJ_BUILD_TESTS)
   enable_testing()
 endif()
@@ -156,6 +158,7 @@ if(PJ_INSTALL_SDK)
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
     cmake/PjPluginManifest.cmake
     cmake/PjParserModule.cmake
+    cmake/parser_module_wasi_no_io_stubs.cpp
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 endif()

@@ -15,8 +15,7 @@
 #include <utility>
 
 #include "detail/native_parser_module_state.hpp"
-#include "pj_base/builtin/builtin_object_codec.hpp"
-#include "pj_base/builtin_object_abi.h"
+#include "detail/parser_module_result_helpers.hpp"
 #include "pj_base/span.hpp"
 
 namespace PJ {
@@ -37,120 +36,9 @@ Expected<std::string> copyLastError(const detail::NativeParserModuleState& modul
   return std::string(buffer.begin(), terminator);
 }
 
-ParserModuleParseResult contractViolation(int32_t code, std::string message) {
-  return ParserModuleParseResult{
-      .fault = ParserModuleFaultKind::kContractViolation,
-      .result_code = code,
-      .message = std::move(message),
-      .output = std::nullopt,
-  };
-}
-
-Expected<ParserModuleScalarOutput> ownScalarOutput(const parser_module::ScalarOutputV1& scalar) {
-  ParserModuleScalarOutput owned;
-  owned.has_timestamp = scalar.has_timestamp;
-  owned.timestamp_ns = scalar.timestamp_ns;
-  owned.fields.reserve(scalar.fields.size());
-  for (const auto& field : scalar.fields) {
-    ParserModuleScalarValue value = std::visit(
-        []<typename Value>(const Value& item) -> ParserModuleScalarValue {
-          if constexpr (std::is_same_v<Value, std::string_view>) {
-            return std::string(item);
-          } else {
-            return item;
-          }
-        },
-        field.value);
-    owned.fields.push_back(ParserModuleScalarField{.name = std::string(field.name), .value = std::move(value)});
-  }
-  return owned;
-}
-
-Expected<ParserModuleObjectOutput> ownObjectOutput(
-    const parser_module::ObjectOutputV1& object, Span<const uint8_t> input_payload, uint16_t expected_type) {
-  if (object.object_type != expected_type) {
-    return unexpected(
-        "output object type " + std::to_string(object.object_type) + " does not match bound type " +
-        std::to_string(expected_type));
-  }
-
-  const auto type = static_cast<sdk::BuiltinObjectType>(object.object_type);
-  auto decoded = deserializeBuiltinObject(type, object.wire.data(), object.wire.size());
-  if (!decoded) {
-    return unexpected("output canonical wire is malformed: " + decoded.error());
-  }
-
-  ParserModuleObjectOutput owned;
-  owned.object = std::move(*decoded);
-  owned.wire.assign(object.wire.begin(), object.wire.end());
-  if (object.splice.has_value()) {
-    uint32_t eligible_field = 0;
-    if (!pj_builtin_object_splice_field_number_v1(object.object_type, &eligible_field) ||
-        eligible_field != object.splice->field_number) {
-      return unexpected("output splice field is not eligible for the object type");
-    }
-    const uint64_t payload_size = static_cast<uint64_t>(input_payload.size());
-    if (object.splice->input_offset > payload_size ||
-        object.splice->input_length > payload_size - object.splice->input_offset) {
-      return unexpected("output splice range is outside the parse payload");
-    }
-    const auto offset = static_cast<size_t>(object.splice->input_offset);
-    const auto length = static_cast<size_t>(object.splice->input_length);
-    auto materialized = std::make_shared<std::vector<uint8_t>>(
-        input_payload.begin() + static_cast<ptrdiff_t>(offset),
-        input_payload.begin() + static_cast<ptrdiff_t>(offset + length));
-    const auto attach = [&]<typename Object>() -> bool {
-      auto* typed = std::any_cast<Object>(&owned.object);
-      if (typed == nullptr) {
-        return false;
-      }
-      typed->data = Span<const uint8_t>(materialized->data(), materialized->size());
-      typed->anchor = materialized;
-      return true;
-    };
-    bool attached = false;
-    switch (type) {
-      case sdk::BuiltinObjectType::kImage:
-        attached = attach.template operator()<sdk::Image>();
-        break;
-      case sdk::BuiltinObjectType::kPointCloud:
-        attached = attach.template operator()<sdk::PointCloud>();
-        break;
-      case sdk::BuiltinObjectType::kDepthImage:
-        attached = attach.template operator()<sdk::DepthImage>();
-        break;
-      case sdk::BuiltinObjectType::kOccupancyGrid:
-        attached = attach.template operator()<sdk::OccupancyGrid>();
-        break;
-      case sdk::BuiltinObjectType::kCompressedPointCloud:
-        attached = attach.template operator()<sdk::CompressedPointCloud>();
-        break;
-      case sdk::BuiltinObjectType::kMesh3D:
-        attached = attach.template operator()<sdk::Mesh3D>();
-        break;
-      case sdk::BuiltinObjectType::kVideoFrame:
-        attached = attach.template operator()<sdk::VideoFrame>();
-        break;
-      case sdk::BuiltinObjectType::kOccupancyGridUpdate:
-        attached = attach.template operator()<sdk::OccupancyGridUpdate>();
-        break;
-      case sdk::BuiltinObjectType::kVoxelGrid:
-        attached = attach.template operator()<sdk::VoxelGrid>();
-        break;
-      default:
-        break;
-    }
-    if (!attached) {
-      return unexpected("output splice could not be attached to its canonical object");
-    }
-    owned.splice = ParserModuleObjectSplice{
-        .field_number = object.splice->field_number,
-        .input_offset = object.splice->input_offset,
-        .payload_bytes = *materialized,
-    };
-  }
-  return owned;
-}
+using detail::contractViolation;
+using detail::ownObjectOutput;
+using detail::ownScalarOutput;
 
 }  // namespace
 
@@ -168,7 +56,8 @@ NativeParserModuleInstance::NativeParserModuleInstance(NativeParserModuleInstanc
       claim_index_(other.claim_index_),
       bound_route_(other.bound_route_),
       expected_object_type_(other.expected_object_type_),
-      bound_(other.bound_) {
+      bound_(other.bound_),
+      instance_budget_reserved_(std::exchange(other.instance_budget_reserved_, false)) {
   other.bound_ = false;
 }
 
@@ -181,6 +70,7 @@ NativeParserModuleInstance& NativeParserModuleInstance::operator=(NativeParserMo
     bound_route_ = other.bound_route_;
     expected_object_type_ = other.expected_object_type_;
     bound_ = other.bound_;
+    instance_budget_reserved_ = std::exchange(other.instance_budget_reserved_, false);
     other.bound_ = false;
   }
   return *this;
@@ -191,12 +81,19 @@ Expected<NativeParserModuleInstance> NativeParserModuleInstance::create(
   if (!module.valid()) {
     return unexpected("cannot create an instance from an invalid native parser module");
   }
+  auto admission = module.state_->session_budget->admitInstance(module.state_->module_id);
+  if (!admission.accepted()) {
+    return unexpected(std::move(admission.diagnostic));
+  }
   const uint64_t token = module.state_->create(claim_index);
   if (token == PJ_MODULE_CREATION_ERROR_TOKEN) {
+    (void)module.state_->session_budget->releaseInstance(module.state_->module_id);
     auto message = copyLastError(*module.state_, PJ_MODULE_CREATION_ERROR_TOKEN);
     return unexpected(message ? *message : message.error());
   }
-  return NativeParserModuleInstance(module.state_, token, claim_index);
+  NativeParserModuleInstance instance(module.state_, token, claim_index);
+  instance.instance_budget_reserved_ = true;
+  return instance;
 }
 
 Expected<ParserModuleBindResult> NativeParserModuleInstance::bind(const parser_module::BindingInfoV1& info) {
@@ -331,8 +228,12 @@ void NativeParserModuleInstance::reset() noexcept {
   if (module_ != nullptr && token_ != PJ_MODULE_CREATION_ERROR_TOKEN) {
     module_->destroy(token_);
   }
+  if (module_ != nullptr && instance_budget_reserved_) {
+    (void)module_->session_budget->releaseInstance(module_->module_id);
+  }
   token_ = PJ_MODULE_CREATION_ERROR_TOKEN;
   bound_ = false;
+  instance_budget_reserved_ = false;
   module_.reset();
 }
 
