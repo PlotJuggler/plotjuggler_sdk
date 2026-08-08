@@ -29,8 +29,10 @@ Four plugin families exist:
    virtuals, and export with a macro. The SDK generates C ABI trampolines with
    full exception safety.
 
-3. **No Qt dependency in the plugin SDK.** Plugins link only `pj_base` (and
-   optionally `pj_dialog_sdk` for dialog UI). Qt is a host-side concern.
+3. **No Qt dependency in the plugin SDK.** Installed plugins link the
+   `plotjuggler_sdk::plugin_sdk` umbrella, which supplies `pj_base` plus the
+   parser/dialog authoring headers without linking Qt. Qt is a host-side
+   concern.
 
 4. **Version negotiation.** Each protocol carries `protocol_version` and
    `struct_size` for forward/backward compatibility.
@@ -101,9 +103,15 @@ Independent decoder, typically driven by a DataSource via the host.
   JSON.
 - Lifecycle: create → bind → parse* → destroy.
 - A parser that registers `SchemaHandler` entries exposes
-  `pj.parser_functional.v1` after schema binding. Functional scalar and object
-  results cross only through synchronous caller-owned C sinks; the host must
-  never cast the opaque context to `MessageParserPluginBase` for such a parser.
+  `pj.parser_functional.v1`, `pj.parser_functional.v2`, and
+  `pj.parser_route_claims.v1` after schema binding. Functional scalar and object
+  results cross only through synchronous caller-owned C sinks; v2 may represent
+  one eligible object bulk field as a payload-relative splice. The host queries
+  v2 first, falls back to v1, and must never cast the opaque context to
+  `MessageParserPluginBase` for such a parser.
+- Route classification reports exact handler-table claims only. The host owns
+  each encoding's universal wildcard scalar claim and resolves scalar and object
+  routes independently.
 - Scalar views are callback-duration-only. Canonical objects cross as a stable
   numeric builtin tag plus canonical wire bytes and are decoded into host-owned
   storage before the extension call returns. No plugin allocator, destructor,
@@ -112,13 +120,13 @@ Independent decoder, typically driven by a DataSource via the host.
   releases it exactly once on success and every failure path. This permits
   zero-copy input when the host already owns an anchored payload; output still
   pays the explicit canonical serialization boundary.
-- Extension presence is truthful, not merely SDK-version-based: a 0.21-built
+- Extension presence is truthful, not merely SDK-version-based: a rebuilt
   parser that still overrides only legacy `parse()` must not advertise the
-  functional extension. Hosts query after `bind_schema` and do not cache an
-  earlier absence.
-- During the 0.21 migration only, a host may use an isolated deprecated
-  direct-C++ bridge for a pre-0.21 parser whose extension is absent. The bridge
-  is removed, together with its class-layout constraint, in SDK 1.0.
+  functional extensions. Hosts query after `bind_schema` and do not cache an
+  earlier absence; an older handler parser may expose v1 without v2.
+- Until SDK 1.0, a host may use an isolated deprecated direct-C++ bridge for a
+  pre-0.21 parser whose functional extensions are absent. The bridge and its
+  class-layout constraint are removed together at 1.0.
 
 ### Dialog
 

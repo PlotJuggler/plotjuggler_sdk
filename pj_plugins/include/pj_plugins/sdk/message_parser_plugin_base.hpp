@@ -30,6 +30,7 @@
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/parser_functional_protocol.h"
+#include "pj_base/parser_route_claims_protocol.h"
 #include "pj_base/plugin_abi_export.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
@@ -302,8 +303,9 @@ class MessageParserPluginBase {
 
   /// Return a pointer to a static plugin-exposed extension for @p id, or
   /// nullptr if unknown. Default returns nullptr. The SDK reserves
-  /// `pj.parser_functional.v1`, which is advertised automatically only after
-  /// at least one SchemaHandler has been registered.
+  /// `pj.parser_route_claims.v1` plus `pj.parser_functional.v1` and v2. Route
+  /// claims are always advertised; both functional revisions are advertised
+  /// automatically after at least one SchemaHandler has been registered.
   virtual const void* pluginExtension(std::string_view id) {
     (void)id;
     return nullptr;
@@ -402,6 +404,12 @@ class MessageParserPluginBase {
     sdk::fillError(out_error, code, domain, message);
   }
 
+  static void storeErrorKind(
+      PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message, std::string_view kind) {
+    sdk::fillError(out_error, code, domain, message);
+    sdk::setExtended(out_error, kind, nullptr);
+  }
+
   static void trampoline_destroy(void* ctx) noexcept;
   static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept;
   static bool trampoline_bind_schema(
@@ -415,8 +423,17 @@ class MessageParserPluginBase {
   PJ_MESSAGE_PARSER_DSO_LOCAL static bool trampoline_parse_scalars_functional(
       void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, const PJ_parser_scalar_sink_v1_t* sink,
       PJ_error_t* out_error) noexcept;
+  PJ_MESSAGE_PARSER_DSO_LOCAL static bool trampoline_parse_scalars_functional_v2(
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, const PJ_parser_scalar_sink_v1_t* sink,
+      PJ_error_t* out_error) noexcept;
   PJ_MESSAGE_PARSER_DSO_LOCAL static bool trampoline_parse_object_functional(
       void* ctx, int64_t timestamp_ns, PJ_payload_t payload, const PJ_parser_object_sink_v1_t* sink,
+      PJ_error_t* out_error) noexcept;
+  PJ_MESSAGE_PARSER_DSO_LOCAL static bool trampoline_parse_object_functional_v2(
+      void* ctx, int64_t timestamp_ns, PJ_payload_t payload, const PJ_parser_object_sink_v2_t* sink,
+      PJ_error_t* out_error) noexcept;
+  PJ_MESSAGE_PARSER_DSO_LOCAL static bool trampoline_classify_routes(
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_route_classification_v1_t* out,
       PJ_error_t* out_error) noexcept;
   static bool trampoline_classify_schema(
       void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,

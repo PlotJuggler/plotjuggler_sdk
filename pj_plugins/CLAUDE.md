@@ -3,8 +3,9 @@
 The runtime-extension layer of `plotjuggler_sdk`: the stable C ABI, the C++ SDK
 plugin authors subclass, and the host-side loaders/RAII handles that `dlopen`
 plugin DSOs. Owns **four plugin families** — DataSource, MessageParser, Toolbox,
-Dialog. Plugins depend only on `pj_base`; this module (the host side) links
-`pj_base` and is consumed by the app. It does **not** own the data-plane bridge
+Dialog. The authoring umbrella spans `pj_base` plus the parser/dialog headers in
+this module through `plotjuggler_sdk::plugin_sdk`; host libraries link `pj_base`
+and are consumed by the app. It does **not** own the data-plane bridge
 (that is `pj_datastore`'s `DatastoreSourceWriteHost` / `…ParserWriteHost` /
 `…ToolboxHost`, which now lives in the PlotJuggler application repo, not in this
 SDK) and links **no Qt** — dialogs are toolkit-neutral (the GUI host supplies the
@@ -15,10 +16,13 @@ submodule-internal modules; `pj_base` carries none).
 ## Layout
 - `include/pj_plugins/host/` — host loaders + RAII handles for DataSource /
   MessageParser / Toolbox, the embedded-manifest `plugin_catalog` scanner
-  (`scanPluginDsos` / `inspectPluginDso`), `ServiceRegistryBuilder`,
-  `ConfigEnvelope`. The duplicate-resolution catalog that composes these into a
-  loaded set is **host policy** and lives in the app (`pj_runtime`,
-  `PluginRuntimeCatalog`), not here.
+  (`scanPluginDsos` / `inspectPluginDso`), parser claim admission + per-route
+  resolution (`ParserClaimCatalog`, `ParserRouteResolver`), native functional
+  parser-module loading/execution (`NativeParserModule`,
+  `NativeParserModuleInstance`, `ParserModuleStrikeTracker`),
+  `ServiceRegistryBuilder`, `ConfigEnvelope`. The DSO duplicate-resolution
+  catalog that composes loaded plugin families into a set is **host policy** and
+  lives in the app (`pj_runtime`, `PluginRuntimeCatalog`), not here.
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:
   `MessageParserPluginBase`, `ObjectIngestPolicyResolver`, parser trampolines.
 - `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host for tests).
@@ -36,13 +40,19 @@ submodule-internal modules; `pj_base` carries none).
 - **The SDK is split across two modules.** `DataSourcePluginBase` /
   `ToolboxPluginBase` / `data_source_patterns.hpp` live in **`pj_base/sdk/`**;
   only `MessageParserPluginBase` + `object_ingest_policy.hpp` live here under
-  `pj_plugins/sdk/`. (The `docs/ARCHITECTURE.md` §2 diagram is stale on this.)
+  `pj_plugins/sdk/`. Functional parser-module authoring headers and the native
+  CMake helper live under `pj_base`; claim resolution and native module
+  loading/runtime live here.
 - **Handles keep the DSO mapped.** Every handle holds a `shared_ptr<void>`
   library token (exposed via `libraryOwner()`), so destroying/hot-reloading the
   loader cannot `dlclose` a live plugin — and a lazy ObjectStore payload anchor,
   whose `release` fn is plugin code, can capture that token to stay safe past the
   handle's own lifetime. Dialog handles add a non-owning `borrowed()` form for
   source/toolbox embedded dialogs — those must not outlive the owning handle.
+- **Native parser modules never unload in v1.** `NativeParserModule` resolves
+  the complete per-handle export set and retains every opened DSO for the
+  process session, including rejected artifacts. Instance wrappers still call
+  `pj_module_destroy`; only the code mapping has session lifetime.
 
 ## Read deeper
 | For | Read |
@@ -52,5 +62,8 @@ submodule-internal modules; `pj_base` carries none).
 | Writing each family | `docs/data-source-guide.md`, `docs/message-parser-guide.md`, `docs/toolbox-guide.md`, `docs/dialog-plugin-guide.md` |
 | Host loader + factory pattern | `include/pj_plugins/host/data_source_library.hpp`, `…/data_source_handle.hpp` |
 | Discovery from embedded manifests | `include/pj_plugins/host/plugin_catalog.hpp` (the duplicate-resolution catalog is host-side in `pj_runtime`) |
+| Parser claim admission and route selection | `include/pj_plugins/host/parser_claim_catalog.hpp`, `parser_route_resolver.hpp` |
+| Native functional parser modules | `include/pj_plugins/host/native_parser_module.hpp`, `parser_module_runtime.hpp` |
+| Authoring native functional parser modules | `../pj_base/include/pj_base/parser_module/README.md`, `module.hpp`, `../.claude/skills/plotjuggler-plugin/references/parser-module.md` |
 | Service wiring into `bind()` | `include/pj_plugins/host/service_registry_builder.hpp` |
 | Builtin-object ingest policy | `include/pj_plugins/sdk/object_ingest_policy.hpp` |

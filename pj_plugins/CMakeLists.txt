@@ -62,6 +62,61 @@ target_link_libraries(pj_plugin_catalog
 )
 
 # ---------------------------------------------------------------------------
+# pj_parser_claim_catalog — host-side parser claim admission and resolution
+# ---------------------------------------------------------------------------
+
+add_library(pj_parser_claim_catalog STATIC
+  src/parser_claim_catalog.cpp
+  src/parser_route_resolver.cpp
+)
+target_include_directories(pj_parser_claim_catalog PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(pj_parser_claim_catalog PUBLIC cxx_std_20)
+target_compile_options(pj_parser_claim_catalog PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_parser_claim_catalog PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME parser_claim_catalog
+)
+target_link_libraries(pj_parser_claim_catalog
+  PUBLIC
+    pj_base
+  PRIVATE
+    nlohmann_json::nlohmann_json
+)
+add_library(plotjuggler_sdk::parser_claim_catalog ALIAS pj_parser_claim_catalog)
+
+# ---------------------------------------------------------------------------
+# pj_parser_module_host — native functional-module loader and runtime
+# ---------------------------------------------------------------------------
+
+add_library(pj_parser_module_host STATIC
+  src/native_parser_module.cpp
+  src/parser_module_runtime.cpp
+)
+target_include_directories(pj_parser_module_host
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_features(pj_parser_module_host PUBLIC cxx_std_20)
+target_compile_options(pj_parser_module_host PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_parser_module_host PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME parser_module_host
+)
+target_link_libraries(pj_parser_module_host
+  PUBLIC
+    pj_base
+  PRIVATE
+    ${CMAKE_DL_LIBS}
+)
+add_library(plotjuggler_sdk::parser_module_host ALIAS pj_parser_module_host)
+
+# ---------------------------------------------------------------------------
 # pj_data_source_host — host-side DataSource library loader
 # ---------------------------------------------------------------------------
 
@@ -221,8 +276,9 @@ target_link_libraries(pj_toolbox_host
 # ---------------------------------------------------------------------------
 # pj_plugin_host — umbrella INTERFACE that bundles every host-side loader.
 # Hosts (the PlotJuggler app, test rigs) link this single target to get
-# discovery + all four plugin-family loaders. The duplicate-resolution catalog
-# is host policy and lives in the app (pj_runtime), built on these primitives.
+# discovery, all four plugin-family loaders, and functional parser-module
+# execution. The duplicate-resolution catalog is host policy and lives in the
+# app (pj_runtime), built on these primitives.
 # ---------------------------------------------------------------------------
 
 add_library(pj_plugin_host INTERFACE)
@@ -232,11 +288,41 @@ target_link_libraries(pj_plugin_host INTERFACE
   pj_toolbox_host
   pj_dialog_library
   pj_plugin_catalog
+  pj_parser_claim_catalog
+  pj_parser_module_host
 )
 set_target_properties(pj_plugin_host PROPERTIES EXPORT_NAME plugin_host)
 add_library(plotjuggler_sdk::plugin_host ALIAS pj_plugin_host)
 
 if(PJ_BUILD_TESTS)
+
+# ---------------------------------------------------------------------------
+# Native functional parser-module fixtures (real shared libraries)
+# ---------------------------------------------------------------------------
+
+# Trailing arguments become PRIVATE compile definitions, each selecting one
+# deliberately defective variant of the shared fixture source.
+function(pj_add_native_parser_module_fixture target)
+  add_library(${target} SHARED tests/native_parser_module_fixture.cpp)
+  target_compile_features(${target} PRIVATE cxx_std_20)
+  target_compile_options(${target} PRIVATE ${PJ_WARNING_FLAGS})
+  set_target_properties(${target} PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
+  )
+  target_link_libraries(${target} PRIVATE pj_base)
+  if(ARGN)
+    target_compile_definitions(${target} PRIVATE ${ARGN})
+  endif()
+  if(UNIX AND NOT APPLE)
+    target_link_options(${target} PRIVATE "LINKER:-z,defs" "LINKER:--exclude-libs,ALL")
+  endif()
+endfunction()
+
+pj_add_native_parser_module_fixture(native_parser_module_fixture)
+pj_add_native_parser_module_fixture(native_parser_module_missing_export PJ_FIXTURE_OMIT_FREE)
+pj_add_native_parser_module_fixture(native_parser_module_wrong_abi PJ_FIXTURE_WRONG_ABI)
+pj_add_native_parser_module_fixture(native_parser_module_unreadable_manifest PJ_FIXTURE_UNREADABLE_MANIFEST)
 
 # ---------------------------------------------------------------------------
 # Mock Toolbox plugin (shared library, for dlopen tests)
@@ -327,6 +413,14 @@ target_link_libraries(message_parser_functional_extension_test PRIVATE
 )
 add_test(NAME message_parser_functional_extension_test COMMAND message_parser_functional_extension_test)
 
+# Unit test: exact route claims synthesized from registered schema handlers.
+add_executable(message_parser_route_claims_extension_test tests/message_parser_route_claims_extension_test.cpp)
+target_compile_options(message_parser_route_claims_extension_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(message_parser_route_claims_extension_test PRIVATE
+  pj_message_parser_host pj_plugin_sdk GTest::gtest_main
+)
+add_test(NAME message_parser_route_claims_extension_test COMMAND message_parser_route_claims_extension_test)
+
 # Compile-time pins for the cross-DSO MessageParserPluginBase member layout.
 add_executable(message_parser_abi_layout_sentinels_test tests/message_parser_abi_layout_sentinels_test.cpp)
 target_compile_options(message_parser_abi_layout_sentinels_test PRIVATE ${PJ_WARNING_FLAGS})
@@ -343,6 +437,66 @@ target_link_libraries(object_ingest_policy_test PRIVATE
 )
 target_include_directories(object_ingest_policy_test PRIVATE include)
 add_test(NAME object_ingest_policy_test COMMAND object_ingest_policy_test)
+
+# Unit tests: parser claim admission, manifest decoding, and synthesis.
+add_executable(parser_claim_catalog_test tests/parser_claim_catalog_test.cpp)
+target_compile_options(parser_claim_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(parser_claim_catalog_test PRIVATE
+  pj_parser_claim_catalog GTest::gtest_main
+)
+add_test(NAME parser_claim_catalog_test COMMAND parser_claim_catalog_test)
+
+# Unit tests: deterministic per-route selection and probe-cache invalidation.
+add_executable(parser_route_resolver_test tests/parser_route_resolver_test.cpp)
+target_compile_options(parser_route_resolver_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(parser_route_resolver_test PRIVATE
+  pj_parser_claim_catalog GTest::gtest_main
+)
+add_test(NAME parser_route_resolver_test COMMAND parser_route_resolver_test)
+
+# Integration tests: native functional parser-module loading and execution.
+add_executable(native_parser_module_test tests/native_parser_module_test.cpp)
+add_dependencies(native_parser_module_test
+  native_parser_module_fixture
+  native_parser_module_missing_export
+  native_parser_module_wrong_abi
+  native_parser_module_unreadable_manifest
+)
+target_compile_definitions(native_parser_module_test PRIVATE
+  PJ_NATIVE_MODULE_FIXTURE_PATH="$<TARGET_FILE:native_parser_module_fixture>"
+  PJ_NATIVE_MODULE_MISSING_EXPORT_PATH="$<TARGET_FILE:native_parser_module_missing_export>"
+  PJ_NATIVE_MODULE_WRONG_ABI_PATH="$<TARGET_FILE:native_parser_module_wrong_abi>"
+  PJ_NATIVE_MODULE_UNREADABLE_MANIFEST_PATH="$<TARGET_FILE:native_parser_module_unreadable_manifest>"
+)
+target_compile_options(native_parser_module_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(native_parser_module_test PRIVATE
+  pj_parser_module_host pj_parser_claim_catalog GTest::gtest_main
+)
+add_test(NAME native_parser_module_test COMMAND native_parser_module_test)
+
+add_executable(parser_module_runtime_test tests/parser_module_runtime_test.cpp)
+add_dependencies(parser_module_runtime_test native_parser_module_fixture)
+target_compile_definitions(parser_module_runtime_test PRIVATE
+  PJ_NATIVE_MODULE_FIXTURE_PATH="$<TARGET_FILE:native_parser_module_fixture>"
+)
+target_compile_options(parser_module_runtime_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(parser_module_runtime_test PRIVATE
+  pj_parser_module_host GTest::gtest_main
+)
+add_test(NAME parser_module_runtime_test COMMAND parser_module_runtime_test)
+
+# Keystone integration: a C++17 module authored and built only with the
+# header-only kit, then exercised through the production native loader/runtime.
+add_executable(parser_module_authoring_e2e_test tests/parser_module_authoring_e2e_test.cpp)
+add_dependencies(parser_module_authoring_e2e_test toy_cdr_pointcloud_module)
+target_compile_definitions(parser_module_authoring_e2e_test PRIVATE
+  PJ_TOY_CDR_POINTCLOUD_MODULE_PATH="$<TARGET_FILE:toy_cdr_pointcloud_module>"
+)
+target_compile_options(parser_module_authoring_e2e_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(parser_module_authoring_e2e_test PRIVATE
+  pj_parser_module_host pj_parser_claim_catalog GTest::gtest_main
+)
+add_test(NAME parser_module_authoring_e2e_test COMMAND parser_module_authoring_e2e_test)
 
 # Unit test: ServiceRegistryBuilder registration rules. PJ_ASSERT_THROWS makes
 # the convenience overload's invariant observable in every build type — a plain
@@ -435,6 +589,8 @@ if(PJ_INSTALL_SDK)
       pj_plugin_loader_detail
       pj_plugin_sdk
       pj_plugin_catalog
+      pj_parser_claim_catalog
+      pj_parser_module_host
       pj_data_source_host
       pj_message_parser_host
       pj_toolbox_host
