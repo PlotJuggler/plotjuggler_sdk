@@ -104,6 +104,13 @@ TEST(MessageParserLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectD
   handle.reset();
 }
 
+// GCC 14's -O2 inliner falsely reports the moved-into optional's std::any
+// payload as maybe-uninitialized when ~ObjectRecord() is fully inlined
+// (observed with GCC 14.4). Clang has no -Wmaybe-uninitialized group.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 TEST(MessageParserLibraryTest, FunctionalObjectRemainsHostOwnedAfterPluginAndLibraryDie) {
   functional_plugin_unloaded = false;
   std::optional<PJ::sdk::ObjectRecord> record;
@@ -140,6 +147,9 @@ TEST(MessageParserLibraryTest, FunctionalObjectRemainsHostOwnedAfterPluginAndLib
 
   record.reset();  // host-side destruction must not jump into the unloaded DSO
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 TEST(MessageParserLibraryTest, LoadNonexistentFails) {
   auto result = PJ::MessageParserLibrary::load("/nonexistent_path/fake_plugin.so");
