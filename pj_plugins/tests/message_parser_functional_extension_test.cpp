@@ -78,6 +78,23 @@ class CustomExtensionParser final : public PJ::MessageParserPluginBase {
   int marker_ = 17;
 };
 
+/// Registers a handler for one schema and keeps legacy parse() for every
+/// other schema — the mixed model the parse() doc-comment sanctions.
+class MixedModelParser final : public PJ::MessageParserPluginBase {
+ public:
+  MixedModelParser() {
+    PJ::sdk::SchemaHandler handler;
+    handler.parse_scalars = [](PJ::Timestamp, PJ::Span<const uint8_t>) -> PJ::Expected<PJ::sdk::ScalarRecord> {
+      return PJ::sdk::ScalarRecord{};
+    };
+    registerSchemaHandler(kSchema, std::move(handler));
+  }
+
+  PJ::Status parse(PJ::Timestamp, PJ::Span<const uint8_t>) override {
+    return PJ::okStatus();
+  }
+};
+
 class BindRegisteredParser final : public PJ::MessageParserPluginBase {
  public:
   PJ::Status bindSchema(std::string_view type_name, PJ::Span<const uint8_t> schema) override {
@@ -273,6 +290,32 @@ TEST(MessageParserFunctionalExtension, HandlerRegisteredDuringBindEnablesExtensi
   EXPECT_FALSE(handle.supportsFunctionalParsing());
   ASSERT_TRUE(handle.bindSchema("dynamic/Type", {}));
   EXPECT_TRUE(handle.supportsFunctionalParsing());
+}
+
+TEST(MessageParserFunctionalExtension, MixedModelParserAdvertisesOnlyForHandledSchemas) {
+  PJ::MessageParserHandle handled(parserVtable<MixedModelParser>());
+  ASSERT_TRUE(handled.bindSchema(kSchema, {}));
+  EXPECT_TRUE(handled.supportsFunctionalParsing());
+
+  // The same plugin bound to a schema it only implements through legacy
+  // parse() must not claim the functional route, or the host would take a
+  // route that parseScalars/parseObject can only reject.
+  PJ::MessageParserHandle unhandled(parserVtable<MixedModelParser>());
+  ASSERT_TRUE(unhandled.bindSchema("example/Unhandled", {}));
+  EXPECT_FALSE(unhandled.supportsFunctionalParsing());
+  const auto status = unhandled.parseScalarsFunctional(
+      0, {}, [](std::optional<PJ::Timestamp>, PJ::Span<const PJ_named_field_value_t>) { return PJ::okStatus(); });
+  EXPECT_FALSE(status);
+  EXPECT_NE(status.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), std::string::npos);
+}
+
+TEST(MessageParserFunctionalExtension, RebindingToAnUnhandledSchemaWithdrawsTheFunctionalRoute) {
+  PJ::MessageParserHandle handle(parserVtable<MixedModelParser>());
+  ASSERT_TRUE(handle.bindSchema(kSchema, {}));
+  ASSERT_TRUE(handle.supportsFunctionalParsing());
+
+  ASSERT_TRUE(handle.bindSchema("example/Unhandled", {}));
+  EXPECT_FALSE(handle.supportsFunctionalParsing());
 }
 
 TEST(MessageParserFunctionalExtension, LegacyParserWithoutExtensionRemainsDetectable) {
