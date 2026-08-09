@@ -44,10 +44,11 @@ these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
      reserved as its one growth path — do not add further top-level
      fields.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
-     `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`, and the
-     `pj.parser_functional.v1` extension/sink tables. New fields or slots go at
-     the tail; readers honor the caller-provided size, and vtable slots are
-     read with `PJ_HAS_TAIL_SLOT`.
+     `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`, the
+     `pj.parser_functional.v1`/v2 extension and sink tables, and
+     `pj.parser_route_claims.v1`. New fields or slots go at the tail; readers
+     honor the caller-provided size, and vtable slots are read with
+     `PJ_HAS_TAIL_SLOT`.
 
 5. **Compile-time ABI layout sentinels.** `pj_base/tests/abi_layout_sentinels_test.cpp`
    consists entirely of `static_assert`s pinning `sizeof`, `alignof`,
@@ -114,14 +115,68 @@ plugin instance. C++ wrappers (`DescriptorImportProviderView`, `JoinableJob`,
 See `docs/toolbox-guide.md` → "Descriptor import and source promotion" for
 the plugin-author walkthrough.
 
-Stable MessageParser-specific example: `"pj.parser_functional.v1"`
-(`PJ_parser_functional_v1_t` in
-`pj_base/parser_functional_protocol.h`). SDK 0.21's
-`MessageParserPluginBase` exposes it automatically after a plugin registers at
-least one `SchemaHandler`. Hosts must query after `bind_schema` and must not
-cache an earlier absence because schema-generic plugins may register their
-handler while binding. A parser that still implements only legacy `parse()`
-does not advertise the extension merely because it was rebuilt with 0.21.
+Stable MessageParser-specific examples are `"pj.parser_functional.v1"` and
+`"pj.parser_functional.v2"` (`PJ_parser_functional_v1_t` and
+`PJ_parser_functional_v2_t` in `pj_base/parser_functional_protocol.h`) plus the
+exact route classifier `"pj.parser_route_claims.v1"`. A handler-registering
+`MessageParserPluginBase` exposes all three automatically. The host queries v2
+first and falls back to v1; v2 adds one eligible object-field splice while
+leaving scalar parsing unchanged. Route classification reports exact handler
+coverage only, and the host synthesizes the universal wildcard scalar claim.
+Hosts must query after `bind_schema` and must not cache an earlier absence
+because schema-generic plugins may register their handler while binding. A
+parser that still implements only legacy `parse()` does not advertise the
+functional extensions merely because it was rebuilt.
+
+### Functional parser modules
+
+Functional parser modules use the family-independent export ABI in
+`pj_base/parser_module_abi.h`, not a plugin-family vtable. The host-side
+`NativeParserModule` loader opens each artifact with local, immediate symbol
+resolution, resolves every operational and native metadata export, gates ABI
+version 1, and copies the embedded manifest for subsequent
+`ParserClaimCatalog` admission. Native module mappings have process-session
+lifetime in v1 and are never unloaded.
+
+`NativeParserModuleInstance` owns one create/bind/parse/destroy lifecycle. It
+uses the frozen little-endian codecs for input and output, consumes all
+module-owned descriptor views before returning, validates output route and
+expected object type, and checks a splice against both the canonical object's
+eligible field and the original payload bounds. A valid splice is materialized
+into that field, so the returned canonical object is complete; its sidecar
+retains the original offset and bytes for future zero-copy integration.
+Malformed returned descriptors, ineligible/out-of-bounds returned splices,
+type/route mismatch, and bad tokens are contract violations; other
+module-reported per-message failures are data errors. The separate
+non-thread-safe `ParserModuleStrikeTracker` quarantines a module claim on its
+third contract violation, permits one same-descriptor recreation, and disables
+the claim after a repeated three-strike cycle. Executor placement, generation
+ownership, folder scanning, and rescan policy remain application concerns.
+
+Module authors use the standalone C++17 headers under
+`pj_base/include/pj_base/parser_module/` through the zero-linkage
+`plotjuggler_sdk::parser_module` target. The readers compile ROS 2 concatenated
+`.msg` bundles or protobuf `FileDescriptorSet` field paths at bind time; the
+CDR locator supports fixed arrays, bounded and unbounded sequences, bounded
+strings, and string arrays/sequences, while cyclic or over-depth schemas fail at
+bind. The typed `ObjectWriter` emits Image, PointCloud, DepthImage,
+OccupancyGrid, CompressedPointCloud, Mesh3D, VideoFrame, OccupancyGridUpdate,
+and VoxelGrid descriptors, including each type's eligible single-splice form.
+Module parse callbacks receive the per-message `pj::Timestamp` alongside the
+payload. `BindingInfo` views expire when `bind()` returns; `owningCopy()` is the
+fallible retention path. Bulk storage uses nothrow allocation, and protobuf
+matching is bounded, so allocation failure is returned as data error rather
+than escaping as a trap. `PJ_FUNCTIONAL_PARSER` supplies the complete native
+export set, uses synchronized index+generation instance tokens to reject stale
+handles, and catches user exceptions at the C boundary.
+`pj_add_parser_module(... TARGETS native)` builds a hidden-visibility module and
+embeds its JSON manifest behind the native metadata exports. `TARGETS wasm` is
+not available in SDK 0.22. The shared host codec can append and read the exact
+JSON bytes in a wasm `pj_parser_module_manifest` custom section; the conditional
+wasi-sdk 27 compile gate builds the toy source with C++17 and exceptions
+disabled, then statically audits the reactor model and every operational export
+signature. This is structural conformance only: no wasm loader or execution
+runtime ships in this release.
 
 ## 0. C protocol v4 (current under ABI v5)
 
@@ -230,7 +285,7 @@ Every plugin family follows the same three-level pattern:
 
 ```
 C ABI protocol  →  C++ SDK base class  →  Host loader + RAII handle
-   (pj_base)          (pj_base)            (pj_plugins)
+   (pj_base)      (pj_base/pj_plugins)       (pj_plugins)
 ```
 
 1. **C ABI protocol** — a vtable struct in a plain-C header. Defines the
@@ -253,7 +308,17 @@ pj_base/
   include/pj_base/
     data_source_protocol.h        ← C ABI
     message_parser_protocol.h     ← C ABI
-    parser_functional_protocol.h  ← C ABI: pj.parser_functional.v1 sinks
+    parser_functional_protocol.h  ← C ABI: pj.parser_functional.v1/v2 sinks
+    parser_route_claims_protocol.h ← C ABI: exact parser route classification
+    parser_module_abi.h           ← native/wasm module exports + byte codecs
+    parser_module_manifest.hpp    ← wasm manifest custom-section embed/read codec
+    parser_module/                ← standalone C++17 header-only module authoring kit
+      module.hpp                  ← umbrella API + PJ_FUNCTIONAL_PARSER exports
+      cdr_reader.hpp              ← bounded XCDR1 reader
+      cdr_field_locator.hpp       ← ROS 2 .msg field-path compiler/cache
+      proto_reader.hpp            ← bounded protobuf wire reader
+      proto_field_locator.hpp     ← FileDescriptorSet field-path compiler
+      object_writer.hpp           ← nine splice-eligible canonical object builders
     toolbox_protocol.h            ← C ABI
     plugin_data_api.h             ← shared data-plane ABI (write hosts)
     descriptor_import_protocol.h  ← C ABI: pj.descriptor_import.v1 extension +
@@ -291,6 +356,10 @@ pj_plugins/
     toolbox_library.hpp
     toolbox_handle.hpp
     plugin_catalog.hpp              ← embedded-manifest DSO scanner (scanPluginDsos / inspectPluginDso)
+    parser_claim_catalog.hpp        ← parser claims, manifest admission, plugin-claim synthesis
+    parser_route_resolver.hpp       ← ordered per-route selection + probe cache
+    native_parser_module.hpp        ← session-lifetime native module loader
+    parser_module_runtime.hpp       ← module instances, outputs, fault tracking
     service_registry_builder.hpp    ← service wiring into bind()
     config_envelope.hpp             ← versioned config wrapper
   include/pj_plugins/sdk/
@@ -303,7 +372,14 @@ pj_plugins/
   src/
     data_source_library.cpp
     message_parser_library.cpp
+    parser_claim_catalog.cpp
+    parser_route_resolver.cpp
+    native_parser_module.cpp
+    parser_module_runtime.cpp
     toolbox_library.cpp
+
+cmake/
+  PjParserModule.cmake             ← pj_add_parser_module native target helper
 
 (PlotJuggler application repo — not part of this SDK submodule)
 pj_datastore/
@@ -313,9 +389,12 @@ pj_datastore/
                                        DatastoreToolboxHost
 ```
 
-**Dependency direction:** Plugins depend only on `pj_base`. The host links
-`pj_plugins` (which depends on `pj_base`). `pj_datastore` — now a module in the
-PlotJuggler application repo, not part of this SDK — provides the concrete
+**Dependency direction:** Installed plugin authors consume
+`plotjuggler_sdk::plugin_sdk`, which combines `pj_base` with the MessageParser
+and dialog authoring headers from `pj_plugins`. Functional parser modules depend
+only on the zero-linkage `plotjuggler_sdk::parser_module` header target. Host
+libraries in `pj_plugins` depend on `pj_base`. `pj_datastore` — now a module in
+the PlotJuggler application repo, not part of this SDK — provides the concrete
 data-host implementations that bridge plugin writes to the columnar storage
 engine.
 
@@ -403,6 +482,23 @@ adapter needed to marshal diagnostics onto their UI thread.
 
 A default-constructed sink discards events at zero cost, so loaders that
 take no sink behave as before.
+
+### 5.2 Parser claim catalog and route resolver
+
+`ParserClaimCatalog` is the host-side parser dispatch catalog. It admits
+transactional claim batches from module manifests or synthesized parser-plugin
+coverage, validates stable `(provider_id, claim_id)` identities, and attaches
+host-supplied provenance and provider generations. The SDK-owned encoding
+registry and normalization helpers keep matching case-sensitive and canonical.
+
+`ParserRouteResolver` independently selects scalar and object providers. It
+applies fail-closed per-route pins, exact-before-wildcard specificity,
+provenance, bounded priority, and stable identity ordering before invoking a
+caller-supplied probe. Probe decisions and retained opaque leases are cached by
+provider generation plus binding identity/config digests. Catalog, pin, and
+provider-config mutation paths explicitly invalidate that cache. The resolver
+contains no loader or executor: the embedding host runs the callback on its
+parser-control executor and owns the concrete provider instance type.
 
 ## 6. RAII Handles
 
@@ -629,8 +725,8 @@ that cascades `topic > source > type > default`:
 Parsers participate through `classifySchema`, `parseScalars`, and
 `parseObject`, backed by the per-schema `SchemaHandler` table. Those C++
 methods and their `ScalarRecord` / `ObjectRecord` / `std::any` values stay
-inside the plugin DSO. SDK 0.21 translates the two functional results through
-`pj.parser_functional.v1`:
+inside the plugin DSO. The base exposes both `pj.parser_functional.v1` and v2;
+`MessageParserHandle` negotiates v2 first and falls back to v1:
 
 - `parse_scalars` calls one caller-owned sink exactly once. Field/name/string
   views are borrowed only for that callback; the host copies anything it
@@ -639,11 +735,14 @@ inside the plugin DSO. SDK 0.21 translates the two functional results through
   and releasing it on every path. That preserves the existing zero-copy input
   into parsers that propagate `PayloadView::anchor`. It serializes the plugin's
   concrete builtin to its canonical `PJ.*` protobuf wire contract and calls one
-  object sink with `(BuiltinObjectType, optional timestamp, bytes)`.
+  object sink with `(BuiltinObjectType, optional timestamp, bytes)`. The v2 sink
+  may instead carry one eligible bulk field as a payload-relative splice.
 - `MessageParserHandle::parseObjectFunctional` decodes those bytes before the
-  callback returns, producing an entirely host-owned `ObjectRecord`. Its
-  destructor and `std::any` manager contain no plugin function pointer, so the
-  value remains safe after the parser and DSO lease are destroyed.
+  callback returns, reconstructs a v2 splice into the canonical object, and
+  rejects a type different from the binding's expected object type. The result
+  is an entirely host-owned `ObjectRecord`; its destructor and `std::any`
+  manager contain no plugin function pointer, so the value remains safe after
+  the parser and DSO lease are destroyed.
 - Provider exceptions, consumer exceptions, malformed/undersized sinks,
   unknown object tags, missing calls, and duplicate calls fail closed through
   `PJ_error_t`. The built-in extension table and trampolines have DSO-local
@@ -665,10 +764,11 @@ zero-length canonical payload is accepted as the valid proto3 default message
 when the separate type tag is known. Concrete builtins and codecs live under
 `pj_base/builtin/`; see `docs/builtin_type.md` for the catalog.
 
-Pre-0.21 parsers expose no functional extension. PlotJuggler 0.21 may retain a
-clearly isolated, deprecated direct-C++ bridge for those already-built DSOs.
-New plugins and new host code use the C extension; SDK 1.0 can remove the bridge
-and the frozen `MessageParserPluginBase` layout constraint.
+Pre-0.21 parsers expose no functional extension, and handler-based 0.21 parsers
+may expose v1 without v2. The host keeps a clearly isolated, deprecated
+direct-C++ bridge for binaries with neither extension. New plugins and new host
+code use v2-first negotiation; SDK 1.0 can remove the bridge and the frozen
+`MessageParserPluginBase` layout constraint.
 
 ## Per-topic pause (demand-driven subscription)
 

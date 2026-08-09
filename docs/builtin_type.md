@@ -84,10 +84,12 @@ are small enough that the zero-copy anchor pattern is unnecessary.
 **Serialize only at an explicit boundary.** Large byte-backed types remain
 views over source-native payload bytes while they are inside one component and
 an ownership anchor is available. Every stable builtin also has a canonical
-codec for storage/replay and for the `pj.parser_functional.v1` DSO boundary.
+codec for storage/replay and for the `pj.parser_functional.v1`/v2 DSO boundary.
 That boundary deliberately serializes the value rather than sharing C++ class,
-allocator, RTTI, or destructor state with the host. The schema and wire-format
-details stay private; public SDK headers expose only SDK structs.
+allocator, RTTI, or destructor state with the host. Functional v2 may carry one
+frozen eligible bulk field as a splice into the input payload; the host still
+reconstructs a canonical SDK object. The schema and wire-format details stay
+private; public SDK headers expose only SDK structs.
 
 ## Serialization Families
 

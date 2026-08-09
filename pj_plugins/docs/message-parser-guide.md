@@ -3,9 +3,9 @@
 > **Tracks the v5 plugin ABI** (`PJ_ABI_VERSION == 5`). The parser
 > write-host supports per-record writes and an optional Arrow stream
 > batch path for parser-shaped formats that naturally decode batches.
-> SchemaHandler-based parsers additionally expose the
-> `pj.parser_functional.v1` C extension introduced in SDK 0.21; no C++ result
-> object crosses the plugin boundary.
+> SchemaHandler-based parsers additionally expose
+> `pj.parser_functional.v1`, `pj.parser_functional.v2`, and
+> `pj.parser_route_claims.v1`; no C++ result object crosses the plugin boundary.
 > For ABI evolution rules, error semantics, and noexcept discipline see
 > `ARCHITECTURE.md`.
 
@@ -26,6 +26,11 @@ already selected a topic/encoding and is handing you payloads to decode. If
 one `parse()` call naturally yields a batch, the parser write host can accept
 that batch via `writeHost().appendArrowStream(...)`.
 
+If a supported encoding already exists and you only need one or a few exact
+custom message types rendered as canonical objects or scalars, use a native
+**functional parser module** instead of owning or forking the whole encoding.
+See `.claude/skills/plotjuggler-plugin/references/parser-module.md`.
+
 A MessageParser is the right choice when:
 - Each message is independently decodable (JSON line, single Protobuf message,
   ROS message, Influx line).
@@ -39,9 +44,9 @@ A MessageParser is the right choice when:
 
 A MessageParser plugin is a shared library (`.so` / `.dylib` / `.dll`) that
 decodes raw byte payloads — JSON, Protobuf, ROS messages, Influx line protocol,
-etc. — into named numeric fields that PlotJuggler can plot. Plugins link only
-against `pj_base` (no Qt, no host internals) and communicate through a stable
-C ABI.
+etc. — into named numeric fields that PlotJuggler can plot. Plugins link against
+the `plotjuggler_sdk::plugin_sdk` authoring target (no Qt or host internals) and
+communicate through a stable C ABI.
 
 MessageParsers are typically used via **delegated ingest**: a DataSource plugin
 acquires raw data from files or network streams and pushes raw payloads through
@@ -55,7 +60,7 @@ the host, which routes them to the appropriate parser based on encoding name.
    `parse()` instead. Optionally override `bindSchema()`, `saveConfig()`, and
    `loadConfig()`.
 3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"...","encoding":["..."]})")`
-4. Build as a shared library linking `pj_base`
+4. Build as a shared library linking `plotjuggler_sdk::plugin_sdk`
 
 For a namespaced class in a static build, provide the getter-symbol token
 separately: `PJ_MESSAGE_PARSER_PLUGIN_NAMED(my::Parser, MyParser, kManifest)`.
@@ -64,7 +69,7 @@ Dynamic builds may use either form.
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
 
 `parse()` remains supported for scalar push ingestion, but it does not by
-itself advertise functional parsing. A 0.21 rebuild of a legacy parser therefore
+itself advertise functional parsing. A rebuild of a legacy parser therefore
 stays on the host's compatibility path until it registers a `SchemaHandler`;
 there is no false capability claim and no flag to maintain manually.
 
@@ -100,7 +105,7 @@ trampolines; others prevent runtime parse failures.
 ### 1. Declare your class
 
 ```cpp
-#include <pj_base/sdk/message_parser_plugin_base.hpp>
+#include <pj_plugins/sdk/message_parser_plugin_base.hpp>
 
 class MyJsonParser : public PJ::MessageParserPluginBase {
  public:
@@ -158,15 +163,13 @@ can read it without creating an instance.
 
 ```cmake
 add_library(my_parser_plugin SHARED my_parser.cpp)
-target_link_libraries(my_parser_plugin PRIVATE pj_base)
+target_link_libraries(my_parser_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
 ```
 
 No other dependencies are needed for headless parsers. If your parser includes
-a configuration dialog (see Dialog Integration below), also link `pj_dialog_sdk`:
-
-```cmake
-target_link_libraries(my_parser_plugin PRIVATE pj_base pj_dialog_sdk)
-```
+a configuration dialog, the same installed umbrella target includes the dialog
+SDK. (`pj_base` and `pj_dialog_sdk` are in-tree implementation targets, not the
+downstream authoring interface.)
 
 ## Lifecycle
 
@@ -292,6 +295,24 @@ if (!status) {
 
 ## Optional Features
 
+### Route claims and functional v1/v2
+
+Registering at least one `SchemaHandler` automatically exposes three extension
+tables; parser authors do not implement them by hand:
+
+- `pj.parser_route_claims.v1` classifies exact handler-table coverage. It never
+  reports wildcard claims. The host synthesizes the universal wildcard scalar
+  claim from each manifest encoding.
+- `pj.parser_functional.v1` delivers scalar records and complete canonical-wire
+  objects through synchronous caller-owned sinks.
+- `pj.parser_functional.v2` keeps the scalar contract and adds a sink for one
+  splice-eligible object field. `MessageParserHandle` queries v2 first and falls
+  back to v1 when it is absent.
+
+The host resolves scalar and object routes independently. A parser may keep the
+scalar route for a type it flattens while another provider owns that type's
+canonical-object route.
+
 ### Schema binding
 
 Override `bindSchema()` to receive schema data before parsing begins. The
@@ -309,7 +330,8 @@ PJ::Status bindSchema(std::string_view type_name,
 ```
 
 The `type_name` is the encoding-specific message type (e.g.
-`"sensor_msgs/Imu"` for ROS, `"my.package.ImuSample"` for Protobuf). The
+`"sensor_msgs/msg/Imu"` for `ros2msg`, `"my.package.ImuSample"` for
+Protobuf). The
 `schema` bytes are encoding-specific (e.g. ROS `.msg` definition text,
 Protobuf `FileDescriptorSet` binary).
 
@@ -448,7 +470,7 @@ it without instantiating the plugin.
 | `id` | string | yes | Stable plugin identifier used by the host catalog. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
-| `encoding` | array of strings | yes | Encodings this parser handles, e.g. `["json"]`, `["protobuf"]`, `["ros1msg", "ros2msg", "cdr"]`. The host uses this list to match binding requests to parsers; one parser may register more than one encoding. |
+| `encoding` | array of strings | yes | Case-sensitive registered encodings this parser handles, e.g. `["json"]`, `["protobuf"]`, or `["ros1msg", "ros2msg"]`. The host uses this list to match binding requests to parsers; one parser may register more than one encoding. |
 
 Example:
 ```json
@@ -634,21 +656,23 @@ handler.parse_object =
   `std::any_cast<PJ::sdk::Image>(&obj)` to dispatch to the matching viewer.
 
 The types above are plugin-author C++ conveniences, not the binary boundary.
-After `bindSchema`, `MessageParserPluginBase` advertises
-`pj.parser_functional.v1` when at least one handler exists. Its trampoline:
+After `bindSchema`, `MessageParserPluginBase` advertises functional v1 and v2
+when at least one handler exists. Their trampolines:
 
 1. invokes `parseScalars` / `parseObject` inside the plugin DSO;
 2. delivers scalar fields through one synchronous caller-owned C sink, or
-   serializes the builtin to canonical `PJ.*` protobuf wire bytes and delivers
-   `(type, optional timestamp, bytes)` through one object sink;
+   serialize the builtin to canonical `PJ.*` protobuf wire bytes and deliver
+   `(type, optional timestamp, bytes)` through one object sink; v2 may instead
+   identify one frozen bulk field as a splice into the parse payload;
 3. destroys every plugin-side C++ result before returning.
 
-`MessageParserHandle::parseScalarsFunctional()` copies or consumes scalar
-views only during the callback. `parseObjectFunctional()` decodes canonical
-bytes synchronously into a host-owned `ObjectRecord`; that value remains safe
-after both the parser instance and shared library are gone. Provider/sink
-exceptions, unknown object tags, malformed tables, and zero/multiple sink calls
-fail closed.
+`MessageParserHandle::parseScalarsFunctional()` copies or consumes scalar views
+only during the callback. `parseObjectFunctional()` negotiates v2 first,
+reconstructs a valid splice when present, validates that the emitted type equals
+the binding's expected object type, and decodes synchronously into a host-owned
+`ObjectRecord`; that value remains safe after both the parser instance and
+shared library are gone. Provider/sink exceptions, unknown or mismatched object
+tags, malformed tables or splices, and zero/multiple sink calls fail closed.
 
 For large objects, pass the `sdk::PayloadView` overload rather than a bare
 `Span` when an ownership anchor already exists. The C extension transfers one
@@ -660,9 +684,11 @@ destructors, RTTI, STL layout, or `std::any` manager functions. Measure this
 path for image/point-cloud workloads instead of bypassing it with direct C++
 calls.
 
-Parsers built before SDK 0.21 expose no functional extension. PlotJuggler 0.21
-may use a deprecated, isolated direct-C++ bridge only for those binaries. New
-host code must not cast an opaque parser context; SDK 1.0 removes the bridge.
+Parsers built before SDK 0.21 expose no functional extension, and handler-based
+0.21 parsers may expose v1 without v2. New host code uses v2-first/v1-fallback
+negotiation and may use a deprecated, isolated direct-C++ bridge only when both
+extensions are absent. It must not otherwise cast an opaque parser context; SDK
+1.0 removes the bridge.
 
 Builtin types and their canonical codecs live under `pj_base/builtin/`, one
 header per type. `serializeBuiltinObject()` / `deserializeBuiltinObject()`

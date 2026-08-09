@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
 file(READ "${CMAKE_CURRENT_LIST_DIR}/VERSION" PJ_SDK_VERSION)
 string(STRIP "${PJ_SDK_VERSION}" PJ_SDK_VERSION)
+# Editing VERSION must re-run configure; otherwise an existing build tree keeps
+# stamping the previous version into the generated pj_base/sdk/version.hpp, and
+# min_sdk_required gating then compares against a version the SDK never shipped.
+set_property(
+  DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/VERSION")
 project(plotjuggler_sdk VERSION "${PJ_SDK_VERSION}" LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +15,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPluginManifest
 include(PjPluginManifest)
+include(PjParserModule)
 
 # ---------------------------------------------------------------------------
 # Options
@@ -122,6 +128,7 @@ endif()
 # Exported CMake namespace: plotjuggler_sdk::
 # Components:
 #   base         — vocabulary types (always available)
+#   parser_module — standalone header-only functional module authoring kit
 #   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
 #   plugin_host  — host-side loaders (data_source, message_parser, toolbox,
 #                  dialog, catalogs)
@@ -153,6 +160,7 @@ if(PJ_INSTALL_SDK)
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
     cmake/PjPluginManifest.cmake
+    cmake/PjParserModule.cmake
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 endif()

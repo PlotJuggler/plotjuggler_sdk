@@ -2,16 +2,14 @@
 name: plotjuggler-plugin
 description: >-
   Write or modify a PlotJuggler plugin (DataSource, MessageParser, Toolbox, or
-  Dialog) using the plotjuggler_sdk C++20 SDK. Use this whenever the task is to
-  implement, extend, debug, or build a PlotJuggler plugin — importing a file
-  format, streaming live data, parsing message payloads, adding a data-processing
-  toolbox, or building a plugin configuration dialog — even if the user does not
-  say the word "plugin" (e.g. "add a CSV loader to PlotJuggler", "make PJ read my
-  MCAP", "parse my protobuf topic", "a dialog for my source"). It gives the fast
-  path (which base class, which header, which macro), the correct CMake for both
-  in-tree and installed-SDK builds, and the load-bearing ABI/lifetime rules that
-  are easy to get wrong. Do NOT use it for changing the SDK's own ABI/protocol
-  (that is a maintainer task with different rules — see the note below).
+  Dialog) or native functional parser module using the plotjuggler_sdk. Use this
+  whenever the task is to implement, extend, debug, or build a PlotJuggler
+  extension — importing a file format, streaming live data, parsing message
+  payloads, mapping a custom type to a canonical object or scalars, adding a
+  data-processing toolbox, or building a plugin configuration dialog — even if
+  the user does not say the word "plugin". It gives the fast path, correct CMake,
+  and load-bearing ABI/lifetime rules. Do NOT use it for changing the SDK's own
+  ABI/protocol (that is a maintainer task with different rules — see below).
 ---
 
 # Writing a PlotJuggler plugin
@@ -22,6 +20,12 @@ subclass and export from a shared library (`.so`/`.dll`/`.dylib`). The SDK
 the C-ABI plumbing (entry point, version symbol, exception trampolines, symbol
 folding) so **you never touch the raw ABI**. Your job is to override a handful of
 virtual methods and ship the library.
+
+There is also a lighter extension shape: a **functional parser module** is one
+C++17 source compiled as a native shared library, with no plugin-family
+boilerplate. Write a MessageParser plugin when you own a whole encoding. Write a
+parser module when you only need one or a few custom message types rendered as
+canonical objects or scalars. Start at `references/parser-module.md`.
 
 This skill is the author-oriented fast path. The repo's `pj_plugins/docs/` guides
 are the full reference; this steers you to the right one and front-loads the
@@ -66,6 +70,7 @@ plotjuggler_sdk::plugin_sdk)` — only the acquisition step differs:
 |---|---|---|
 | Turn a **file** or a **live source** (socket, serial, hardware) into topics | **DataSource** | `references/data-source.md` |
 | Decode a **byte payload** on a topic into named fields (JSON, protobuf, ROS, custom) | **MessageParser** | `references/message-parser.md` |
+| Map **one or a few message types** to canonical objects or scalars without owning the encoding | **Functional parser module** | `references/parser-module.md` |
 | A **tool** that reads existing data, transforms it, and writes new topics | **Toolbox** | `references/toolbox.md` |
 | A **configuration UI** (for a source/parser/toolbox, or standalone) | **Dialog** | `references/dialog.md` |
 
@@ -95,8 +100,8 @@ second argument is the **manifest JSON literal** (see Step 3).
 > ⚠ **Header-location trap.** Three base classes live under `pj_base/sdk/`, but
 > `MessageParserPluginBase` lives under **`pj_plugins/sdk/`**, and the Dialog SDK
 > lives under `pj_plugins/sdk/` too (installed there from the `dialog_protocol`
-> module). Some in-repo docs still show the parser header under `pj_base/` — that
-> is stale; use the paths in the table.
+> module). Do not substitute a `pj_base/sdk/` path for either one; use the paths
+> in the table.
 
 The quickest correct start is to copy a working example from this repo and edit it:
 `examples/sdk_consumer/` (minimal external DataSource with the full CMake),
@@ -223,6 +228,7 @@ coalescing, etc.) — read them.
 | What each family may do; capabilities; permission matrix; config contract | `pj_plugins/docs/REQUIREMENTS.md` |
 | How the C ABI / loaders / host bridge work (mostly maintainer detail) | `pj_plugins/docs/ARCHITECTURE.md` |
 | Writing each family, in depth | `pj_plugins/docs/{data-source,message-parser,toolbox,dialog-plugin}-guide.md` |
+| Authoring a native functional parser module | `references/parser-module.md`, `pj_base/include/pj_base/parser_module/README.md` |
 | Dialog `WidgetData` setters + event-handler signatures | `docs/dialog-sdk-reference.md` |
 | Builtin object types + their wire codecs | `docs/builtin_type.md`, `pj_base/include/pj_base/builtin/` |
 | Object store: publish/read objects, ownership, lazy fetch | `V4_STORE.md` |

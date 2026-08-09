@@ -4,8 +4,8 @@
 
 PlotJuggler SDK — C++20 foundation libraries that make up the PlotJuggler plugin SDK and host-side
 plugin loading. **Read-only submodule** inside PJ4: consumed as-is; changes happen in this repo,
-not in the PJ4 superproject. This file is the single navigation node for the whole submodule — the
-two modules below have no own CLAUDE.md.
+not in the PJ4 superproject. This file is the root navigation node for the whole submodule;
+`pj_plugins/CLAUDE.md` adds module-specific guidance, while `pj_base` has no separate CLAUDE.md.
 
 > The columnar storage engine (`pj_datastore`) used to live here. It now lives in the PlotJuggler
 > application repo as a top-level module: plugins reach storage only through the C ABI defined in
@@ -15,13 +15,17 @@ two modules below have no own CLAUDE.md.
 ### Modules
 
 - **pj_base** — vocabulary types (`Timestamp`, `DatasetId`, `Expected<T>`, `Span<T>`, type trees),
-  the canonical builtin object vocabulary (`pj_base/builtin/`: 16 struct headers — Image, DepthImage,
+  the canonical builtin object vocabulary (`pj_base/builtin/`: 17 struct headers — Image, DepthImage,
   PointCloud, CompressedPointCloud, OccupancyGrid(+Update), Mesh3D, VideoFrame,
-  SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms, PosesInFrame, VoxelGrid) and their 15
-  wire codecs (RobotDescription carries source text as-is — no codec), the C-ABI protocol headers for
-  DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them.
+  SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms, PosesInFrame,
+  VoxelGrid, PlotMarkers) and their canonical wire codecs, the C-ABI protocol headers for
+  DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them, the
+  standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), the host-side
+  wasm parser-module manifest custom-section codec, and the test-only static WASI ABI auditor. The
+  0.22 authoring helper builds native parser modules only; wasm loading/execution is not present.
 - **pj_plugins** — host-side loaders + RAII handles + plugin **discovery** (directory scan +
   embedded-manifest inspection) for four plugin families (DataSource, MessageParser, Dialog, Toolbox),
+  parser claim admission/resolution and native functional parser-module execution,
   config-envelope helpers, and the **dialog C ABI** (`pj_plugins/dialog_protocol/`). The
   duplicate-resolution *catalog* (which copy wins by priority/version/compatibility) is host policy
   and lives in the app (`pj_runtime`), built on these discovery primitives. Note the split: the DataSource/MessageParser/Toolbox C-ABI
@@ -60,6 +64,8 @@ documentation check before commit.
 **Plugin system** (`pj_plugins/docs/`): `REQUIREMENTS.md` (families, capability system, config
 contract) · `ARCHITECTURE.md` (C ABI protocols, SDK base classes, host loaders, dialog protocol) ·
 `data-source-guide.md` · `message-parser-guide.md` · `dialog-plugin-guide.md` · `toolbox-guide.md`.
+The concise native functional-module authoring reference is
+`.claude/skills/plotjuggler-plugin/references/parser-module.md`.
 
 ## Build & Test
 

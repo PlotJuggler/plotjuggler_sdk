@@ -146,6 +146,21 @@ jobs:
         # abigail-tools provides abidw/abidiff for the ABI drift gate (below).
         run: sudo apt-get update && sudo apt-get install -y xvfb ccache ninja-build zstd abigail-tools
 
+      - name: Install wasi-sdk 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="27.0"
+          archive="${RUNNER_TEMP}/wasi-sdk-${version}.tar.gz"
+          install_dir="${RUNNER_TEMP}/wasi-sdk-${version}"
+          url="https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-${version}-x86_64-linux.tar.gz"
+
+          curl -fsSL --retry 5 --retry-all-errors "${url}" -o "${archive}"
+          mkdir -p "${install_dir}"
+          tar -xzf "${archive}" --strip-components=1 -C "${install_dir}"
+          echo "PJ_WASI_SDK_ROOT=${install_dir}" >> "${GITHUB_ENV}"
+          "${install_dir}/bin/clang++" --version
+
       - name: Configure ccache
         # Compiler-output cache for our own C++ — complementary to the Conan
         # cache (which holds prebuilt third-party packages, not our objects).
@@ -207,10 +222,16 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DPJ_WASI_SDK_ROOT=${PJ_WASI_SDK_ROOT}
           -DPJ_ENABLE_ABI_CHECK=ON
 
       - name: Build
         run: cmake --build build
+
+      - name: WASI parser-module conformance
+        run: |
+          cmake --build build --target parser_module_wasm_conformance_fixture
+          ctest --test-dir build -L wasi --output-on-failure
 
       - name: ABI drift gate
         # Mechanically enforces the Release Versioning policy (CLAUDE.md): a non-MAJOR

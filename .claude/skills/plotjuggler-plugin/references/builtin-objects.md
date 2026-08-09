@@ -66,8 +66,8 @@ if (!st) return PJ::unexpected(st.error());
 Each builtin has a `*_codec.hpp` under `PJ::` (not `PJ::sdk::`) with
 `serializeXxx()` / `deserializeXxx()`. Note the asymmetry: `serializeXxx()` returns
 a plain `std::vector<uint8_t>` (serialization can't fail), while `deserializeXxx()`
-returns `PJ::Expected<...>`. The `RobotDescription` type is the exception — it
-carries its source text as-is and has no codec.
+returns `PJ::Expected<...>`. `RobotDescription` also has a canonical codec; its
+source text remains unchanged inside the small wire envelope.
 
 **MessageParsers emit objects differently — by returning, not pushing.** A parser's
 `SchemaHandler.parse_object` returns an `ObjectRecord{optional<Timestamp> ts,

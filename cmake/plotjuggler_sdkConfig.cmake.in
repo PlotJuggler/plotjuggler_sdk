@@ -16,6 +16,11 @@ foreach(_comp ${plotjuggler_sdk_FIND_COMPONENTS})
   if(_comp STREQUAL "base")
     set(plotjuggler_sdk_base_FOUND TRUE)
 
+  elseif(_comp STREQUAL "parser_module")
+    # Header-only authoring surface plus its native module target helper.
+    include("${CMAKE_CURRENT_LIST_DIR}/PjParserModule.cmake")
+    set(plotjuggler_sdk_parser_module_FOUND TRUE)
+
   elseif(_comp STREQUAL "plugin_sdk")
     find_dependency(nlohmann_json)
     # Ship the cmake/PjPluginManifest.cmake helper so plugin authors can call

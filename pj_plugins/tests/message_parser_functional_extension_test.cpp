@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <any>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -161,6 +162,32 @@ bool emitUnknownObject(
   return sink->accept_object(sink->ctx, false, 0, 999, PJ_bytes_view_t{&byte, sizeof(byte)}, out_error);
 }
 
+bool emitImageV1(void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v1_t* sink, PJ_error_t* out_error) noexcept {
+  static constexpr std::array<uint8_t, 2> kImageWire{0x10, 0x01};
+  return sink != nullptr && sink->accept_object != nullptr &&
+         sink->accept_object(
+             sink->ctx, false, 0, PJ_BUILTIN_OBJECT_TYPE_IMAGE, PJ_bytes_view_t{kImageWire.data(), kImageWire.size()},
+             out_error);
+}
+
+bool emitSplicedPointCloudV2(
+    void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t* sink, PJ_error_t* out_error) noexcept {
+  static constexpr std::array<uint8_t, 2> kPointCloudWire{0x10, 0x01};
+  return sink != nullptr && sink->accept_object_spliced != nullptr &&
+         sink->accept_object_spliced(
+             sink->ctx, true, 88, PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD,
+             PJ_bytes_view_t{kPointCloudWire.data(), kPointCloudWire.size()}, 9, 1, 2, out_error);
+}
+
+bool emitMismatchedImageV2(
+    void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t* sink, PJ_error_t* out_error) noexcept {
+  static constexpr std::array<uint8_t, 2> kImageWire{0x10, 0x01};
+  return sink != nullptr && sink->accept_object != nullptr &&
+         sink->accept_object(
+             sink->ctx, false, 0, PJ_BUILTIN_OBJECT_TYPE_IMAGE, PJ_bytes_view_t{kImageWire.data(), kImageWire.size()},
+             out_error);
+}
+
 template <PJ_parser_parse_scalars_fn_t ParseScalars, PJ_parser_parse_object_fn_t ParseObject>
 const PJ_message_parser_vtable_t* adversarialVtable() {
   static const PJ_parser_functional_v1_t extension{
@@ -179,6 +206,33 @@ const PJ_message_parser_vtable_t* adversarialVtable() {
   return &vtable;
 }
 
+template <auto ParseObject>
+const PJ_message_parser_vtable_t* adversarialV2Vtable() {
+  static const PJ_parser_functional_v2_t extension{
+      .struct_size = sizeof(PJ_parser_functional_v2_t),
+      .parse_scalars = emitNoScalars,
+      .parse_object = ParseObject,
+  };
+  static const PJ_message_parser_vtable_t vtable = [] {
+    PJ_message_parser_vtable_t copy = *parserVtable<FunctionalParser>();
+    copy.classify_schema = [](void*, PJ_string_view_t, PJ_bytes_view_t, PJ_schema_classification_t* out,
+                              PJ_error_t*) noexcept {
+      if (out == nullptr) {
+        return false;
+      }
+      out->object_type = PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD;
+      out->reserved = 0;
+      return true;
+    };
+    copy.get_plugin_extension = [](void*, PJ_string_view_t id) noexcept -> const void* {
+      const std::string_view name{id.data == nullptr ? "" : id.data, id.size};
+      return name == PJ_PARSER_FUNCTIONAL_EXTENSION_V2 ? &extension : nullptr;
+    };
+    return copy;
+  }();
+  return &vtable;
+}
+
 TEST(MessageParserFunctionalExtension, NewlyBuiltParserExposesStableExtensionAutomatically) {
   PJ::MessageParserHandle handle(parserVtable<FunctionalParser>());
 
@@ -188,6 +242,129 @@ TEST(MessageParserFunctionalExtension, NewlyBuiltParserExposesStableExtensionAut
       static_cast<const PJ_parser_functional_v1_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
   ASSERT_NE(extension, nullptr);
   EXPECT_GE(extension->struct_size, PJ_PARSER_FUNCTIONAL_V1_MIN_SIZE);
+}
+
+TEST(MessageParserFunctionalExtension, NewlyBuiltParserExposesV1AndV2AndV2EmitsFullCanonicalWire) {
+  PJ::MessageParserHandle handle(parserVtable<FunctionalParser>());
+  ASSERT_TRUE(handle.bindSchema(kSchema, {}));
+
+  const auto* v1 =
+      static_cast<const PJ_parser_functional_v1_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
+  const auto* v2 =
+      static_cast<const PJ_parser_functional_v2_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
+  ASSERT_NE(v1, nullptr);
+  ASSERT_NE(v2, nullptr);
+  EXPECT_GE(v1->struct_size, PJ_PARSER_FUNCTIONAL_V1_MIN_SIZE);
+  EXPECT_GE(v2->struct_size, PJ_PARSER_FUNCTIONAL_V2_MIN_SIZE);
+  EXPECT_NE(v2->parse_scalars, nullptr);
+
+  struct SinkState {
+    bool accepted_full = false;
+    bool accepted_spliced = false;
+    uint16_t object_type = PJ_BUILTIN_OBJECT_TYPE_NONE;
+  } state;
+  PJ_parser_object_sink_v2_t sink{
+      .struct_size = sizeof(PJ_parser_object_sink_v2_t),
+      .ctx = &state,
+      .accept_object =
+          [](void* ctx, bool, int64_t, uint16_t object_type, PJ_bytes_view_t wire, PJ_error_t*) noexcept {
+            auto& captured = *static_cast<SinkState*>(ctx);
+            captured.accepted_full = true;
+            captured.object_type = object_type;
+            return wire.size != 0;
+          },
+      .accept_object_spliced =
+          [](void* ctx, bool, int64_t, uint16_t, PJ_bytes_view_t, uint32_t, uint64_t, uint64_t, PJ_error_t*) noexcept {
+            static_cast<SinkState*>(ctx)->accepted_spliced = true;
+            return true;
+          },
+  };
+  const std::array<uint8_t, 3> payload{1, 2, 3};
+  PJ_error_t error{};
+  EXPECT_TRUE(v2->parse_object(
+      handle.context(), 100, PJ_payload_t{.data = payload.data(), .size = payload.size(), .anchor = {}}, &sink, &error))
+      << error.message;
+  EXPECT_TRUE(state.accepted_full);
+  EXPECT_FALSE(state.accepted_spliced);
+  EXPECT_EQ(state.object_type, PJ_BUILTIN_OBJECT_TYPE_IMAGE);
+}
+
+TEST(MessageParserFunctionalExtension, V2FailureKindsAreFrozenAndCarryNoExtendedPayload) {
+  PJ::MessageParserHandle throwing_handle(parserVtable<ThrowingFunctionalParser>());
+  ASSERT_TRUE(throwing_handle.bindSchema(kSchema, {}));
+  const auto* throwing_v2 = static_cast<const PJ_parser_functional_v2_t*>(
+      throwing_handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
+  ASSERT_NE(throwing_v2, nullptr);
+
+  PJ_parser_scalar_sink_v1_t scalar_sink{
+      .struct_size = sizeof(PJ_parser_scalar_sink_v1_t),
+      .ctx = nullptr,
+      .accept_record = [](void*, bool, int64_t, const PJ_named_field_value_t*, uint64_t,
+                          PJ_error_t*) noexcept { return true; },
+  };
+  PJ_error_t error{};
+  EXPECT_FALSE(throwing_v2->parse_scalars(throwing_handle.context(), 0, PJ_bytes_view_t{}, &scalar_sink, &error));
+  EXPECT_EQ(std::string_view(error.extended_kind), PJ_PARSER_ERROR_KIND_CONTRACT_VIOLATION);
+  EXPECT_EQ(error.extended, nullptr);
+
+  PJ_parser_object_sink_v2_t object_sink{
+      .struct_size = sizeof(PJ_parser_object_sink_v2_t),
+      .ctx = nullptr,
+      .accept_object = [](void*, bool, int64_t, uint16_t, PJ_bytes_view_t, PJ_error_t*) noexcept { return true; },
+      .accept_object_spliced = [](void*, bool, int64_t, uint16_t, PJ_bytes_view_t, uint32_t, uint64_t, uint64_t,
+                                  PJ_error_t*) noexcept { return true; },
+  };
+  error = {};
+  EXPECT_FALSE(throwing_v2->parse_object(throwing_handle.context(), 0, PJ_payload_t{}, &object_sink, &error));
+  EXPECT_EQ(std::string_view(error.extended_kind), PJ_PARSER_ERROR_KIND_CONTRACT_VIOLATION);
+  EXPECT_EQ(error.extended, nullptr);
+
+  PJ::MessageParserHandle handle(parserVtable<FunctionalParser>());
+  ASSERT_TRUE(handle.bindSchema(kSchema, {}));
+  const auto* v2 =
+      static_cast<const PJ_parser_functional_v2_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
+  ASSERT_NE(v2, nullptr);
+  scalar_sink.accept_record = [](void*, bool, int64_t, const PJ_named_field_value_t*, uint64_t,
+                                 PJ_error_t* out_error) noexcept {
+    PJ::sdk::fillError(out_error, 7, "test", "sink declined record");
+    return false;
+  };
+  error = {};
+  EXPECT_FALSE(v2->parse_scalars(handle.context(), 0, PJ_bytes_view_t{}, &scalar_sink, &error));
+  EXPECT_EQ(std::string_view(error.message), "sink declined record");
+  EXPECT_EQ(std::string_view(error.extended_kind), PJ_PARSER_ERROR_KIND_SINK_REJECTED);
+  EXPECT_EQ(error.extended, nullptr);
+
+  scalar_sink.accept_record = [](void*, bool, int64_t, const PJ_named_field_value_t*, uint64_t,
+                                 PJ_error_t* out_error) noexcept {
+    PJ::sdk::fillError(out_error, 7, "test", "sink detected a contract violation");
+    PJ::sdk::setExtended(out_error, PJ_PARSER_ERROR_KIND_CONTRACT_VIOLATION, nullptr);
+    return false;
+  };
+  error = {};
+  EXPECT_FALSE(v2->parse_scalars(handle.context(), 0, PJ_bytes_view_t{}, &scalar_sink, &error));
+  EXPECT_EQ(std::string_view(error.extended_kind), PJ_PARSER_ERROR_KIND_CONTRACT_VIOLATION);
+
+  object_sink.accept_object = [](void*, bool, int64_t, uint16_t, PJ_bytes_view_t, PJ_error_t* out_error) noexcept {
+    PJ::sdk::fillError(out_error, 7, "test", "object type contract violation");
+    PJ::sdk::setExtended(out_error, PJ_PARSER_ERROR_KIND_CONTRACT_VIOLATION, nullptr);
+    return false;
+  };
+  error = {};
+  EXPECT_FALSE(v2->parse_object(handle.context(), 0, PJ_payload_t{}, &object_sink, &error));
+  EXPECT_EQ(std::string_view(error.extended_kind), PJ_PARSER_ERROR_KIND_CONTRACT_VIOLATION);
+
+  PJ::MessageParserHandle unbound_handle(parserVtable<FunctionalParser>());
+  const auto* unbound_v2 = static_cast<const PJ_parser_functional_v2_t*>(
+      unbound_handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
+  ASSERT_NE(unbound_v2, nullptr);
+  scalar_sink.accept_record = [](void*, bool, int64_t, const PJ_named_field_value_t*, uint64_t, PJ_error_t*) noexcept {
+    return true;
+  };
+  error = {};
+  EXPECT_FALSE(unbound_v2->parse_scalars(unbound_handle.context(), 0, PJ_bytes_view_t{}, &scalar_sink, &error));
+  EXPECT_EQ(std::string_view(error.extended_kind), PJ_PARSER_ERROR_KIND_DATA_ERROR);
+  EXPECT_EQ(error.extended, nullptr);
 }
 
 TEST(MessageParserFunctionalExtension, ScalarRouteDeliversOnlyCAbiValuesDuringTheSinkCall) {
@@ -246,6 +423,36 @@ TEST(MessageParserFunctionalExtension, ObjectRouteReturnsAHostOwnedTypedValue) {
   EXPECT_EQ(image->data[3], 6U);
 }
 
+TEST(MessageParserFunctionalExtension, HostFallsBackToV1WhenV2IsAbsent) {
+  PJ::MessageParserHandle handle(adversarialVtable<emitNoScalars, emitImageV1>());
+  ASSERT_TRUE(handle.bindSchema(kSchema, {}));
+  auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>{});
+  ASSERT_TRUE(record.has_value()) << record.error();
+  EXPECT_EQ(PJ::sdk::typeOf(record->object), PJ::sdk::BuiltinObjectType::kImage);
+}
+
+TEST(MessageParserFunctionalExtension, HostV2PathReconstructsEligibleSplices) {
+  PJ::MessageParserHandle handle(adversarialV2Vtable<emitSplicedPointCloudV2>());
+  ASSERT_TRUE(handle.bindSchema("example/PointCloud", {}));
+  const std::array<uint8_t, 4> payload{10, 20, 30, 40};
+  auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>(payload));
+  ASSERT_TRUE(record.has_value()) << record.error();
+  EXPECT_EQ(record->ts, 88);
+  const auto* cloud = std::any_cast<PJ::sdk::PointCloud>(&record->object);
+  ASSERT_NE(cloud, nullptr);
+  ASSERT_EQ(cloud->data.size(), 2U);
+  EXPECT_EQ(cloud->data[0], 20U);
+  EXPECT_EQ(cloud->data[1], 30U);
+}
+
+TEST(MessageParserFunctionalExtension, HostRejectsObjectTypeThatDiffersFromBindingClassification) {
+  PJ::MessageParserHandle handle(adversarialV2Vtable<emitMismatchedImageV2>());
+  ASSERT_TRUE(handle.bindSchema("example/PointCloud", {}));
+  auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>{});
+  ASSERT_FALSE(record.has_value());
+  EXPECT_NE(record.error().find("differs from the bound classification"), std::string::npos);
+}
+
 TEST(MessageParserFunctionalExtension, PluginExceptionsNeverCrossEitherFunctionalRoute) {
   PJ::MessageParserHandle handle(parserVtable<ThrowingFunctionalParser>());
   ASSERT_TRUE(handle.bindSchema(kSchema, {}));
@@ -269,6 +476,7 @@ TEST(MessageParserFunctionalExtension, ExistingPluginDefinedExtensionsRemainVisi
   PJ::MessageParserHandle handle(parserVtable<CustomExtensionParser>());
 
   EXPECT_FALSE(handle.supportsFunctionalParsing());
+  EXPECT_EQ(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), nullptr);
   const auto* marker = static_cast<const int*>(handle.getPluginExtension("example.custom.v1"));
   ASSERT_NE(marker, nullptr);
   EXPECT_EQ(*marker, 17);
@@ -316,6 +524,21 @@ TEST(MessageParserFunctionalExtension, RebindingToAnUnhandledSchemaWithdrawsTheF
 
   ASSERT_TRUE(handle.bindSchema("example/Unhandled", {}));
   EXPECT_FALSE(handle.supportsFunctionalParsing());
+}
+
+TEST(MessageParserFunctionalExtension, SchemaGatingWithdrawsV2AlongsideV1) {
+  // v2 shares v1's advertisement gate. A host prefers v2, so a v2 that stayed
+  // advertised for a schema only legacy parse() implements would send every
+  // message down a route parse_object/parse_scalars can only reject.
+  PJ::MessageParserHandle handled(parserVtable<MixedModelParser>());
+  ASSERT_TRUE(handled.bindSchema(kSchema, {}));
+  EXPECT_NE(handled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), nullptr);
+  EXPECT_NE(handled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), nullptr);
+
+  PJ::MessageParserHandle unhandled(parserVtable<MixedModelParser>());
+  ASSERT_TRUE(unhandled.bindSchema("example/Unhandled", {}));
+  EXPECT_EQ(unhandled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), nullptr);
+  EXPECT_EQ(unhandled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), nullptr);
 }
 
 TEST(MessageParserFunctionalExtension, LegacyParserWithoutExtensionRemainsDetectable) {
