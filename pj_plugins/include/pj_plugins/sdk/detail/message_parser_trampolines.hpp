@@ -124,11 +124,18 @@ inline const void* MessageParserPluginBase::trampoline_get_plugin_extension(void
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     std::string_view sv = id.data == nullptr ? std::string_view{} : std::string_view(id.data, id.size);
-    // Do not falsely advertise the functional route for a newly rebuilt
-    // plugin that still implements only legacy parse(). Schema handlers may
-    // be registered in the constructor or bindSchema(); hosts query again
-    // after binding and do not cache an earlier absence.
-    if (sv == PJ_PARSER_FUNCTIONAL_EXTENSION_V1 && !self->handlers_.empty()) {
+    // Once a schema is bound, advertise the functional route only if THIS
+    // schema has a handler. A mixed-model plugin may register handlers for
+    // some schemas and keep legacy parse() for the rest; gating on "any
+    // handler exists" would make the host prefer a functional route that
+    // parseScalars/parseObject then reject for the unhandled schema. Before
+    // binding, any registered handler still advertises the capability, since
+    // no schema-specific answer exists yet and hosts query again after
+    // binding without caching an earlier absence.
+    const bool functional_route_available = self->bound_type_name_.empty()
+                                                ? !self->handlers_.empty()
+                                                : self->findSchemaHandler(self->bound_type_name_) != nullptr;
+    if (sv == PJ_PARSER_FUNCTIONAL_EXTENSION_V1 && functional_route_available) {
       static const PJ_parser_functional_v1_t extension{
           .struct_size = sizeof(PJ_parser_functional_v1_t),
           .parse_scalars = trampoline_parse_scalars_functional,
