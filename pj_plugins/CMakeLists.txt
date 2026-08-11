@@ -390,7 +390,15 @@ endif()
 add_library(dependency_search_real SHARED tests/dependency_search_dependency.cpp)
 target_compile_features(dependency_search_real PRIVATE cxx_std_20)
 target_compile_options(dependency_search_real PRIVATE ${PJ_WARNING_FLAGS})
-set_target_properties(dependency_search_real PROPERTIES OUTPUT_NAME pj_dependency_search_fixture)
+set_target_properties(dependency_search_real PROPERTIES
+  OUTPUT_NAME pj_dependency_search_fixture
+  # Keep this DLL out of the test executable's directory: on Windows the
+  # loader's LOAD_LIBRARY_SEARCH_APPLICATION_DIR leg would otherwise resolve
+  # the dependency from there and defeat the decoy-only case.
+  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/dependency_search_real"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/dependency_search_real"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/dependency_search_real"
+)
 
 add_library(dependency_search_decoy SHARED tests/dependency_search_dependency.cpp)
 target_compile_features(dependency_search_decoy PRIVATE cxx_std_20)

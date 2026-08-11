@@ -105,7 +105,13 @@ TEST(SourceDialogIntegration, DialogVtableSurvivesCandidateFileDeletion) {
   {
     auto lib = PJ::DataSourceLibrary::load(candidate);
     ASSERT_TRUE(lib) << lib.error();
+#if defined(_WIN32)
+    // A mapped image cannot be deleted on Windows, but it can be renamed away;
+    // deferred resolution must not depend on the original path either way.
+    std::filesystem::rename(candidate, candidate.parent_path() / "moved-away.dll");
+#else
     ASSERT_TRUE(std::filesystem::remove(candidate));
+#endif
 
     auto dialog_vtable = lib->resolveDialogVtable();
     ASSERT_TRUE(dialog_vtable) << dialog_vtable.error();
