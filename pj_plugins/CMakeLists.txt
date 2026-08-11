@@ -350,6 +350,9 @@ add_library(entry_point_donor SHARED tests/entry_point_donor.cpp)
 target_compile_features(entry_point_donor PRIVATE cxx_std_20)
 target_compile_options(entry_point_donor PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(entry_point_donor PRIVATE pj_base)
+# The PE forwarder string below names entry_point_donor.dll at runtime. Pin the
+# output basename so it cannot drift from the module token in the .def file.
+set_target_properties(entry_point_donor PROPERTIES OUTPUT_NAME entry_point_donor)
 
 add_library(entry_point_via_dependency_plugin SHARED tests/entry_point_via_dependency.cpp)
 target_compile_features(entry_point_via_dependency_plugin PRIVATE cxx_std_20)
@@ -368,8 +371,19 @@ if(WIN32)
   )
   target_compile_features(entry_point_forwarder_plugin PRIVATE cxx_std_20)
   target_compile_options(entry_point_forwarder_plugin PRIVATE ${PJ_WARNING_FLAGS})
+  # Deliberately do not link entry_point_donor: the .def entry is a PE forwarder,
+  # not an import that the linker should resolve. Both targets retain CMake's
+  # common runtime output directory, so entry_point_donor.dll is available when
+  # GetProcAddress follows the forwarder.
   target_link_libraries(entry_point_forwarder_plugin PRIVATE pj_base)
   add_dependencies(entry_point_forwarder_plugin entry_point_donor)
+  set_target_properties(
+    entry_point_donor
+    entry_point_via_dependency_plugin
+    entry_point_with_own_exports_plugin
+    entry_point_forwarder_plugin
+    PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/entry_point_fixtures"
+  )
 endif()
 
 # Dependency-search fixtures. The real and decoy dependencies intentionally
@@ -430,6 +444,7 @@ target_compile_definitions(source_dialog_integration_test PRIVATE
   PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
 )
 target_compile_options(source_dialog_integration_test PRIVATE ${PJ_WARNING_FLAGS})
+target_include_directories(source_dialog_integration_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(source_dialog_integration_test PRIVATE
   pj_data_source_host pj_dialog_host pj_base GTest::gtest_main
 )

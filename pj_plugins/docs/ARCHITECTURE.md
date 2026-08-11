@@ -453,16 +453,17 @@ These live in `sdk/detail/*_trampolines.hpp`.
 
 Each family has a loader that:
 1. Lexically normalizes the candidate to an absolute filesystem path, passes
-   that exact path to `dlopen` (or `LoadLibraryExW` on Windows), and records it
-   in the library object for later symbol resolution.
+   that exact path to `dlopen` (or `LoadLibraryExW` on Windows), and records
+   both that spelling and its best-effort `weakly_canonical()` spelling in the
+   library object for later symbol resolution.
 2. Resolves the ABI marker and entry point, then verifies that each symbol's
    defining object is the candidate DSO itself rather than a dependency. On
-   POSIX, an exact byte match between `dladdr().dli_fname` and the recorded load
+   POSIX, an exact byte match between `dladdr().dli_fname` and either recorded
    path succeeds without re-reading the filesystem; `equivalent()` is only the
-   fallback for different path spellings. On Windows, the defining `HMODULE`
-   is recovered from the resolved address with `GetModuleHandleExW(...
-   FROM_ADDRESS ...)` and compared to the candidate handle, which also rejects
-   forwarded PE exports.
+   fallback for genuinely different path spellings. On Windows, the defining
+   `HMODULE` is recovered from the resolved address with
+   `GetModuleHandleExW(... FROM_ADDRESS ...)` and compared to the candidate
+   handle, which also rejects forwarded PE exports.
 3. Validates `protocol_version` and `struct_size`.
 4. Stores the vtable pointer for creating handles.
 
@@ -476,8 +477,8 @@ Each family has a loader that:
 Loaders also provide `resolveDialogVtable()` to find the dialog vtable in a
 plugin `.so` that exports both a family vtable and a dialog vtable (e.g. a
 DataSource with an embedded dialog). These deferred lookups use the recorded
-load path, so they remain valid after the candidate file is removed or the
-process working directory changes.
+load-time paths, so they remain valid after the candidate file is removed, the
+process working directory changes, or dyld reports a symlink-resolved filename.
 
 Native functional parser modules use the same absolute-path normalization,
 package-scoped platform open, and defining-module provenance checks for every

@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
+#include "detail/library_loader.hpp"
 #include "pj_plugins/host/config_envelope.hpp"
 #include "pj_plugins/host/data_source_library.hpp"
 #include "pj_plugins/host/dialog_handle.hpp"
@@ -96,17 +97,45 @@ TEST(SourceDialogIntegration, ResolveDialogVtable) {
 
 TEST(SourceDialogIntegration, DialogVtableSurvivesCandidateFileDeletion) {
   TemporaryDirectory temporary;
-  const std::filesystem::path candidate =
-      temporary.path() / std::filesystem::path(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH).filename();
+  const std::filesystem::path plugin_filename =
+      std::filesystem::path(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH).filename();
+  const std::filesystem::path candidate = temporary.path() / plugin_filename;
   std::filesystem::copy_file(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH, candidate);
 
-  auto lib = PJ::DataSourceLibrary::load(candidate);
-  ASSERT_TRUE(lib) << lib.error();
-  ASSERT_TRUE(std::filesystem::remove(candidate));
+  {
+    auto lib = PJ::DataSourceLibrary::load(candidate);
+    ASSERT_TRUE(lib) << lib.error();
+    ASSERT_TRUE(std::filesystem::remove(candidate));
 
-  auto dialog_vtable = lib->resolveDialogVtable();
-  ASSERT_TRUE(dialog_vtable) << dialog_vtable.error();
-  EXPECT_EQ((*dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+    auto dialog_vtable = lib->resolveDialogVtable();
+    ASSERT_TRUE(dialog_vtable) << dialog_vtable.error();
+    EXPECT_EQ((*dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+  }
+
+#if !defined(_WIN32)
+  const std::filesystem::path real_directory = temporary.path() / "real";
+  const std::filesystem::path symlink_directory = temporary.path() / "symlink";
+  std::filesystem::create_directories(real_directory);
+  std::filesystem::create_directory_symlink(real_directory, symlink_directory);
+  const std::filesystem::path real_candidate = real_directory / plugin_filename;
+  const std::filesystem::path symlink_candidate = symlink_directory / plugin_filename;
+  std::filesystem::copy_file(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH, real_candidate);
+
+  // Preload the real spelling so glibc reuses a link-map whose dli_fname is the
+  // canonical path when the library API subsequently loads through the symlink.
+  // This reproduces dyld's realpath reporting on Linux.
+  auto preloaded_handle = PJ::detail::loadLibraryHandle(real_candidate);
+  ASSERT_TRUE(preloaded_handle) << preloaded_handle.error();
+  auto preloaded_owner = PJ::detail::adoptLibraryHandle(*preloaded_handle);
+
+  auto symlink_lib = PJ::DataSourceLibrary::load(symlink_candidate);
+  ASSERT_TRUE(symlink_lib) << symlink_lib.error();
+  ASSERT_TRUE(std::filesystem::remove(real_candidate));
+
+  auto symlink_dialog_vtable = symlink_lib->resolveDialogVtable();
+  ASSERT_TRUE(symlink_dialog_vtable) << symlink_dialog_vtable.error();
+  EXPECT_EQ((*symlink_dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+#endif
 }
 
 TEST(SourceDialogIntegration, DialogVtableSurvivesCwdChangeAfterRelativeLoad) {

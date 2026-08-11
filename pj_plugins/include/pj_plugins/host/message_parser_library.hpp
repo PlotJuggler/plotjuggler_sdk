@@ -31,6 +31,10 @@
 
 namespace PJ {
 
+namespace detail {
+struct LibraryPathIdentity;
+}
+
 /**
  * Loads a MessageParser plugin shared library and provides factory access.
  *
@@ -100,9 +104,12 @@ class MessageParserLibrary {
   }
 
  private:
+  [[nodiscard]] static Expected<MessageParserLibrary> loadFromHandleWithIdentity(
+      std::shared_ptr<void> handle, const detail::LibraryPathIdentity& origin);
+
   MessageParserLibrary(
       std::shared_ptr<void> handle, const PJ_message_parser_vtable_t* vtable, std::string path,
-      const PJ_dialog_vtable_t* static_dialog_vtable = nullptr);
+      std::string resolved_path, const PJ_dialog_vtable_t* static_dialog_vtable = nullptr);
 
   void reset();
 
@@ -110,6 +117,7 @@ class MessageParserLibrary {
   const PJ_message_parser_vtable_t* vtable_ = nullptr;
   const PJ_dialog_vtable_t* static_dialog_vtable_ = nullptr;
   std::string path_;
+  std::string resolved_path_;
 };
 
 }  // namespace PJ

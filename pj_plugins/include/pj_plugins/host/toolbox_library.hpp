@@ -31,6 +31,10 @@
 
 namespace PJ {
 
+namespace detail {
+struct LibraryPathIdentity;
+}
+
 /**
  * Loads a Toolbox plugin shared library and provides factory access.
  *
@@ -100,8 +104,11 @@ class ToolboxLibrary {
   }
 
  private:
+  [[nodiscard]] static Expected<ToolboxLibrary> loadFromHandleWithIdentity(
+      std::shared_ptr<void> handle, const detail::LibraryPathIdentity& origin);
+
   ToolboxLibrary(
-      std::shared_ptr<void> handle, const PJ_toolbox_vtable_t* vtable, std::string path,
+      std::shared_ptr<void> handle, const PJ_toolbox_vtable_t* vtable, std::string path, std::string resolved_path,
       const PJ_dialog_vtable_t* static_dialog_vtable = nullptr);
 
   void reset();
@@ -110,6 +117,7 @@ class ToolboxLibrary {
   const PJ_toolbox_vtable_t* vtable_ = nullptr;
   const PJ_dialog_vtable_t* static_dialog_vtable_ = nullptr;
   std::string path_;
+  std::string resolved_path_;
 };
 
 }  // namespace PJ

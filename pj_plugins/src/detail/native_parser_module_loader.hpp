@@ -19,7 +19,7 @@ using NativeModuleHandle = void*;
 /// UTF-8 by contract, including on Windows where filesystem::path(char*) would
 /// otherwise interpret them using the active ANSI code page.
 inline Expected<NativeModuleHandle> openNativeParserModule(
-    std::string_view path, std::filesystem::path* loaded_path = nullptr) {
+    std::string_view path, LibraryPathIdentity* recorded_path = nullptr) {
 #if defined(_WIN32)
   if (path.size() > static_cast<size_t>(INT_MAX)) {
     return unexpected("native parser-module path is too long");
@@ -34,16 +34,16 @@ inline Expected<NativeModuleHandle> openNativeParserModule(
           CP_UTF8, MB_ERR_INVALID_CHARS, path.data(), static_cast<int>(path.size()), wide_path.data(), required) == 0) {
     return unexpected("native parser-module path conversion failed");
   }
-  return loadLibraryHandle(std::filesystem::path(wide_path), loaded_path);
+  return loadLibraryHandle(std::filesystem::path(wide_path), recorded_path);
 #else
-  return loadLibraryHandle(std::filesystem::path(std::string(path)), loaded_path);
+  return loadLibraryHandle(std::filesystem::path(std::string(path)), recorded_path);
 #endif
 }
 
 /// Resolve a required parser-module export and apply the same defining-module
 /// provenance policy as the family plugin loaders.
 inline Expected<void*> resolveNativeParserModuleSymbol(
-    NativeModuleHandle handle, const char* name, const std::filesystem::path& candidate_path) {
+    NativeModuleHandle handle, const char* name, const LibraryPathIdentity& candidate_path) {
   if (handle == nullptr) {
     return unexpected("native parser module is not loaded");
   }
