@@ -153,8 +153,15 @@ TEST_F(PluginCatalogTest, EntryPointSymbolResolvedFromDependencyIsRejected) {
   ASSERT_TRUE(raw_handle.has_value()) << raw_handle.error();
   auto family_query = detail::exportedPluginFamilies(
       detail::adoptLibraryHandle(*raw_handle), PJ_ENTRY_POINT_VIA_DEPENDENCY_PLUGIN_PATH);
+#if defined(__APPLE__)
+  // RTLD_FIRST hides dependency symbols from dlsym outright, so the getter is
+  // cleanly absent on macOS rather than a provenance violation.
+  ASSERT_TRUE(family_query.has_value()) << family_query.error();
+  EXPECT_TRUE(family_query->empty());
+#else
   ASSERT_FALSE(family_query.has_value());
   EXPECT_TRUE(is_provenance_error(family_query.error())) << family_query.error();
+#endif
 #endif
 
   auto library = DataSourceLibrary::load(PJ_ENTRY_POINT_WITH_OWN_EXPORTS_PLUGIN_PATH);
