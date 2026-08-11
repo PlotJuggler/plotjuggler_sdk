@@ -3,11 +3,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
-#include <string_view>
+#include <system_error>
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -18,15 +25,31 @@
 
 namespace PJ::detail {
 
-inline Expected<void*> loadLibraryHandle(std::string_view path) {
+/// Encode a native path for the legacy narrow `Library::path()` accessor.
+inline std::string pathForLegacyAccessor(const std::filesystem::path& path) {
 #if defined(_WIN32)
-  // LOAD_WITH_ALTERED_SEARCH_PATH adds the directory of the loaded DLL to the
-  // search path for resolving its dependencies — matches dlopen's default on
-  // Linux. Without it, deps are only searched in the .exe directory, System32
-  // and PATH, so plugins cannot ship their own sibling DLLs
-  HMODULE module = LoadLibraryExA(std::string(path).c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+  const auto utf8 = path.u8string();
+  return std::string(utf8.begin(), utf8.end());
+#else
+  return path.string();
+#endif
+}
+
+inline Expected<void*> loadLibraryHandle(const std::filesystem::path& path) {
+  std::error_code path_error;
+  const std::filesystem::path absolute_path = std::filesystem::absolute(path, path_error);
+  if (path_error) {
+#if defined(_WIN32)
+    return unexpected("cannot make library path absolute: " + path_error.message());
+#else
+    return unexpected("cannot make library path absolute '" + path.string() + "': " + path_error.message());
+#endif
+  }
+#if defined(_WIN32)
+  HMODULE module = LoadLibraryExW(
+      absolute_path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   if (module == nullptr) {
-    return unexpected("LoadLibraryExA failed (error " + std::to_string(GetLastError()) + ")");
+    return unexpected("LoadLibraryExW failed (error " + std::to_string(GetLastError()) + ")");
   }
   return reinterpret_cast<void*>(module);
 #else
@@ -51,7 +74,13 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // malloc/pthread/system calls are NOT defined in the plugin so they still
   // reach the host — ASAN malloc interposition works correctly.
   int flags = RTLD_NOW | RTLD_LOCAL;
-  void* handle = dlopen(std::string(path).c_str(), flags);
+#if defined(__APPLE__)
+  // Restrict handle-scoped lookups to the candidate image. Dylibs that rely on
+  // -reexport_library no longer resolve through this handle; that stricter
+  // admission behavior is intentional and provenance diagnostics stay explicit.
+  flags |= RTLD_FIRST;
+#endif
+  void* handle = dlopen(absolute_path.c_str(), flags);
   if (handle == nullptr) {
     const char* error = dlerror();
     return unexpected(error == nullptr ? "" : error);
@@ -60,8 +89,55 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
 #endif
 }
 
-/// Resolve a named symbol from a loaded library handle.
-inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
+/// Return the filesystem object that defines @p symbol on POSIX platforms.
+inline Expected<std::filesystem::path> symbolOwner(void* symbol) {
+#if defined(_WIN32)
+  (void)symbol;
+  return std::filesystem::path{};
+#else
+  Dl_info info{};
+  if (symbol == nullptr || dladdr(symbol, &info) == 0 || info.dli_fname == nullptr || info.dli_fname[0] == '\0') {
+    return unexpected("dladdr failed to identify the defining object");
+  }
+  return std::filesystem::path(info.dli_fname);
+#endif
+}
+
+/// Verify that @p symbol is defined by @p candidate_path, not a dependency.
+inline Expected<void> verifySymbolProvenance(
+    void* symbol, const char* symbol_name, const std::filesystem::path& candidate_path) {
+#if defined(_WIN32)
+  (void)symbol;
+  (void)symbol_name;
+  (void)candidate_path;
+  return {};
+#else
+  auto owner = symbolOwner(symbol);
+  if (!owner) {
+    return unexpected(
+        "cannot prove provenance for symbol '" + std::string(symbol_name) + "' in candidate '" +
+        candidate_path.string() + "': " + owner.error());
+  }
+
+  std::error_code equivalent_error;
+  const bool equivalent = std::filesystem::equivalent(*owner, candidate_path, equivalent_error);
+  if (equivalent_error) {
+    return unexpected(
+        "cannot prove provenance for symbol '" + std::string(symbol_name) + "': defining object '" + owner->string() +
+        "', candidate '" + candidate_path.string() + "': " + equivalent_error.message());
+  }
+  if (!equivalent) {
+    return unexpected(
+        "symbol '" + std::string(symbol_name) + "' resolved from dependency '" + owner->string() +
+        "', not candidate '" + candidate_path.string() + "'");
+  }
+  return {};
+#endif
+}
+
+/// Resolve a named symbol and prove that it is defined by @p candidate_path.
+inline Expected<void*> resolveSymbol(
+    void* handle, const char* symbol_name, const std::filesystem::path& candidate_path) {
   if (handle == nullptr) {
     return unexpected("library not loaded");
   }
@@ -71,23 +147,33 @@ inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
     std::string name(symbol_name);
     return unexpected(name + " not found");
   }
-  return reinterpret_cast<void*>(symbol);
+  void* resolved = reinterpret_cast<void*>(symbol);
 #else
   dlerror();
   void* symbol = dlsym(handle, symbol_name);
   const char* err = dlerror();
   if (err != nullptr) {
+#if defined(__APPLE__)
+    return unexpected(
+        "cannot prove provenance for symbol '" + std::string(symbol_name) + "' in candidate '" +
+        candidate_path.string() + "': RTLD_FIRST lookup failed: " + err);
+#else
     return unexpected(err);
-  }
-  return symbol;
 #endif
+  }
+  void* resolved = symbol;
+#endif
+  if (auto provenance = verifySymbolProvenance(resolved, symbol_name, candidate_path); !provenance) {
+    return unexpected(provenance.error());
+  }
+  return resolved;
 }
 
 /// Verify the plugin exports `pj_plugin_abi_version` and its value equals
 /// PJ_ABI_VERSION. Must be called BEFORE the family vtable is fetched — the
 /// vtable layout is only meaningful once the boot-level ABI matches.
-inline Expected<void> checkPluginAbiVersion(void* handle) {
-  auto sym = resolveSymbol(handle, "pj_plugin_abi_version");
+inline Expected<void> checkPluginAbiVersion(void* handle, const std::filesystem::path& candidate_path) {
+  auto sym = resolveSymbol(handle, "pj_plugin_abi_version", candidate_path);
   if (!sym) {
     return unexpected("plugin missing pj_plugin_abi_version symbol: " + sym.error());
   }
@@ -113,6 +199,12 @@ inline void closeLibraryHandle(void* handle) {
 
 inline std::shared_ptr<void> adoptLibraryHandle(void* handle) {
   return std::shared_ptr<void>(handle, [](void* loaded_handle) { closeLibraryHandle(loaded_handle); });
+}
+
+/// Wrap an already-open library handle with a no-op deleter so process exit can
+/// reclaim it after all SDK admission passes share the same native open.
+inline std::shared_ptr<void> adoptLibraryHandleNonOwning(void* handle) {
+  return std::shared_ptr<void>(handle, [](void*) {});
 }
 
 }  // namespace PJ::detail

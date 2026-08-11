@@ -215,6 +215,10 @@ previously-circulated pre-v4 design included):
 - **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
   only (DEEPBIND was a documented ASAN/allocator-interposition trap).
   Plugin-local symbol isolation is left to `-fvisibility=hidden`.
+- **Declined loader alternatives.** Admission does not use
+  `RTLD_NODELETE` as its lifetime contract, `RTLD_DEEPBIND`, `dlmopen`, or a
+  manifest-format change. Shared handle ownership controls lifetime, while
+  candidate-file provenance is checked directly at each boot-level symbol.
 
 Structural shape inherited from the pre-v4 design work (carries the
 service registry, error out-params, and typed borrowed-dialog patterns):
@@ -449,7 +453,8 @@ These live in `sdk/detail/*_trampolines.hpp`.
 
 Each family has a loader that:
 1. Calls `dlopen` (or `LoadLibrary` on Windows) on the `.so` path.
-2. Calls `dlsym` for the entry point symbol.
+2. Resolves the ABI marker and entry point, then verifies that each symbol's
+   defining object is the candidate DSO itself rather than a dependency.
 3. Validates `protocol_version` and `struct_size`.
 4. Stores the vtable pointer for creating handles.
 

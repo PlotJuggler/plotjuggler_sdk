@@ -343,6 +343,58 @@ target_compile_features(legacy_macro_dialog_plugin PRIVATE cxx_std_20)
 target_compile_options(legacy_macro_dialog_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(legacy_macro_dialog_plugin PRIVATE pj_dialog_protocol)
 
+# First two-DSO loader fixtures: one malformed candidate whose entry points
+# come only from a dependency, and one well-formed candidate that defines its
+# own entry points while retaining the same dependency.
+add_library(entry_point_donor SHARED tests/entry_point_donor.cpp)
+target_compile_features(entry_point_donor PRIVATE cxx_std_20)
+target_compile_options(entry_point_donor PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(entry_point_donor PRIVATE pj_base)
+
+add_library(entry_point_via_dependency_plugin SHARED tests/entry_point_via_dependency.cpp)
+target_compile_features(entry_point_via_dependency_plugin PRIVATE cxx_std_20)
+target_compile_options(entry_point_via_dependency_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(entry_point_via_dependency_plugin PRIVATE entry_point_donor pj_base)
+
+add_library(entry_point_with_own_exports_plugin SHARED tests/entry_point_with_own_exports.cpp)
+target_compile_features(entry_point_with_own_exports_plugin PRIVATE cxx_std_20)
+target_compile_options(entry_point_with_own_exports_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(entry_point_with_own_exports_plugin PRIVATE entry_point_donor pj_base)
+
+# Dependency-search fixtures. The real and decoy dependencies intentionally
+# share one filename but live in separate build directories.
+add_library(dependency_search_real SHARED tests/dependency_search_dependency.cpp)
+target_compile_features(dependency_search_real PRIVATE cxx_std_20)
+target_compile_options(dependency_search_real PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(dependency_search_real PROPERTIES OUTPUT_NAME pj_dependency_search_fixture)
+
+add_library(dependency_search_decoy SHARED tests/dependency_search_dependency.cpp)
+target_compile_features(dependency_search_decoy PRIVATE cxx_std_20)
+target_compile_options(dependency_search_decoy PRIVATE ${PJ_WARNING_FLAGS})
+target_compile_definitions(dependency_search_decoy PRIVATE PJ_DEPENDENCY_SEARCH_DECOY)
+set_target_properties(dependency_search_decoy PROPERTIES
+  OUTPUT_NAME pj_dependency_search_fixture
+  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/dependency_search_decoy"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/dependency_search_decoy"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/dependency_search_decoy"
+)
+
+add_library(dependency_search_candidate_plugin SHARED tests/dependency_search_candidate.cpp)
+target_compile_features(dependency_search_candidate_plugin PRIVATE cxx_std_20)
+target_compile_options(dependency_search_candidate_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(dependency_search_candidate_plugin PRIVATE dependency_search_real pj_base)
+if(APPLE)
+  # Keep this copied fixture package-relative without CMake appending the
+  # absolute build directory, which would invalidate the decoy-only case.
+  set_target_properties(dependency_search_candidate_plugin PROPERTIES SKIP_BUILD_RPATH TRUE)
+  target_link_options(dependency_search_candidate_plugin PRIVATE "LINKER:-rpath,@loader_path")
+elseif(UNIX)
+  set_target_properties(dependency_search_candidate_plugin PROPERTIES
+    BUILD_RPATH "$ORIGIN"
+    BUILD_RPATH_USE_ORIGIN TRUE
+  )
+endif()
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -565,17 +617,25 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MISSING_ID_PLUGIN_PATH="$<TARGET_FILE:missing_id_data_source_plugin>"
   PJ_INVALID_OPTIONAL_PLUGIN_PATH="$<TARGET_FILE:invalid_optional_manifest_data_source_plugin>"
   PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
+  PJ_ENTRY_POINT_VIA_DEPENDENCY_PLUGIN_PATH="$<TARGET_FILE:entry_point_via_dependency_plugin>"
+  PJ_ENTRY_POINT_WITH_OWN_EXPORTS_PLUGIN_PATH="$<TARGET_FILE:entry_point_with_own_exports_plugin>"
+  PJ_DEPENDENCY_SEARCH_CANDIDATE_PATH="$<TARGET_FILE:dependency_search_candidate_plugin>"
+  PJ_DEPENDENCY_SEARCH_REAL_PATH="$<TARGET_FILE:dependency_search_real>"
+  PJ_DEPENDENCY_SEARCH_DECOY_PATH="$<TARGET_FILE:dependency_search_decoy>"
 )
 target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
+target_include_directories(plugin_catalog_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(plugin_catalog_test PRIVATE
-  pj_plugin_catalog GTest::gtest_main
+  pj_plugin_catalog pj_data_source_host GTest::gtest_main
 )
 add_dependencies(plugin_catalog_test mock_data_source_plugin
                  mock_json_parser_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
                  static_manifest_dialog_plugin legacy_macro_dialog_plugin
-                 old_dialog_vtable_plugin missing_dialog_required_slots_plugin)
+                 old_dialog_vtable_plugin missing_dialog_required_slots_plugin
+                 entry_point_via_dependency_plugin entry_point_with_own_exports_plugin
+                 dependency_search_candidate_plugin dependency_search_decoy)
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS

@@ -21,6 +21,7 @@
 #include <pj_base/message_parser_protocol.h>
 #include <pj_plugins/dialog_protocol.h>
 
+#include <filesystem>
 #include <memory>
 #include <pj_plugins/host/message_parser_handle.hpp>
 #include <string>
@@ -50,6 +51,25 @@ class MessageParserLibrary {
 
   /// Load a plugin from @p path. Returns an error string on failure.
   [[nodiscard]] static Expected<MessageParserLibrary> load(std::string_view path);
+
+  /// Preserve an unambiguous load call for existing narrow string paths.
+  [[nodiscard]] static Expected<MessageParserLibrary> load(const char* path) {
+    return load(std::string_view(path));
+  }
+
+  /// Preserve an unambiguous load call for existing `std::string` paths.
+  [[nodiscard]] static Expected<MessageParserLibrary> load(const std::string& path) {
+    return load(std::string_view(path));
+  }
+
+  /// Load a plugin from a filesystem-native @p path.
+  [[nodiscard]] static Expected<MessageParserLibrary> load(const std::filesystem::path& path);
+
+  /// Validate and retain an already-open @p handle whose file is @p origin.
+  /// The library shares the caller-supplied handle ownership and does not open
+  /// or close a separate native module during validation.
+  [[nodiscard]] static Expected<MessageParserLibrary> loadFromHandle(
+      std::shared_ptr<void> handle, const std::filesystem::path& origin);
 
   /// Wrap a statically-linked plugin vtable (no dlopen; for WASM/static builds).
   /// @p vtable must have static storage duration (valid for the program lifetime).

@@ -61,6 +61,16 @@ function(pj_emit_plugin_manifest TARGET)
     C_VISIBILITY_PRESET     hidden
     VISIBILITY_INLINES_HIDDEN ON
   )
+  if(APPLE)
+    set_target_properties(${TARGET} PROPERTIES
+      INSTALL_RPATH "@loader_path"
+      MACOSX_RPATH ON
+    )
+  elseif(UNIX)
+    set_target_properties(${TARGET} PROPERTIES
+      INSTALL_RPATH "$ORIGIN"
+    )
+  endif()
   target_link_options(${TARGET} PRIVATE
     $<$<PLATFORM_ID:Linux>:-Wl,-Bsymbolic-functions>
   )

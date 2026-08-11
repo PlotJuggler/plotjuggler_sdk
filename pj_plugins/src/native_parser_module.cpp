@@ -3,6 +3,7 @@
 
 #include "pj_plugins/host/native_parser_module.hpp"
 
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -61,7 +62,7 @@ NativeParserModule::NativeParserModule(std::shared_ptr<const detail::NativeParse
 
 Expected<NativeParserModule> NativeParserModule::load(
     std::string_view path, DiagnosticSink sink, std::string diagnostic_source) {
-  auto handle_result = detail::openNativeParserModule(path);
+  auto handle_result = detail::openNativeParserModule(std::filesystem::path(path));
   if (!handle_result) {
     return rejectLoad(path, sink, diagnostic_source, "failed to open native parser module: " + handle_result.error());
   }

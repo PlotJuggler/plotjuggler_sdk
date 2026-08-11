@@ -39,12 +39,6 @@ struct ManifestCandidate {
   std::string manifest_json;
 };
 
-struct LibraryHandleCloser {
-  void operator()(void* handle) const {
-    detail::closeLibraryHandle(handle);
-  }
-};
-
 bool hasDsoSuffix(const std::filesystem::path& path) {
   return path.extension().string() == kDsoSuffix;
 }
@@ -54,9 +48,9 @@ bool hasDsoSuffix(const std::filesystem::path& path) {
 // Only the family-specific types and constants vary.
 template <typename Vtable, typename EntryFn>
 Expected<ManifestCandidate> probeDirectVtable(
-    void* handle, const char* symbol, const char* family_name, uint32_t expected_protocol, size_t min_vtable_size,
-    PluginFamily family) {
-  auto sym = detail::resolveSymbol(handle, symbol);
+    void* handle, const std::filesystem::path& origin, const char* symbol, const char* family_name,
+    uint32_t expected_protocol, size_t min_vtable_size, PluginFamily family) {
+  auto sym = detail::resolveSymbol(handle, symbol, origin);
   if (!sym) {
     return unexpected(sym.error());
   }
@@ -76,26 +70,26 @@ Expected<ManifestCandidate> probeDirectVtable(
   return ManifestCandidate{family, vt->manifest_json == nullptr ? "" : vt->manifest_json};
 }
 
-Expected<ManifestCandidate> tryDataSource(void* handle) {
+Expected<ManifestCandidate> tryDataSource(void* handle, const std::filesystem::path& origin) {
   return probeDirectVtable<PJ_data_source_vtable_t, PJ_get_data_source_vtable_fn>(
-      handle, "PJ_get_data_source_vtable", "DataSource", PJ_DATA_SOURCE_PROTOCOL_VERSION,
+      handle, origin, "PJ_get_data_source_vtable", "DataSource", PJ_DATA_SOURCE_PROTOCOL_VERSION,
       PJ_DATA_SOURCE_MIN_VTABLE_SIZE, PluginFamily::kDataSource);
 }
 
-Expected<ManifestCandidate> tryMessageParser(void* handle) {
+Expected<ManifestCandidate> tryMessageParser(void* handle, const std::filesystem::path& origin) {
   return probeDirectVtable<PJ_message_parser_vtable_t, PJ_get_message_parser_vtable_fn>(
-      handle, "PJ_get_message_parser_vtable", "MessageParser", PJ_MESSAGE_PARSER_PROTOCOL_VERSION,
+      handle, origin, "PJ_get_message_parser_vtable", "MessageParser", PJ_MESSAGE_PARSER_PROTOCOL_VERSION,
       PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE, PluginFamily::kMessageParser);
 }
 
-Expected<ManifestCandidate> tryToolbox(void* handle) {
+Expected<ManifestCandidate> tryToolbox(void* handle, const std::filesystem::path& origin) {
   return probeDirectVtable<PJ_toolbox_vtable_t, PJ_get_toolbox_vtable_fn>(
-      handle, "PJ_get_toolbox_vtable", "Toolbox", PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION, PJ_TOOLBOX_MIN_VTABLE_SIZE,
-      PluginFamily::kToolbox);
+      handle, origin, "PJ_get_toolbox_vtable", "Toolbox", PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION,
+      PJ_TOOLBOX_MIN_VTABLE_SIZE, PluginFamily::kToolbox);
 }
 
-Expected<ManifestCandidate> tryDialog(void* handle) {
-  auto sym = detail::resolveSymbol(handle, "PJ_get_dialog_vtable");
+Expected<ManifestCandidate> tryDialog(void* handle, const std::filesystem::path& origin) {
+  auto sym = detail::resolveSymbol(handle, "PJ_get_dialog_vtable", origin);
   if (!sym) {
     return unexpected(sym.error());
   }
@@ -127,28 +121,28 @@ Expected<ManifestCandidate> tryDialog(void* handle) {
   return ManifestCandidate{PluginFamily::kDialog, std::move(manifest_json)};
 }
 
-Expected<ManifestCandidate> findEmbeddedManifest(void* handle) {
+Expected<ManifestCandidate> findEmbeddedManifest(void* handle, const std::filesystem::path& origin) {
   std::vector<std::string> errors;
 
-  if (auto candidate = tryDataSource(handle)) {
+  if (auto candidate = tryDataSource(handle, origin)) {
     return *candidate;
   } else {
     errors.push_back(fmt::format("data_source: {}", candidate.error()));
   }
 
-  if (auto candidate = tryMessageParser(handle)) {
+  if (auto candidate = tryMessageParser(handle, origin)) {
     return *candidate;
   } else {
     errors.push_back(fmt::format("message_parser: {}", candidate.error()));
   }
 
-  if (auto candidate = tryToolbox(handle)) {
+  if (auto candidate = tryToolbox(handle, origin)) {
     return *candidate;
   } else {
     errors.push_back(fmt::format("toolbox: {}", candidate.error()));
   }
 
-  if (auto candidate = tryDialog(handle)) {
+  if (auto candidate = tryDialog(handle, origin)) {
     return *candidate;
   } else {
     errors.push_back(fmt::format("dialog: {}", candidate.error()));
@@ -312,19 +306,29 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
   if (!hasDsoSuffix(dso_path)) {
     return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
   }
-  auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
 
-  auto handle = detail::loadLibraryHandle(dso_path.string());
-  if (!handle) {
-    return unexpected(with_path(handle.error()));
+  auto raw_handle = detail::loadLibraryHandle(dso_path);
+  if (!raw_handle) {
+    return unexpected(fmt::format("{}: {}", dso_path.string(), raw_handle.error()));
   }
-  std::unique_ptr<void, LibraryHandleCloser> library(*handle);
+  return inspectPluginDso(detail::adoptLibraryHandle(*raw_handle), dso_path);
+}
 
-  if (auto abi = detail::checkPluginAbiVersion(library.get()); !abi) {
+Expected<PluginDescriptor> inspectPluginDso(
+    const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path) {
+  if (!hasDsoSuffix(dso_path)) {
+    return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
+  }
+  auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
+  if (handle == nullptr) {
+    return unexpected(with_path("library not loaded"));
+  }
+
+  if (auto abi = detail::checkPluginAbiVersion(handle.get(), dso_path); !abi) {
     return unexpected(with_path(abi.error()));
   }
 
-  auto candidate = findEmbeddedManifest(library.get());
+  auto candidate = findEmbeddedManifest(handle.get(), dso_path);
   if (!candidate) {
     return unexpected(with_path(candidate.error()));
   }
@@ -335,6 +339,29 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
   }
   return *descriptor;
 }
+
+namespace detail {
+
+std::vector<PluginFamily> exportedPluginFamilies(
+    const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path) {
+  std::vector<PluginFamily> families;
+  if (handle == nullptr) {
+    return families;
+  }
+
+  auto append_if_owned = [&](const char* symbol, PluginFamily family) {
+    if (resolveSymbol(handle.get(), symbol, dso_path)) {
+      families.push_back(family);
+    }
+  };
+  append_if_owned("PJ_get_data_source_vtable", PluginFamily::kDataSource);
+  append_if_owned("PJ_get_message_parser_vtable", PluginFamily::kMessageParser);
+  append_if_owned("PJ_get_toolbox_vtable", PluginFamily::kToolbox);
+  append_if_owned("PJ_get_dialog_vtable", PluginFamily::kDialog);
+  return families;
+}
+
+}  // namespace detail
 
 Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory) {
   std::error_code ec;

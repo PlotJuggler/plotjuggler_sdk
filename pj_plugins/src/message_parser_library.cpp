@@ -45,17 +45,31 @@ MessageParserLibrary& MessageParserLibrary::operator=(MessageParserLibrary&& oth
 }
 
 Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path) {
+  auto library = load(std::filesystem::path(path));
+  if (library) {
+    library->path_ = std::string(path);
+  }
+  return library;
+}
+
+Expected<MessageParserLibrary> MessageParserLibrary::load(const std::filesystem::path& path) {
   auto raw_handle = detail::loadLibraryHandle(path);
   if (!raw_handle) {
     return unexpected(raw_handle.error());
   }
-  auto handle = detail::adoptLibraryHandle(*raw_handle);
+  return loadFromHandle(detail::adoptLibraryHandle(*raw_handle), path);
+}
 
-  if (auto abi = detail::checkPluginAbiVersion(handle.get()); !abi) {
+Expected<MessageParserLibrary> MessageParserLibrary::loadFromHandle(
+    std::shared_ptr<void> handle, const std::filesystem::path& origin) {
+  if (handle == nullptr) {
+    return unexpected("library not loaded");
+  }
+  if (auto abi = detail::checkPluginAbiVersion(handle.get(), origin); !abi) {
     return unexpected(abi.error());
   }
 
-  auto sym = detail::resolveSymbol(handle.get(), "PJ_get_message_parser_vtable");
+  auto sym = detail::resolveSymbol(handle.get(), "PJ_get_message_parser_vtable", origin);
   if (!sym) {
     return unexpected(sym.error());
   }
@@ -75,7 +89,7 @@ Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path)
     return unexpected(status.error());
   }
 
-  return MessageParserLibrary(std::move(handle), vtable, std::string(path));
+  return MessageParserLibrary(std::move(handle), vtable, detail::pathForLegacyAccessor(origin));
 }
 
 Expected<MessageParserLibrary> MessageParserLibrary::loadStatic(
@@ -115,7 +129,11 @@ Expected<const PJ_dialog_vtable_t*> MessageParserLibrary::resolveDialogVtable() 
   if (path_ == "static://") {
     return unexpected("static MessageParser has no registered dialog vtable");
   }
-  auto sym = detail::resolveSymbol(handle_.get(), "PJ_get_dialog_vtable");
+#if defined(_WIN32)
+  auto sym = detail::resolveSymbol(handle_.get(), "PJ_get_dialog_vtable", {});
+#else
+  auto sym = detail::resolveSymbol(handle_.get(), "PJ_get_dialog_vtable", std::filesystem::path(path_));
+#endif
   if (!sym) {
     return unexpected(sym.error());
   }

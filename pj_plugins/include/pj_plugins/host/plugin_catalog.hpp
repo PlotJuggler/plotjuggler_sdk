@@ -16,7 +16,9 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "pj_base/expected.hpp"
@@ -81,11 +83,25 @@ struct PluginScanResult {
 /// Inspect one DSO and return its embedded plugin descriptor.
 [[nodiscard]] Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path);
 
+/// Inspect one DSO through an already-open @p handle originating at @p dso_path.
+/// The supplied shared handle remains owned by the caller and is not reopened.
+[[nodiscard]] Expected<PluginDescriptor> inspectPluginDso(
+    const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path);
+
 /// Recursively scan a directory for platform plugin DSOs. Invalid candidates are
 /// reported in diagnostics while discovery continues.
 [[nodiscard]] Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory);
 
 /// Human-readable name for a plugin family.
 [[nodiscard]] std::string_view toString(PluginFamily family) noexcept;
+
+namespace detail {
+
+/// Return the plugin families whose getter symbols are defined by @p dso_path
+/// itself. Missing getters and getters supplied only by dependencies are omitted.
+[[nodiscard]] std::vector<PluginFamily> exportedPluginFamilies(
+    const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path);
+
+}  // namespace detail
 
 }  // namespace PJ

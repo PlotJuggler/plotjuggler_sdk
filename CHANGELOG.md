@@ -3,6 +3,25 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.23.0]
+
+### Fix: entry-point symbol provenance and modern platform loaders (MINOR)
+
+Plugin admission now proves that the ABI marker and family vtable getter are
+defined by the candidate DSO itself instead of accepting definitions from a
+dependency. POSIX uses defining-object identity, macOS restricts handle-scoped
+lookups to the first image, and Windows uses filesystem-native wide paths with
+package-scoped dependency search. Plugin install rpaths now resolve bundled
+dependencies relative to the plugin on Linux and macOS.
+
+New filesystem-path overloads and already-open-handle adoption APIs let hosts
+validate, inspect, and instantiate a candidate through one native module open.
+Static initializers now run once per admission instead of up to three times.
+
+There is no C-ABI or protocol change: `PJ_ABI_VERSION`, all family protocol
+versions, vtable layouts, and `abi/baseline.abi` remain unchanged. The release
+is MINOR because the installed C++ host API gains additive overloads.
+
 ## [0.22.0]
 
 ### Feature: extensible parser routing and functional parser modules (MINOR)
