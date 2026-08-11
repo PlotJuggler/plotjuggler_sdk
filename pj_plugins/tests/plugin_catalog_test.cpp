@@ -9,8 +9,23 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+
+#include "detail/library_loader.hpp"
+#include "pj_plugins/host/data_source_library.hpp"
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace PJ {
 namespace {
@@ -118,6 +133,122 @@ TEST_F(PluginCatalogTest, InspectRequiredPrefixOnlyDialogDsoDoesNotReadStaticMan
   EXPECT_EQ(descriptor->id, "old-dialog-vtable");
   EXPECT_EQ(descriptor->name, "Old Dialog Vtable");
   EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
+}
+
+TEST_F(PluginCatalogTest, EntryPointSymbolResolvedFromDependencyIsRejected) {
+#if !defined(_WIN32)
+  auto is_provenance_error = [](const std::string& error) {
+    return error.find("resolved from dependency") != std::string::npos ||
+           error.find("cannot prove provenance") != std::string::npos;
+  };
+  auto dependency_library = DataSourceLibrary::load(PJ_ENTRY_POINT_VIA_DEPENDENCY_PLUGIN_PATH);
+  ASSERT_FALSE(dependency_library.has_value());
+  EXPECT_TRUE(is_provenance_error(dependency_library.error())) << dependency_library.error();
+
+  auto dependency_descriptor = inspectPluginDso(PJ_ENTRY_POINT_VIA_DEPENDENCY_PLUGIN_PATH);
+  ASSERT_FALSE(dependency_descriptor.has_value());
+  EXPECT_TRUE(is_provenance_error(dependency_descriptor.error())) << dependency_descriptor.error();
+#endif
+
+  auto library = DataSourceLibrary::load(PJ_ENTRY_POINT_WITH_OWN_EXPORTS_PLUGIN_PATH);
+  ASSERT_TRUE(library.has_value()) << library.error();
+
+  auto descriptor = inspectPluginDso(PJ_ENTRY_POINT_WITH_OWN_EXPORTS_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "entry-point-candidate");
+}
+
+#if defined(_WIN32)
+TEST_F(PluginCatalogTest, ForwardedEntryPointIsRejected) {
+  auto library = DataSourceLibrary::load(PJ_ENTRY_POINT_FORWARDER_PLUGIN_PATH);
+  ASSERT_FALSE(library.has_value());
+  EXPECT_NE(library.error().find("resolved from dependency"), std::string::npos) << library.error();
+
+  auto descriptor = inspectPluginDso(PJ_ENTRY_POINT_FORWARDER_PLUGIN_PATH);
+  ASSERT_FALSE(descriptor.has_value());
+  EXPECT_NE(descriptor.error().find("resolved from dependency"), std::string::npos) << descriptor.error();
+}
+#endif
+
+TEST_F(PluginCatalogTest, UnicodeExtensionPathLoadsOnWindows) {
+  const std::filesystem::path unicode_dir = dir_ / std::filesystem::path(u8"插件-π");
+  std::filesystem::create_directories(unicode_dir);
+  const std::filesystem::path plugin_path = unicode_dir / pluginFileName("unicode_plugin");
+  std::filesystem::copy_file(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, plugin_path);
+
+  auto descriptor = inspectPluginDso(plugin_path);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "mock-data-source");
+
+  auto library = DataSourceLibrary::load(plugin_path);
+  ASSERT_TRUE(library.has_value()) << library.error();
+  EXPECT_TRUE(library->valid());
+}
+
+TEST_F(PluginCatalogTest, AlreadyOpenHandleSupportsInspectionLoadingAndFamilyQuery) {
+  const std::filesystem::path plugin_path = PJ_MOCK_DATA_SOURCE_PLUGIN_PATH;
+  auto raw_handle = detail::loadLibraryHandle(plugin_path);
+  ASSERT_TRUE(raw_handle.has_value()) << raw_handle.error();
+  auto owner = detail::adoptLibraryHandle(*raw_handle);
+  auto shared_handle = detail::adoptLibraryHandleNonOwning(owner.get());
+
+  const auto families = detail::exportedPluginFamilies(shared_handle, plugin_path);
+  EXPECT_EQ(families, std::vector<PluginFamily>{PluginFamily::kDataSource});
+
+  auto descriptor = inspectPluginDso(shared_handle, plugin_path);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "mock-data-source");
+
+  auto library = DataSourceLibrary::loadFromHandle(shared_handle, plugin_path);
+  ASSERT_TRUE(library.has_value()) << library.error();
+  EXPECT_TRUE(library->valid());
+}
+
+TEST_F(PluginCatalogTest, DependencySearchExcludesCwdAndPath) {
+  const std::filesystem::path candidate_dir = dir_ / "candidate";
+  const std::filesystem::path cwd_decoy_dir = dir_ / "cwd-decoy";
+  const std::filesystem::path path_decoy_dir = dir_ / "path-decoy";
+  std::filesystem::create_directories(candidate_dir);
+  std::filesystem::create_directories(cwd_decoy_dir);
+  std::filesystem::create_directories(path_decoy_dir);
+
+  const std::filesystem::path candidate_source = PJ_DEPENDENCY_SEARCH_CANDIDATE_PATH;
+  const std::filesystem::path real_source = PJ_DEPENDENCY_SEARCH_REAL_PATH;
+  const std::filesystem::path decoy_source = PJ_DEPENDENCY_SEARCH_DECOY_PATH;
+  const std::filesystem::path candidate = candidate_dir / candidate_source.filename();
+  const std::filesystem::path sibling = candidate_dir / real_source.filename();
+  std::filesystem::copy_file(candidate_source, candidate);
+  std::filesystem::copy_file(real_source, sibling);
+  std::filesystem::copy_file(decoy_source, cwd_decoy_dir / real_source.filename());
+  std::filesystem::copy_file(decoy_source, path_decoy_dir / real_source.filename());
+
+  const std::filesystem::path original_cwd = std::filesystem::current_path();
+#if defined(_WIN32)
+  std::optional<std::wstring> old_path;
+  const DWORD old_path_size = GetEnvironmentVariableW(L"PATH", nullptr, 0);
+  if (old_path_size > 0) {
+    std::wstring value(old_path_size, L'\0');
+    const DWORD copied = GetEnvironmentVariableW(L"PATH", value.data(), old_path_size);
+    ASSERT_GT(copied, 0U);
+    value.resize(copied);
+    old_path = std::move(value);
+  }
+  ASSERT_NE(SetEnvironmentVariableW(L"PATH", path_decoy_dir.c_str()), 0);
+#endif
+  std::filesystem::current_path(cwd_decoy_dir);
+
+  auto sibling_result = inspectPluginDso(candidate);
+  std::filesystem::remove(sibling);
+  auto decoy_only_result = DataSourceLibrary::load(candidate);
+
+  std::filesystem::current_path(original_cwd);
+#if defined(_WIN32)
+  ASSERT_NE(SetEnvironmentVariableW(L"PATH", old_path.has_value() ? old_path->c_str() : nullptr), 0);
+#endif
+
+  ASSERT_TRUE(sibling_result.has_value()) << sibling_result.error();
+  EXPECT_EQ(sibling_result->id, "dependency-search-real");
+  EXPECT_FALSE(decoy_only_result.has_value());
 }
 
 TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {

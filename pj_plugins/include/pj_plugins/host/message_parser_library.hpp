@@ -21,6 +21,7 @@
 #include <pj_base/message_parser_protocol.h>
 #include <pj_plugins/dialog_protocol.h>
 
+#include <filesystem>
 #include <memory>
 #include <pj_plugins/host/message_parser_handle.hpp>
 #include <string>
@@ -29,6 +30,10 @@
 #include "pj_base/expected.hpp"
 
 namespace PJ {
+
+namespace detail {
+struct LibraryPathIdentity;
+}
 
 /**
  * Loads a MessageParser plugin shared library and provides factory access.
@@ -50,6 +55,25 @@ class MessageParserLibrary {
 
   /// Load a plugin from @p path. Returns an error string on failure.
   [[nodiscard]] static Expected<MessageParserLibrary> load(std::string_view path);
+
+  /// Preserve an unambiguous load call for existing narrow string paths.
+  [[nodiscard]] static Expected<MessageParserLibrary> load(const char* path) {
+    return load(std::string_view(path));
+  }
+
+  /// Preserve an unambiguous load call for existing `std::string` paths.
+  [[nodiscard]] static Expected<MessageParserLibrary> load(const std::string& path) {
+    return load(std::string_view(path));
+  }
+
+  /// Load a plugin from a filesystem-native @p path.
+  [[nodiscard]] static Expected<MessageParserLibrary> load(const std::filesystem::path& path);
+
+  /// Validate and retain an already-open @p handle whose file is @p origin.
+  /// The library shares the caller-supplied handle ownership and does not open
+  /// or close a separate native module during validation.
+  [[nodiscard]] static Expected<MessageParserLibrary> loadFromHandle(
+      std::shared_ptr<void> handle, const std::filesystem::path& origin);
 
   /// Wrap a statically-linked plugin vtable (no dlopen; for WASM/static builds).
   /// @p vtable must have static storage duration (valid for the program lifetime).
@@ -80,9 +104,12 @@ class MessageParserLibrary {
   }
 
  private:
+  [[nodiscard]] static Expected<MessageParserLibrary> loadFromHandleWithIdentity(
+      std::shared_ptr<void> handle, const detail::LibraryPathIdentity& origin);
+
   MessageParserLibrary(
       std::shared_ptr<void> handle, const PJ_message_parser_vtable_t* vtable, std::string path,
-      const PJ_dialog_vtable_t* static_dialog_vtable = nullptr);
+      std::string resolved_path, const PJ_dialog_vtable_t* static_dialog_vtable = nullptr);
 
   void reset();
 
@@ -90,6 +117,7 @@ class MessageParserLibrary {
   const PJ_message_parser_vtable_t* vtable_ = nullptr;
   const PJ_dialog_vtable_t* static_dialog_vtable_ = nullptr;
   std::string path_;
+  std::string resolved_path_;
 };
 
 }  // namespace PJ

@@ -34,17 +34,32 @@ DialogLibrary& DialogLibrary::operator=(DialogLibrary&& other) noexcept {
 }
 
 Expected<DialogLibrary> DialogLibrary::load(std::string_view path) {
-  auto raw_handle = detail::loadLibraryHandle(path);
+  return load(std::filesystem::path(path));
+}
+
+Expected<DialogLibrary> DialogLibrary::load(const std::filesystem::path& path) {
+  detail::LibraryPathIdentity recorded_path;
+  auto raw_handle = detail::loadLibraryHandle(path, &recorded_path);
   if (!raw_handle) {
     return unexpected(raw_handle.error());
   }
-  auto handle = detail::adoptLibraryHandle(*raw_handle);
+  return loadFromHandle(detail::adoptLibraryHandle(*raw_handle), recorded_path.load_path);
+}
 
-  if (auto abi = detail::checkPluginAbiVersion(handle.get()); !abi) {
+Expected<DialogLibrary> DialogLibrary::loadFromHandle(
+    std::shared_ptr<void> handle, const std::filesystem::path& origin) {
+  if (handle == nullptr) {
+    return unexpected("library not loaded");
+  }
+  auto recorded_path = detail::recordLibraryPathIdentity(origin);
+  if (!recorded_path) {
+    return unexpected(recorded_path.error());
+  }
+  if (auto abi = detail::checkPluginAbiVersion(handle.get(), *recorded_path); !abi) {
     return unexpected(abi.error());
   }
 
-  auto sym = detail::resolveSymbol(handle.get(), "PJ_get_dialog_vtable");
+  auto sym = detail::resolveSymbol(handle.get(), "PJ_get_dialog_vtable", *recorded_path);
   if (!sym) {
     return unexpected(sym.error());
   }
@@ -64,7 +79,7 @@ Expected<DialogLibrary> DialogLibrary::load(std::string_view path) {
     return unexpected(status.error());
   }
 
-  return DialogLibrary(std::move(handle), vtable, std::string(path));
+  return DialogLibrary(std::move(handle), vtable, detail::pathForLegacyAccessor(recorded_path->load_path));
 }
 
 void DialogLibrary::reset() {

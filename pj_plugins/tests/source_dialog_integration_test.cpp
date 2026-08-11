@@ -3,10 +3,14 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
 
+#include "detail/library_loader.hpp"
 #include "pj_plugins/host/config_envelope.hpp"
 #include "pj_plugins/host/data_source_library.hpp"
 #include "pj_plugins/host/dialog_handle.hpp"
@@ -20,6 +24,46 @@
 #endif
 
 namespace {
+
+class TemporaryDirectory {
+ public:
+  TemporaryDirectory()
+      : path_(
+            std::filesystem::temp_directory_path() /
+            ("pj_dialog_loader_" +
+             std::to_string(static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())))) {
+    std::filesystem::create_directories(path_);
+  }
+
+  ~TemporaryDirectory() {
+    std::error_code error;
+    std::filesystem::remove_all(path_, error);
+  }
+
+  const std::filesystem::path& path() const noexcept {
+    return path_;
+  }
+
+ private:
+  std::filesystem::path path_;
+};
+
+class CurrentPathGuard {
+ public:
+  CurrentPathGuard() : original_(std::filesystem::current_path()) {}
+
+  ~CurrentPathGuard() {
+    std::error_code error;
+    std::filesystem::current_path(original_, error);
+  }
+
+  const std::filesystem::path& original() const noexcept {
+    return original_;
+  }
+
+ private:
+  std::filesystem::path original_;
+};
 
 // --- Test 1: Load combined .so ---
 
@@ -49,6 +93,72 @@ TEST(SourceDialogIntegration, ResolveDialogVtable) {
   auto dialog_vt = lib->resolveDialogVtable();
   ASSERT_TRUE(dialog_vt) << dialog_vt.error();
   EXPECT_EQ((*dialog_vt)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+}
+
+TEST(SourceDialogIntegration, DialogVtableSurvivesCandidateFileDeletion) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path plugin_filename =
+      std::filesystem::path(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH).filename();
+  const std::filesystem::path candidate = temporary.path() / plugin_filename;
+  std::filesystem::copy_file(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH, candidate);
+
+  {
+    auto lib = PJ::DataSourceLibrary::load(candidate);
+    ASSERT_TRUE(lib) << lib.error();
+#if defined(_WIN32)
+    // A mapped image cannot be deleted on Windows, but it can be renamed away;
+    // deferred resolution must not depend on the original path either way.
+    std::filesystem::rename(candidate, candidate.parent_path() / "moved-away.dll");
+#else
+    ASSERT_TRUE(std::filesystem::remove(candidate));
+#endif
+
+    auto dialog_vtable = lib->resolveDialogVtable();
+    ASSERT_TRUE(dialog_vtable) << dialog_vtable.error();
+    EXPECT_EQ((*dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+  }
+
+#if !defined(_WIN32)
+  const std::filesystem::path real_directory = temporary.path() / "real";
+  const std::filesystem::path symlink_directory = temporary.path() / "symlink";
+  std::filesystem::create_directories(real_directory);
+  std::filesystem::create_directory_symlink(real_directory, symlink_directory);
+  const std::filesystem::path real_candidate = real_directory / plugin_filename;
+  const std::filesystem::path symlink_candidate = symlink_directory / plugin_filename;
+  std::filesystem::copy_file(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH, real_candidate);
+
+  // Preload the real spelling so glibc reuses a link-map whose dli_fname is the
+  // canonical path when the library API subsequently loads through the symlink.
+  // This reproduces dyld's realpath reporting on Linux.
+  auto preloaded_handle = PJ::detail::loadLibraryHandle(real_candidate);
+  ASSERT_TRUE(preloaded_handle) << preloaded_handle.error();
+  auto preloaded_owner = PJ::detail::adoptLibraryHandle(*preloaded_handle);
+
+  auto symlink_lib = PJ::DataSourceLibrary::load(symlink_candidate);
+  ASSERT_TRUE(symlink_lib) << symlink_lib.error();
+  ASSERT_TRUE(std::filesystem::remove(real_candidate));
+
+  auto symlink_dialog_vtable = symlink_lib->resolveDialogVtable();
+  ASSERT_TRUE(symlink_dialog_vtable) << symlink_dialog_vtable.error();
+  EXPECT_EQ((*symlink_dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+#endif
+}
+
+TEST(SourceDialogIntegration, DialogVtableSurvivesCwdChangeAfterRelativeLoad) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path candidate =
+      temporary.path() / std::filesystem::path(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH).filename();
+  std::filesystem::copy_file(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH, candidate);
+
+  CurrentPathGuard current_path;
+  std::filesystem::current_path(temporary.path());
+  auto lib = PJ::DataSourceLibrary::load(candidate.filename());
+  std::filesystem::current_path(current_path.original());
+
+  ASSERT_TRUE(lib) << lib.error();
+  auto dialog_vtable = lib->resolveDialogVtable();
+  ASSERT_TRUE(dialog_vtable) << dialog_vtable.error();
+  EXPECT_EQ((*dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
 }
 
 // --- Test 4: Borrowed dialog context ---

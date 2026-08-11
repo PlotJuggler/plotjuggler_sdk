@@ -4,6 +4,7 @@
 
 #include <pj_plugins/dialog_protocol.h>
 
+#include <filesystem>
 #include <memory>
 #include <pj_plugins/host/dialog_handle.hpp>
 #include <string>
@@ -31,6 +32,25 @@ class DialogLibrary {
 
   /// Load a dialog plugin from @p path. Returns an error string on failure.
   [[nodiscard]] static Expected<DialogLibrary> load(std::string_view path);
+
+  /// Preserve an unambiguous load call for existing narrow string paths.
+  [[nodiscard]] static Expected<DialogLibrary> load(const char* path) {
+    return load(std::string_view(path));
+  }
+
+  /// Preserve an unambiguous load call for existing `std::string` paths.
+  [[nodiscard]] static Expected<DialogLibrary> load(const std::string& path) {
+    return load(std::string_view(path));
+  }
+
+  /// Load a dialog plugin from a filesystem-native @p path.
+  [[nodiscard]] static Expected<DialogLibrary> load(const std::filesystem::path& path);
+
+  /// Validate and retain an already-open @p handle whose file is @p origin.
+  /// The library shares the caller-supplied handle ownership and does not open
+  /// or close a separate native module during validation.
+  [[nodiscard]] static Expected<DialogLibrary> loadFromHandle(
+      std::shared_ptr<void> handle, const std::filesystem::path& origin);
 
   /// True if the library was loaded and the vtable resolved successfully.
   [[nodiscard]] bool valid() const {

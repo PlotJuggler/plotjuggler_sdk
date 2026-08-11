@@ -215,6 +215,10 @@ previously-circulated pre-v4 design included):
 - **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
   only (DEEPBIND was a documented ASAN/allocator-interposition trap).
   Plugin-local symbol isolation is left to `-fvisibility=hidden`.
+- **Declined loader alternatives.** Admission does not use
+  `RTLD_NODELETE` as its lifetime contract, `RTLD_DEEPBIND`, `dlmopen`, or a
+  manifest-format change. Shared handle ownership controls lifetime, while
+  candidate-file provenance is checked directly at each boot-level symbol.
 
 Structural shape inherited from the pre-v4 design work (carries the
 service registry, error out-params, and typed borrowed-dialog patterns):
@@ -448,8 +452,18 @@ These live in `sdk/detail/*_trampolines.hpp`.
 ## 5. Host Loaders
 
 Each family has a loader that:
-1. Calls `dlopen` (or `LoadLibrary` on Windows) on the `.so` path.
-2. Calls `dlsym` for the entry point symbol.
+1. Lexically normalizes the candidate to an absolute filesystem path, passes
+   that exact path to `dlopen` (or `LoadLibraryExW` on Windows), and records
+   both that spelling and its best-effort `weakly_canonical()` spelling in the
+   library object for later symbol resolution.
+2. Resolves the ABI marker and entry point, then verifies that each symbol's
+   defining object is the candidate DSO itself rather than a dependency. On
+   POSIX, an exact byte match between `dladdr().dli_fname` and either recorded
+   path succeeds without re-reading the filesystem; `equivalent()` is only the
+   fallback for genuinely different path spellings. On Windows, the defining
+   `HMODULE` is recovered from the resolved address with
+   `GetModuleHandleExW(... FROM_ADDRESS ...)` and compared to the candidate
+   handle, which also rejects forwarded PE exports.
 3. Validates `protocol_version` and `struct_size`.
 4. Stores the vtable pointer for creating handles.
 
@@ -462,7 +476,13 @@ Each family has a loader that:
 
 Loaders also provide `resolveDialogVtable()` to find the dialog vtable in a
 plugin `.so` that exports both a family vtable and a dialog vtable (e.g. a
-DataSource with an embedded dialog).
+DataSource with an embedded dialog). These deferred lookups use the recorded
+load-time paths, so they remain valid after the candidate file is removed, the
+process working directory changes, or dyld reports a symlink-resolved filename.
+
+Native functional parser modules use the same absolute-path normalization,
+package-scoped platform open, and defining-module provenance checks for every
+required ABI export. Their narrow path API is explicitly UTF-8 on Windows.
 
 ### 5.1 Host-side diagnostic propagation
 
