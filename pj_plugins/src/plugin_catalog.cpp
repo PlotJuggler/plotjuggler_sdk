@@ -6,6 +6,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -13,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #include "detail/library_loader.hpp"
 #include "detail/vtable_validation.hpp"
@@ -41,6 +43,16 @@ struct ManifestCandidate {
 
 bool hasDsoSuffix(const std::filesystem::path& path) {
   return path.extension().string() == kDsoSuffix;
+}
+
+bool nativeSymbolPresent(void* handle, const char* symbol) noexcept {
+#if defined(_WIN32)
+  return GetProcAddress(reinterpret_cast<HMODULE>(handle), symbol) != nullptr;
+#else
+  dlerror();
+  void* resolved = dlsym(handle, symbol);
+  return dlerror() == nullptr && resolved != nullptr;
+#endif
 }
 
 // Direct-vtable families share the exact same probe sequence: resolve symbol,
@@ -348,26 +360,38 @@ Expected<PluginDescriptor> inspectPluginDso(
 
 namespace detail {
 
-std::vector<PluginFamily> exportedPluginFamilies(
+Expected<std::vector<PluginFamily>> exportedPluginFamilies(
     const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path) {
   std::vector<PluginFamily> families;
   if (handle == nullptr) {
-    return families;
+    return unexpected("library not loaded");
   }
   auto recorded_path = recordLibraryPathIdentity(dso_path);
   if (!recorded_path) {
-    return families;
+    return unexpected(recorded_path.error());
   }
 
-  auto append_if_owned = [&](const char* symbol, PluginFamily family) {
-    if (resolveSymbol(handle.get(), symbol, *recorded_path)) {
-      families.push_back(family);
+  auto append_if_owned = [&](const char* symbol, PluginFamily family) -> Expected<void> {
+    if (!nativeSymbolPresent(handle.get(), symbol)) {
+      return {};
     }
+    auto resolved = resolveSymbol(handle.get(), symbol, *recorded_path);
+    if (!resolved) {
+      return unexpected(resolved.error());
+    }
+    families.push_back(family);
+    return {};
   };
-  append_if_owned("PJ_get_data_source_vtable", PluginFamily::kDataSource);
-  append_if_owned("PJ_get_message_parser_vtable", PluginFamily::kMessageParser);
-  append_if_owned("PJ_get_toolbox_vtable", PluginFamily::kToolbox);
-  append_if_owned("PJ_get_dialog_vtable", PluginFamily::kDialog);
+  for (const auto& [symbol, family] : std::array<std::pair<const char*, PluginFamily>, 4>{
+           std::pair{"PJ_get_data_source_vtable", PluginFamily::kDataSource},
+           {"PJ_get_message_parser_vtable", PluginFamily::kMessageParser},
+           {"PJ_get_toolbox_vtable", PluginFamily::kToolbox},
+           {"PJ_get_dialog_vtable", PluginFamily::kDialog},
+       }) {
+    if (auto status = append_if_owned(symbol, family); !status) {
+      return unexpected(status.error());
+    }
+  }
   return families;
 }
 

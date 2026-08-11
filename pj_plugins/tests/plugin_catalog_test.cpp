@@ -148,6 +148,20 @@ TEST_F(PluginCatalogTest, EntryPointSymbolResolvedFromDependencyIsRejected) {
   auto dependency_descriptor = inspectPluginDso(PJ_ENTRY_POINT_VIA_DEPENDENCY_PLUGIN_PATH);
   ASSERT_FALSE(dependency_descriptor.has_value());
   EXPECT_TRUE(is_provenance_error(dependency_descriptor.error())) << dependency_descriptor.error();
+
+  auto raw_handle = detail::loadLibraryHandle(PJ_ENTRY_POINT_VIA_DEPENDENCY_PLUGIN_PATH);
+  ASSERT_TRUE(raw_handle.has_value()) << raw_handle.error();
+  auto family_query = detail::exportedPluginFamilies(
+      detail::adoptLibraryHandle(*raw_handle), PJ_ENTRY_POINT_VIA_DEPENDENCY_PLUGIN_PATH);
+#if defined(__APPLE__)
+  // RTLD_FIRST hides dependency symbols from dlsym outright, so the getter is
+  // cleanly absent on macOS rather than a provenance violation.
+  ASSERT_TRUE(family_query.has_value()) << family_query.error();
+  EXPECT_TRUE(family_query->empty());
+#else
+  ASSERT_FALSE(family_query.has_value());
+  EXPECT_TRUE(is_provenance_error(family_query.error())) << family_query.error();
+#endif
 #endif
 
   auto library = DataSourceLibrary::load(PJ_ENTRY_POINT_WITH_OWN_EXPORTS_PLUGIN_PATH);
@@ -193,7 +207,8 @@ TEST_F(PluginCatalogTest, AlreadyOpenHandleSupportsInspectionLoadingAndFamilyQue
   auto shared_handle = detail::adoptLibraryHandleNonOwning(owner.get());
 
   const auto families = detail::exportedPluginFamilies(shared_handle, plugin_path);
-  EXPECT_EQ(families, std::vector<PluginFamily>{PluginFamily::kDataSource});
+  ASSERT_TRUE(families.has_value()) << families.error();
+  EXPECT_EQ(*families, std::vector<PluginFamily>{PluginFamily::kDataSource});
 
   auto descriptor = inspectPluginDso(shared_handle, plugin_path);
   ASSERT_TRUE(descriptor.has_value()) << descriptor.error();

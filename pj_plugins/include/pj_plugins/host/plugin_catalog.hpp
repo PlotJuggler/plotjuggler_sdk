@@ -98,8 +98,9 @@ struct PluginScanResult {
 namespace detail {
 
 /// Return the plugin families whose getter symbols are defined by @p dso_path
-/// itself. Missing getters and getters supplied only by dependencies are omitted.
-[[nodiscard]] std::vector<PluginFamily> exportedPluginFamilies(
+/// itself. Missing getters are omitted; provenance and path-identity failures
+/// are returned to the caller instead of being mistaken for absent families.
+[[nodiscard]] Expected<std::vector<PluginFamily>> exportedPluginFamilies(
     const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path);
 
 }  // namespace detail
