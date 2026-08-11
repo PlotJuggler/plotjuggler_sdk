@@ -1,0 +1,3 @@
+LIBRARY entry_point_forwarder_plugin
+EXPORTS
+  PJ_get_data_source_vtable=entry_point_donor.PJ_get_data_source_vtable

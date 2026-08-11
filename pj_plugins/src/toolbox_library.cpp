@@ -45,19 +45,16 @@ ToolboxLibrary& ToolboxLibrary::operator=(ToolboxLibrary&& other) noexcept {
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
-  auto library = load(std::filesystem::path(path));
-  if (library) {
-    library->path_ = std::string(path);
-  }
-  return library;
+  return load(std::filesystem::path(path));
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::load(const std::filesystem::path& path) {
-  auto raw_handle = detail::loadLibraryHandle(path);
+  std::filesystem::path loaded_path;
+  auto raw_handle = detail::loadLibraryHandle(path, &loaded_path);
   if (!raw_handle) {
     return unexpected(raw_handle.error());
   }
-  return loadFromHandle(detail::adoptLibraryHandle(*raw_handle), path);
+  return loadFromHandle(detail::adoptLibraryHandle(*raw_handle), loaded_path);
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::loadFromHandle(
@@ -65,11 +62,15 @@ Expected<ToolboxLibrary> ToolboxLibrary::loadFromHandle(
   if (handle == nullptr) {
     return unexpected("library not loaded");
   }
-  if (auto abi = detail::checkPluginAbiVersion(handle.get(), origin); !abi) {
+  auto loaded_path = detail::normalizedAbsoluteLibraryPath(origin);
+  if (!loaded_path) {
+    return unexpected(loaded_path.error());
+  }
+  if (auto abi = detail::checkPluginAbiVersion(handle.get(), *loaded_path); !abi) {
     return unexpected(abi.error());
   }
 
-  auto sym = detail::resolveSymbol(handle.get(), "PJ_get_toolbox_vtable", origin);
+  auto sym = detail::resolveSymbol(handle.get(), "PJ_get_toolbox_vtable", *loaded_path);
   if (!sym) {
     return unexpected(sym.error());
   }
@@ -89,7 +90,7 @@ Expected<ToolboxLibrary> ToolboxLibrary::loadFromHandle(
     return unexpected(status.error());
   }
 
-  return ToolboxLibrary(std::move(handle), vtable, detail::pathForLegacyAccessor(origin));
+  return ToolboxLibrary(std::move(handle), vtable, detail::pathForLegacyAccessor(*loaded_path));
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::loadStatic(

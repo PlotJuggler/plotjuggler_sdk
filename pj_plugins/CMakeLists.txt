@@ -361,6 +361,17 @@ target_compile_features(entry_point_with_own_exports_plugin PRIVATE cxx_std_20)
 target_compile_options(entry_point_with_own_exports_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(entry_point_with_own_exports_plugin PRIVATE entry_point_donor pj_base)
 
+if(WIN32)
+  add_library(entry_point_forwarder_plugin SHARED
+    tests/entry_point_forwarder.cpp
+    tests/entry_point_forwarder.def
+  )
+  target_compile_features(entry_point_forwarder_plugin PRIVATE cxx_std_20)
+  target_compile_options(entry_point_forwarder_plugin PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(entry_point_forwarder_plugin PRIVATE pj_base)
+  add_dependencies(entry_point_forwarder_plugin entry_point_donor)
+endif()
+
 # Dependency-search fixtures. The real and decoy dependencies intentionally
 # share one filename but live in separate build directories.
 add_library(dependency_search_real SHARED tests/dependency_search_dependency.cpp)
@@ -623,6 +634,11 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_DEPENDENCY_SEARCH_REAL_PATH="$<TARGET_FILE:dependency_search_real>"
   PJ_DEPENDENCY_SEARCH_DECOY_PATH="$<TARGET_FILE:dependency_search_decoy>"
 )
+if(WIN32)
+  target_compile_definitions(plugin_catalog_test PRIVATE
+    PJ_ENTRY_POINT_FORWARDER_PLUGIN_PATH="$<TARGET_FILE:entry_point_forwarder_plugin>"
+  )
+endif()
 target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
 target_include_directories(plugin_catalog_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(plugin_catalog_test PRIVATE
@@ -636,6 +652,9 @@ add_dependencies(plugin_catalog_test mock_data_source_plugin
                  old_dialog_vtable_plugin missing_dialog_required_slots_plugin
                  entry_point_via_dependency_plugin entry_point_with_own_exports_plugin
                  dependency_search_candidate_plugin dependency_search_decoy)
+if(WIN32)
+  add_dependencies(plugin_catalog_test entry_point_forwarder_plugin)
+endif()
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS

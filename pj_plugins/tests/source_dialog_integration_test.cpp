@@ -3,6 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -20,6 +23,46 @@
 #endif
 
 namespace {
+
+class TemporaryDirectory {
+ public:
+  TemporaryDirectory()
+      : path_(
+            std::filesystem::temp_directory_path() /
+            ("pj_dialog_loader_" +
+             std::to_string(static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())))) {
+    std::filesystem::create_directories(path_);
+  }
+
+  ~TemporaryDirectory() {
+    std::error_code error;
+    std::filesystem::remove_all(path_, error);
+  }
+
+  const std::filesystem::path& path() const noexcept {
+    return path_;
+  }
+
+ private:
+  std::filesystem::path path_;
+};
+
+class CurrentPathGuard {
+ public:
+  CurrentPathGuard() : original_(std::filesystem::current_path()) {}
+
+  ~CurrentPathGuard() {
+    std::error_code error;
+    std::filesystem::current_path(original_, error);
+  }
+
+  const std::filesystem::path& original() const noexcept {
+    return original_;
+  }
+
+ private:
+  std::filesystem::path original_;
+};
 
 // --- Test 1: Load combined .so ---
 
@@ -49,6 +92,38 @@ TEST(SourceDialogIntegration, ResolveDialogVtable) {
   auto dialog_vt = lib->resolveDialogVtable();
   ASSERT_TRUE(dialog_vt) << dialog_vt.error();
   EXPECT_EQ((*dialog_vt)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+}
+
+TEST(SourceDialogIntegration, DialogVtableSurvivesCandidateFileDeletion) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path candidate =
+      temporary.path() / std::filesystem::path(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH).filename();
+  std::filesystem::copy_file(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH, candidate);
+
+  auto lib = PJ::DataSourceLibrary::load(candidate);
+  ASSERT_TRUE(lib) << lib.error();
+  ASSERT_TRUE(std::filesystem::remove(candidate));
+
+  auto dialog_vtable = lib->resolveDialogVtable();
+  ASSERT_TRUE(dialog_vtable) << dialog_vtable.error();
+  EXPECT_EQ((*dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
+}
+
+TEST(SourceDialogIntegration, DialogVtableSurvivesCwdChangeAfterRelativeLoad) {
+  TemporaryDirectory temporary;
+  const std::filesystem::path candidate =
+      temporary.path() / std::filesystem::path(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH).filename();
+  std::filesystem::copy_file(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH, candidate);
+
+  CurrentPathGuard current_path;
+  std::filesystem::current_path(temporary.path());
+  auto lib = PJ::DataSourceLibrary::load(candidate.filename());
+  std::filesystem::current_path(current_path.original());
+
+  ASSERT_TRUE(lib) << lib.error();
+  auto dialog_vtable = lib->resolveDialogVtable();
+  ASSERT_TRUE(dialog_vtable) << dialog_vtable.error();
+  EXPECT_EQ((*dialog_vtable)->protocol_version, PJ_DIALOG_PROTOCOL_VERSION);
 }
 
 // --- Test 4: Borrowed dialog context ---

@@ -158,6 +158,18 @@ TEST_F(PluginCatalogTest, EntryPointSymbolResolvedFromDependencyIsRejected) {
   EXPECT_EQ(descriptor->id, "entry-point-candidate");
 }
 
+#if defined(_WIN32)
+TEST_F(PluginCatalogTest, ForwardedEntryPointIsRejected) {
+  auto library = DataSourceLibrary::load(PJ_ENTRY_POINT_FORWARDER_PLUGIN_PATH);
+  ASSERT_FALSE(library.has_value());
+  EXPECT_NE(library.error().find("resolved from dependency"), std::string::npos) << library.error();
+
+  auto descriptor = inspectPluginDso(PJ_ENTRY_POINT_FORWARDER_PLUGIN_PATH);
+  ASSERT_FALSE(descriptor.has_value());
+  EXPECT_NE(descriptor.error().find("resolved from dependency"), std::string::npos) << descriptor.error();
+}
+#endif
+
 TEST_F(PluginCatalogTest, UnicodeExtensionPathLoadsOnWindows) {
   const std::filesystem::path unicode_dir = dir_ / std::filesystem::path(u8"插件-π");
   std::filesystem::create_directories(unicode_dir);

@@ -35,9 +35,12 @@ inline std::string pathForLegacyAccessor(const std::filesystem::path& path) {
 #endif
 }
 
-inline Expected<void*> loadLibraryHandle(const std::filesystem::path& path) {
+/// Produce the normalized absolute spelling used for the native loader call.
+/// This is deliberately lexical: loading does not require the candidate to
+/// remain stat-able after the native module handle has been acquired.
+inline Expected<std::filesystem::path> normalizedAbsoluteLibraryPath(const std::filesystem::path& path) {
   std::error_code path_error;
-  const std::filesystem::path absolute_path = std::filesystem::absolute(path, path_error);
+  std::filesystem::path absolute_path = std::filesystem::absolute(path, path_error);
   if (path_error) {
 #if defined(_WIN32)
     return unexpected("cannot make library path absolute: " + path_error.message());
@@ -45,11 +48,23 @@ inline Expected<void*> loadLibraryHandle(const std::filesystem::path& path) {
     return unexpected("cannot make library path absolute '" + path.string() + "': " + path_error.message());
 #endif
   }
+  return absolute_path.lexically_normal();
+}
+
+inline Expected<void*> loadLibraryHandle(
+    const std::filesystem::path& path, std::filesystem::path* loaded_path = nullptr) {
+  auto absolute_path = normalizedAbsoluteLibraryPath(path);
+  if (!absolute_path) {
+    return unexpected(absolute_path.error());
+  }
 #if defined(_WIN32)
   HMODULE module = LoadLibraryExW(
-      absolute_path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+      absolute_path->c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   if (module == nullptr) {
     return unexpected("LoadLibraryExW failed (error " + std::to_string(GetLastError()) + ")");
+  }
+  if (loaded_path != nullptr) {
+    *loaded_path = *absolute_path;
   }
   return reinterpret_cast<void*>(module);
 #else
@@ -80,10 +95,13 @@ inline Expected<void*> loadLibraryHandle(const std::filesystem::path& path) {
   // admission behavior is intentional and provenance diagnostics stay explicit.
   flags |= RTLD_FIRST;
 #endif
-  void* handle = dlopen(absolute_path.c_str(), flags);
+  void* handle = dlopen(absolute_path->c_str(), flags);
   if (handle == nullptr) {
     const char* error = dlerror();
     return unexpected(error == nullptr ? "" : error);
+  }
+  if (loaded_path != nullptr) {
+    *loaded_path = *absolute_path;
   }
   return handle;
 #endif
@@ -103,20 +121,49 @@ inline Expected<std::filesystem::path> symbolOwner(void* symbol) {
 #endif
 }
 
-/// Verify that @p symbol is defined by @p candidate_path, not a dependency.
+/// Verify that @p symbol is defined by @p candidate_handle/path, not a
+/// dependency. POSIX accepts an exact recorded loader-path match without any
+/// filesystem access, then uses equivalent() only for different spellings.
 inline Expected<void> verifySymbolProvenance(
-    void* symbol, const char* symbol_name, const std::filesystem::path& candidate_path) {
+    void* candidate_handle, void* symbol, const char* symbol_name, const std::filesystem::path& candidate_path) {
 #if defined(_WIN32)
-  (void)symbol;
-  (void)symbol_name;
-  (void)candidate_path;
+  HMODULE owner = nullptr;
+  if (symbol == nullptr || GetModuleHandleExW(
+                               GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCWSTR>(symbol), &owner) == 0) {
+    return unexpected(
+        "cannot prove provenance for symbol '" + std::string(symbol_name) + "': GetModuleHandleExW failed (error " +
+        std::to_string(GetLastError()) + ")");
+  }
+  const auto candidate = reinterpret_cast<HMODULE>(candidate_handle);
+  if (owner != candidate) {
+    auto module_path = [](HMODULE module) {
+      std::wstring buffer(32768, L'\0');
+      const DWORD length = GetModuleFileNameW(module, buffer.data(), static_cast<DWORD>(buffer.size()));
+      if (length == 0 || length >= static_cast<DWORD>(buffer.size())) {
+        return std::string("<unknown module>");
+      }
+      buffer.resize(length);
+      return pathForLegacyAccessor(std::filesystem::path(buffer));
+    };
+    const std::string candidate_name =
+        candidate_path.empty() ? module_path(candidate) : pathForLegacyAccessor(candidate_path);
+    return unexpected(
+        "symbol '" + std::string(symbol_name) + "' resolved from dependency '" + module_path(owner) +
+        "', not candidate '" + candidate_name + "'");
+  }
   return {};
 #else
+  (void)candidate_handle;
   auto owner = symbolOwner(symbol);
   if (!owner) {
     return unexpected(
         "cannot prove provenance for symbol '" + std::string(symbol_name) + "' in candidate '" +
         candidate_path.string() + "': " + owner.error());
+  }
+
+  if (owner->native() == candidate_path.native()) {
+    return {};
   }
 
   std::error_code equivalent_error;
@@ -163,7 +210,7 @@ inline Expected<void*> resolveSymbol(
   }
   void* resolved = symbol;
 #endif
-  if (auto provenance = verifySymbolProvenance(resolved, symbol_name, candidate_path); !provenance) {
+  if (auto provenance = verifySymbolProvenance(handle, resolved, symbol_name, candidate_path); !provenance) {
     return unexpected(provenance.error());
   }
   return resolved;

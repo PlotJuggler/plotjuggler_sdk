@@ -11,8 +11,17 @@ Plugin admission now proves that the ABI marker and family vtable getter are
 defined by the candidate DSO itself instead of accepting definitions from a
 dependency. POSIX uses defining-object identity, macOS restricts handle-scoped
 lookups to the first image, and Windows uses filesystem-native wide paths with
-package-scoped dependency search. Plugin install rpaths now resolve bundled
-dependencies relative to the plugin on Linux and macOS.
+package-scoped dependency search and defining-module checks that reject
+forwarded PE exports. Recorded normalized absolute load paths let deferred
+dialog-vtable provenance accept exact defining-path matches without re-stating
+the candidate, so staged deletion and later working-directory changes are
+safe. Plugin install rpaths now resolve bundled dependencies relative to the
+plugin on Linux and macOS.
+
+Native functional parser modules now share the same absolute-path open and
+symbol-provenance checks, including `RTLD_FIRST` on macOS. Their narrow load
+API retains its explicit UTF-8 contract on Windows and rejects invalid UTF-8
+before calling the platform loader.
 
 New filesystem-path overloads and already-open-handle adoption APIs let hosts
 validate, inspect, and instantiate a candidate through one native module open.

@@ -307,11 +307,12 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
     return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
   }
 
-  auto raw_handle = detail::loadLibraryHandle(dso_path);
+  std::filesystem::path loaded_path;
+  auto raw_handle = detail::loadLibraryHandle(dso_path, &loaded_path);
   if (!raw_handle) {
     return unexpected(fmt::format("{}: {}", dso_path.string(), raw_handle.error()));
   }
-  return inspectPluginDso(detail::adoptLibraryHandle(*raw_handle), dso_path);
+  return inspectPluginDso(detail::adoptLibraryHandle(*raw_handle), loaded_path);
 }
 
 Expected<PluginDescriptor> inspectPluginDso(
@@ -324,11 +325,16 @@ Expected<PluginDescriptor> inspectPluginDso(
     return unexpected(with_path("library not loaded"));
   }
 
-  if (auto abi = detail::checkPluginAbiVersion(handle.get(), dso_path); !abi) {
+  auto loaded_path = detail::normalizedAbsoluteLibraryPath(dso_path);
+  if (!loaded_path) {
+    return unexpected(with_path(loaded_path.error()));
+  }
+
+  if (auto abi = detail::checkPluginAbiVersion(handle.get(), *loaded_path); !abi) {
     return unexpected(with_path(abi.error()));
   }
 
-  auto candidate = findEmbeddedManifest(handle.get(), dso_path);
+  auto candidate = findEmbeddedManifest(handle.get(), *loaded_path);
   if (!candidate) {
     return unexpected(with_path(candidate.error()));
   }
@@ -348,9 +354,13 @@ std::vector<PluginFamily> exportedPluginFamilies(
   if (handle == nullptr) {
     return families;
   }
+  auto loaded_path = normalizedAbsoluteLibraryPath(dso_path);
+  if (!loaded_path) {
+    return families;
+  }
 
   auto append_if_owned = [&](const char* symbol, PluginFamily family) {
-    if (resolveSymbol(handle.get(), symbol, dso_path)) {
+    if (resolveSymbol(handle.get(), symbol, *loaded_path)) {
       families.push_back(family);
     }
   };

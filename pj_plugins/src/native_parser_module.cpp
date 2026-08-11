@@ -47,8 +47,9 @@ Expected<NativeParserModule> rejectLoad(
 }
 
 template <typename Function>
-Expected<Function> resolve(detail::NativeModuleHandle handle, const char* name) {
-  auto symbol = detail::resolveNativeParserModuleSymbol(handle, name);
+Expected<Function> resolve(
+    detail::NativeModuleHandle handle, const char* name, const std::filesystem::path& candidate_path) {
+  auto symbol = detail::resolveNativeParserModuleSymbol(handle, name, candidate_path);
   if (!symbol) {
     return unexpected(symbol.error());
   }
@@ -62,7 +63,8 @@ NativeParserModule::NativeParserModule(std::shared_ptr<const detail::NativeParse
 
 Expected<NativeParserModule> NativeParserModule::load(
     std::string_view path, DiagnosticSink sink, std::string diagnostic_source) {
-  auto handle_result = detail::openNativeParserModule(std::filesystem::path(path));
+  std::filesystem::path loaded_path;
+  auto handle_result = detail::openNativeParserModule(path, &loaded_path);
   if (!handle_result) {
     return rejectLoad(path, sink, diagnostic_source, "failed to open native parser module: " + handle_result.error());
   }
@@ -75,7 +77,7 @@ Expected<NativeParserModule> NativeParserModule::load(
 
 #define PJ_RESOLVE_MODULE_EXPORT(member, type, name)                      \
   do {                                                                    \
-    auto resolved = resolve<type>(handle, name);                          \
+    auto resolved = resolve<type>(handle, name, loaded_path);             \
     if (!resolved) {                                                      \
       return rejectLoad(path, sink, diagnostic_source, resolved.error()); \
     }                                                                     \
