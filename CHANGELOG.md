@@ -3,6 +3,43 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.24.0]
+
+### Feature: plugin-authoring helpers + descriptor-import provider support (MINOR)
+
+Helpers that every official plugin repository had to carry (and copy between
+repositories) now ship with the SDK:
+
+- Header-only, in `plugin_sdk` (`pj_plugins/sdk/`): `parser_array_policy.hpp`
+  (the cross-parser max-array-size + clamp/skip contract with its canonical
+  and legacy JSON keys), `streaming_source.hpp` (`DrainQueue`,
+  `LatestValueSlot`, `stringSetFromViews`, `parserConfigOverride`,
+  `DelegatedIngestCache` — the receive-thread → `onPoll()` handoff and the
+  delegated-ingest binding cache), `streaming_dialog.hpp` (parser-encoding
+  selector + visible-selection merge) and `endpoint.hpp` (strict port parse,
+  endpoint composition with IPv6 bracketing).
+- New compiled component `plotjuggler_sdk::descriptor_import_support`
+  (`pj_base/sdk/descriptor_import/`, namespace `PJ::sdk::descriptor_import`):
+  the callee side of `pj.descriptor_import.v1`. `OriginPolicy` /
+  `parseOrigin` / origin allowlists (fail-closed: schemes must be named);
+  the allowlisted, canonically serialized source descriptor
+  (`SourceDescriptorPolicy` with an `IdentityScheme` — the one owner of the
+  identity prefix + digest width, shared with the cache's `CacheSpec`);
+  the request-addressed `RequestArtifactCache` (validator-injected, atomic
+  publish, cross-process read leases, orphan + LRU cleanup; errors as
+  `Expected<T, CacheError>` with a retryable flag); and `ProviderJob` (gated
+  worker thread, on_dataset zero-or-one, on_terminal exactly-once,
+  cancel/join/destroy vtable) with `SettlementLatch`. The struct_size
+  growth-contract helpers (`readDescriptorImportStartRequest`,
+  `writeDescriptorQueryResult`, `PJ::sdk::fieldCovered`) are header-only in
+  `pj_base/sdk/descriptor_import.hpp` / `plugin_data_api.hpp`, beside their
+  consumer-side twins. `pj_base/sdk/text_utils.hpp` (lowerAscii, parsePort)
+  backs both this component and the streaming helpers.
+
+There is no C-ABI or protocol change: `PJ_ABI_VERSION`, every family
+protocol version, vtable layouts and `abi/baseline.abi` are unchanged. MINOR because the installed C++ API grows
+additively; plugins that do not use the additions keep their current pin.
+
 ## [0.23.1]
 
 ### Fix: Conan `plugin_host` component links the parser-module host (PATCH)

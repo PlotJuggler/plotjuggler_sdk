@@ -23,6 +23,12 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
   standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), the host-side
   wasm parser-module manifest custom-section codec, and the test-only static WASI ABI auditor. The
   0.22 authoring helper builds native parser modules only; wasm loading/execution is not present.
+- **descriptor_import_support** — a separate compiled component
+  (`plotjuggler_sdk::descriptor_import_support`, headers under
+  `pj_base/sdk/descriptor_import/`): the callee side of the descriptor-import
+  extension for provider plugins — origin policy, canonical descriptors +
+  identities, the request-addressed artifact cache, the provider job runner.
+  Only plugins that provide `pj.descriptor_import.v1` link it.
 - **pj_plugins** — host-side loaders + RAII handles + plugin **discovery** (directory scan +
   embedded-manifest inspection) for four plugin families (DataSource, MessageParser, Dialog, Toolbox),
   parser claim admission/resolution and native functional parser-module execution,
@@ -34,6 +40,7 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
 ### Dependency graph
 
 - `pj_plugins` → `pj_base` (+ nlohmann/json)
+- `pj_descriptor_import_support` → `pj_base` (+ nlohmann/json)
 
 ## Read path
 
