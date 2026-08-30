@@ -490,6 +490,16 @@ target_link_libraries(message_parser_runtime_test PRIVATE
 )
 add_test(NAME message_parser_runtime_test COMMAND message_parser_runtime_test)
 
+# Unit test: the header-only plugin-authoring helpers (parser array policy,
+# streaming handoff containers + delegated ingest, endpoint text, streaming
+# dialog helpers).
+add_executable(plugin_sdk_helpers_test tests/plugin_sdk_helpers_test.cpp)
+target_compile_options(plugin_sdk_helpers_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(plugin_sdk_helpers_test PRIVATE
+  pj_plugin_sdk nlohmann_json::nlohmann_json GTest::gtest_main
+)
+add_test(NAME plugin_sdk_helpers_test COMMAND plugin_sdk_helpers_test)
+
 # Unit test: additions-only pure-functional parser C extension.
 add_executable(message_parser_functional_extension_test tests/message_parser_functional_extension_test.cpp)
 target_compile_options(message_parser_functional_extension_test PRIVATE ${PJ_WARNING_FLAGS})

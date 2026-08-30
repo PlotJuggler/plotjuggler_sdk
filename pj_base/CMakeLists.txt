@@ -81,11 +81,49 @@ set_target_properties(pj_parser_module PROPERTIES EXPORT_NAME parser_module)
 add_library(plotjuggler_sdk::parser_module ALIAS pj_parser_module)
 
 # ---------------------------------------------------------------------------
+# descriptor_import_support — the callee side of pj.descriptor_import.v1 for
+# provider plugins: origin policy, canonical descriptors, the request-
+# addressed artifact cache, and the provider job runner. Compiled (file
+# locks, fsync, threads) and therefore its own component: plugins that do not
+# provide descriptor import never link it.
+# ---------------------------------------------------------------------------
+find_package(nlohmann_json REQUIRED)
+add_library(pj_descriptor_import_support STATIC
+  src/descriptor_import/source_descriptor.cpp
+  src/descriptor_import/file_lock.cpp
+  src/descriptor_import/fs_durability.cpp
+  src/descriptor_import/origin.cpp
+  src/descriptor_import/provider_job.cpp
+  src/descriptor_import/request_cache.cpp
+  src/descriptor_import/sha256.cpp
+)
+target_include_directories(pj_descriptor_import_support
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_features(pj_descriptor_import_support PUBLIC cxx_std_20)
+target_compile_options(pj_descriptor_import_support PRIVATE
+  ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
+)
+target_link_libraries(pj_descriptor_import_support PUBLIC
+  pj_base
+  nlohmann_json::nlohmann_json
+)
+set_target_properties(pj_descriptor_import_support PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME descriptor_import_support
+)
+add_library(plotjuggler_sdk::descriptor_import_support ALIAS pj_descriptor_import_support)
+
+# ---------------------------------------------------------------------------
 # Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt)
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_base pj_parser_module EXPORT plotjuggler_sdkTargets
+  install(TARGETS pj_base pj_parser_module pj_descriptor_import_support EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
@@ -159,6 +197,20 @@ if(PJ_BUILD_TESTS)
     get_filename_component(test_name ${test_src} NAME_WE)
     add_executable(${test_name} ${test_src})
     target_link_libraries(${test_name} PRIVATE pj_base GTest::gtest_main)
+    add_test(NAME ${test_name} COMMAND ${test_name})
+  endforeach()
+
+  set(PJ_DESCRIPTOR_IMPORT_TESTS
+    tests/descriptor_import_origin_test.cpp
+    tests/descriptor_import_source_descriptor_test.cpp
+    tests/descriptor_import_request_cache_test.cpp
+    tests/descriptor_import_provider_job_test.cpp
+  )
+  foreach(test_src ${PJ_DESCRIPTOR_IMPORT_TESTS})
+    get_filename_component(test_name ${test_src} NAME_WE)
+    add_executable(${test_name} ${test_src})
+    target_compile_options(${test_name} PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(${test_name} PRIVATE pj_descriptor_import_support GTest::gtest_main)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
 

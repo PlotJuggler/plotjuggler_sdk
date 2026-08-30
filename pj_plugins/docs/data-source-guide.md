@@ -71,7 +71,12 @@ prevent runtime failures and confusing host behaviour.
   but the host receives a generic error and the plugin loses the chance to
   report a useful reason.
 - Call host methods from a background thread you spawned. Buffer in plugin
-  memory and flush from `onPoll()`.
+  memory and flush from `onPoll()` — `PJ::sdk::DrainQueue` / `LatestValueSlot`
+  (`pj_plugins/sdk/streaming_source.hpp`) are the swap-drain containers for
+  that handoff; `DelegatedIngestCache` in the same header wraps
+  `ensureParserBinding` + `pushMessage` for delegated-ingest sources, and
+  `pj_plugins/sdk/endpoint.hpp` / `streaming_dialog.hpp` cover endpoint text
+  and the connection-panel encoding selector.
 - Call `runtimeHost().progressFinish()` from a `FileSourceBase` subclass —
   the base class calls it for you after `importData()` returns.
 - Re-release an `ArrowArrayStream` after `appendArrowStream()` returns

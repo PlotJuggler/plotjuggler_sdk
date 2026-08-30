@@ -28,6 +28,10 @@ foreach(_comp ${plotjuggler_sdk_FIND_COMPONENTS})
     include("${CMAKE_CURRENT_LIST_DIR}/PjPluginManifest.cmake")
     set(plotjuggler_sdk_plugin_sdk_FOUND TRUE)
 
+  elseif(_comp STREQUAL "descriptor_import_support")
+    find_dependency(nlohmann_json)
+    set(plotjuggler_sdk_descriptor_import_support_FOUND TRUE)
+
   elseif(_comp STREQUAL "plugin_host")
     find_dependency(nlohmann_json)
     set(plotjuggler_sdk_plugin_host_FOUND TRUE)

@@ -191,7 +191,7 @@ class JoinableJob {
   /// Tail-slot capacity check mirroring PJ_HAS_TAIL_SLOT, applied to
   /// PJ_joinable_job_vtable_t's cancel/join/destroy members.
   static bool hasSlot(const PJ_joinable_job_vtable_t* vt, std::size_t offset, std::size_t size) noexcept {
-    return vt->struct_size >= offset + size;
+    return sdk::fieldCovered(vt->struct_size, offset, size);
   }
 
   static bool hasCancel(const PJ_joinable_job_vtable_t* vt) noexcept {
@@ -609,6 +609,77 @@ class SourcePromotionHostView {
 
   PJ_source_promotion_host_t host_{};
 };
+
+// ---------------------------------------------------------------------------
+// Provider half: the raw-struct plumbing a "pj.descriptor_import.v1" PROVIDER
+// needs under the struct_size growth contract. Header-only — a provider that
+// only wants ABI-correct struct handling links nothing; the threaded job
+// runner and the artifact cache live in the descriptor_import_support
+// component (pj_base/sdk/descriptor_import/).
+// ---------------------------------------------------------------------------
+
+/// Copy a start request out of the caller-sized C struct, reading only the
+/// fields the caller's struct_size covers, and FAIL CLOSED on unknown flag
+/// bits (the ABI's synchronous rejection: no callbacks, out_job untouched).
+/// The ABI requires start_import to copy the request before returning, so the
+/// owning DescriptorImportStartRequest is exactly the right shape.
+[[nodiscard]] inline Expected<DescriptorImportStartRequest> readDescriptorImportStartRequest(
+    const PJ_descriptor_import_start_request_v1_t* request) {
+  if (request == nullptr) {
+    return unexpected("null start request");
+  }
+  const auto covered = [request](std::size_t offset, std::size_t size) {
+    return sdk::fieldCovered(request->struct_size, offset, size);
+  };
+  DescriptorImportStartRequest out;
+  if (covered(offsetof(PJ_descriptor_import_start_request_v1_t, flags), sizeof(request->flags))) {
+    out.flags = request->flags;
+  }
+  if ((out.flags & ~PJ_DESCRIPTOR_IMPORT_START_FLAGS_V1_MASK) != 0) {
+    return unexpected("unknown start_import flag bits (fail closed)");
+  }
+  if (covered(offsetof(PJ_descriptor_import_start_request_v1_t, descriptor_json), sizeof(request->descriptor_json))) {
+    out.descriptor_json = std::string(sdk::toStringView(request->descriptor_json));
+  }
+  if (covered(
+          offsetof(PJ_descriptor_import_start_request_v1_t, max_transfer_bytes), sizeof(request->max_transfer_bytes))) {
+    out.max_transfer_bytes = request->max_transfer_bytes;
+  }
+  return out;
+}
+
+/// Write a query answer into the caller-sized C struct, touching only the
+/// members the caller's struct_size covers. The string members become VIEWS
+/// into `result` — keep it alive until the next query on the same plugin
+/// instance (the ABI's lifetime rule); a provider typically stores its last
+/// DescriptorQueryResult as a member. A null out_result is a no-op.
+inline void writeDescriptorQueryResult(
+    PJ_descriptor_query_result_v1_t* out_result, const DescriptorQueryResult& result) noexcept {
+  if (out_result == nullptr) {
+    return;
+  }
+  const auto covered = [out_result](std::size_t offset, std::size_t size) {
+    return sdk::fieldCovered(out_result->struct_size, offset, size);
+  };
+  if (covered(offsetof(PJ_descriptor_query_result_v1_t, trust), sizeof(out_result->trust))) {
+    out_result->trust = static_cast<PJ_descriptor_trust_t>(result.trust);
+  }
+  if (covered(offsetof(PJ_descriptor_query_result_v1_t, is_materialized), sizeof(out_result->is_materialized))) {
+    out_result->is_materialized = result.is_materialized ? 1u : 0u;
+  }
+  if (covered(offsetof(PJ_descriptor_query_result_v1_t, source_identity), sizeof(out_result->source_identity))) {
+    out_result->source_identity = sdk::toAbiString(result.source_identity);
+  }
+  if (covered(offsetof(PJ_descriptor_query_result_v1_t, local_path_utf8), sizeof(out_result->local_path_utf8))) {
+    out_result->local_path_utf8 = sdk::toAbiString(result.local_path_utf8);
+  }
+  if (covered(offsetof(PJ_descriptor_query_result_v1_t, message), sizeof(out_result->message))) {
+    out_result->message = sdk::toAbiString(result.message);
+  }
+  if (covered(offsetof(PJ_descriptor_query_result_v1_t, estimated_bytes), sizeof(out_result->estimated_bytes))) {
+    out_result->estimated_bytes = result.estimated_bytes;
+  }
+}
 
 }  // namespace PJ
 
