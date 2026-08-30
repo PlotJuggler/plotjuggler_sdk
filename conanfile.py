@@ -147,6 +147,7 @@ class PlotjugglerSdkConan(ConanFile):
         # CMakeDeps actually include()s it after find_package() returns.
         self.cpp_info.set_property("cmake_build_modules", [
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPluginManifest.cmake"),
+            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjParserModule.cmake"),
         ])
 
         # --- base ---
@@ -162,16 +163,28 @@ class PlotjugglerSdkConan(ConanFile):
         sdk.includedirs = ["include"]
         sdk.requires = ["base", "nlohmann_json::nlohmann_json"]
 
+        # --- parser_module (header-only functional parser-module authoring kit;
+        # pj_add_parser_module() comes from the PjParserModule build module) ---
+        kit = self.cpp_info.components["parser_module"]
+        kit.set_property("cmake_target_name", "plotjuggler_sdk::parser_module")
+        kit.libs = []  # INTERFACE only: authored modules link no SDK library
+        kit.includedirs = ["include"]
+
         # --- plugin_host (umbrella linking every host-side loader) ---
         if self.options.with_host:
             host = self.cpp_info.components["plugin_host"]
             host.set_property("cmake_target_name", "plotjuggler_sdk::plugin_host")
+            # Static archives: dependents before their dependencies. The
+            # parser-module host and claim catalog joined the umbrella in 0.22
+            # (they were missing from this list until 0.23.1).
             host.libs = [
                 "pj_data_source_host",
                 "pj_message_parser_host",
                 "pj_toolbox_host",
                 "pj_dialog_library",
                 "pj_plugin_catalog",
+                "pj_parser_module_host",
+                "pj_parser_claim_catalog",
                 "pj_plugin_loader_detail",
             ]
             host.includedirs = ["include"]
