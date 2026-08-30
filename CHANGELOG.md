@@ -3,6 +3,23 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.23.1]
+
+### Fix: Conan `plugin_host` component links the parser-module host (PATCH)
+
+The Conan recipe's `plugin_host` component omitted `pj_parser_module_host` and
+`pj_parser_claim_catalog`, both part of the `plotjuggler_sdk::plugin_host`
+umbrella since 0.22.0, so Conan consumers of the host umbrella could not link
+the claim catalog, route resolver, or native parser-module loader. The recipe
+also gains the `parser_module` component and ships `PjParserModule.cmake` as a
+build module, so `find_package(plotjuggler_sdk COMPONENTS parser_module)` and
+`pj_add_parser_module()` work from the Conan package exactly as from the
+installed CMake package. No header, ABI, or behavior change.
+
+Also silences a GCC 15 `-Wfree-nonheap-object` false positive in
+`parser_module_abi.cpp` that made every `-O3 -Werror` (Release package) build
+fail on that compiler; Debug and `-O2` builds were unaffected.
+
 ## [0.23.0]
 
 ### Fix: entry-point symbol provenance and modern platform loaders (MINOR)

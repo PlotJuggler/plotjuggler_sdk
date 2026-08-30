@@ -46,6 +46,16 @@ Expected<T> malformed(std::string message) {
   return true;
 }
 
+// GCC 15 at -O3 reports a -Wfree-nonheap-object false positive when
+// std::vector<uint8_t>::push_back's reallocation path is inlined into the
+// little-endian writer below (the freed pointer is the vector's own heap
+// block). Debug and -O2 builds are clean, so this only surfaced in Release
+// package builds. Clang has no such warning group.
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 15
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
+
 class ByteWriter {
  public:
   explicit ByteWriter(size_t reserve) {
@@ -587,5 +597,9 @@ Expected<OutputDescriptorV1> readOutputDescriptorV1(Span<const uint8_t> bytes) {
   }
   return OutputDescriptorV1(std::move(scalar));
 }
+
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 15
+#pragma GCC diagnostic pop
+#endif
 
 }  // namespace PJ::parser_module
