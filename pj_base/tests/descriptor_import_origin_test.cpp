@@ -59,8 +59,12 @@ TEST(DescriptorImportOrigin, RejectedShapes) {
   EXPECT_FALSE(parseOrigin("grpc+tls://user@host:6726", policy).has_value());
   EXPECT_FALSE(parseOrigin("grpc+tls://host:6726?query=1", policy).has_value());
   EXPECT_FALSE(parseOrigin("grpc+tls://host:6726#frag", policy).has_value());
-  EXPECT_FALSE(parseOrigin("grpc+tls://[::1]:6726", policy).has_value());  // IPv6 unsupported
-  EXPECT_FALSE(parseOrigin("grpc+tls://host:0", policy).has_value());      // port range
+  EXPECT_FALSE(parseOrigin("grpc+tls://[::1]:6726", policy).has_value());    // IPv6 unsupported
+  EXPECT_FALSE(parseOrigin("grpc+tls://::1:6726", policy).has_value());      // colons left in host
+  EXPECT_FALSE(parseOrigin("grpc+tls://host]:6726", policy).has_value());    // stray bracket
+  EXPECT_FALSE(parseOrigin("grpc+tls://ho st:6726", policy).has_value());    // illegal host byte
+  EXPECT_FALSE(parseOrigin("grpc+tls://host%41:6726", policy).has_value());  // percent-escape
+  EXPECT_FALSE(parseOrigin("grpc+tls://host:0", policy).has_value());        // port range
   EXPECT_FALSE(parseOrigin("grpc+tls://host:65536", policy).has_value());
   EXPECT_FALSE(parseOrigin("grpc+tls://host:12ab", policy).has_value());
   EXPECT_FALSE(parseOrigin("://host:1", policy).has_value());  // empty scheme

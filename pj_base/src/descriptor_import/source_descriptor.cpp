@@ -15,9 +15,11 @@ namespace {
 
 constexpr std::size_t kMaxDepth = 16;
 
+// Floor 32 hex (128 bits): a smaller requested width — a config typo — must
+// never silently mint a trivially collidable content address.
 std::size_t normalizedHexChars(std::size_t hex_chars) {
-  if (hex_chars < 2) {
-    return 2;
+  if (hex_chars < 32) {
+    return 32;
   }
   if (hex_chars > 64) {
     return 64;

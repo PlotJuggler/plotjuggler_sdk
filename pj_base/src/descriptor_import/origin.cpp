@@ -12,6 +12,23 @@ namespace PJ {
 namespace sdk {
 namespace descriptor_import {
 
+namespace {
+
+// The only bytes a HOST may contain (checked after ASCII-lowering): letters,
+// digits, dot, hyphen, underscore. Anything else — a colon left over from the
+// last-colon split (an unbracketed IPv6 literal), brackets, userinfo residue,
+// spaces, percent-escapes — is a malformed authority and fails closed.
+bool validHostBytes(const std::string& host) {
+  if (host.empty()) {
+    return false;
+  }
+  return std::all_of(host.begin(), host.end(), [](const char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_';
+  });
+}
+
+}  // namespace
+
 std::optional<Origin> parseOrigin(std::string_view uri, const OriginPolicy& policy) {
   const std::size_t scheme_end = uri.find("://");
   if (scheme_end == std::string_view::npos || scheme_end == 0) {
@@ -27,8 +44,7 @@ std::optional<Origin> parseOrigin(std::string_view uri, const OriginPolicy& poli
   const std::string_view rest = uri.substr(scheme_end + 3);
   const std::size_t path_start = rest.find('/');
   const std::string_view authority = path_start == std::string_view::npos ? rest : rest.substr(0, path_start);
-  if (authority.empty() || authority.find('@') != std::string_view::npos ||
-      authority.find('[') != std::string_view::npos) {
+  if (authority.empty()) {
     return std::nullopt;
   }
   const std::size_t colon = authority.rfind(':');
@@ -48,6 +64,9 @@ std::optional<Origin> parseOrigin(std::string_view uri, const OriginPolicy& poli
     }
     origin.host = lowerAscii(std::string(authority.substr(0, colon)));
     origin.port = *port;
+  }
+  if (!validHostBytes(origin.host)) {
+    return std::nullopt;  // malformed authority (userinfo, brackets, IPv6, junk)
   }
   return origin;
 }

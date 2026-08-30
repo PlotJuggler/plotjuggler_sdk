@@ -49,9 +49,10 @@ namespace descriptor_import {
 /// colliding.
 struct IdentityScheme {
   std::string prefix;
-  /// Requested digest width in hex characters; normalized to 2..64 and even
-  /// by hexChars(), so an out-of-range value never yields a scheme whose
-  /// minted identities fail its own parse.
+  /// Requested digest width in hex characters; normalized to 32..64 (a
+  /// 128-bit collision-resistance floor) and even by hexChars(), so an
+  /// out-of-range value never yields a scheme whose minted identities fail
+  /// its own parse — nor a trivially collidable address space.
   std::size_t digest_hex_chars = 32;
 
   [[nodiscard]] std::size_t hexChars() const noexcept;
@@ -98,7 +99,7 @@ struct SourceDescriptorPolicy {
 [[nodiscard]] std::string sourceDescriptorIdentity(
     const nlohmann::json& descriptor, const SourceDescriptorPolicy& policy);
 
-/// Lowercase hex of the first `hex_chars` characters (normalized to 2..64,
+/// Lowercase hex of the first `hex_chars` characters (normalized to 32..64,
 /// even) of sha256(data). Exposed so artifact validators can re-hash embedded
 /// provenance instead of trusting a stored identity string.
 [[nodiscard]] std::string sha256Hex(std::string_view data, std::size_t hex_chars = 64);

@@ -137,15 +137,22 @@ TEST(IdentitySchemeTest, DigestValidatesShapeExactly) {
 }
 
 TEST(IdentitySchemeTest, MintedIdentitiesAlwaysParseUnderTheSameScheme) {
-  // Out-of-range digest widths are normalized identically on both sides, so
-  // a scheme can never mint an identity its own parse rejects.
+  // Out-of-range digest widths are normalized identically on both sides —
+  // with a 128-bit FLOOR, so a config typo can never mint a trivially
+  // collidable (e.g. 8-bit) content address.
   for (const std::size_t requested : {std::size_t{0}, std::size_t{3}, std::size_t{33}, std::size_t{200}}) {
     const IdentityScheme scheme{"p:", requested};
     const std::string identity = scheme.identityFor("payload");
     const auto digest = scheme.digestOf(identity);
     ASSERT_TRUE(digest.has_value()) << "requested " << requested;
     EXPECT_EQ(digest->size(), scheme.hexChars());
+    EXPECT_GE(scheme.hexChars(), 32u);
+    EXPECT_LE(scheme.hexChars(), 64u);
   }
+  EXPECT_EQ((IdentityScheme{"p:", 0}).hexChars(), 32u);    // floor: 128 bits
+  EXPECT_EQ((IdentityScheme{"p:", 48}).hexChars(), 48u);   // in range: kept
+  EXPECT_EQ((IdentityScheme{"p:", 33}).hexChars(), 32u);   // odd rounds down
+  EXPECT_EQ((IdentityScheme{"p:", 200}).hexChars(), 64u);  // cap: sha256 width
 }
 
 TEST(SourceDescriptor, Sha256NistVectors) {
@@ -157,8 +164,10 @@ TEST(SourceDescriptor, Sha256NistVectors) {
   // One-million 'a' (block-boundary coverage).
   EXPECT_EQ(sha256Hex(std::string(1'000'000, 'a')), "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
   EXPECT_EQ(sha256Hex("abc", 32), "ba7816bf8f01cfea414140de5dae2223");
-  EXPECT_EQ(sha256Hex("abc", 3), "ba");  // odd lengths round down
-  EXPECT_EQ(sha256Hex("abc", 0), "ba");  // floor of 2
+  // The 128-bit floor applies here too: sub-32 requests widen, never narrow.
+  EXPECT_EQ(sha256Hex("abc", 3), "ba7816bf8f01cfea414140de5dae2223");
+  EXPECT_EQ(sha256Hex("abc", 0), "ba7816bf8f01cfea414140de5dae2223");
+  EXPECT_EQ(sha256Hex("abc", 33), "ba7816bf8f01cfea414140de5dae2223");  // odd rounds down
   EXPECT_EQ(sha256Hex("abc", 200).size(), 64u);
 }
 

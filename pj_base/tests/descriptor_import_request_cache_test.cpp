@@ -243,15 +243,21 @@ TEST_F(RequestCacheTest, LeaseBlocksWriteButAllowsLookup) {
   EXPECT_TRUE(cache().beginWrite(identityFor(kHexA)));
 }
 
-TEST_F(RequestCacheTest, LookupUnderExclusiveHolderReturnsUnleasedHit) {
+TEST_F(RequestCacheTest, LookupUnderExclusiveHolderIsARetryableMiss) {
   auto hit = materialize(kHexA, "bytes");
   ASSERT_TRUE(hit.has_value());
   hit->lease.release();
   auto writer = cache().beginWrite(identityFor(kHexA));  // exclusive holder live
   ASSERT_TRUE(writer) << writer.error().message;
-  auto found = cache().lookup(identityFor(kHexA));
-  ASSERT_TRUE(found.has_value());  // still answers from the validated file
-  EXPECT_FALSE(found->lease.held());
+  // A Hit never travels without its protecting lease: an evictor that beat
+  // this lookup could delete the file right under an unleased path.
+  std::string miss_reason;
+  EXPECT_FALSE(cache().lookup(identityFor(kHexA), &miss_reason).has_value());
+  EXPECT_NE(miss_reason.find("retry"), std::string::npos) << miss_reason;
+  writer->abort();  // holder gone: the next lookup is a leased hit again
+  auto after = cache().lookup(identityFor(kHexA));
+  ASSERT_TRUE(after.has_value());
+  EXPECT_TRUE(after->lease.held());
 }
 
 TEST_F(RequestCacheTest, ReadLeaseRejectsMalformedIdentity) {
@@ -357,6 +363,28 @@ TEST_F(RequestCacheTest, RootlessCacheFailsEveryOperationCleanly) {
   EXPECT_FALSE(rootless.acquireReadLease(identityFor(kHexA)));
   EXPECT_FALSE(rootless.lookup(identityFor(kHexA)).has_value());
   EXPECT_FALSE(rootless.cleanup(CleanupPolicy{}).had_errors);
+}
+
+TEST_F(RequestCacheTest, UnicodeCacheRootRoundTripsAndCleans) {
+  // Sidecar paths are built by native-path append, never through .string():
+  // on a non-ACP Windows code page this root would otherwise throw or
+  // corrupt. On POSIX it exercises the same code paths byte-transparently.
+  const fs::path uroot = root() / fs::path(u8"пж-缓存-ü");
+  fs::create_directories(uroot);
+  RequestArtifactCache ucache(CacheSpec{uroot, kSuffix, IdentityScheme{kPrefix, 32}}, acceptAll());
+  auto txn = ucache.beginWrite(identityFor(kHexA));
+  ASSERT_TRUE(txn) << txn.error().message;
+  writeFile(txn->partialPath(), "bytes");
+  auto hit = txn->commit();
+  ASSERT_TRUE(hit) << hit.error().message;
+  EXPECT_TRUE(hit->lease.held());
+  EXPECT_TRUE(ucache.lookup(identityFor(kHexA)).has_value());
+  hit->lease.release();
+  CleanupPolicy policy;
+  policy.max_total_bytes = 0;  // evict everything evictable
+  const auto result = ucache.cleanup(policy);
+  EXPECT_TRUE(result.target_met);
+  EXPECT_FALSE(fs::exists(ucache.pathFor(identityFor(kHexA))));
 }
 
 TEST_F(RequestCacheTest, OutOfRangeDigestWidthStillRoundTrips) {

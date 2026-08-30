@@ -8,9 +8,9 @@
  * which of them imply a default port) and then parses every URI it is about
  * to trust, compare, or hand a credential to through it. Anything the policy
  * does not explicitly accept is rejected rather than normalized: a scheme
- * not in the policy, userinfo, query, fragment, an empty host, a bracketed
- * IPv6 literal, a missing port without a scheme default, or a port outside
- * 1..65535.
+ * not in the policy, userinfo, query, fragment, an empty host, any IPv6
+ * literal (bracketed or not), any host byte outside [a-z0-9._-], a missing
+ * port without a scheme default, or a port outside 1..65535.
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0

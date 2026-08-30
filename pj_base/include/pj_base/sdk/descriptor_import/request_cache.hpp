@@ -99,8 +99,7 @@ class ReadLease {
   ReadLease(const ReadLease&) = delete;
   ReadLease& operator=(const ReadLease&) = delete;
 
-  /// False for a default-constructed or moved-from lease, and for a Hit whose
-  /// lease could not be taken (the path is then usable but unprotected).
+  /// False for a default-constructed or moved-from lease.
   [[nodiscard]] bool held() const noexcept;
   /// Drop the hold early, before the lease is destroyed.
   void release() noexcept;
@@ -119,7 +118,9 @@ using ArtifactValidator =
 
 class RequestArtifactCache {
  public:
-  /// A validated artifact path plus the lease protecting it.
+  /// A validated artifact path plus the lease protecting it. The lease is
+  /// always held: a contended lock yields a retryable miss/error instead —
+  /// a Hit never travels without its protection.
   struct Hit {
     std::filesystem::path path;
     ReadLease lease;
@@ -145,9 +146,11 @@ class RequestArtifactCache {
     /// lease. On any failure the partial is removed and the reason returned;
     /// the transaction is finished either way. The lock conversion is not
     /// atomic on any platform: when a concurrent exclusive try wins that
-    /// window the returned lease is re-acquired shared and the artifact's
-    /// existence re-checked, so a Hit always names a file that existed under
-    /// its lease.
+    /// window the lease is re-acquired shared and the artifact's existence
+    /// re-checked, so a Hit always names a file that existed under its held
+    /// lease; when even the re-acquisition is contended, commit returns a
+    /// RETRYABLE error — the artifact is published, the caller retries
+    /// lookup().
     [[nodiscard]] Expected<Hit, CacheError> commit();
 
     /// Remove the partial and release the lock. Idempotent.
@@ -176,11 +179,12 @@ class RequestArtifactCache {
 
   /// Existing + validator-approved, with a shared lease taken BEFORE the
   /// validation (lease-then-validate) so an evictor cannot unlink between the
-  /// check and the use; touches the LRU stamp. When the lease is contended
-  /// (an exclusive holder is live) the file is still validated and returned,
-  /// with `lease.held() == false`. A miss reports why in `miss_reason`
-  /// (absent, or the validator's rejection); the file is NOT deleted on a
-  /// rejection — the next materialization renames over it.
+  /// check and the use; touches the LRU stamp. A contended lease (an
+  /// exclusive holder is live) is a MISS with a retry hint in `miss_reason` —
+  /// a Hit never travels without its lease. A miss reports why in
+  /// `miss_reason` (absent, locked, or the validator's rejection); the file
+  /// is NOT deleted on a rejection — the next materialization renames over
+  /// it.
   [[nodiscard]] std::optional<Hit> lookup(std::string_view identity, std::string* miss_reason = nullptr);
 
   /// Shared lease on `identity`'s lock, independently of the file's existence

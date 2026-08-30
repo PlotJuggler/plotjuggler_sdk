@@ -56,14 +56,23 @@ class CacheLayout {
   [[nodiscard]] fs::path artifact(std::string_view digest) const {
     return spec_.root / (std::string(digest) + spec_.artifact_suffix);
   }
+  // Sidecar names are appended on the NATIVE path — never through .string(),
+  // which narrows via the execution code page on Windows and can throw or
+  // corrupt under a Unicode cache root.
   [[nodiscard]] static fs::path lockOf(const fs::path& artifact) {
-    return fs::path(artifact.string() + ".lock");
+    fs::path sidecar = artifact;
+    sidecar += ".lock";
+    return sidecar;
   }
   [[nodiscard]] static fs::path touchOf(const fs::path& artifact) {
-    return fs::path(artifact.string() + ".touch");
+    fs::path sidecar = artifact;
+    sidecar += ".touch";
+    return sidecar;
   }
   [[nodiscard]] static fs::path partialOf(const fs::path& artifact) {
-    return fs::path(artifact.string() + ".partial." + std::to_string(currentPid()));
+    fs::path sidecar = artifact;
+    sidecar += ".partial." + std::to_string(currentPid());
+    return sidecar;
   }
 
   enum class Kind { kArtifact, kPartial, kOther };
@@ -75,7 +84,10 @@ class CacheLayout {
   /// Managed names only: "<digest><suffix>" and "<digest><suffix>.partial.<pid>";
   /// sidecars, foreign files and malformed digests are kOther.
   [[nodiscard]] Classified classify(const fs::path& file) const {
-    const std::string name = file.filename().string();
+    // u8string(): a foreign Unicode name classifies as kOther instead of
+    // throwing through .string() on a non-ACP Windows code page.
+    const std::u8string u8name = file.filename().u8string();
+    const std::string name(u8name.begin(), u8name.end());
     const std::size_t hex = spec_.identity.hexChars();
     const auto digestOk = [&name, hex] {
       return name.size() >= hex && std::all_of(
@@ -233,17 +245,24 @@ Expected<RequestArtifactCache::Hit, CacheError> RequestArtifactCache::WriteTrans
     // shared, then re-check existence under it — the published file may have
     // been evicted in that window.
     lease = detail::FileLock::tryShared(CacheLayout::lockOf(impl.artifact), &reason);
+    if (!lease.has_value()) {
+      // Published, but a concurrent holder won the handoff window. A Hit
+      // never travels without its protecting lease: the artifact IS on disk,
+      // so the caller retries lookup() instead.
+      impl.lock.reset();
+      return unexpected(
+          CacheError{
+              "published, but the read lease was lost to a concurrent holder; retry the lookup",
+              /*retryable=*/true});
+    }
     std::error_code exists_ec;
-    if (lease.has_value() && (!fs::is_regular_file(impl.artifact, exists_ec) || exists_ec)) {
+    if (!fs::is_regular_file(impl.artifact, exists_ec) || exists_ec) {
       impl.lock.reset();
       return unexpected(CacheError{"artifact vanished during the lease handoff"});
     }
-    // No lease at all: a Hit without one — the caller sees held() == false.
   }
   impl.lock.reset();
-  if (lease.has_value()) {
-    hit.lease = ReadLease(std::make_unique<ReadLease::Impl>(ReadLease::Impl{std::move(*lease)}));
-  }
+  hit.lease = ReadLease(std::make_unique<ReadLease::Impl>(ReadLease::Impl{std::move(*lease)}));
   return hit;
 }
 
@@ -318,9 +337,14 @@ std::optional<RequestArtifactCache::Hit> RequestArtifactCache::lookup(
     return miss("no artifact for this identity");
   }
   // Lease-then-validate: the shared lock is taken before the validation so an
-  // evictor cannot unlink the file between the check and the caller's use.
+  // evictor cannot unlink the file between the check and the caller's use. A
+  // contended lock (a live materialization or eviction) is therefore a MISS —
+  // a Hit never travels without its protecting lease.
   std::string lease_error;
   auto lease = detail::FileLock::tryShared(CacheLayout::lockOf(resolved->artifact), &lease_error);
+  if (!lease.has_value()) {
+    return miss("artifact is locked by a materialization or eviction (retry): " + lease_error);
+  }
   std::string reason;
   if (!validator_(resolved->artifact, resolved->digest, &reason)) {
     return miss("artifact rejected: " + reason);
@@ -328,9 +352,7 @@ std::optional<RequestArtifactCache::Hit> RequestArtifactCache::lookup(
   touchStamp(resolved->artifact);
   Hit hit;
   hit.path = resolved->artifact;
-  if (lease.has_value()) {
-    hit.lease = ReadLease(std::make_unique<ReadLease::Impl>(ReadLease::Impl{std::move(*lease)}));
-  }
+  hit.lease = ReadLease(std::make_unique<ReadLease::Impl>(ReadLease::Impl{std::move(*lease)}));
   return hit;
 }
 

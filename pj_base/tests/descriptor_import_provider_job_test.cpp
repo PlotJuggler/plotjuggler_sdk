@@ -205,6 +205,105 @@ TEST_F(ProviderJobTest, WatchdogDoesNotFireWhenTheBodyFinishesFirst) {
   EXPECT_EQ(expired.load(), 0);
 }
 
+TEST_F(ProviderJobTest, CancelAfterCompletionNeverFiresTheHook) {
+  // The hook captures body-locals: once the body returned they are gone, so
+  // completion disarms the hook — an ordinary post-success destroy (which
+  // cancels unconditionally) must not touch it.
+  auto hook_calls = std::make_shared<std::atomic<int>>(0);
+  const auto body = [hook_calls](JobControl& control) {
+    int body_local = 0;
+    control.onCancel([&body_local, hook_calls] {
+      body_local = 1;  // a use-after-return if this ever ran late
+      hook_calls->fetch_add(1);
+    });
+    return ImportOutcome{PJ_DESCRIPTOR_IMPORT_SUCCEEDED_EAGER_ONLY, "ok"};
+  };
+  ASSERT_TRUE(ProviderJob::start(body, &callbacks_, &rec_, &job_, nullptr));
+  join();
+  cancel();                        // post-terminal cancel: a pure flag
+  job_.vtable->destroy(job_.ctx);  // destroy cancels again: still nothing
+  job_ = PJ_joinable_job_t{};
+  EXPECT_EQ(hook_calls->load(), 0);
+  EXPECT_EQ(rec_.terminals.load(), 1);
+}
+
+TEST_F(ProviderJobTest, HookAndWatchdogExceptionsAreContained) {
+  // Both callbacks run behind noexcept boundaries (the ABI cancel thunk, the
+  // watchdog thread): a throw from either must be contained, not terminate.
+  std::atomic<bool> armed{false};
+  const auto body = [&](JobControl& control) {
+    control.onCancel([] { throw std::runtime_error("hook boom"); });
+    control.armWatchdog(10ms, [] { throw std::runtime_error("watchdog boom"); });
+    armed.store(true);
+    while (!control.isCancelled()) {
+      std::this_thread::sleep_for(1ms);
+    }
+    return ImportOutcome{PJ_DESCRIPTOR_IMPORT_CANCELLED, "cancelled"};
+  };
+  ASSERT_TRUE(ProviderJob::start(body, &callbacks_, &rec_, &job_, nullptr));
+  while (!armed.load()) {
+    std::this_thread::sleep_for(1ms);
+  }
+  std::this_thread::sleep_for(40ms);  // the watchdog fires and throws: contained
+  cancel();                           // the hook throws inside the noexcept thunk: contained
+  join();
+  EXPECT_EQ(rec_.terminals.load(), 1);
+  EXPECT_EQ(rec_.last_outcome.load(), PJ_DESCRIPTOR_IMPORT_CANCELLED);
+}
+
+TEST_F(ProviderJobTest, TerminalWaitsForAnInFlightCancelHook) {
+  // A hook's captured body-locals must outlive its invocation: the terminal
+  // (after which the body frame is meaningless) may only fire once a hook
+  // still executing on the cancelling thread has finished.
+  std::atomic<bool> armed{false};
+  std::atomic<bool> hook_entered{false};
+  std::atomic<bool> release_hook{false};
+  const auto body = [&](JobControl& control) {
+    control.onCancel([&hook_entered, &release_hook] {
+      hook_entered.store(true);
+      while (!release_hook.load()) {
+        std::this_thread::sleep_for(1ms);
+      }
+    });
+    armed.store(true);
+    while (!control.isCancelled()) {
+      std::this_thread::sleep_for(1ms);
+    }
+    return ImportOutcome{PJ_DESCRIPTOR_IMPORT_CANCELLED, "cancelled"};
+  };
+  ASSERT_TRUE(ProviderJob::start(body, &callbacks_, &rec_, &job_, nullptr));
+  while (!armed.load()) {
+    std::this_thread::sleep_for(1ms);
+  }
+  std::thread canceller([this] { cancel(); });  // blocks inside the hook
+  while (!hook_entered.load()) {
+    std::this_thread::sleep_for(1ms);
+  }
+  std::this_thread::sleep_for(30ms);    // the body has long returned by now
+  EXPECT_EQ(rec_.terminals.load(), 0);  // …but the terminal waits for the hook
+  release_hook.store(true);
+  canceller.join();
+  join();
+  EXPECT_EQ(rec_.terminals.load(), 1);
+  EXPECT_EQ(rec_.last_outcome.load(), PJ_DESCRIPTOR_IMPORT_CANCELLED);
+}
+
+TEST_F(ProviderJobTest, RearmingTheWatchdogFromOnExpireIsANoOp) {
+  // on_expire runs ON the watchdog thread; re-arming there would self-join.
+  std::atomic<int> expired{0};
+  const auto body = [&](JobControl& control) {
+    control.armWatchdog(10ms, [&control, &expired] {
+      expired.fetch_add(1);
+      control.armWatchdog(1ms, [&expired] { expired.fetch_add(1); });  // ignored
+    });
+    std::this_thread::sleep_for(60ms);
+    return ImportOutcome{PJ_DESCRIPTOR_IMPORT_FAILED, "ceiling"};
+  };
+  ASSERT_TRUE(ProviderJob::start(body, &callbacks_, &rec_, &job_, nullptr));
+  join();
+  EXPECT_EQ(expired.load(), 1);
+}
+
 TEST_F(ProviderJobTest, DestroyWithoutJoinCancelsAndJoins) {
   std::atomic<bool> started{false};
   const auto body = [&](JobControl& control) {

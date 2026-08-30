@@ -6,11 +6,11 @@
  *
  * ProviderJob::start() runs a provider-supplied body on a worker thread and
  * owns the whole PJ_joinable_job_t contract around it: no callback before
- * start_import returns (a start gate), on_dataset zero-or-one, on_terminal
- * exactly-once and last, cancel() idempotent and non-blocking, join()
- * idempotent and safe under concurrent callers, destroy() = cancel + join +
- * free, a self-join from a job callback downgraded to a no-op. The body only
- * decides the outcome.
+ * start() returns (a start gate — make it the tail call of start_import),
+ * on_dataset zero-or-one, on_terminal exactly-once and last, cancel()
+ * idempotent and non-blocking, join() idempotent and safe under concurrent
+ * callers, destroy() = cancel + join + free, a self-join from a job callback
+ * downgraded to a no-op. The body only decides the outcome.
  *
  * Reading a start request and writing a query result under the struct_size
  * growth contract need no threads: they are header-only in
@@ -58,16 +58,23 @@ class JobControl {
   /// immediately, on the registering thread, if it already has — so a body
   /// blocked in a transport call can be interrupted. Runs on the cancelling
   /// thread; must be non-blocking and must not call back into the job.
+  /// Exceptions from the hook are contained. The body's return DISARMS the
+  /// hook — it can never run after the terminal (a post-completion destroy()
+  /// cancels as a pure flag), and an invocation in flight is waited out
+  /// first — so captured body-locals safely outlive every invocation.
   void onCancel(std::function<void()> hook);
 
   /// [thread-safe] Deliver the ABI's on_dataset: zero-or-one per job; later
   /// calls are ignored. Must precede the dataset's first publication.
   void notifyDataset(PJ_data_source_handle_t dataset) noexcept;
 
-  /// [thread-safe] Fire `on_expire` once if the body is still running after
-  /// `timeout` (a duration ceiling — typically it cancels the transport, not
-  /// the job, so the terminal can classify the cause). A non-positive timeout
-  /// is ignored. The watchdog is stopped before on_terminal fires.
+  /// [job-body thread only] Fire `on_expire` once if the body is still
+  /// running after `timeout` (a duration ceiling — typically it cancels the
+  /// transport, not the job, so the terminal can classify the cause). A
+  /// non-positive timeout is ignored; re-arming replaces the previous
+  /// watchdog; calling from inside `on_expire` (which runs on the watchdog
+  /// thread) is a no-op. Exceptions from `on_expire` are contained. The
+  /// watchdog is stopped before on_terminal fires.
   void armWatchdog(std::chrono::milliseconds timeout, std::function<void()> on_expire);
 
  private:
@@ -89,6 +96,14 @@ class ProviderJob {
   /// leaked — when the callbacks are unusable or the thread cannot start.
   /// Descriptor parsing, flags and credential resolution are the caller's
   /// job BEFORE calling this (see readDescriptorImportStartRequest).
+  ///
+  /// The precise gate guarantee: no callback runs until `out_job` is fully
+  /// populated and this call is returning. Make `return ProviderJob::start(
+  /// ...)` the LAST statement of start_import — callback delivery from a
+  /// spawned thread cannot be ordered against the ABI call's own return
+  /// instruction, so a host that finishes its callback bookkeeping before
+  /// calling start_import (as the protocol requires) observes exactly the
+  /// documented "no callback before start_import returns".
   [[nodiscard]] static bool start(
       Body body, const PJ_descriptor_import_callbacks_v1_t* callbacks, void* callback_ctx, PJ_joinable_job_t* out_job,
       PJ_error_t* out_error);

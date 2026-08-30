@@ -49,6 +49,8 @@ struct JobState {
   std::mutex hook_mu;
   std::function<void()> cancel_hook;
   bool hook_fired = false;
+  bool hook_running = false;  ///< a requestCancel() is inside the hook right now
+  std::condition_variable hook_cv;
 
   std::mutex watchdog_mu;
   std::condition_variable watchdog_cv;
@@ -56,6 +58,9 @@ struct JobState {
   std::thread watchdog;
 
   // [thread-safe] Idempotent, non-blocking: flag + the registered hook once.
+  // The hook can be reached from the ABI's noexcept cancel slot, so its
+  // exceptions are contained here; disarmHook() waits out an invocation in
+  // flight before the body's locals die.
   void requestCancel() {
     cancelled.store(true, std::memory_order_release);
     std::function<void()> hook;
@@ -63,12 +68,30 @@ struct JobState {
       std::lock_guard<std::mutex> lock(hook_mu);
       if (!hook_fired && cancel_hook) {
         hook_fired = true;
+        hook_running = true;
         hook = std::move(cancel_hook);
       }
     }
     if (hook) {
-      hook();
+      try {
+        hook();
+      } catch (...) {}
+      {
+        std::lock_guard<std::mutex> lock(hook_mu);
+        hook_running = false;
+      }
+      hook_cv.notify_all();
     }
+  }
+
+  // Called once the body has returned: a hook that captured body-locals must
+  // never run again (destroy() cancels unconditionally, even after success),
+  // and one already running is waited out so those locals outlive it.
+  void disarmHook() {
+    std::unique_lock<std::mutex> lock(hook_mu);
+    cancel_hook = nullptr;
+    hook_fired = true;
+    hook_cv.wait(lock, [this] { return !hook_running; });
   }
 
   [[nodiscard]] bool isCancelled() const noexcept {
@@ -111,6 +134,11 @@ struct JobState {
         result.message = "internal error while running the import";
       }
     }
+    // The body is done and its locals are dying: the cancel hook is disarmed
+    // (and an in-flight invocation waited out) before anything else happens.
+    try {
+      disarmHook();
+    } catch (...) {}
     // A watchdog must never fire after (or during) the terminal.
     try {
       stopWatchdog();
@@ -144,7 +172,9 @@ void JobControl::onCancel(std::function<void()> hook) {
     }
     state_.hook_fired = true;
   }
-  hook();  // already cancelled: fire now, outside the lock
+  try {
+    hook();  // already cancelled: fire now, outside the lock
+  } catch (...) {}
 }
 
 void JobControl::notifyDataset(PJ_data_source_handle_t dataset) noexcept {
@@ -160,6 +190,11 @@ void JobControl::armWatchdog(std::chrono::milliseconds timeout, std::function<vo
   if (timeout.count() <= 0 || !on_expire) {
     return;
   }
+  // Re-arming from inside on_expire would join the watchdog thread from
+  // itself: downgraded to a no-op (armWatchdog is body-thread-only).
+  if (state_.watchdog.joinable() && state_.watchdog.get_id() == std::this_thread::get_id()) {
+    return;
+  }
   state_.stopWatchdog();
   {
     std::lock_guard<std::mutex> lock(state_.watchdog_mu);
@@ -171,7 +206,9 @@ void JobControl::armWatchdog(std::chrono::milliseconds timeout, std::function<vo
     const bool stopped = state->watchdog_cv.wait_for(lock, timeout, [state] { return state->watchdog_stop; });
     lock.unlock();
     if (!stopped) {
-      on_expire();
+      try {
+        on_expire();
+      } catch (...) {}
     }
   });
 }
