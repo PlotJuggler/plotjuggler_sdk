@@ -455,6 +455,36 @@ artifact reports `SUCCEEDED_EAGER_ONLY` instead.
 C++ consumers: `PJ::DescriptorImportProviderView`, `PJ::JoinableJob`,
 `PJ::SourcePromotionHostView` in `pj_base/sdk/descriptor_import.hpp`.
 
+**Provider-side support (0.24.0).** The mechanics every provider must get
+right ship as the `descriptor_import_support` component (link
+`plotjuggler_sdk::descriptor_import_support`; headers under
+`pj_base/sdk/descriptor_import/`, namespace `PJ::sdk::descriptor_import`):
+
+- `origin.hpp` — `OriginPolicy` + `parseOrigin()`: strict, fail-closed
+  (scheme, host, port) parsing for trust and credential-release decisions,
+  plus `parseOriginList()` / `originAllowed()` for an environment allowlist.
+- `source_descriptor.hpp` — `SourceDescriptorPolicy` (identity vs presentation
+  field allowlists, size bounds, an `IdentityScheme` = prefix + digest width)
+  with `parseSourceDescriptor()`, `canonicalSourceDescriptorJson()` and
+  `sourceDescriptorIdentity()`. Typed validation of the fields stays in the
+  plugin; pin the canonical bytes with a vectors test.
+- `request_cache.hpp` — `RequestArtifactCache` over a `CacheSpec{root,
+  artifact_suffix, IdentityScheme}`: `beginWrite()` → write the partial →
+  `commit()` (validate, fsync, atomic rename, lease handoff), `lookup()`
+  (lease-then-validate, with a miss reason), `cleanup()` (orphans + LRU under
+  a `CleanupPolicy`, reporting a `CleanupResult`). Errors are
+  `Expected<T, CacheError>`; `CacheError::retryable` marks lock contention.
+  Artifact validation is an injected callback that must re-hash the embedded
+  provenance.
+- `provider_job.hpp` — `ProviderJob::start()` runs your import body on a
+  gated worker and owns the whole `PJ_joinable_job_t` contract; the body gets
+  a `JobControl` (`isCancelled`, `onCancel` hook, `notifyDataset`,
+  `armWatchdog`); `SettlementLatch` waits for an asynchronous promotion
+  result cancel-aware. The struct_size growth contract
+  (`readDescriptorImportStartRequest()` / `writeDescriptorQueryResult()`) is
+  header-only in `pj_base/sdk/descriptor_import.hpp`, beside its
+  consumer-side twins.
+
 ## Common Mistakes
 
 | Symptom | Cause | Fix |

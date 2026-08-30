@@ -170,6 +170,12 @@ class PlotjugglerSdkConan(ConanFile):
         kit.libs = []  # INTERFACE only: authored modules link no SDK library
         kit.includedirs = ["include"]
 
+        # --- descriptor_import_support (callee side of pj.descriptor_import.v1) ---
+        support = self.cpp_info.components["descriptor_import_support"]
+        support.set_property("cmake_target_name", "plotjuggler_sdk::descriptor_import_support")
+        support.libs = ["pj_descriptor_import_support"]
+        support.includedirs = ["include"]
+        support.requires = ["base", "nlohmann_json::nlohmann_json"]
         # --- plugin_host (umbrella linking every host-side loader) ---
         if self.options.with_host:
             host = self.cpp_info.components["plugin_host"]

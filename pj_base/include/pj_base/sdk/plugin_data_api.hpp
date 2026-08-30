@@ -186,6 +186,13 @@ class CatalogSnapshot {
   return PJ_bytes_view_t{bytes.data(), bytes.size()};
 }
 
+/// The struct_size growth contract, in one place: a field at `offset` of
+/// `size` bytes may be read or written only when the peer's declared
+/// `struct_size` wholly covers it. The C-side twin is PJ_HAS_TAIL_SLOT.
+[[nodiscard]] constexpr bool fieldCovered(std::size_t struct_size, std::size_t offset, std::size_t size) noexcept {
+  return struct_size >= offset + size;
+}
+
 [[nodiscard]] inline PrimitiveType typeOf(const ValueRef& value) {
   return std::visit(
       [](auto&& v) -> PrimitiveType {
