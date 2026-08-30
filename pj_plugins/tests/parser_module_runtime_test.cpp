@@ -214,5 +214,25 @@ TEST(ParserModuleRuntime, StrikeTrackerQuarantinesReplaysAndThenDisables) {
   EXPECT_EQ(tracker.state(key).quarantine_count, 2U);
 }
 
+TEST(ParserModuleRuntime, StrikeTrackerDisablesWhenTheReplayItselfFaults) {
+  const ParserModuleClaimKey key{"org.plotjuggler.test.native-module", "malformed"};
+  ParserModuleStrikeTracker tracker;
+  for (int strike = 1; strike <= 3; ++strike) {
+    (void)tracker.recordFault(key, ParserModuleFaultKind::kContractViolation);
+  }
+  ASSERT_EQ(tracker.state(key).health, ParserModuleClaimHealth::kQuarantined);
+
+  // A data error during replay is still not a strike.
+  EXPECT_EQ(tracker.recordFault(key, ParserModuleFaultKind::kDataError).health, ParserModuleClaimHealth::kQuarantined);
+  // A contract violation during replay (create/bind trapping again) is the
+  // repeat the policy disables on; the claim can never be stuck quarantined.
+  const auto disabled = tracker.recordFault(key, ParserModuleFaultKind::kContractViolation);
+  EXPECT_EQ(disabled.health, ParserModuleClaimHealth::kDisabled);
+  EXPECT_EQ(disabled.quarantine_count, 2U);
+  EXPECT_FALSE(tracker.markRecreated(key));
+  EXPECT_EQ(
+      tracker.recordFault(key, ParserModuleFaultKind::kContractViolation).health, ParserModuleClaimHealth::kDisabled);
+}
+
 }  // namespace
 }  // namespace PJ

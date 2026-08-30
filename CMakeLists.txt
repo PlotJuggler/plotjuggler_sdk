@@ -110,8 +110,6 @@ find_package(FastFloat REQUIRED)
 # Modules
 # ---------------------------------------------------------------------------
 
-set(PJ_SDK_WITH_WASMER OFF)
-
 if(PJ_BUILD_TESTS)
   enable_testing()
 endif()

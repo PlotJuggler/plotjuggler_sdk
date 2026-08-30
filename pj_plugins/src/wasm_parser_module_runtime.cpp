@@ -109,11 +109,10 @@ namespace detail {
 struct WasmParserModuleInstanceState {
   ~WasmParserModuleInstanceState() {
     if (token != PJ_MODULE_CREATION_ERROR_TOKEN && destroy != nullptr) {
+      // Best-effort teardown: the store is deleted right after, so a destroy
+      // trap has nothing left to corrupt and nobody left to report to.
       wasm_val_t arguments[1] = {wasmI64(token)};
-      auto destroyed = callVoid(PJ_MODULE_DESTROY_EXPORT_NAME, destroy, arguments);
-      if (!destroyed) {
-        (void)recordContractViolation("pj_module_destroy failed: " + destroyed.error());
-      }
+      (void)callVoid(PJ_MODULE_DESTROY_EXPORT_NAME, destroy, arguments);
     }
     if (exports_initialized) {
       wasm_extern_vec_delete(&exports);
@@ -125,17 +124,12 @@ struct WasmParserModuleInstanceState {
       wasm_store_delete(store);
     }
     if (instance_budget_reserved && module->session_budget != nullptr) {
-      (void)module->session_budget->releaseInstance(module->module_id);
+      module->session_budget->releaseInstance(module->module_reservation);
     }
   }
 
-  [[nodiscard]] ParserModuleClaimKey claimKey() const {
-    return ParserModuleClaimKey{module->module_id, module->claim_ids[claim_index]};
-  }
-
-  [[nodiscard]] ParserModuleStrikeState recordContractViolation(std::string message) {
+  void noteContractViolation(std::string message) {
     lifecycle_diagnostic = std::move(message);
-    return module->strike_tracker->recordFault(claimKey(), ParserModuleFaultKind::kContractViolation);
   }
 
   [[nodiscard]] Expected<void> callVoid(
@@ -269,8 +263,6 @@ struct WasmParserModuleInstanceState {
   uint16_t expected_object_type = 0;
   bool bound = false;
   bool instance_budget_reserved = false;
-  bool recreation_pending = false;
-  std::vector<uint8_t> binding_bytes;
   std::string lifecycle_diagnostic;
 };
 
@@ -279,8 +271,8 @@ struct WasmParserModuleInstanceState {
 namespace {
 
 /// Owns one `pj_module_alloc` region for the duration of a host operation.
-/// The destructor releases it and records a contract fault if guest free
-/// traps; `release()` frees it early and returns that fault directly.
+/// The destructor releases it and notes a contract fault if guest free traps;
+/// `release()` frees it early and returns that fault directly.
 class GuestAllocation {
  public:
   GuestAllocation(detail::WasmParserModuleInstanceState& state, uint64_t address, uint64_t size)
@@ -292,7 +284,7 @@ class GuestAllocation {
   ~GuestAllocation() {
     auto released = release();
     if (!released) {
-      (void)state_->recordContractViolation("pj_module_free failed during cleanup: " + released.error());
+      state_->noteContractViolation("pj_module_free failed during cleanup: " + released.error());
     }
   }
 
@@ -378,6 +370,7 @@ Expected<void> bindRuntimeExports(detail::WasmParserModuleInstanceState* state) 
 WasmParserModuleInstance::WasmParserModuleInstance(std::unique_ptr<detail::WasmParserModuleInstanceState> state)
     : state_(std::move(state)) {}
 
+WasmParserModuleInstance::WasmParserModuleInstance() = default;
 WasmParserModuleInstance::~WasmParserModuleInstance() = default;
 WasmParserModuleInstance::WasmParserModuleInstance(WasmParserModuleInstance&& other) noexcept = default;
 WasmParserModuleInstance& WasmParserModuleInstance::operator=(WasmParserModuleInstance&& other) noexcept = default;
@@ -398,27 +391,21 @@ Expected<WasmParserModuleInstance, WasmParserModuleCreateError> WasmParserModule
   if (!module.valid()) {
     return reject("cannot create an instance from an invalid wasm parser module");
   }
-  if (claim_index >= module.state_->claim_ids.size()) {
+  if (claim_index >= module.state_->claim_count) {
     return reject("claim index is outside the wasm parser-module manifest");
-  }
-  const ParserModuleClaimKey key{module.state_->module_id, module.state_->claim_ids[claim_index]};
-  const ParserModuleStrikeState initial_health = module.state_->strike_tracker->state(key);
-  if (initial_health.health == ParserModuleClaimHealth::kDisabled) {
-    return reject(
-        "parser-module claim is disabled for the session", ParserModuleFaultKind::kNone,
-        WasmParserModuleCreateOutcome::kAdmissionDecline);
-  }
-  auto admission = module.state_->session_budget->admitInstance(module.state_->module_id);
-  if (!admission.accepted()) {
-    return reject(
-        std::move(admission.diagnostic), ParserModuleFaultKind::kNone,
-        WasmParserModuleCreateOutcome::kAdmissionDecline);
   }
   auto state = std::make_unique<detail::WasmParserModuleInstanceState>();
   state->module = module.state_;
   state->claim_index = claim_index;
-  state->instance_budget_reserved = true;
-  state->recreation_pending = initial_health.health == ParserModuleClaimHealth::kQuarantined;
+  if (module.state_->session_budget != nullptr) {
+    auto admission = module.state_->session_budget->admitInstance(module.state_->module_reservation);
+    if (!admission.accepted()) {
+      return reject(
+          std::move(admission.diagnostic), ParserModuleFaultKind::kNone,
+          WasmParserModuleCreateOutcome::kAdmissionDecline);
+    }
+    state->instance_budget_reserved = true;
+  }
   state->store = wasm_store_new(state->module->engine);
   if (state->store == nullptr) {
     return reject("failed to create a Wasmer store");
@@ -429,82 +416,47 @@ Expected<WasmParserModuleInstance, WasmParserModuleCreateError> WasmParserModule
   state->instance = wasm_instance_new(state->store, state->module->module, &imports, &instantiation_trap);
   if (state->instance == nullptr) {
     if (instantiation_trap != nullptr) {
-      const std::string message = "wasm instantiation failed: " + trapMessage(instantiation_trap);
-      (void)state->recordContractViolation(message);
-      return reject(message, ParserModuleFaultKind::kContractViolation);
+      return reject(
+          "wasm instantiation failed: " + trapMessage(instantiation_trap), ParserModuleFaultKind::kContractViolation);
     }
     return reject("Wasmer failed to instantiate the parser module");
   }
   auto exports = bindRuntimeExports(state.get());
   if (!exports) {
-    (void)state->recordContractViolation(exports.error());
     return reject(exports.error(), ParserModuleFaultKind::kContractViolation);
   }
   auto initialized = state->callVoid("_initialize", state->initialize, {});
   if (!initialized) {
-    const std::string message = "parser-module _initialize failed: " + initialized.error();
-    (void)state->recordContractViolation(message);
-    return reject(message, ParserModuleFaultKind::kContractViolation);
+    return reject(
+        "parser-module _initialize failed: " + initialized.error(), ParserModuleFaultKind::kContractViolation);
   }
   auto abi = state->callI32(PJ_MODULE_ABI_EXPORT_NAME, state->abi, {});
   if (!abi) {
-    const std::string message = "pj_module_abi failed: " + abi.error();
-    (void)state->recordContractViolation(message);
-    return reject(message, ParserModuleFaultKind::kContractViolation);
+    return reject("pj_module_abi failed: " + abi.error(), ParserModuleFaultKind::kContractViolation);
   }
   if (static_cast<uint32_t>(*abi) != PJ_PARSER_MODULE_ABI_VERSION) {
-    const std::string message = "wasm parser module ABI mismatch (expected " +
-                                std::to_string(PJ_PARSER_MODULE_ABI_VERSION) + ", got " +
-                                std::to_string(static_cast<uint32_t>(*abi)) + ")";
-    (void)state->recordContractViolation(message);
-    return reject(message, ParserModuleFaultKind::kContractViolation);
+    return reject(
+        "wasm parser module ABI mismatch (expected " + std::to_string(PJ_PARSER_MODULE_ABI_VERSION) + ", got " +
+            std::to_string(static_cast<uint32_t>(*abi)) + ")",
+        ParserModuleFaultKind::kContractViolation);
   }
 
   wasm_val_t arguments[1] = {WASM_I32_VAL(static_cast<int32_t>(claim_index))};
   auto token = state->callI64(PJ_MODULE_CREATE_EXPORT_NAME, state->create, arguments);
   if (!token) {
-    const std::string message = "pj_module_create failed: " + token.error();
-    (void)state->recordContractViolation(message);
-    return reject(message, ParserModuleFaultKind::kContractViolation);
+    return reject("pj_module_create failed: " + token.error(), ParserModuleFaultKind::kContractViolation);
   }
   state->token = static_cast<uint64_t>(*token);
   if (state->token == PJ_MODULE_CREATION_ERROR_TOKEN) {
     auto message = state->copyLastError(PJ_MODULE_CREATION_ERROR_TOKEN);
     if (!message) {
-      (void)state->recordContractViolation(message.error());
       return reject(message.error(), ParserModuleFaultKind::kContractViolation);
     }
-    return reject(*message);
+    return reject(
+        message->empty() ? std::string("pj_module_create returned the creation-error token without a diagnostic")
+                         : std::move(*message));
   }
   return WasmParserModuleInstance(std::move(state));
-}
-
-Expected<void> WasmParserModuleInstance::recreateBoundInstance() {
-  if (state_ == nullptr || state_->binding_bytes.empty()) {
-    return unexpected(std::string("quarantined wasm parser-module instance has no accepted binding to replay"));
-  }
-  const uint32_t claim_index = state_->claim_index;
-  const std::vector<uint8_t> binding_bytes = state_->binding_bytes;
-  auto binding = parser_module::readBindingInfoV1(binding_bytes);
-  if (!binding) {
-    return unexpected("cannot decode the quarantined binding for replay: " + binding.error());
-  }
-  WasmParserModule module(state_->module);
-  state_.reset();
-
-  auto recreated = create(module, claim_index);
-  if (!recreated) {
-    return unexpected("quarantine recreation failed during create: " + recreated.error().message);
-  }
-  auto rebound = recreated->bind(*binding);
-  if (!rebound) {
-    return unexpected("quarantine recreation failed during bind: " + rebound.error());
-  }
-  if (rebound->outcome != ParserModuleBindOutcome::kAccept) {
-    return unexpected("quarantine binding replay was not accepted: " + rebound->message);
-  }
-  state_ = std::move(recreated->state_);
-  return {};
 }
 
 Expected<ParserModuleBindResult> WasmParserModuleInstance::bind(const parser_module::BindingInfoV1& info) {
@@ -520,13 +472,13 @@ Expected<ParserModuleBindResult> WasmParserModuleInstance::bind(const parser_mod
   }
   auto address = state_->allocate(encoded->size());
   if (!address) {
-    (void)state_->recordContractViolation(address.error());
+    state_->noteContractViolation(address.error());
     return bindContractViolation(PJ_MODULE_ERR_ALLOCATION_FAILURE, address.error());
   }
   GuestAllocation input_buffer(*state_, *address, encoded->size());
   auto guest_input = state_->memoryRange(input_buffer.address(), encoded->size());
   if (!guest_input) {
-    (void)state_->recordContractViolation(guest_input.error());
+    state_->noteContractViolation(guest_input.error());
     return bindContractViolation(PJ_MODULE_ERR_GENERIC, guest_input.error());
   }
   std::copy(encoded->begin(), encoded->end(), guest_input->begin());
@@ -540,13 +492,13 @@ Expected<ParserModuleBindResult> WasmParserModuleInstance::bind(const parser_mod
   auto released = input_buffer.release();
   if (!code_result) {
     state_->bound = false;
-    (void)state_->recordContractViolation(code_result.error());
+    state_->noteContractViolation(code_result.error());
     return bindContractViolation(PJ_MODULE_ERR_GENERIC, code_result.error());
   }
   if (!released) {
     state_->bound = false;
     const std::string message = "pj_module_free failed after bind: " + released.error();
-    (void)state_->recordContractViolation(message);
+    state_->noteContractViolation(message);
     return bindContractViolation(PJ_MODULE_ERR_GENERIC, message);
   }
 
@@ -562,11 +514,6 @@ Expected<ParserModuleBindResult> WasmParserModuleInstance::bind(const parser_mod
     state_->bound_route = info.route;
     state_->expected_object_type = info.expected_object_type;
     state_->bound = true;
-    state_->binding_bytes = *encoded;
-    if (state_->recreation_pending) {
-      (void)state_->module->strike_tracker->markRecreated(state_->claimKey());
-      state_->recreation_pending = false;
-    }
     return result;
   }
 
@@ -580,7 +527,7 @@ Expected<ParserModuleBindResult> WasmParserModuleInstance::bind(const parser_mod
     }
   } else {
     const std::string message = "pj_module_bind returned an out-of-contract positive result";
-    (void)state_->recordContractViolation(message);
+    state_->noteContractViolation(message);
     return bindContractViolation(code, message);
   }
 
@@ -592,7 +539,7 @@ Expected<ParserModuleBindResult> WasmParserModuleInstance::bind(const parser_mod
     result.message = std::move(*message);
   }
   if (result.fault == ParserModuleFaultKind::kContractViolation) {
-    (void)state_->recordContractViolation(result.message);
+    state_->noteContractViolation(result.message);
   }
   return result;
 }
@@ -603,16 +550,6 @@ Expected<ParserModuleParseResult> WasmParserModuleInstance::parse(const parser_m
   }
   if (!state_->bound) {
     return unexpected(std::string("cannot parse before an accepted wasm module bind"));
-  }
-  const ParserModuleStrikeState health = state_->module->strike_tracker->state(state_->claimKey());
-  if (health.health == ParserModuleClaimHealth::kDisabled) {
-    return contractViolation(PJ_MODULE_ERR_GENERIC, "parser-module claim is disabled for the session");
-  }
-  if (health.health == ParserModuleClaimHealth::kQuarantined) {
-    auto recreated = recreateBoundInstance();
-    if (!recreated) {
-      return contractViolation(PJ_MODULE_ERR_GENERIC, recreated.error());
-    }
   }
 
   const auto parse_once = [&]() -> Expected<ParserModuleParseResult> {
@@ -729,21 +666,8 @@ Expected<ParserModuleParseResult> WasmParserModuleInstance::parse(const parser_m
   };
 
   auto result = parse_once();
-  if (!result || result->fault != ParserModuleFaultKind::kContractViolation) {
-    return result;
-  }
-
-  const ParserModuleStrikeState strike = state_->recordContractViolation(result->message);
-  if (strike.health == ParserModuleClaimHealth::kQuarantined) {
-    auto recreated = recreateBoundInstance();
-    if (!recreated) {
-      result->message += "; automatic quarantine recreation failed: " + recreated.error();
-    } else {
-      result->message += "; claim quarantined and recreated through create/bind replay";
-    }
-  } else if (strike.health == ParserModuleClaimHealth::kDisabled) {
-    result->message += "; claim disabled for the session after repeat quarantine";
-    state_.reset();
+  if (result && result->fault == ParserModuleFaultKind::kContractViolation) {
+    state_->noteContractViolation(result->message);
   }
   return result;
 }
@@ -754,10 +678,6 @@ bool WasmParserModuleInstance::valid() const noexcept {
 
 uint32_t WasmParserModuleInstance::claimIndex() const noexcept {
   return state_ == nullptr ? 0 : state_->claim_index;
-}
-
-ParserModuleStrikeState WasmParserModuleInstance::strikeState() const {
-  return state_ == nullptr ? ParserModuleStrikeState{} : state_->module->strike_tracker->state(state_->claimKey());
 }
 
 std::string_view WasmParserModuleInstance::lifecycleDiagnostic() const noexcept {

@@ -74,5 +74,41 @@ TEST(ParserModuleWasm, RejectsInvalidIndicesAndUnboundedVectorCounts) {
   expectRejected(std::move(hostile_count), "count exceeds the remaining section bytes");
 }
 
+TEST(ParserModuleWasm, ParsesAndBoundsTableSections) {
+  auto unsupported_form = module();
+  appendSection(&unsupported_form, 4, {1, 0x40, 0x00, 0x70, 0, 1});
+  expectRejected(std::move(unsupported_form), "unsupported wasm table form");
+
+  auto unbounded = module();
+  appendSection(&unbounded, 4, {1, 0x70, 0, 25});
+  auto inspected_unbounded = inspectWasmModule(unbounded);
+  ASSERT_TRUE(inspected_unbounded.has_value()) << inspected_unbounded.error();
+  ASSERT_EQ(inspected_unbounded->tables.size(), 1U);
+  EXPECT_EQ(inspected_unbounded->tables.front().minimum_elements, 25U);
+  EXPECT_FALSE(inspected_unbounded->tables.front().maximum_elements.has_value());
+  auto unbounded_tables = validateParserModuleWasmTables(*inspected_unbounded, 1000);
+  ASSERT_FALSE(unbounded_tables.has_value());
+  EXPECT_NE(unbounded_tables.error().find("no declared maximum"), std::string::npos);
+
+  auto bounded = module();
+  appendSection(&bounded, 4, {2, 0x70, 1, 25, 100, 0x6F, 1, 0, 50});
+  auto inspected_bounded = inspectWasmModule(bounded);
+  ASSERT_TRUE(inspected_bounded.has_value()) << inspected_bounded.error();
+  ASSERT_EQ(inspected_bounded->tables.size(), 2U);
+  auto within_cap = validateParserModuleWasmTables(*inspected_bounded, 150);
+  ASSERT_TRUE(within_cap.has_value()) << within_cap.error();
+  EXPECT_EQ(*within_cap, 150U);
+  auto over_cap = validateParserModuleWasmTables(*inspected_bounded, 149);
+  ASSERT_FALSE(over_cap.has_value());
+  EXPECT_NE(over_cap.error().find("exceeds configured cap"), std::string::npos);
+
+  auto none = module();
+  auto inspected_none = inspectWasmModule(none);
+  ASSERT_TRUE(inspected_none.has_value());
+  auto no_tables = validateParserModuleWasmTables(*inspected_none, 0);
+  ASSERT_TRUE(no_tables.has_value());
+  EXPECT_EQ(*no_tables, 0U);
+}
+
 }  // namespace
 }  // namespace PJ::parser_module

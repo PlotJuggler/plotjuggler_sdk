@@ -11,23 +11,35 @@ Functional parser modules can now be validated, compiled once, and executed as
 WASI reactors through the pinned Wasmer 7.0.1 C API:
 
 - The wasm loader admits only reactors with the frozen operational signatures,
-  `_initialize`, exactly one manifest section, bounded exported memory, no
-  start function, and the v1 empty import allow-list.
-- Store-per-instance execution copies ABI blocks through guest allocation,
-  revalidates linear-memory ranges after every guest call, preserves host
-  payload splice semantics, and classifies traps or metering exhaustion as
-  contract violations.
-- Instruction metering, declared-memory caps, and pure session admission
-  budgets bound calls, artifact size, modules, claims, instances, and aggregate
-  declared memory. Adversarial trap, infinite-loop, memory-growth, and
-  quarantine-replay fixtures pin the failure behavior.
+  `_initialize`, exactly one manifest section, bounded exported memory, bounded
+  tables, no start function, and the v1 empty import allow-list. The audit is
+  one shared `pj_base` entry point (`validateParserModuleWasmArtifact`) used by
+  both the loader and the `pj-wasm-embed-manifest` tool.
+- Store-per-instance execution (Singlepass backend when available) copies ABI
+  blocks through guest allocation, revalidates linear-memory ranges after every
+  guest call, preserves host payload splice semantics, and classifies traps or
+  metering exhaustion as contract violations. The wasm wrapper has the native
+  wrapper's fault contract: it classifies, the host records strikes,
+  quarantines, and replays through the shared `ParserModuleStrikeTracker`.
+- Instruction metering, declared-memory and table caps, and an optional
+  thread-safe session budget bound calls, artifact size, modules, claims,
+  instances, and aggregate declared memory. Reservations are opaque ids that
+  count resources, never manifest identities. Adversarial trap, infinite-loop,
+  memory-growth, table-cap, and host-driven quarantine fixtures pin the
+  behavior.
+- `ParserModuleStrikeTracker` is now thread-safe, and a contract violation
+  while a claim is quarantined (a failed create/bind replay) disables it instead
+  of leaving it quarantined forever.
 - The installed `pj-wasm-embed-manifest` frontend embeds or verifies exact
-  manifest bytes and performs the shared static ABI audit.
+  manifest bytes and performs the shared static audit.
 - `pj_add_parser_module(... TARGETS wasm)` provides the wasi-sdk 27 C++17
   reactor preset, manifest embedding, and post-link audit; `TARGETS native wasm`
   emits both artifacts from one author source.
 
-The wasm execution libraries remain optional when `PJ_WASMER_ROOT` is unset.
+The wasm executor is an in-tree component gated on `PJ_WASMER_ROOT`; installed
+packages stay wasmer-free and ship the authoring preset and tool only.
+`NativeParserModule::load(path, sink)` is unchanged from 0.22: admission
+accounting happens only through the new budget overload.
 
 ## [0.23.1]
 

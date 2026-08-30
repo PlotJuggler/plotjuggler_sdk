@@ -8,8 +8,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "pj_base/builtin/point_cloud.hpp"
@@ -21,6 +24,8 @@
 
 namespace PJ {
 namespace {
+
+const ParserModuleClaimKey kClaim{"org.plotjuggler.test.adversarial-wasm", "adversarial"};
 
 Span<const uint8_t> bytes(std::string_view text) {
   return {reinterpret_cast<const uint8_t*>(text.data()), text.size()};
@@ -55,6 +60,12 @@ Expected<WasmParserModuleInstance> createBound(const WasmParserModule& module) {
   return std::move(*instance);
 }
 
+WasmParserModuleLoadOptions budgeted(std::shared_ptr<ParserModuleSessionBudgetTracker> budget) {
+  WasmParserModuleLoadOptions options;
+  options.budget = std::move(budget);
+  return options;
+}
+
 ParserModuleParseResult parseBehavior(WasmParserModuleInstance& instance, uint8_t behavior) {
   const std::array<uint8_t, 1> payload{behavior};
   auto result = instance.parse(parser_module::ParseInputV1{.payload = payload});
@@ -62,32 +73,50 @@ ParserModuleParseResult parseBehavior(WasmParserModuleInstance& instance, uint8_
   return result ? std::move(*result) : ParserModuleParseResult{};
 }
 
+void expectPointCloud42(const ParserModuleParseResult& result) {
+  ASSERT_EQ(result.fault, ParserModuleFaultKind::kNone) << result.message;
+  const auto* object = std::get_if<ParserModuleObjectOutput>(&*result.output);
+  ASSERT_NE(object, nullptr);
+  const auto* cloud = std::any_cast<sdk::PointCloud>(&object->object);
+  ASSERT_NE(cloud, nullptr);
+  ASSERT_EQ(cloud->data.size(), 1U);
+  EXPECT_EQ(cloud->data[0], 42U);
+}
+
 TEST(WasmParserModuleHardening, EnforcesArtifactAndDeclaredMemoryAdmissionCaps) {
   const uint64_t file_size = std::filesystem::file_size(PJ_ADVERSARIAL_WASM_PATH);
-  WasmParserModuleLimits limits;
-  limits.maximum_artifact_bytes = file_size - 1;
   std::vector<Diagnostic> diagnostics;
-  auto oversized = WasmParserModule::load(
-      PJ_ADVERSARIAL_WASM_PATH, limits, [&](const Diagnostic& diagnostic) { diagnostics.push_back(diagnostic); });
+  WasmParserModuleLoadOptions options;
+  options.sink = [&](const Diagnostic& diagnostic) { diagnostics.push_back(diagnostic); };
+
+  options.limits.maximum_artifact_bytes = file_size - 1;
+  auto oversized = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, options);
   ASSERT_FALSE(oversized.has_value());
   ASSERT_EQ(diagnostics.size(), 1U);
   EXPECT_NE(oversized.error().find("artifact_file_size budget exhausted"), std::string::npos);
 
-  limits = WasmParserModuleLimits{};
-  limits.maximum_linear_memory_bytes = UINT64_C(128) * 1024U * 1024U;
+  options.limits = WasmParserModuleLimits{};
+  options.limits.maximum_linear_memory_bytes = UINT64_C(128) * 1024U * 1024U;
   diagnostics.clear();
-  auto memory_bomb = WasmParserModule::load(
-      PJ_ADVERSARIAL_WASM_PATH, limits, [&](const Diagnostic& diagnostic) { diagnostics.push_back(diagnostic); });
+  auto memory_bomb = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, options);
   ASSERT_FALSE(memory_bomb.has_value());
   ASSERT_EQ(diagnostics.size(), 1U);
   EXPECT_NE(memory_bomb.error().find("exceeds configured cap"), std::string::npos);
+
+  options.limits = WasmParserModuleLimits{};
+  options.limits.maximum_table_elements = 0;
+  diagnostics.clear();
+  auto table_bomb = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, options);
+  ASSERT_FALSE(table_bomb.has_value());
+  ASSERT_EQ(diagnostics.size(), 1U);
+  EXPECT_NE(table_bomb.error().find("table maximum"), std::string::npos);
 }
 
 TEST(WasmParserModuleHardening, EnforcesAggregateBudgetsAtActualAdmissionBoundaries) {
   const uint64_t file_size = std::filesystem::file_size(PJ_ADVERSARIAL_WASM_PATH);
   const auto load_with = [](ParserModuleSessionBudgetLimits limits) {
     auto budget = std::make_shared<ParserModuleSessionBudgetTracker>(limits);
-    auto loaded = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, budget);
+    auto loaded = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, budgeted(budget));
     return std::pair(std::move(budget), std::move(loaded));
   };
 
@@ -131,12 +160,30 @@ TEST(WasmParserModuleHardening, EnforcesAggregateBudgetsAtActualAdmissionBoundar
   EXPECT_EQ(memory_decline.error().outcome, WasmParserModuleCreateOutcome::kAdmissionDecline);
   EXPECT_NE(memory_decline.error().message.find("total_linear_memory"), std::string::npos);
   EXPECT_EQ(memory_budget->usage().declared_linear_memory_bytes, 0U);
+
+  // Reservations are released by the wrappers themselves, module last.
+  limits = {};
+  limits.maximum_modules = 1;
+  limits.maximum_active_instances = 1;
+  auto [release_budget, released_load] = load_with(limits);
+  ASSERT_TRUE(released_load.has_value()) << released_load.error();
+  std::optional<WasmParserModule> released_module(std::move(*released_load));
+  {
+    auto instance = createBound(*released_module);
+    ASSERT_TRUE(instance.has_value()) << instance.error();
+    EXPECT_EQ(release_budget->usage().active_instances, 1U);
+    released_module.reset();
+    EXPECT_EQ(release_budget->usage().modules, 1U) << "module reservation outlives its instances";
+  }
+  EXPECT_EQ(release_budget->usage().modules, 0U);
+  EXPECT_EQ(release_budget->usage().active_instances, 0U);
+  EXPECT_EQ(release_budget->usage().declared_linear_memory_bytes, 0U);
 }
 
 TEST(WasmParserModuleHardening, MetersInfiniteLoopAsDistinctContractViolation) {
-  WasmParserModuleLimits limits;
-  limits.metering_points_per_call = UINT64_C(1000000);
-  auto module = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, limits);
+  WasmParserModuleLoadOptions options;
+  options.limits.metering_points_per_call = UINT64_C(1000000);
+  auto module = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, options);
   ASSERT_TRUE(module.has_value()) << module.error();
   auto instance = createBound(*module);
   ASSERT_TRUE(instance.has_value()) << instance.error();
@@ -159,44 +206,70 @@ TEST(WasmParserModuleHardening, EngineRejectsRuntimeGrowthPastDeclaredMaximum) {
   EXPECT_NE(result.message.find("memory growth rejected by declared maximum"), std::string::npos);
 }
 
-TEST(WasmParserModuleHardening, TrapQuarantineReplaysBindingThenDisablesOnRepeat) {
+TEST(WasmParserModuleHardening, HostDrivenQuarantineReplaysBindingThenDisablesOnRepeat) {
+  // The wasm wrapper only classifies; this is the host loop, identical to the
+  // native one: record faults, replay create/bind on quarantine, mark the
+  // recreation, and stop creating instances once the claim is disabled.
   auto module = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH);
   ASSERT_TRUE(module.has_value()) << module.error();
+  ParserModuleStrikeTracker tracker;
   auto instance = createBound(*module);
   ASSERT_TRUE(instance.has_value()) << instance.error();
 
   for (uint8_t strike = 1; strike <= 3; ++strike) {
     const ParserModuleParseResult result = parseBehavior(*instance, 0);
     ASSERT_EQ(result.fault, ParserModuleFaultKind::kContractViolation);
-    const ParserModuleStrikeState state = module->strikeState(0);
-    if (strike < 3) {
-      EXPECT_EQ(state.health, ParserModuleClaimHealth::kActive);
-      EXPECT_EQ(state.strikes, strike);
-    } else {
-      EXPECT_EQ(state.health, ParserModuleClaimHealth::kActive);
-      EXPECT_EQ(state.strikes, 0U);
-      EXPECT_EQ(state.quarantine_count, 1U);
-      EXPECT_NE(result.message.find("quarantined and recreated"), std::string::npos);
-    }
+    EXPECT_NE(result.message.find("wasm trap"), std::string::npos);
+    EXPECT_EQ(instance->lifecycleDiagnostic(), result.message);
+    const ParserModuleStrikeState state = tracker.recordFault(kClaim, result.fault);
+    EXPECT_EQ(state.health, strike < 3 ? ParserModuleClaimHealth::kActive : ParserModuleClaimHealth::kQuarantined);
   }
+  EXPECT_EQ(tracker.state(kClaim).quarantine_count, 1U);
 
-  const ParserModuleParseResult recovered = parseBehavior(*instance, 3);
-  ASSERT_EQ(recovered.fault, ParserModuleFaultKind::kNone) << recovered.message;
-  const auto* object = std::get_if<ParserModuleObjectOutput>(&*recovered.output);
-  ASSERT_NE(object, nullptr);
-  const auto* cloud = std::any_cast<sdk::PointCloud>(&object->object);
-  ASSERT_NE(cloud, nullptr);
-  ASSERT_EQ(cloud->data.size(), 1U);
-  EXPECT_EQ(cloud->data[0], 42U);
+  instance = createBound(*module);
+  ASSERT_TRUE(instance.has_value()) << instance.error();
+  ASSERT_TRUE(tracker.markRecreated(kClaim));
+  expectPointCloud42(parseBehavior(*instance, 3));
 
   for (uint8_t strike = 0; strike < 3; ++strike) {
     const ParserModuleParseResult result = parseBehavior(*instance, 0);
     ASSERT_EQ(result.fault, ParserModuleFaultKind::kContractViolation);
+    (void)tracker.recordFault(kClaim, result.fault);
   }
-  const ParserModuleStrikeState disabled = module->strikeState(0);
+  const ParserModuleStrikeState disabled = tracker.state(kClaim);
   EXPECT_EQ(disabled.health, ParserModuleClaimHealth::kDisabled);
   EXPECT_EQ(disabled.quarantine_count, 2U);
-  EXPECT_FALSE(instance->valid());
+  EXPECT_FALSE(tracker.markRecreated(kClaim));
+}
+
+TEST(WasmParserModuleHardening, IndependentInstancesRunConcurrentlyUnderOneTracker) {
+  // Scalar and object routes of one claim run on different threads in the
+  // host; the stores are independent and the shared tracker is synchronized.
+  auto budget = std::make_shared<ParserModuleSessionBudgetTracker>();
+  auto module = WasmParserModule::load(PJ_ADVERSARIAL_WASM_PATH, budgeted(budget));
+  ASSERT_TRUE(module.has_value()) << module.error();
+  ParserModuleStrikeTracker tracker;
+
+  std::vector<std::thread> threads;
+  for (int worker = 0; worker < 4; ++worker) {
+    threads.emplace_back([&] {
+      auto instance = createBound(*module);
+      ASSERT_TRUE(instance.has_value()) << instance.error();
+      for (int round = 0; round < 25; ++round) {
+        expectPointCloud42(parseBehavior(*instance, 3));
+        const ParserModuleParseResult trap = parseBehavior(*instance, 2);  // data error, never a strike
+        EXPECT_EQ(trap.fault, ParserModuleFaultKind::kDataError);
+        (void)tracker.recordFault(kClaim, trap.fault);
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  EXPECT_EQ(tracker.state(kClaim).strikes, 0U);
+  EXPECT_EQ(tracker.state(kClaim).health, ParserModuleClaimHealth::kActive);
+  EXPECT_EQ(budget->usage().active_instances, 0U);
+  EXPECT_EQ(budget->usage().modules, 1U);
 }
 
 }  // namespace

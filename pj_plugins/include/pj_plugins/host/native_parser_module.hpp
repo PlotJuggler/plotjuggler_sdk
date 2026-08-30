@@ -38,7 +38,8 @@ class NativeParserModule {
   [[nodiscard]] static Expected<NativeParserModule> load(
       std::string_view path, DiagnosticSink sink = {}, std::string diagnostic_source = "NativeParserModule");
 
-  /// Load using an application-owned aggregate session budget.
+  /// Load under an application-owned aggregate session budget. A null budget
+  /// behaves exactly like the overload above: no admission accounting.
   [[nodiscard]] static Expected<NativeParserModule> load(
       std::string_view path, std::shared_ptr<ParserModuleSessionBudgetTracker> budget, DiagnosticSink sink = {},
       std::string diagnostic_source = "NativeParserModule");

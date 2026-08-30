@@ -150,7 +150,9 @@ type/route mismatch, and bad tokens are contract violations; other
 module-reported per-message failures are data errors. The separate
 non-thread-safe `ParserModuleStrikeTracker` quarantines a module claim on its
 third contract violation, permits one same-descriptor recreation, and disables
-the claim after a repeated three-strike cycle. Executor placement, generation
+the claim after a repeated three-strike cycle or a contract violation during the
+replay itself. It is shared by native and wasm instances and is thread-safe,
+because the scalar and object routes of one claim run on different threads. Executor placement, generation
 ownership, folder scanning, and rescan policy remain application concerns.
 
 Module authors use the standalone C++17 headers under
@@ -179,21 +181,39 @@ toy module with C++17 and exceptions disabled, then statically audits the
 reactor model and every operational export signature without executing wasm.
 
 When `PJ_WASMER_ROOT` selects the pinned Wasmer 7.0.1 C API, the optional
-`WasmParserModule` loader applies that static audit before compilation and
-requires exported memory plus an empty import set. The fixture supplies its
-unreachable WASI I/O fallbacks internally, so no fd, path, socket, clock,
-random, environment, or scheduler capability enters the frozen v1 allow-list.
-An engine-owned compiled module is instantiated in one independent store per
-bound instance. Store calls may migrate between threads sequentially, but the
-host must serialize calls on an instance. The runtime reacquires linear memory
-after every guest call, validates every returned range, and resolves splices
-against the original host payload. Per-call Wasmer instruction metering is the
-enforceable execution deadline; the pinned archive exposes no public interrupt
-or epoch API. Artifacts must declare a bounded memory maximum, and a separate
-session tracker admits module count, file size, total claims, active instances,
-and aggregate per-instance declared memory. Guest traps and metering exhaustion
-join malformed descriptors and bad offsets in the contract-violation strike
-path; module-reported parse errors remain strike-free data errors.
+`WasmParserModule` loader runs the same `pj_base` static audit as the
+`pj-wasm-embed-manifest` tool (`validateParserModuleWasmArtifact`) before
+compilation: exactly one manifest section, an empty import set, the frozen
+export ABI, exported linear memory with a declared maximum, and tables with a
+declared maximum (default cap 65536 elements — table storage is host memory
+outside the linear-memory budget). The authoring preset supplies unreachable
+WASI I/O fallbacks internally, so no fd, path, socket, clock, random,
+environment, or scheduler capability enters the frozen v1 allow-list.
+Compilation prefers Wasmer's Singlepass backend (linear compile time; there is
+no cancellable compile API) and always runs synchronously inside `load()` — the
+host keeps it off the UI thread. An engine-owned compiled module is
+instantiated in one independent store per bound instance. Store calls may
+migrate between threads sequentially, but the host must serialize calls on an
+instance. The runtime reacquires linear memory after every guest call,
+validates every returned range, and resolves splices against the original host
+payload. Per-call instruction metering bounds guest execution; it is an
+instruction budget, not a wall-clock deadline (bulk operators such as
+`memory.copy` cost one point regardless of size, and the pinned archive exposes
+no public interrupt or epoch API). Artifacts must declare a bounded memory
+maximum, and the optional, thread-safe `ParserModuleSessionBudgetTracker`
+admits module count, file size, total claims, active instances, and aggregate
+per-instance declared memory; it counts resources under opaque reservation ids
+and never keys on manifest identity, which remains catalog policy. Both loaders
+accept a null budget and then perform no admission accounting.
+
+The wasm wrapper carries exactly the native wrapper's fault contract: guest
+traps and metering exhaustion join malformed descriptors and bad offsets as
+returned contract violations, module-reported parse errors are strike-free data
+errors, and the host records faults, quarantines, replays create/bind, and
+disables through `ParserModuleStrikeTracker`. The executor is an in-tree
+component: applications build the SDK from source with `PJ_WASMER_ROOT`, while
+installed packages stay wasmer-free and ship only the authoring preset and the
+embed/audit tool.
 
 ### Wasmer pin rationale (7.0.1, evaluated against 7.2.1 on 2026-08-09)
 

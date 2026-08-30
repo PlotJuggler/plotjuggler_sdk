@@ -9,6 +9,12 @@
  * The wrapper is move-only and not concurrently callable. A host may migrate
  * it between threads when calls do not overlap. Every host access to guest
  * memory re-acquires the current base and size after the preceding guest call.
+ *
+ * Like NativeParserModuleInstance, the wrapper only classifies faults: traps,
+ * metering exhaustion, malformed descriptors, and bad splices are returned as
+ * contract violations, module-reported failures as data errors. Recording
+ * strikes, quarantining a claim, and replaying create/bind are host policy
+ * driven through ParserModuleStrikeTracker, exactly as for native modules.
  */
 
 #include <cstdint>
@@ -40,7 +46,7 @@ struct WasmParserModuleCreateError {
 
 class WasmParserModuleInstance {
  public:
-  WasmParserModuleInstance() = default;
+  WasmParserModuleInstance();
   ~WasmParserModuleInstance();
 
   WasmParserModuleInstance(WasmParserModuleInstance&& other) noexcept;
@@ -50,27 +56,25 @@ class WasmParserModuleInstance {
   WasmParserModuleInstance& operator=(const WasmParserModuleInstance&) = delete;
 
   /// Instantiate the shared compiled module in a new store, run `_initialize`
-  /// exactly once, then create the manifest claim at `claim_index`.
+  /// exactly once, then create the manifest claim at `claim_index`. A trap on
+  /// that path is returned with `fault == kContractViolation`; a session-budget
+  /// rejection with `outcome == kAdmissionDecline`.
   [[nodiscard]] static Expected<WasmParserModuleInstance, WasmParserModuleCreateError> create(
       const WasmParserModule& module, uint32_t claim_index);
 
   [[nodiscard]] Expected<ParserModuleBindResult> bind(const parser_module::BindingInfoV1& info);
 
-  /// Parse one message. Contract violations accrue per module claim. The
-  /// third violation destroys and recreates the instance through the accepted
-  /// create/bind inputs; a second quarantine disables the claim for the
-  /// session and invalidates this wrapper.
+  /// Parse one message and consume the returned descriptor transactionally.
   [[nodiscard]] Expected<ParserModuleParseResult> parse(const parser_module::ParseInputV1& input);
 
   [[nodiscard]] bool valid() const noexcept;
   [[nodiscard]] uint32_t claimIndex() const noexcept;
-  [[nodiscard]] ParserModuleStrikeState strikeState() const;
+  /// The most recent contract-violation text, including guest `free` faults
+  /// raised while cleaning up after another failure.
   [[nodiscard]] std::string_view lifecycleDiagnostic() const noexcept;
 
  private:
   explicit WasmParserModuleInstance(std::unique_ptr<detail::WasmParserModuleInstanceState> state);
-
-  [[nodiscard]] Expected<void> recreateBoundInstance();
 
   std::unique_ptr<detail::WasmParserModuleInstanceState> state_;
 };

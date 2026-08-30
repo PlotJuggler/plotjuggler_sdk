@@ -57,9 +57,9 @@ WASI reactor modules use the same operational exports and compile with
 exceptions disabled. Their manifest is delivered in the
 `pj_parser_module_manifest` custom section, so the native-only manifest address
 and length exports are omitted automatically when targeting wasm. Authored
-reactors have an empty import set and a declared linear-memory maximum; the
-default maximum is 256 MiB and can be configured with
-`PJ_PARSER_MODULE_WASM_MAX_MEMORY_BYTES`.
+reactors have an empty import set, a declared linear-memory maximum (default
+256 MiB, configurable with `PJ_PARSER_MODULE_WASM_MAX_MEMORY_BYTES`), and a
+declared table maximum (wasm-ld emits one; the host caps it at 65536 elements).
 
 See
 `.claude/skills/plotjuggler-plugin/references/parser-module.md` at the repository

@@ -4,31 +4,19 @@
 #include "pj_plugins/host/parser_module_session_budget.hpp"
 
 #include <cstdint>
-#include <memory>
+#include <mutex>
 #include <string>
-#include <utility>
+#include <string_view>
 
 namespace PJ {
 namespace {
 
-ParserModuleAdmissionDecision accept() {
-  return ParserModuleAdmissionDecision{
-      .outcome = ParserModuleAdmissionOutcome::kAccept,
-      .exhausted_budget = ParserModuleBudgetKind::kNone,
-      .diagnostic = {},
-  };
-}
-
-ParserModuleAdmissionDecision decline(ParserModuleBudgetKind kind, std::string reason) {
-  return ParserModuleAdmissionDecision{
-      .outcome = ParserModuleAdmissionOutcome::kDecline,
-      .exhausted_budget = kind,
-      .diagnostic = "parser-module admission DECLINE: " + std::move(reason),
-  };
-}
-
 ParserModuleAdmissionDecision declineBudget(ParserModuleBudgetKind kind, std::string_view name) {
-  return decline(kind, std::string(name) + " budget exhausted");
+  return ParserModuleAdmissionDecision{
+      .reservation = 0,
+      .exhausted_budget = kind,
+      .diagnostic = "parser-module admission DECLINE: " + std::string(name) + " budget exhausted",
+  };
 }
 
 bool exceedsAggregate(uint64_t current, uint64_t additional, uint64_t maximum) {
@@ -41,10 +29,8 @@ ParserModuleSessionBudgetTracker::ParserModuleSessionBudgetTracker(ParserModuleS
     : limits_(limits) {}
 
 ParserModuleAdmissionDecision ParserModuleSessionBudgetTracker::admitModule(
-    std::string module_id, uint64_t artifact_bytes, uint64_t claim_count, uint64_t declared_linear_memory_maximum) {
-  if (modules_.find(module_id) != modules_.end()) {
-    return decline(ParserModuleBudgetKind::kNone, "module is already admitted");
-  }
+    uint64_t artifact_bytes, uint64_t claim_count, uint64_t declared_linear_memory_maximum) {
+  const std::scoped_lock lock(mutex_);
   if (usage_.modules >= limits_.maximum_modules) {
     return declineBudget(ParserModuleBudgetKind::kModuleCount, "module_count");
   }
@@ -55,22 +41,28 @@ ParserModuleAdmissionDecision ParserModuleSessionBudgetTracker::admitModule(
     return declineBudget(ParserModuleBudgetKind::kTotalClaims, "total_claims");
   }
 
+  const uint64_t reservation = next_reservation_++;
   modules_.emplace(
-      std::move(module_id), ModuleReservation{
-                                .artifact_bytes = artifact_bytes,
-                                .claim_count = claim_count,
-                                .declared_linear_memory_maximum = declared_linear_memory_maximum,
-                                .active_instances = 0,
-                            });
+      reservation, ModuleReservation{
+                       .claim_count = claim_count,
+                       .declared_linear_memory_maximum = declared_linear_memory_maximum,
+                       .active_instances = 0,
+                   });
   ++usage_.modules;
   usage_.claims += claim_count;
-  return accept();
+  return ParserModuleAdmissionDecision{
+      .reservation = reservation, .exhausted_budget = ParserModuleBudgetKind::kNone, .diagnostic = {}};
 }
 
-ParserModuleAdmissionDecision ParserModuleSessionBudgetTracker::admitInstance(std::string_view module_id) {
-  auto module = modules_.find(module_id);
+ParserModuleAdmissionDecision ParserModuleSessionBudgetTracker::admitInstance(uint64_t module_reservation) {
+  const std::scoped_lock lock(mutex_);
+  auto module = modules_.find(module_reservation);
   if (module == modules_.end()) {
-    return decline(ParserModuleBudgetKind::kNone, "module is not admitted");
+    return ParserModuleAdmissionDecision{
+        .reservation = 0,
+        .exhausted_budget = ParserModuleBudgetKind::kNone,
+        .diagnostic = "parser-module admission DECLINE: module is not admitted",
+    };
   }
   if (usage_.active_instances >= limits_.maximum_active_instances) {
     return declineBudget(ParserModuleBudgetKind::kActiveInstances, "active_instances");
@@ -84,42 +76,44 @@ ParserModuleAdmissionDecision ParserModuleSessionBudgetTracker::admitInstance(st
   ++module->second.active_instances;
   ++usage_.active_instances;
   usage_.declared_linear_memory_bytes += module->second.declared_linear_memory_maximum;
-  return accept();
+  return ParserModuleAdmissionDecision{
+      .reservation = module_reservation, .exhausted_budget = ParserModuleBudgetKind::kNone, .diagnostic = {}};
 }
 
-bool ParserModuleSessionBudgetTracker::releaseInstance(std::string_view module_id) {
-  auto module = modules_.find(module_id);
+void ParserModuleSessionBudgetTracker::releaseInstance(uint64_t module_reservation) {
+  const std::scoped_lock lock(mutex_);
+  auto module = modules_.find(module_reservation);
   if (module == modules_.end() || module->second.active_instances == 0) {
-    return false;
+    return;
   }
   --module->second.active_instances;
   --usage_.active_instances;
   usage_.declared_linear_memory_bytes -= module->second.declared_linear_memory_maximum;
-  return true;
 }
 
-bool ParserModuleSessionBudgetTracker::releaseModule(std::string_view module_id) {
-  auto module = modules_.find(module_id);
-  if (module == modules_.end() || module->second.active_instances != 0) {
-    return false;
+void ParserModuleSessionBudgetTracker::releaseModule(uint64_t module_reservation) {
+  const std::scoped_lock lock(mutex_);
+  auto module = modules_.find(module_reservation);
+  if (module == modules_.end()) {
+    return;
   }
+  // Live instances of a dropped module still hold their store; their memory
+  // and instance counts are given back when each of them is released.
+  usage_.active_instances -= module->second.active_instances;
+  usage_.declared_linear_memory_bytes -=
+      module->second.active_instances * module->second.declared_linear_memory_maximum;
   --usage_.modules;
   usage_.claims -= module->second.claim_count;
   modules_.erase(module);
-  return true;
 }
 
 const ParserModuleSessionBudgetLimits& ParserModuleSessionBudgetTracker::limits() const noexcept {
   return limits_;
 }
 
-ParserModuleSessionBudgetUsage ParserModuleSessionBudgetTracker::usage() const noexcept {
+ParserModuleSessionBudgetUsage ParserModuleSessionBudgetTracker::usage() const {
+  const std::scoped_lock lock(mutex_);
   return usage_;
-}
-
-std::shared_ptr<ParserModuleSessionBudgetTracker> defaultParserModuleSessionBudget() {
-  static auto tracker = std::make_shared<ParserModuleSessionBudgetTracker>();
-  return tracker;
 }
 
 }  // namespace PJ

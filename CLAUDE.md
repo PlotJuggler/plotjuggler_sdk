@@ -27,8 +27,8 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
 - **pj_plugins** — host-side loaders + RAII handles + plugin **discovery** (directory scan +
   embedded-manifest inspection) for four plugin families (DataSource, MessageParser, Dialog, Toolbox),
   parser claim admission/resolution, native functional parser-module execution, the optional
-  sandboxed wasm parser-module loader/runtime (Wasmer 7.0.1, gated on `PJ_WASMER_ROOT`, only the
-  `plugin_host` component depends on it) with session budgets,
+  sandboxed wasm parser-module loader/runtime (Wasmer 7.0.1, in-tree only: gated on
+  `PJ_WASMER_ROOT`, never part of an installed package) with optional session budgets,
   config-envelope helpers, and the **dialog C ABI** (`pj_plugins/dialog_protocol/`). The
   duplicate-resolution *catalog* (which copy wins by priority/version/compatibility) is host policy
   and lives in the app (`pj_runtime`), built on these discovery primitives. Note the split: the DataSource/MessageParser/Toolbox C-ABI

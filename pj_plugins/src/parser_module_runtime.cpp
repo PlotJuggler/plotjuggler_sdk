@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -81,18 +82,23 @@ Expected<NativeParserModuleInstance> NativeParserModuleInstance::create(
   if (!module.valid()) {
     return unexpected("cannot create an instance from an invalid native parser module");
   }
-  auto admission = module.state_->session_budget->admitInstance(module.state_->module_id);
-  if (!admission.accepted()) {
-    return unexpected(std::move(admission.diagnostic));
+  const auto& budget = module.state_->session_budget;
+  if (budget != nullptr) {
+    auto admission = budget->admitInstance(module.state_->module_reservation);
+    if (!admission.accepted()) {
+      return unexpected(std::move(admission.diagnostic));
+    }
   }
   const uint64_t token = module.state_->create(claim_index);
   if (token == PJ_MODULE_CREATION_ERROR_TOKEN) {
-    (void)module.state_->session_budget->releaseInstance(module.state_->module_id);
+    if (budget != nullptr) {
+      budget->releaseInstance(module.state_->module_reservation);
+    }
     auto message = copyLastError(*module.state_, PJ_MODULE_CREATION_ERROR_TOKEN);
     return unexpected(message ? *message : message.error());
   }
   NativeParserModuleInstance instance(module.state_, token, claim_index);
-  instance.instance_budget_reserved_ = true;
+  instance.instance_budget_reserved_ = budget != nullptr;
   return instance;
 }
 
@@ -229,7 +235,7 @@ void NativeParserModuleInstance::reset() noexcept {
     module_->destroy(token_);
   }
   if (module_ != nullptr && instance_budget_reserved_) {
-    (void)module_->session_budget->releaseInstance(module_->module_id);
+    module_->session_budget->releaseInstance(module_->module_reservation);
   }
   token_ = PJ_MODULE_CREATION_ERROR_TOKEN;
   bound_ = false;
@@ -239,10 +245,18 @@ void NativeParserModuleInstance::reset() noexcept {
 
 ParserModuleStrikeState ParserModuleStrikeTracker::recordFault(
     const ParserModuleClaimKey& key, ParserModuleFaultKind fault) {
+  const std::scoped_lock lock(mutex_);
   auto [it, inserted] = states_.try_emplace(key);
   (void)inserted;
   auto& state = it->second;
-  if (fault != ParserModuleFaultKind::kContractViolation || state.health != ParserModuleClaimHealth::kActive) {
+  if (fault != ParserModuleFaultKind::kContractViolation || state.health == ParserModuleClaimHealth::kDisabled) {
+    return state;
+  }
+  if (state.health == ParserModuleClaimHealth::kQuarantined) {
+    // The replay itself faulted: that is the repeat the policy disables on.
+    state.strikes = 0;
+    ++state.quarantine_count;
+    state.health = ParserModuleClaimHealth::kDisabled;
     return state;
   }
 
@@ -260,6 +274,7 @@ ParserModuleStrikeState ParserModuleStrikeTracker::recordFault(
 }
 
 bool ParserModuleStrikeTracker::markRecreated(const ParserModuleClaimKey& key) {
+  const std::scoped_lock lock(mutex_);
   auto it = states_.find(key);
   if (it == states_.end() || it->second.health != ParserModuleClaimHealth::kQuarantined) {
     return false;
@@ -269,6 +284,7 @@ bool ParserModuleStrikeTracker::markRecreated(const ParserModuleClaimKey& key) {
 }
 
 ParserModuleStrikeState ParserModuleStrikeTracker::state(const ParserModuleClaimKey& key) const {
+  const std::scoped_lock lock(mutex_);
   const auto it = states_.find(key);
   return it == states_.end() ? ParserModuleStrikeState{} : it->second;
 }

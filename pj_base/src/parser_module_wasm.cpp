@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "pj_base/parser_module_abi.h"
+#include "pj_base/parser_module_manifest.hpp"
 
 namespace PJ::parser_module {
 namespace {
@@ -96,6 +97,7 @@ struct ModuleBuilder {
   std::vector<uint32_t> defined_function_types;
   std::vector<WasmMemoryLimits> imported_memories;
   std::vector<WasmMemoryLimits> defined_memories;
+  std::vector<WasmTableLimits> tables;
   std::vector<PendingImport> imports;
   std::vector<WasmExport> exports;
   bool has_start_section = false;
@@ -254,6 +256,8 @@ struct ModuleBuilder {
         if (!limits) {
           return unexpected(limits.error());
         }
+        module->tables.push_back(
+            WasmTableLimits{.minimum_elements = limits->minimum_pages, .maximum_elements = limits->maximum_pages});
         break;
       }
       case WasmExternalKind::kMemory: {
@@ -304,6 +308,36 @@ struct ModuleBuilder {
     module->defined_function_types.push_back(*type_index);
   }
   return requireConsumed(cursor, "function");
+}
+
+[[nodiscard]] Expected<void> parseTableSection(Cursor cursor, ModuleBuilder* module) {
+  auto count = cursor.varUint32();
+  if (!count) {
+    return unexpected(count.error());
+  }
+  auto bounded = requireCountFits(*count, cursor.remaining(), 3, "table-section entry");
+  if (!bounded) {
+    return unexpected(bounded.error());
+  }
+  module->tables.reserve(module->tables.size() + *count);
+  for (uint32_t index = 0; index < *count; ++index) {
+    auto reference_type = cursor.byte();
+    if (!reference_type) {
+      return unexpected(reference_type.error());
+    }
+    if (*reference_type != UINT8_C(0x70) && *reference_type != UINT8_C(0x6F)) {
+      // 0x40 introduces the table-with-initializer form; neither it nor typed
+      // references are part of the frozen v1 module shape.
+      return unexpected(std::string("unsupported wasm table form"));
+    }
+    auto limits = readLimits(&cursor);
+    if (!limits) {
+      return unexpected(limits.error());
+    }
+    module->tables.push_back(
+        WasmTableLimits{.minimum_elements = limits->minimum_pages, .maximum_elements = limits->maximum_pages});
+  }
+  return requireConsumed(cursor, "table");
 }
 
 [[nodiscard]] Expected<void> parseMemorySection(Cursor cursor, ModuleBuilder* module) {
@@ -381,6 +415,7 @@ struct ModuleBuilder {
   result.memories.reserve(builder.imported_memories.size() + builder.defined_memories.size());
   result.memories.insert(result.memories.end(), builder.imported_memories.begin(), builder.imported_memories.end());
   result.memories.insert(result.memories.end(), builder.defined_memories.begin(), builder.defined_memories.end());
+  result.tables = std::move(builder.tables);
   result.imports.reserve(builder.imports.size());
   for (auto& imported : builder.imports) {
     if (imported.function_type.has_value()) {
@@ -448,6 +483,9 @@ struct ModuleBuilder {
         break;
       case 3:
         parsed = parseFunctionSection(*section, &module);
+        break;
+      case 4:
+        parsed = parseTableSection(*section, &module);
         break;
       case 5:
         parsed = parseMemorySection(*section, &module);
@@ -572,6 +610,57 @@ Expected<uint64_t> validateParserModuleWasmMemory(const WasmModuleInfo& module, 
     aggregate_maximum += bytes;
   }
   return aggregate_maximum;
+}
+
+Expected<uint64_t> validateParserModuleWasmTables(const WasmModuleInfo& module, uint64_t maximum_elements) {
+  uint64_t aggregate_maximum = 0;
+  for (const auto& table : module.tables) {
+    if (!table.maximum_elements.has_value()) {
+      return unexpected(std::string("wasm parser-module table has no declared maximum"));
+    }
+    const uint64_t elements = *table.maximum_elements;
+    if (elements > maximum_elements || elements > maximum_elements - aggregate_maximum) {
+      return unexpected(
+          "wasm parser-module table maximum " + std::to_string(elements) + " exceeds configured cap " +
+          std::to_string(maximum_elements) + " elements");
+    }
+    aggregate_maximum += elements;
+  }
+  return aggregate_maximum;
+}
+
+Expected<ParserModuleWasmArtifact> validateParserModuleWasmArtifact(
+    Span<const uint8_t> wasm, const ParserModuleWasmLimits& limits) {
+  auto manifest = readManifestSection(wasm);
+  if (!manifest) {
+    return unexpected("invalid wasm parser-module manifest: " + manifest.error());
+  }
+  auto inspected = inspectWasmModule(wasm);
+  if (!inspected) {
+    return unexpected("invalid wasm parser module: " + inspected.error());
+  }
+  if (!inspected->imports.empty()) {
+    const auto& imported = inspected->imports.front();
+    return unexpected("wasm parser module uses disallowed import '" + imported.module + "." + imported.name + "'");
+  }
+  auto abi = validateParserModuleWasmAbi(*inspected);
+  if (!abi) {
+    return unexpected(abi.error());
+  }
+  auto memory_maximum = validateParserModuleWasmMemory(*inspected, limits.maximum_linear_memory_bytes);
+  if (!memory_maximum) {
+    return unexpected(memory_maximum.error());
+  }
+  auto table_maximum = validateParserModuleWasmTables(*inspected, limits.maximum_table_elements);
+  if (!table_maximum) {
+    return unexpected(table_maximum.error());
+  }
+  return ParserModuleWasmArtifact{
+      .manifest_json = *manifest,
+      .module = std::move(*inspected),
+      .declared_linear_memory_maximum = *memory_maximum,
+      .declared_table_elements = *table_maximum,
+  };
 }
 
 }  // namespace PJ::parser_module

@@ -4,19 +4,22 @@
 
 /**
  * @file parser_module_session_budget.hpp
- * @brief Pure admission accounting for parser-module session limits.
+ * @brief Aggregate resource accounting for parser-module admission.
  *
- * This state is deliberately non-thread-safe. The application host owns
- * serialization and calls it before compilation or lazy instantiation. A
- * declined reservation never mutates usage.
+ * The tracker counts resources, not identities: every accepted module
+ * reservation is an opaque id, so two loads of one artifact (or native and
+ * wasm builds of one source) are two reservations. Duplicate-provider policy
+ * belongs to the claim catalog, not here.
+ *
+ * The tracker is thread-safe. Loader wrappers release reservations from their
+ * destructors, which run on whichever thread drops the wrapper, so callers
+ * cannot be asked to serialize it. A declined reservation never mutates usage.
  */
 
 #include <cstdint>
-#include <functional>
 #include <map>
-#include <memory>
+#include <mutex>
 #include <string>
-#include <string_view>
 
 namespace PJ {
 
@@ -34,11 +37,6 @@ struct ParserModuleSessionBudgetLimits {
   uint64_t maximum_linear_memory_bytes = kDefaultMaximumLinearMemoryBytes;
 };
 
-enum class ParserModuleAdmissionOutcome : uint8_t {
-  kAccept,
-  kDecline,
-};
-
 enum class ParserModuleBudgetKind : uint8_t {
   kNone,
   kModuleCount,
@@ -48,13 +46,15 @@ enum class ParserModuleBudgetKind : uint8_t {
   kTotalLinearMemory,
 };
 
+/// Outcome of one admission request. `reservation` is nonzero exactly when
+/// the request was accepted and is the handle for every later call.
 struct ParserModuleAdmissionDecision {
-  ParserModuleAdmissionOutcome outcome = ParserModuleAdmissionOutcome::kDecline;
+  uint64_t reservation = 0;
   ParserModuleBudgetKind exhausted_budget = ParserModuleBudgetKind::kNone;
   std::string diagnostic;
 
   [[nodiscard]] bool accepted() const noexcept {
-    return outcome == ParserModuleAdmissionOutcome::kAccept;
+    return reservation != 0;
   }
 };
 
@@ -69,37 +69,37 @@ class ParserModuleSessionBudgetTracker {
  public:
   explicit ParserModuleSessionBudgetTracker(ParserModuleSessionBudgetLimits limits = {});
 
-  /// Reserve one compiled module before compilation. `artifact_bytes` is a
-  /// per-file gate; claims contribute to the aggregate session total.
+  /// Reserve one module before compilation. `artifact_bytes` is a per-file
+  /// gate; `claim_count` joins the aggregate claim total;
+  /// `declared_linear_memory_maximum` is charged per admitted instance.
   [[nodiscard]] ParserModuleAdmissionDecision admitModule(
-      std::string module_id, uint64_t artifact_bytes, uint64_t claim_count, uint64_t declared_linear_memory_maximum);
+      uint64_t artifact_bytes, uint64_t claim_count, uint64_t declared_linear_memory_maximum);
 
-  /// Reserve one lazy instance. Its module's declared memory maximum is added
-  /// to aggregate memory because every instance owns an independent store.
-  [[nodiscard]] ParserModuleAdmissionDecision admitInstance(std::string_view module_id);
+  /// Reserve one instance of an admitted module. Every instance owns an
+  /// independent store, so the module's declared memory is charged again.
+  [[nodiscard]] ParserModuleAdmissionDecision admitInstance(uint64_t module_reservation);
 
-  [[nodiscard]] bool releaseInstance(std::string_view module_id);
-  [[nodiscard]] bool releaseModule(std::string_view module_id);
+  /// Releases are idempotent-safe: unknown or already-released ids are ignored.
+  void releaseInstance(uint64_t module_reservation);
+  /// A module reservation is released even when instances are still live;
+  /// their later releases then find no module and are ignored.
+  void releaseModule(uint64_t module_reservation);
 
   [[nodiscard]] const ParserModuleSessionBudgetLimits& limits() const noexcept;
-  [[nodiscard]] ParserModuleSessionBudgetUsage usage() const noexcept;
+  [[nodiscard]] ParserModuleSessionBudgetUsage usage() const;
 
  private:
   struct ModuleReservation {
-    uint64_t artifact_bytes = 0;
     uint64_t claim_count = 0;
     uint64_t declared_linear_memory_maximum = 0;
     uint64_t active_instances = 0;
   };
 
   ParserModuleSessionBudgetLimits limits_;
+  mutable std::mutex mutex_;
   ParserModuleSessionBudgetUsage usage_;
-  std::map<std::string, ModuleReservation, std::less<>> modules_;
+  uint64_t next_reservation_ = 1;
+  std::map<uint64_t, ModuleReservation> modules_;
 };
-
-/// Process-session defaults used by loader overloads that are not supplied an
-/// application-owned tracker. The returned tracker is shared by native and
-/// wasm admission.
-[[nodiscard]] std::shared_ptr<ParserModuleSessionBudgetTracker> defaultParserModuleSessionBudget();
 
 }  // namespace PJ

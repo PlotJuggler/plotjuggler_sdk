@@ -45,6 +45,13 @@ struct WasmMemoryLimits {
   bool operator==(const WasmMemoryLimits&) const = default;
 };
 
+struct WasmTableLimits {
+  uint32_t minimum_elements = 0;
+  std::optional<uint32_t> maximum_elements;
+
+  bool operator==(const WasmTableLimits&) const = default;
+};
+
 struct WasmImport {
   std::string module;
   std::string name;
@@ -64,6 +71,7 @@ struct WasmModuleInfo {
   std::vector<WasmImport> imports;
   std::vector<WasmExport> exports;
   std::vector<WasmMemoryLimits> memories;
+  std::vector<WasmTableLimits> tables;
   bool has_start_section = false;
   size_t section_count = 0;
   size_t function_type_count = 0;
@@ -94,5 +102,40 @@ struct WasmModuleInfo {
  * those declarations. Byte arithmetic is overflow-checked.
  */
 [[nodiscard]] Expected<uint64_t> validateParserModuleWasmMemory(const WasmModuleInfo& module, uint64_t maximum_bytes);
+
+/** Validate bounded tables and return their aggregate declared maximum.
+ *
+ * Table storage is host memory outside linear memory, so every declared table
+ * (imported or defined) must provide a maximum, and the sum of those maxima
+ * must not exceed `maximum_elements`. A module without tables returns 0.
+ */
+[[nodiscard]] Expected<uint64_t> validateParserModuleWasmTables(
+    const WasmModuleInfo& module, uint64_t maximum_elements);
+
+/// Per-artifact resource caps applied by the static admission audit.
+struct ParserModuleWasmLimits {
+  static constexpr uint64_t kDefaultMaximumLinearMemoryBytes = UINT64_C(256) * 1024U * 1024U;
+  static constexpr uint64_t kDefaultMaximumTableElements = UINT64_C(65536);
+
+  uint64_t maximum_linear_memory_bytes = kDefaultMaximumLinearMemoryBytes;
+  uint64_t maximum_table_elements = kDefaultMaximumTableElements;
+};
+
+/// Result of a passed admission audit. `manifest_json` views the audited bytes.
+struct ParserModuleWasmArtifact {
+  Span<const uint8_t> manifest_json;
+  WasmModuleInfo module;
+  uint64_t declared_linear_memory_maximum = 0;
+  uint64_t declared_table_elements = 0;
+};
+
+/** The complete static admission audit shared by the host loader and the
+ * `pj-wasm-embed-manifest` tool: exactly one manifest section, an empty import
+ * set (the frozen v1 allow-list), the frozen operational export ABI, bounded
+ * exported linear memory, and bounded tables. Nothing is compiled or executed.
+ * The manifest bytes are returned verbatim; JSON validation is the caller's.
+ */
+[[nodiscard]] Expected<ParserModuleWasmArtifact> validateParserModuleWasmArtifact(
+    Span<const uint8_t> wasm, const ParserModuleWasmLimits& limits);
 
 }  // namespace PJ::parser_module

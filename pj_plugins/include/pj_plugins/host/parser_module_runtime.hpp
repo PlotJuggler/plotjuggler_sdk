@@ -8,14 +8,17 @@
  *
  * The wrapper performs one serialized create/bind/parse/destroy lifecycle.
  * Module-owned descriptor views are decoded and copied before parse returns.
- * The independent strike tracker is deliberately pure, non-thread-safe state
- * so a host executor can apply its own scheduling and generation policy.
+ * The independent strike tracker holds pure per-claim state that a host
+ * executor drives with its own scheduling and generation policy; it is
+ * thread-safe because the scalar and object routes of one claim run on
+ * different threads.
  */
 
 #include <compare>
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <variant>
@@ -148,7 +151,11 @@ struct ParserModuleStrikeState {
   uint8_t quarantine_count = 0;
 };
 
-/// Pure per-(module, claim) contract-fault state. Data errors never mutate it.
+/// Per-(module, claim) contract-fault state shared by native and wasm modules.
+/// Data errors never mutate it. Three contract violations quarantine the claim;
+/// the host then replays create/bind and calls markRecreated(). A contract
+/// violation while quarantined (a failed replay) or a second three-strike cycle
+/// disables the claim for the session. Thread-safe.
 class ParserModuleStrikeTracker {
  public:
   [[nodiscard]] ParserModuleStrikeState recordFault(const ParserModuleClaimKey& key, ParserModuleFaultKind fault);
@@ -160,6 +167,7 @@ class ParserModuleStrikeTracker {
   [[nodiscard]] ParserModuleStrikeState state(const ParserModuleClaimKey& key) const;
 
  private:
+  mutable std::mutex mutex_;
   std::map<ParserModuleClaimKey, ParserModuleStrikeState> states_;
 };
 

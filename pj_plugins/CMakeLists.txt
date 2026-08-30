@@ -33,7 +33,10 @@ else()
   set(PJ_WASMER_AVAILABLE ON)
   message(STATUS "Wasm parser-module loader enabled with Wasmer 7.0.1: ${PJ_WASMER_ROOT}")
 endif()
-set(PJ_SDK_WITH_WASMER ${PJ_WASMER_AVAILABLE} PARENT_SCOPE)
+# The wasm executor is an in-tree component: the application builds this SDK
+# from source with PJ_WASMER_ROOT set. Installed packages stay wasmer-free (they
+# still ship the wasm authoring preset and pj-wasm-embed-manifest), so nothing
+# below exports a target that would reference pj_wasmer_static.
 
 add_library(pj_plugin_loader_detail STATIC
   src/detail/vtable_validation.cpp
@@ -361,7 +364,7 @@ target_link_libraries(pj_plugin_host INTERFACE
   pj_parser_module_host
 )
 if(PJ_WASMER_AVAILABLE)
-  target_link_libraries(pj_plugin_host INTERFACE pj_wasm_parser_module_host)
+  target_link_libraries(pj_plugin_host INTERFACE $<BUILD_INTERFACE:pj_wasm_parser_module_host>)
 endif()
 set_target_properties(pj_plugin_host PROPERTIES EXPORT_NAME plugin_host)
 add_library(plotjuggler_sdk::plugin_host ALIAS pj_plugin_host)
@@ -810,10 +813,6 @@ endif() # PJ_BUILD_TESTS
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  set(_pj_plugin_host_install_targets)
-  if(PJ_WASMER_AVAILABLE)
-    list(APPEND _pj_plugin_host_install_targets pj_wasm_parser_module_host)
-  endif()
   install(TARGETS
       pj_plugin_loader_detail
       pj_plugin_sdk
@@ -824,7 +823,6 @@ if(PJ_INSTALL_SDK)
       pj_message_parser_host
       pj_toolbox_host
       pj_plugin_host
-      ${_pj_plugin_host_install_targets}
     EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

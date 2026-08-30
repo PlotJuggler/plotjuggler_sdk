@@ -67,41 +67,30 @@ using PJ::unexpected;
   if (!manifest) {
     return unexpected(manifest.error());
   }
-  auto embedded = PJ::parser_module::readManifestSection(*wasm);
-  if (!embedded) {
-    return unexpected(embedded.error());
+  PJ::parser_module::ParserModuleWasmLimits limits;
+  limits.maximum_linear_memory_bytes = maximum_memory_bytes;
+  auto artifact = PJ::parser_module::validateParserModuleWasmArtifact(*wasm, limits);
+  if (!artifact) {
+    return unexpected(artifact.error());
   }
-  if (embedded->size() != manifest->size() || !std::equal(embedded->begin(), embedded->end(), manifest->begin())) {
+  const auto& embedded = artifact->manifest_json;
+  if (embedded.size() != manifest->size() || !std::equal(embedded.begin(), embedded.end(), manifest->begin())) {
     return unexpected(std::string("embedded parser-module manifest bytes do not match the source file"));
   }
 
-  auto module = PJ::parser_module::inspectWasmModule(*wasm);
-  if (!module) {
-    return unexpected(module.error());
-  }
-  auto abi = PJ::parser_module::validateParserModuleWasmAbi(*module);
-  if (!abi) {
-    return unexpected(abi.error());
-  }
-  if (!module->imports.empty()) {
-    const auto& imported = module->imports.front();
-    return unexpected("disallowed parser-module import: " + imported.module + "." + imported.name);
-  }
-  auto memory = PJ::parser_module::validateParserModuleWasmMemory(*module, maximum_memory_bytes);
-  if (!memory) {
-    return unexpected(memory.error());
-  }
-
+  const auto& module = artifact->module;
   std::cout << "WASM parser-module ABI conformance: PASS\n"
-            << "  sections enumerated: " << module->section_count << '\n'
-            << "  function types: " << module->function_type_count << ", functions: " << module->function_count
-            << ", exports: " << module->exports.size() << '\n'
+            << "  sections enumerated: " << module.section_count << '\n'
+            << "  function types: " << module.function_type_count << ", functions: " << module.function_count
+            << ", exports: " << module.exports.size() << '\n'
             << "  operational exports: 8 exact signatures verified\n"
             << "  reactor: _initialize exported; _start/start section absent\n"
             << "  native-only metadata exports: absent\n"
             << "  imports: empty frozen allow-list verified\n"
-            << "  declared linear-memory maximum: " << *memory << " bytes\n"
-            << "  manifest section: exactly one, " << embedded->size() << " exact bytes\n";
+            << "  declared linear-memory maximum: " << artifact->declared_linear_memory_maximum << " bytes\n"
+            << "  declared table elements: " << artifact->declared_table_elements << " (cap "
+            << limits.maximum_table_elements << ")\n"
+            << "  manifest section: exactly one, " << embedded.size() << " exact bytes\n";
   return {};
 }
 
@@ -134,7 +123,7 @@ int main(int argc, char** argv) {
   if (argc == 5 && std::string_view(argv[1]) == "embed") {
     result = embed(argv[2], argv[3], argv[4]);
   } else if ((argc == 4 || argc == 5) && std::string_view(argv[1]) == "verify") {
-    uint64_t maximum_memory_bytes = UINT64_C(256) * 1024U * 1024U;
+    uint64_t maximum_memory_bytes = PJ::parser_module::ParserModuleWasmLimits::kDefaultMaximumLinearMemoryBytes;
     if (argc == 5) {
       const std::string_view text(argv[4]);
       const auto parsed = std::from_chars(text.data(), text.data() + text.size(), maximum_memory_bytes);

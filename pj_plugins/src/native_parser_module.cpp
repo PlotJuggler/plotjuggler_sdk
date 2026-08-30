@@ -62,8 +62,8 @@ Expected<Function> resolve(
 namespace detail {
 
 NativeParserModuleState::~NativeParserModuleState() {
-  if (module_budget_reserved && session_budget != nullptr) {
-    (void)session_budget->releaseModule(module_id);
+  if (session_budget != nullptr) {
+    session_budget->releaseModule(module_reservation);
   }
 }
 
@@ -74,15 +74,12 @@ NativeParserModule::NativeParserModule(std::shared_ptr<const detail::NativeParse
 
 Expected<NativeParserModule> NativeParserModule::load(
     std::string_view path, DiagnosticSink sink, std::string diagnostic_source) {
-  return load(path, defaultParserModuleSessionBudget(), std::move(sink), std::move(diagnostic_source));
+  return load(path, nullptr, std::move(sink), std::move(diagnostic_source));
 }
 
 Expected<NativeParserModule> NativeParserModule::load(
     std::string_view path, std::shared_ptr<ParserModuleSessionBudgetTracker> budget, DiagnosticSink sink,
     std::string diagnostic_source) {
-  if (budget == nullptr) {
-    return rejectLoad(path, sink, diagnostic_source, "native parser-module session budget is null");
-  }
   detail::LibraryPathIdentity recorded_path;
   auto handle_result = detail::openNativeParserModule(path, &recorded_path);
   if (!handle_result) {
@@ -133,28 +130,28 @@ Expected<NativeParserModule> NativeParserModule::load(
   const auto* manifest = reinterpret_cast<const char*>(static_cast<uintptr_t>(manifest_addr));
   state->manifest_json.assign(manifest, static_cast<size_t>(manifest_len));
 
-  auto decoded_manifest = decodeParserModuleManifest(state->manifest_json, ParserClaimProvenance::kFolderDrop);
-  if (!decoded_manifest) {
-    return rejectLoad(
-        path, sink, diagnostic_source, "invalid native parser-module manifest: " + decoded_manifest.error());
+  if (budget != nullptr) {
+    // Budget accounting needs the claim count, so the manifest is decoded here
+    // as well as at catalog ingestion. Without a budget the 0.22 contract holds:
+    // the loader copies the bytes and leaves every manifest decision to the
+    // catalog.
+    auto decoded_manifest = decodeParserModuleManifest(state->manifest_json, ParserClaimProvenance::kFolderDrop);
+    if (!decoded_manifest) {
+      return rejectLoad(
+          path, sink, diagnostic_source, "invalid native parser-module manifest: " + decoded_manifest.error());
+    }
+    std::error_code file_error;
+    const uintmax_t artifact_size = std::filesystem::file_size(std::filesystem::path(path), file_error);
+    if (file_error || artifact_size > std::numeric_limits<uint64_t>::max()) {
+      return rejectLoad(path, sink, diagnostic_source, "native parser-module artifact file size is unreadable");
+    }
+    auto admission = budget->admitModule(static_cast<uint64_t>(artifact_size), decoded_manifest->claims.size(), 0);
+    if (!admission.accepted()) {
+      return rejectLoad(path, sink, diagnostic_source, std::move(admission.diagnostic));
+    }
+    state->session_budget = std::move(budget);
+    state->module_reservation = admission.reservation;
   }
-  std::error_code file_error;
-  const uintmax_t artifact_size = std::filesystem::file_size(std::filesystem::path(path), file_error);
-  if (file_error || artifact_size > std::numeric_limits<uint64_t>::max()) {
-    return rejectLoad(path, sink, diagnostic_source, "native parser-module artifact file size is unreadable");
-  }
-  state->module_id = decoded_manifest->id;
-  state->claim_ids.reserve(decoded_manifest->claims.size());
-  for (const auto& claim : decoded_manifest->claims) {
-    state->claim_ids.push_back(claim.claim_id);
-  }
-  state->session_budget = budget;
-  auto admission = budget->admitModule(
-      decoded_manifest->id, static_cast<uint64_t>(artifact_size), decoded_manifest->claims.size(), 0);
-  if (!admission.accepted()) {
-    return rejectLoad(path, sink, diagnostic_source, std::move(admission.diagnostic));
-  }
-  state->module_budget_reserved = true;
 
   return NativeParserModule(std::move(state));
 }

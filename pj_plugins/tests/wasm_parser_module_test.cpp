@@ -334,6 +334,62 @@ std::vector<uint8_t> withoutMemoryMaximum(std::vector<uint8_t> wasm) {
   return wasm;
 }
 
+/// Rewrite the fixture's single funcref table limits. A null maximum drops
+/// the maximum flag entirely.
+std::vector<uint8_t> withTableLimits(std::vector<uint8_t> wasm, std::optional<uint32_t> maximum) {
+  const auto table = findSection(wasm, 4);
+  EXPECT_TRUE(table.has_value());
+  if (!table) {
+    return wasm;
+  }
+  size_t position = table->payload_begin;
+  const auto count = readVarUint32(wasm, &position);
+  const uint8_t reference_type = wasm[position++];
+  const auto flags = readVarUint32(wasm, &position);
+  const auto minimum = readVarUint32(wasm, &position);
+  EXPECT_EQ(count, 1U);
+  EXPECT_EQ(reference_type, 0x70);
+  EXPECT_EQ(flags, 1U);
+  EXPECT_TRUE(minimum.has_value());
+  if (!count || *count != 1 || !flags || *flags != 1 || !minimum) {
+    return wasm;
+  }
+
+  std::vector<uint8_t> payload{1, 0x70, static_cast<uint8_t>(maximum ? 1 : 0)};
+  append(&payload, encodeVarUint32(*minimum));
+  if (maximum) {
+    append(&payload, encodeVarUint32(std::max(*maximum, *minimum)));
+  }
+  const auto replacement = encodeSection(4, payload);
+  wasm.erase(wasm.begin() + static_cast<ptrdiff_t>(table->begin), wasm.begin() + static_cast<ptrdiff_t>(table->end));
+  wasm.insert(wasm.begin() + static_cast<ptrdiff_t>(table->begin), replacement.begin(), replacement.end());
+  return wasm;
+}
+
+/// Replace the embedded manifest with one declaring three claims while the
+/// compiled module still knows two, so the guest's own creation-error path
+/// (token zero) is reachable through a claim index the host accepts.
+std::vector<uint8_t> withThreeClaimManifest(std::vector<uint8_t> wasm) {
+  wasm = withoutManifest(std::move(wasm));
+  constexpr std::string_view kManifest = R"({
+  "module_abi": 1,
+  "id": "org.plotjuggler.test.kit-cdr-pointcloud",
+  "name": "Authoring kit CDR PointCloud fixture",
+  "version": "1.0.0",
+  "claims": [
+    {"claim_id": "full-wire", "encoding": "ros2msg", "type_name": "toy_msgs/msg/Cloud",
+     "routes": ["object"], "object_type": "kPointCloud", "priority": 0},
+    {"claim_id": "spliced", "encoding": "ros2msg", "type_name": "toy_msgs/msg/CloudSplice",
+     "routes": ["object"], "object_type": "kPointCloud", "priority": 0},
+    {"claim_id": "phantom", "encoding": "ros2msg", "type_name": "toy_msgs/msg/Phantom",
+     "routes": ["object"], "object_type": "kPointCloud", "priority": 0}
+  ]
+})";
+  auto embedded = parser_module::appendManifestSection(wasm, bytes(kManifest));
+  EXPECT_TRUE(embedded.has_value()) << embedded.error();
+  return embedded ? std::move(*embedded) : std::move(wasm);
+}
+
 std::vector<uint8_t> withFunctionFirstOpcode(std::vector<uint8_t> wasm, std::string_view export_name, uint8_t opcode) {
   const auto function = findExportLocation(wasm, export_name);
   const auto code = findSection(wasm, 10);
@@ -503,6 +559,12 @@ std::vector<uint8_t> toyPayload() {
   return output;
 }
 
+WasmParserModuleLoadOptions collectingInto(std::vector<Diagnostic>* diagnostics) {
+  WasmParserModuleLoadOptions options;
+  options.sink = [diagnostics](const Diagnostic& diagnostic) { diagnostics->push_back(diagnostic); };
+  return options;
+}
+
 parser_module::BindingInfoV1 binding(uint32_t claim_index, std::string_view schema) {
   return parser_module::BindingInfoV1{
       .route = parser_module::Route::kObject,
@@ -519,11 +581,13 @@ parser_module::BindingInfoV1 binding(uint32_t claim_index, std::string_view sche
 
 TEST(WasmParserModule, LoadsValidatesAndAdmitsManifestWithoutInstantiation) {
   std::vector<Diagnostic> diagnostics;
-  auto module = WasmParserModule::load(
-      PJ_TOY_CDR_POINTCLOUD_WASM_PATH, [&](const Diagnostic& diagnostic) { diagnostics.push_back(diagnostic); });
+  auto module = WasmParserModule::load(PJ_TOY_CDR_POINTCLOUD_WASM_PATH, collectingInto(&diagnostics));
   ASSERT_TRUE(module.has_value()) << module.error();
   EXPECT_TRUE(module->valid());
   EXPECT_TRUE(diagnostics.empty());
+  EXPECT_EQ(module->declaredLinearMemoryMaximum(), UINT64_C(256) * 1024U * 1024U);
+  EXPECT_GT(module->declaredTableElements(), 0U);
+  EXPECT_LE(module->declaredTableElements(), parser_module::ParserModuleWasmLimits::kDefaultMaximumTableElements);
 
   ParserClaimCatalog catalog;
   auto manifest = catalog.ingestModuleManifest(module->manifestJson(), ParserClaimProvenance::kFolderDrop, 31);
@@ -544,14 +608,15 @@ TEST(WasmParserModule, RejectsLoaderViolationsWithOneDiagnostic) {
       {withWrongExportSignature(valid), "wrong wasm signature"},
       {withDisallowedImport(valid), "wasi_snapshot_preview1.fd_write"},
       {withoutMemoryMaximum(valid), "memory has no declared maximum"},
+      {withTableLimits(valid, std::nullopt), "table has no declared maximum"},
+      {withTableLimits(valid, UINT32_C(1) << 20U), "table maximum 1048576 exceeds configured cap"},
       {withInvalidParseOpcode(valid), "Wasmer rejected parser module"},
   };
 
   for (const auto& [artifact, expected] : cases) {
     TemporaryWasm file(artifact);
     std::vector<Diagnostic> diagnostics;
-    auto module =
-        WasmParserModule::load(file.string(), [&](const Diagnostic& diagnostic) { diagnostics.push_back(diagnostic); });
+    auto module = WasmParserModule::load(file.string(), collectingInto(&diagnostics));
     EXPECT_FALSE(module.has_value()) << expected;
     ASSERT_EQ(diagnostics.size(), 1U) << expected;
     EXPECT_EQ(diagnostics.front().level, DiagnosticLevel::kError);
@@ -638,12 +703,28 @@ TEST(WasmParserModule, DeepSchemaReturnsDepthErrorWithConfiguredShadowStack) {
   EXPECT_NE(result->message.find("nesting depth exceeds 64"), std::string::npos);
 }
 
-TEST(WasmParserModule, CopiesTokenZeroCreationError) {
+TEST(WasmParserModule, RejectsClaimIndexOutsideTheManifestBeforeCallingTheGuest) {
   auto module = WasmParserModule::load(PJ_TOY_CDR_POINTCLOUD_WASM_PATH);
   ASSERT_TRUE(module.has_value()) << module.error();
   auto instance = WasmParserModuleInstance::create(*module, 2);
   ASSERT_FALSE(instance.has_value());
+  EXPECT_EQ(instance.error().outcome, WasmParserModuleCreateOutcome::kError);
+  EXPECT_EQ(instance.error().fault, ParserModuleFaultKind::kNone);
   EXPECT_NE(instance.error().message.find("claim index is outside the wasm parser-module manifest"), std::string::npos);
+}
+
+TEST(WasmParserModule, CopiesTokenZeroCreationError) {
+  TemporaryWasm artifact(withThreeClaimManifest(readFile(PJ_TOY_CDR_POINTCLOUD_WASM_PATH)));
+  auto module = WasmParserModule::load(artifact.string());
+  ASSERT_TRUE(module.has_value()) << module.error();
+  // The host accepts index 2; the guest (built with two claims) returns the
+  // creation-error token and the message is read back through
+  // pj_module_last_error(0, ...).
+  auto instance = WasmParserModuleInstance::create(*module, 2);
+  ASSERT_FALSE(instance.has_value());
+  EXPECT_EQ(instance.error().outcome, WasmParserModuleCreateOutcome::kError);
+  EXPECT_EQ(instance.error().fault, ParserModuleFaultKind::kNone);
+  EXPECT_EQ(instance.error().message, "claim index is outside the module manifest");
 }
 
 TEST(WasmParserModule, ClassifiesModuleParseErrorAsStrikeFreeDataError) {
@@ -687,7 +768,7 @@ TEST(WasmParserModule, ClassifiesGuestTrapAsContractViolation) {
   EXPECT_EQ(tracker.recordFault(key, result->fault).strikes, 1U);
 }
 
-TEST(WasmParserModule, TypesCreationTrapsAndRecordsTheirStrike) {
+TEST(WasmParserModule, TypesCreationTrapsAsContractViolations) {
   TemporaryWasm artifact(withTrappingCreate(readFile(PJ_TOY_CDR_POINTCLOUD_WASM_PATH)));
   auto module = WasmParserModule::load(artifact.string());
   ASSERT_TRUE(module.has_value()) << module.error();
@@ -696,19 +777,23 @@ TEST(WasmParserModule, TypesCreationTrapsAndRecordsTheirStrike) {
   EXPECT_EQ(instance.error().outcome, WasmParserModuleCreateOutcome::kError);
   EXPECT_EQ(instance.error().fault, ParserModuleFaultKind::kContractViolation);
   EXPECT_NE(instance.error().message.find("pj_module_create failed: wasm trap"), std::string::npos);
-  EXPECT_EQ(module->strikeState(0).strikes, 1U);
+
+  // The host feeds the classified fault to the same tracker native uses.
+  ParserModuleStrikeTracker tracker;
+  const ParserModuleClaimKey key{"org.plotjuggler.test.kit-cdr-pointcloud", "full-wire"};
+  EXPECT_EQ(tracker.recordFault(key, instance.error().fault).strikes, 1U);
 }
 
-TEST(WasmParserModule, RecordsDestroyAndGuestFreeTraps) {
+TEST(WasmParserModule, SurvivesDestroyTrapsAndReportsGuestFreeTraps) {
   {
     TemporaryWasm artifact(withTrappingDestroy(readFile(PJ_TOY_CDR_POINTCLOUD_WASM_PATH)));
     auto module = WasmParserModule::load(artifact.string());
     ASSERT_TRUE(module.has_value()) << module.error();
-    {
-      auto instance = WasmParserModuleInstance::create(*module, 0);
-      ASSERT_TRUE(instance.has_value()) << instance.error().message;
-    }
-    EXPECT_EQ(module->strikeState(0).strikes, 1U);
+    auto instance = WasmParserModuleInstance::create(*module, 0);
+    ASSERT_TRUE(instance.has_value()) << instance.error().message;
+    // Teardown is best-effort: a trapping destroy must not escape the wrapper.
+    *instance = WasmParserModuleInstance{};
+    EXPECT_FALSE(instance->valid());
   }
 
   TemporaryWasm artifact(withTrappingFree(readFile(PJ_TOY_CDR_POINTCLOUD_WASM_PATH)));
@@ -721,7 +806,6 @@ TEST(WasmParserModule, RecordsDestroyAndGuestFreeTraps) {
   EXPECT_EQ(result->fault, ParserModuleFaultKind::kContractViolation);
   EXPECT_NE(result->message.find("pj_module_free failed after bind"), std::string::npos);
   EXPECT_NE(instance->lifecycleDiagnostic().find("pj_module_free failed after bind"), std::string_view::npos);
-  EXPECT_EQ(module->strikeState(0).strikes, 1U);
 }
 
 }  // namespace
