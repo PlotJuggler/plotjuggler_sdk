@@ -10,6 +10,7 @@
 
 #include "descriptor_import/file_lock.hpp"
 #include "descriptor_import/fs_durability.hpp"
+#include "pj_base/sdk/testing/request_cache_probe.hpp"
 
 #if defined(_WIN32)
 // windows.h min/max macros break std::max / numeric_limits<>::max.
@@ -127,6 +128,28 @@ void touchStamp(const fs::path& artifact) {
   std::error_code ec;
   fs::last_write_time(stamp, fs::file_time_type::clock::now(), ec);
   detail::chmod0600(stamp);
+}
+
+std::optional<fs::file_time_type> readLruStamp(const fs::path& artifact, std::error_code& ec) {
+  auto stamp = fs::last_write_time(CacheLayout::touchOf(artifact), ec);
+  if (!ec) {
+    return stamp;
+  }
+  stamp = fs::last_write_time(artifact, ec);
+  if (!ec) {
+    return stamp;
+  }
+  return std::nullopt;
+}
+
+bool isMissing(const std::error_code& ec) {
+  return ec == std::errc::no_such_file_or_directory;
+}
+
+void noteErrorUnlessMissing(const std::error_code& ec, CleanupResult& result) {
+  if (ec && !isMissing(ec)) {
+    result.had_errors = true;
+  }
 }
 
 }  // namespace
@@ -447,15 +470,7 @@ Scan scanRoot(const CacheLayout& layout, const fs::path& root, const CleanupPoli
         continue;
       }
       scan.total = saturatedAdd(scan.total, size);
-      auto stamp = fs::last_write_time(CacheLayout::touchOf(entry.path()), entry_ec);
-      if (entry_ec) {
-        // No touch sidecar (pre-stamp file or a deleted stamp): fall back to
-        // the file's own mtime so it still participates in the order.
-        stamp = fs::last_write_time(entry.path(), entry_ec);
-        if (entry_ec) {
-          stamp = fs::file_time_type::min();
-        }
-      }
+      const auto stamp = readLruStamp(entry.path(), entry_ec).value_or(fs::file_time_type::min());
       scan.candidates.push_back({entry.path(), size, stamp});
     }
   }
@@ -470,7 +485,8 @@ Scan scanRoot(const CacheLayout& layout, const fs::path& root, const CleanupPoli
 // the lock dies with its process (so a crashed writer's partial becomes
 // collectable), while the age threshold keeps process B from ever deleting
 // process A's live partial in a lock-handoff instant.
-void removeStalePartials(const std::vector<StalePartial>& partials, CleanupResult& result) {
+void removeStalePartials(
+    const std::vector<StalePartial>& partials, const CleanupPolicy& policy, CleanupResult& result) {
   for (const StalePartial& partial : partials) {
     std::string lock_error;
     bool contended = false;
@@ -480,11 +496,24 @@ void removeStalePartials(const std::vector<StalePartial>& partials, CleanupResul
       continue;  // a live materialization owns this identity
     }
     std::error_code ec;
+    if (!fs::is_regular_file(partial.file, ec)) {
+      noteErrorUnlessMissing(ec, result);
+      continue;
+    }
+    const auto mtime = fs::last_write_time(partial.file, ec);
+    if (ec) {
+      noteErrorUnlessMissing(ec, result);
+      continue;
+    }
+    if (fs::file_time_type::clock::now() - mtime < policy.orphan_partial_age) {
+      continue;
+    }
     const std::uintmax_t size = fs::file_size(partial.file, ec);
     const bool size_known = !ec;
-    if (!fs::remove(partial.file, ec) || ec) {
-      result.had_errors = true;
-    } else if (size_known) {
+    ec.clear();
+    const bool removed = fs::remove(partial.file, ec);
+    noteErrorUnlessMissing(ec, result);
+    if (!ec && removed && size_known) {
       result.bytes_reclaimed = saturatedAdd(result.bytes_reclaimed, size);
     }
   }
@@ -531,8 +560,32 @@ void evictUntilUnderBudget(
       continue;  // leased or re-materializing: never evict under a holder
     }
     std::error_code ec;
-    if (!fs::remove(victim.file, ec) || ec) {
-      result.had_errors = true;
+    if (!fs::is_regular_file(victim.file, ec)) {
+      noteErrorUnlessMissing(ec, result);
+      continue;
+    }
+    const std::uintmax_t current_size = fs::file_size(victim.file, ec);
+    if (ec) {
+      noteErrorUnlessMissing(ec, result);
+      continue;
+    }
+    if (current_size != victim.size) {
+      continue;
+    }
+    const auto current_stamp = readLruStamp(victim.file, ec);
+    if (!current_stamp.has_value()) {
+      noteErrorUnlessMissing(ec, result);
+      continue;
+    }
+    if (*current_stamp != victim.stamp) {
+      continue;
+    }
+    const bool removed = fs::remove(victim.file, ec);
+    noteErrorUnlessMissing(ec, result);
+    if (ec) {
+      continue;
+    }
+    if (!removed) {
       continue;
     }
     total -= victim.size;
@@ -547,15 +600,14 @@ void evictUntilUnderBudget(
   result.target_met = result.bytes_held_over_target == 0;
 }
 
-}  // namespace
-
-CleanupResult RequestArtifactCache::cleanup(const CleanupPolicy& policy) {
+CleanupResult cleanupImpl(
+    const CacheSpec& spec, const CleanupPolicy& policy, const std::function<void()>& between_scan_and_evict) {
   CleanupResult result;
-  if (spec_.root.empty()) {
+  if (spec.root.empty()) {
     return result;
   }
   std::error_code ec;
-  const fs::file_status root_status = fs::status(spec_.root, ec);
+  const fs::file_status root_status = fs::status(spec.root, ec);
   if (ec == std::errc::no_such_file_or_directory || (!ec && !fs::exists(root_status))) {
     return result;  // first use: the first materialization creates the root later
   }
@@ -566,16 +618,38 @@ CleanupResult RequestArtifactCache::cleanup(const CleanupPolicy& policy) {
     result.had_errors = true;
     return result;
   }
-  const CacheLayout layout(spec_);
-  Scan scan = scanRoot(layout, spec_.root, policy, result);
+  const CacheLayout layout(spec);
+  Scan scan = scanRoot(layout, spec.root, policy, result);
   if (!result.target_met) {
     return result;  // the scan itself failed
   }
   result.bytes_scanned = scan.total;
-  removeStalePartials(scan.stale_partials, result);
-  evictUntilUnderBudget(scan.candidates, scan.total, spec_.root, policy, result);
+  if (between_scan_and_evict) {
+    try {
+      between_scan_and_evict();
+    } catch (...) {
+      // A test probe cannot interrupt cleanup.
+    }
+  }
+  removeStalePartials(scan.stale_partials, policy, result);
+  evictUntilUnderBudget(scan.candidates, scan.total, spec.root, policy, result);
   return result;
 }
+
+}  // namespace
+
+CleanupResult RequestArtifactCache::cleanup(const CleanupPolicy& policy) {
+  return cleanupImpl(spec_, policy, {});
+}
+
+namespace testing {
+
+CleanupResult cleanupWithProbe(
+    RequestArtifactCache& cache, const CleanupPolicy& policy, std::function<void()> between_scan_and_evict) {
+  return cleanupImpl(cache.spec(), policy, between_scan_and_evict);
+}
+
+}  // namespace testing
 
 }  // namespace descriptor_import
 }  // namespace sdk

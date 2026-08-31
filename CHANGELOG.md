@@ -3,6 +3,14 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.25.1]
+
+### Fix: cache cleanup revalidates scanned files before removal (PATCH)
+
+Descriptor-import cache cleanup now rechecks an artifact's size and LRU stamp under its
+exclusive identity lock before eviction, and rechecks an orphan partial's age before removal.
+Files replaced, refreshed, or removed after the single cleanup scan are skipped without error.
+
 ## [0.25.0]
 
 ### Feature: plugin-authoring CMake helpers ship with the SDK (MINOR)
