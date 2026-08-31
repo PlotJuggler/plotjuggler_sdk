@@ -13,8 +13,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Make project cmake/ helpers discoverable to sub-trees and plugins.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPluginManifest
-include(PjPluginManifest)
+include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPlugin
+include(PjPlugin)
 include(PjParserModule)
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,8 @@ if(PJ_INSTALL_SDK)
   install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
-    cmake/PjPluginManifest.cmake
+    cmake/PjPlugin.cmake
+    cmake/PjCheckElfPluginExports.cmake
     cmake/PjParserModule.cmake
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
