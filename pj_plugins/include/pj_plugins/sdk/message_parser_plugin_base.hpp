@@ -9,6 +9,11 @@
  * the service registry plus optional object-write and parser-runtime services.
  * Override to additionally acquire optional services.
  * All trampolines are noexcept at the ABI boundary.
+ *
+ * The "maximum array size + clamp/skip" parser option is a cross-plugin config
+ * contract: read and write it with PJ::sdk::arrayLimitFromJson /
+ * arrayLimitToJson from pj_plugins/sdk/parser_array_policy.hpp rather than
+ * inventing per-parser keys.
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0

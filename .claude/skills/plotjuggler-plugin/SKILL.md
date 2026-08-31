@@ -110,6 +110,40 @@ The quickest correct start is to copy a working example from this repo and edit 
 family reference embeds an API skeleton for when the repo isn't at hand (domain
 placeholders like `openSocket()` are yours to fill in).
 
+## Step 2½ — The SDK already has it: do not write these
+
+Before writing any helper, look it up here. Every row is a problem plugin authors
+kept re-solving until the SDK absorbed the solution; several own a **wire or config
+contract**, so a private reimplementation is not merely redundant — it is
+incompatible with the host and with every other plugin. All headers are in
+`plotjuggler_sdk::plugin_sdk`; symbols live in `PJ::sdk` unless noted.
+
+| You need to… | Use | Header |
+|---|---|---|
+| Hand data from your receive thread to `onPoll()` (batch) | `DrainQueue<T>` — `push()` on the I/O thread, `drain()` in `onPoll()` | `pj_plugins/sdk/streaming_source.hpp` |
+| Same, but only the *latest* value matters (status, snapshot) | `LatestValueSlot<T>` — `set()` / `take()` | `pj_plugins/sdk/streaming_source.hpp` |
+| Push raw payloads to a MessageParser (delegated ingest), per topic | `DelegatedIngestCache::push(host, key, request, ts, bytes)` — caches bindings, anchors payload ownership, binding-unavailable is *not* an error | `pj_plugins/sdk/streaming_source.hpp` |
+| Read the `"_parser_config"` the host injects into your config JSON | `parserConfigOverride(config_json)` | `pj_plugins/sdk/streaming_source.hpp` |
+| Turn the topic-subscription ABI's string views into a `std::set` | `stringSetFromViews(views, count)` | `pj_plugins/sdk/streaming_source.hpp` |
+| Parser option "max array size" + clamp/skip (**config-key contract**) | `ArrayLimit`, `arrayLimitFromJson(cfg)`, `arrayLimitToJson(cfg, limit)`, `kMaxArraySizeKey`/`kArrayPolicyKey` | `pj_plugins/sdk/parser_array_policy.hpp` |
+| Parser-encoding combo in a streaming dialog | `writeEncodingSelector(wd, "encoding_combo", available, selected)`, `encodingAt(index, available)`, `parseEncodingsJson(json)` | `pj_plugins/sdk/streaming_dialog.hpp`, `pj_plugins/sdk/encoding_utils.hpp` |
+| Merge a topic selection the host reports only for *visible* rows | `mergeVisibleSelection(previous, reported, is_visible, accept)`, `passesSelectionFilter(topic, selection, projection)` | `pj_plugins/sdk/streaming_dialog.hpp` |
+| Build `scheme://host:port/path` from dialog fields (IPv6-safe) | `composeEndpoint(scheme, host, port, path)`, `composeHostPort(host, port)`, `authorityHost(host)` | `pj_plugins/sdk/endpoint.hpp` |
+| Validate a port string; lowercase an ASCII token | `parsePort(text) → optional<uint16_t>`, `lowerAscii(s)` | `pj_base/sdk/text_utils.hpp` |
+| Read an env var / find the plugin's own directory / per-user data dir (MSVC-clean) | `PJ::platform::getEnv`, `getSharedLibDir(fn_addr)`, `userDataDir()` | `pj_base/sdk/platform.hpp` |
+| Parse or compare versions (manifest, `min_sdk_required`) | `PJ::SemVer::parse` / `isValid` / `<=>`; `PJ::sdkVersion()` | `pj_base/sdk/semver.hpp`, `pj_base/sdk/version.hpp` |
+| Parse `event_json` yourself (only if you override raw `onWidgetEvent`) | `PJ::WidgetEvent` — `text()`, `currentIndex()`, `checked()`, `filePickerResult()`, … (`DialogPluginTyped` already does this for you) | `pj_plugins/sdk/widget_event.hpp` |
+| File-picker / tree-widget payloads (**wire-string contract**) | `FilePickerOptions`, `FilePickerResult`, `TreeItem`, `TreeCell` + their `*WireValue()` spellings | `pj_plugins/sdk/file_picker_types.hpp`, `pj_plugins/sdk/tree_types.hpp` |
+| Attach media/renderer hints or object metadata to an ObjectStore topic | `MediaMetadataBuilder`, `ObjectTopicMetadataBuilder` | `pj_base/sdk/media_metadata.hpp`, `pj_base/sdk/object_topic_metadata.hpp` |
+| Hold object bytes read from the toolbox object host | `ObjectBytes` (move-only RAII) | `pj_base/sdk/object_bytes.hpp` |
+| Arrow schema/array/stream out-params | `ArrowSchemaHolder`, `ArrowArrayHolder`, `ArrowStreamHolder` (Step 4 rule 6) | `pj_base/sdk/arrow.hpp` |
+| Provide `pj.descriptor_import.v1` (a source that fetches descriptors/datasets from an origin) | `readDescriptorImportStartRequest` + the compiled component `plotjuggler_sdk::descriptor_import_support` (`OriginPolicy`, `RequestArtifactCache`, `ProviderJob`) — link it only if you provide the extension | `pj_base/sdk/descriptor_import.hpp`, `pj_base/sdk/descriptor_import/` |
+| Embed a `.ui`/manifest/any file as a `constexpr` header; make the DSO a plugin | `pj_embed_file()`, `pj_configure_plugin()` (Step 3) | shipped CMake, no include |
+
+If your problem is in this table, the helper is the implementation. If it is *almost*
+in the table, extend the SDK helper (a maintainer change) rather than forking it into
+the plugin — that is how every row above got here.
+
 ## Step 3 — Build it
 
 One CMakeLists.txt serves every acquisition channel from Step 0:

@@ -67,10 +67,9 @@ PJ_DATA_SOURCE_PLUGIN(MyCsvSource,
 
 ```cpp
 #include <pj_base/sdk/data_source_patterns.hpp>
+#include <pj_plugins/sdk/streaming_source.hpp>   // DrainQueue: the receive-thread → onPoll() handoff
 #include <atomic>
-#include <mutex>
 #include <thread>
-#include <vector>
 
 class MyUdpSource : public PJ::StreamSourceBase {
  public:
@@ -88,11 +87,11 @@ class MyUdpSource : public PJ::StreamSourceBase {
   }
 
   PJ::Status onPoll() override {        // host thread — the only place you touch the host
-    std::vector<Sample> batch;
-    { std::lock_guard lk(mu_); batch.swap(buffer_); }
+    auto batch = pending_.drain();      // swaps the whole queue out under a brief lock
     auto topic = writeHost().ensureTopic("udp/data");
     if (!topic) return PJ::unexpected(topic.error());
-    for (auto& s : batch) {
+    for (; !batch.empty(); batch.pop()) {
+      const Sample& s = batch.front();
       const PJ::sdk::NamedFieldValue f[] = {{.name = "value", .value = s.value}};
       auto st = writeHost().appendRecord(*topic, s.timestamp_ns, f);
       if (!st) return PJ::unexpected(st.error());
@@ -105,42 +104,55 @@ class MyUdpSource : public PJ::StreamSourceBase {
     if (fd_ >= 0) shutdownSocket(fd_);  // unblock a blocking recv BEFORE join, or join() hangs forever
     if (io_.joinable()) io_.join();
     if (fd_ >= 0) { closeSocket(fd_); fd_ = -1; }
+    pending_.clear();
   }
 
  private:
   struct Sample { PJ::Timestamp timestamp_ns; double value; };
   void recvLoop() {
     while (running_.load()) {
-      Sample s = receiveOne(fd_);       // do NOT call writeHost() here
-      std::lock_guard lk(mu_); buffer_.push_back(s);
+      pending_.push(receiveOne(fd_));   // do NOT call writeHost() here
     }
   }
   int fd_ = -1; std::string config_ = "{}";
-  std::atomic<bool> running_{false}; std::thread io_; std::mutex mu_;
-  std::vector<Sample> buffer_;
+  std::atomic<bool> running_{false}; std::thread io_;
+  PJ::sdk::DrainQueue<Sample> pending_;   // NOT a hand-rolled mutex + vector
 };
 
 PJ_DATA_SOURCE_PLUGIN(MyUdpSource, R"({"id":"my-udp","name":"My UDP","version":"1.0.0"})")
 ```
 
+When only the newest value matters (a status snapshot, a "latest frame"), use
+`PJ::sdk::LatestValueSlot<T>` (`set()` / `take()`) instead of a queue — it coalesces
+for you. Both live in `pj_plugins/sdk/streaming_source.hpp`; do not write your own.
+
 For **delegated** ingest (let a MessageParser decode the bytes): declare
-`kCapabilityDelegatedIngest`, in `onStart()` call
-`runtimeHost().ensureParserBinding({.topic_name=..., .parser_encoding="json", ...})`,
-and in `onPoll()` push raw payloads with
-`runtimeHost().pushMessage(*binding, ts, [bytes = std::move(bytes)] { return bytes; })`.
-The fetch callable must capture its payload **by value** and be idempotent — the
-host may invoke it zero, one, or many times, possibly from consumer threads, and
-releases it exactly once even when the push fails. The config-envelope that ties
-source⇆parser is managed by the host; you never see the parser directly.
-Two delegated-ingest traps:
+`kCapabilityDelegatedIngest` and hold a `PJ::sdk::DelegatedIngestCache` (same
+header). In `onPoll()`:
+
+```cpp
+PJ::sdk::ParserBindingRequest req{.topic_name = topic, .parser_encoding = encoding_,
+                                  .parser_config_json = parser_config_};
+auto r = ingest_.push(runtimeHost(), /*cache_key=*/topic, req, ts, std::move(bytes));
+if (!r) return PJ::unexpected(r.error());               // a failed push IS an error
+// r == kBindingUnavailable: no parser for that encoding yet — skipped, retried next poll
+```
+
+The cache owns the `ensureParserBinding` + `pushMessage` pair per topic and anchors
+the payload bytes so the host's fetch callable is idempotent and by-value (the host
+may invoke it zero, one, or many times, from consumer threads, and releases it once
+even when the push fails). The config-envelope that ties source⇆parser is managed
+by the host; you never see the parser directly. Two delegated-ingest traps the
+helpers already encode — know them anyway:
 
 - **Forward `_parser_config`.** The host injects the parser's saved options into
-  *your* `loadConfig()` JSON under the key `"_parser_config"`. Extract that string
-  and pass it as `ParserBindingRequest.parser_config_json` — otherwise
-  schema-based parsers bind unconfigured and silently drop every message.
-- **Binding-unavailable is not an error.** If `ensureParserBinding` fails (e.g. no
-  parser installed for that encoding yet), skip the message and retry on a later
-  poll; only a failed `pushMessage` on an established binding is a real error.
+  *your* `loadConfig()` JSON under the key `"_parser_config"`. Read it with
+  `parser_config_ = PJ::sdk::parserConfigOverride(json)` and pass it as
+  `ParserBindingRequest.parser_config_json` — otherwise schema-based parsers bind
+  unconfigured and silently drop every message.
+- **Binding-unavailable is not an error.** `DelegatedIngestCache::push` returns the
+  `kBindingUnavailable` disposition, not an error, for exactly this reason; only a
+  failed `pushMessage` on an established binding is a real error.
 
 **Alternative receive shape — no thread at all:** if your transport offers a
 non-blocking read (e.g. ZMQ `dontwait`), you can skip the background thread and
@@ -163,9 +175,9 @@ extension (`pluginExtension(PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1)` returning a liv
 
 ## Traps specific to DataSource
 
-- **Background threads never touch the host.** Buffer in plugin memory under a
-  mutex; flush in `onPoll()`/`poll()`. Calling `writeHost()` from your I/O thread
-  races the host and crashes.
+- **Background threads never touch the host.** Buffer in plugin memory with
+  `PJ::sdk::DrainQueue` / `LatestValueSlot`; flush in `onPoll()`/`poll()`. Calling
+  `writeHost()` from your I/O thread races the host and crashes.
 - **`onStop()` must be idempotent** — it can be called more than once. Null out
   handles after closing.
 - **Streaming loses data if you block in `onPoll()`.** `onPoll()` runs at the

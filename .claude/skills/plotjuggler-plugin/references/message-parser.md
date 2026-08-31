@@ -121,6 +121,27 @@ the base class derives these extensions.
 
 - `loadConfig(json)` / `saveConfig()` — parser options (array-size limits,
   embedded-timestamp flag and field name, …). Tolerate unknown/missing keys.
+  The array-size option is a **cross-parser config contract** — never invent your
+  own keys for it; `pj_plugins/sdk/parser_array_policy.hpp` owns them (canonical
+  `max_array_size` / `array_policy` plus the legacy bools, read with precedence):
+
+  ```cpp
+  #include <pj_plugins/sdk/parser_array_policy.hpp>
+
+  PJ::Status loadConfig(std::string_view json) override {
+    auto cfg = nlohmann::json::parse(json, nullptr, false);
+    limit_ = PJ::sdk::arrayLimitFromJson(cfg);       // never throws; defaults 500 / clamp
+    use_embedded_ts_ = cfg.value("use_embedded_timestamp", false);
+    return PJ::okStatus();
+  }
+  std::string saveConfig() const override {
+    nlohmann::json cfg{{"use_embedded_timestamp", use_embedded_ts_}};
+    PJ::sdk::arrayLimitToJson(cfg, limit_);           // writes canonical + legacy keys
+    return cfg.dump();
+  }
+  // in the flatten loop:  if (n > limit_.max_size) { if (!limit_.clamp()) skip field; else n = limit_.max_size; }
+  PJ::sdk::ArrayLimit limit_;
+  ```
 - `parse()` — legacy direct route; only touch it when porting old code. Plugins
   that populate the handler table inherit a working `parse()` from the base.
 
