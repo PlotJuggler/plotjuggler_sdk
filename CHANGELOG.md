@@ -3,6 +3,40 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.25.0]
+
+### Feature: plugin-authoring CMake helpers ship with the SDK (MINOR)
+
+`cmake/PjPlugin.cmake` (installed with the `plugin_sdk` component, auto-included by
+`find_package(plotjuggler_sdk COMPONENTS plugin_sdk)`, the Conan build modules and the
+in-tree build) replaces `cmake/PjPluginManifest.cmake` and absorbs the helpers every
+official plugin carried in its own `cmake/` directory:
+
+- `pj_configure_plugin(<target> FAMILIES <f>... [MANIFEST_FILE] [MANIFEST_HEADER]
+  [MANIFEST_VAR] [ABI_MAJOR] [EXTRA_EXPORTS] [NO_EXPORT_HARDENING])` — the one call that
+  makes a `SHARED` target a correct plugin: manifest validation, symbol isolation + rpath,
+  the `.pjmanifest.json` sidecar, an optional `constexpr` header generated from
+  `manifest.json` (single source for the `PJ_*_PLUGIN` literal), and on Linux a
+  version-script export allowlist with a post-build gate against `STB_GNU_UNIQUE` leaks
+  and missing entry points.
+- `pj_embed_file(<target> FILE HEADER VAR_NAME)` — generic configure-time file →
+  `constexpr char[]` header (Qt Designer `.ui`, manifests, …); rewritten only when the
+  content changes, and emitted as character literals so non-ASCII bytes compile under
+  `-Werror` (the copied helper's integer initializers did not).
+- `pj_harden_plugin_exports(<target> [FAMILIES] [REQUIRED_EXPORTS] [EXTRA_EXPORTS])` —
+  the allowlist + gate on its own, for DSOs with non-standard entry points.
+- `pj_emit_plugin_manifest` is **deprecated** (one CMake deprecation notice per configure)
+  and forwards to `pj_configure_plugin(... NO_EXPORT_HARDENING)` with identical behavior.
+
+Migration from the copied helpers: `pj_embed_ui` → `pj_embed_file` (`UI_FILE` → `FILE`);
+`pj_embed_manifest` + `pj_emit_plugin_manifest` + `pj_harden_plugin_exports` → one
+`pj_configure_plugin(... FAMILIES <f>... MANIFEST_HEADER <h> MANIFEST_VAR <v>)`. The
+allowlist no longer names the never-shipped `pj_plugin_descriptor_*`; `REQUIRED_EXPORTS`
+are now kept exported automatically (no need to repeat them in `EXTRA_EXPORTS`).
+
+Plugins that adopt these helpers pin `plotjuggler_sdk/[>=0.25.0 <1.0.0]`. No ABI change;
+`abi/baseline.abi` is untouched.
+
 ## [0.24.0]
 
 ### Feature: plugin-authoring helpers + descriptor-import provider support (MINOR)
