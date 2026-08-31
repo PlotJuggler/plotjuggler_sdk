@@ -171,7 +171,7 @@ the plugin still links no Qt.
 ## Helpers you do not rewrite (connection dialogs)
 
 Every streaming source's dialog has the same three sub-problems; the SDK ships the
-answers (all `PJ::sdk`, header in parentheses). See SKILL.md Step 2½ for the full table.
+answers (all `PJ::sdk`, header in parentheses). See SKILL.md Step 4 for the full table.
 
 - **Parser-encoding combo** (`pj_plugins/sdk/streaming_dialog.hpp`,
   `pj_plugins/sdk/encoding_utils.hpp`). The host tells the owner which encodings

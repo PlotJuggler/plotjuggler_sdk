@@ -41,7 +41,7 @@ things that silently break a plugin.
   **maintainer** task. Stop and follow `pj_plugins/docs/ARCHITECTURE.md` §0a and
   the "Release Versioning" contract in the root `CLAUDE.md`. Different rules apply.
 
-## Step 0 — How do you get the SDK?
+## Step 1 — How do you get the SDK?
 
 A plugin author obtains `plotjuggler_sdk` one of three ways. **All three end at the
 same link line** — `target_link_libraries(my_plugin PRIVATE
@@ -64,7 +64,7 @@ plotjuggler_sdk::plugin_sdk)` — only the acquisition step differs:
   so prefer the umbrella. The `pj_plugins/docs/*-guide.md` snippets show
   per-piece in-tree targets.)
 
-## Step 1 — Pick the family
+## Step 2 — Pick the family
 
 | Your goal | Family | Read |
 |---|---|---|
@@ -83,10 +83,10 @@ If your data is object-like (image, point cloud, occupancy grid, transforms,
 markers…) rather than scalar time series, also read `references/builtin-objects.md`
 **before** writing — it changes what you emit and how.
 
-## Step 2 — The fast path per family
+## Step 3 — The fast path per family
 
 Subclass the base, override the minimum, register with the macro. The macro's
-second argument is the **manifest JSON literal** (see Step 3).
+second argument is the **manifest JSON literal** (see Step 5).
 
 | Family | Subclass | `#include` | Override (minimum) | Register |
 |---|---|---|---|---|
@@ -110,7 +110,7 @@ The quickest correct start is to copy a working example from this repo and edit 
 family reference embeds an API skeleton for when the repo isn't at hand (domain
 placeholders like `openSocket()` are yours to fill in).
 
-## Step 2½ — The SDK already has it: do not write these
+## Step 4 — The SDK already has it: do not write these
 
 Before writing any helper, look it up here. Every row is a problem plugin authors
 kept re-solving until the SDK absorbed the solution; several own a **wire or config
@@ -136,17 +136,17 @@ incompatible with the host and with every other plugin. All headers are in
 | File-picker / tree-widget payloads (**wire-string contract**) | `FilePickerOptions`, `FilePickerResult`, `TreeItem`, `TreeCell` + their `*WireValue()` spellings | `pj_plugins/sdk/file_picker_types.hpp`, `pj_plugins/sdk/tree_types.hpp` |
 | Attach media/renderer hints or object metadata to an ObjectStore topic | `MediaMetadataBuilder`, `ObjectTopicMetadataBuilder` | `pj_base/sdk/media_metadata.hpp`, `pj_base/sdk/object_topic_metadata.hpp` |
 | Hold object bytes read from the toolbox object host | `ObjectBytes` (move-only RAII) | `pj_base/sdk/object_bytes.hpp` |
-| Arrow schema/array/stream out-params | `ArrowSchemaHolder`, `ArrowArrayHolder`, `ArrowStreamHolder` (Step 4 rule 6) | `pj_base/sdk/arrow.hpp` |
+| Arrow schema/array/stream out-params | `ArrowSchemaHolder`, `ArrowArrayHolder`, `ArrowStreamHolder` (Step 6 rule 6) | `pj_base/sdk/arrow.hpp` |
 | Provide `pj.descriptor_import.v1` (a source that fetches descriptors/datasets from an origin) | `readDescriptorImportStartRequest` + the compiled component `plotjuggler_sdk::descriptor_import_support` (`OriginPolicy`, `RequestArtifactCache`, `ProviderJob`) — link it only if you provide the extension | `pj_base/sdk/descriptor_import.hpp`, `pj_base/sdk/descriptor_import/` |
-| Embed a `.ui`/manifest/any file as a `constexpr` header; make the DSO a plugin | `pj_embed_file()`, `pj_configure_plugin()` (Step 3) | shipped CMake, no include |
+| Embed a `.ui`/manifest/any file as a `constexpr` header; make the DSO a plugin | `pj_embed_file()`, `pj_configure_plugin()` (Step 5) | shipped CMake, no include |
 
 If your problem is in this table, the helper is the implementation. If it is *almost*
 in the table, extend the SDK helper (a maintainer change) rather than forking it into
 the plugin — that is how every row above got here.
 
-## Step 3 — Build it
+## Step 5 — Build it
 
-One CMakeLists.txt serves every acquisition channel from Step 0:
+One CMakeLists.txt serves every acquisition channel from Step 1:
 
 ```cmake
 cmake_minimum_required(VERSION 3.22)
@@ -191,7 +191,7 @@ include `"encoding": ["json", …]` (the host routes payloads by these names,
 case-sensitive); DataSource may add `"file_extensions": [".csv"]`.
 `pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 
-## Step 4 — The rules that silently break a plugin
+## Step 6 — The rules that silently break a plugin
 
 These cut across all families. The family references add family-specific traps
 (dialog `buttonBox` naming, parser topic-scoping, toolbox `notifyDataChanged`
