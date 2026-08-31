@@ -1,11 +1,11 @@
 name: Release
 
 # Triggers on tag push (e.g. `git push origin v0.2.0`). Builds the Conan
-# package on every consumer platform (Linux, macOS, Windows), uploads each
-# binary to the project's Cloudsmith remote, and publishes a GitHub Release
-# with auto-generated notes.
+# package on every consumer platform (Linux x86_64/aarch64, macOS arm64,
+# Windows x64/arm64), uploads each binary to the PlotJuggler JFrog Artifactory
+# Conan repository, and publishes a GitHub Release with auto-generated notes.
 #
-# Why a matrix: Cloudsmith stores one binary package per platform/compiler
+# Why a matrix: the remote stores one binary package per platform/compiler
 # (package_id). A single ubuntu job only ever publishes a Linux/gcc binary, so
 # macOS and Windows consumers are forced to build plotjuggler_sdk from source
 # via `--build=missing`. That is slow and, on macOS specifically, fragile: a
@@ -14,17 +14,24 @@ name: Release
 # recipe revision) with "exports_sources but sources not found in local cache".
 # Publishing a binary per platform means consumers download instead of compile.
 #
-# Secrets required (set in repo Settings -> Secrets and variables -> Actions):
-#   CLOUDSMITH_USER     - Cloudsmith username (e.g. "davide-faconti")
-#   CLOUDSMITH_API_KEY  - Cloudsmith API key with write access to the
-#                         plotjuggler/plotjuggler repository
+# Why THESE runners: they are exactly the images pj-official-plugins resolves
+# the SDK on (its CI + release matrix), so the published package_ids match
+# what `conan install` computes there -- ubuntu-22.04 (gcc 11), macos-14
+# (apple-clang 15, arm64), windows-2022 (msvc 194). A binary built on another
+# image (e.g. a newer apple-clang) would be silently ignored downstream.
+#
+# Remote: https://plotjuggler.jfrog.io/artifactory/api/conan/plotjuggler-conan
+# Anonymous READ is enabled on it (the re-publish guard needs no credentials);
+# uploads use the PlotJuggler org-level secrets:
+#   JFROG_USER   - Artifactory user with deploy permission on plotjuggler-conan
+#   JFROG_TOKEN  - its identity token / API key
 #
 # Manual trigger: workflow_dispatch lets you re-run for an existing tag if the
 # first attempt failed (e.g. flaky upload on one platform). Set `tag` input to
 # e.g. v0.1.0. NOTE: do not *move* an already-released tag to a new commit —
 # cut a new patch version instead. Moving a tag changes the recipe revision on
 # the remote and orphans any consumer mid-resolve. The `prepare` job enforces
-# this: it refuses to publish a version that already exists on Cloudsmith under
+# this: it refuses to publish a version that already exists on the remote under
 # a different recipe revision (override with the `allow_republish` input only to
 # repair a botched release).
 
@@ -46,6 +53,9 @@ on:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false  # never cancel an in-flight release
+
+env:
+  JFROG_CONAN_URL: https://plotjuggler.jfrog.io/artifactory/api/conan/plotjuggler-conan
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -99,7 +109,7 @@ jobs:
         # produced a new recipe revision that replaced the first and orphaned any
         # consumer that had resolved the original mid-build. This guard computes
         # the recipe revision THIS release would publish and compares it to what is
-        # already on Cloudsmith for this version:
+        # already on the JFrog remote for this version:
         #   * version not published yet     -> proceed (first release)
         #   * same recipe revision present  -> proceed (idempotent re-run after a
         #                                      flaky/partial upload)
@@ -107,9 +117,6 @@ jobs:
         #                                      already-released version)
         # prepare runs on Linux (LF); the build matrix forces an LF checkout, so
         # both compute the same canonical recipe revision.
-        env:
-          CLOUDSMITH_USER: ${{ secrets.CLOUDSMITH_USER }}
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
         run: |
           if [[ "${{ inputs.allow_republish }}" == "true" ]]; then
             echo "allow_republish=true -> skipping the re-publish guard"
@@ -124,15 +131,15 @@ jobs:
             | python3 -c "import json,sys; print(json.load(sys.stdin)['reference'].split('#',1)[1])")
           echo "This release would publish recipe revision: ${local_rrev}"
 
-          conan remote add plotjuggler-cloudsmith https://conan.cloudsmith.io/plotjuggler/plotjuggler --force
-          if [[ -n "$CLOUDSMITH_USER" && -n "$CLOUDSMITH_API_KEY" ]]; then
-            conan remote login plotjuggler-cloudsmith "$CLOUDSMITH_USER" -p "$CLOUDSMITH_API_KEY"
-          fi
+          # Anonymous read is enabled on the remote, so no login is needed here.
+          conan remote add plotjuggler-conan "${JFROG_CONAN_URL}" --force
 
-          conan list "plotjuggler_sdk/${version}#*" -r plotjuggler-cloudsmith --format=json \
+          conan list "plotjuggler_sdk/${version}#*" -r plotjuggler-conan --format=json \
             > /tmp/remote_revs.json 2>/dev/null || true
 
-          if grep -q "RECIPEUNKNOWN" /tmp/remote_revs.json; then
+          # Artifactory reports an unknown recipe as a plain "404: Not Found";
+          # conan_server / Cloudsmith use RECIPEUNKNOWN. Accept both.
+          if grep -q -E "RECIPEUNKNOWN|404: Not Found" /tmp/remote_revs.json; then
             echo "Version ${version} is not yet published — first release, proceeding."
           elif grep -q '"error"' /tmp/remote_revs.json; then
             echo "::warning::Unexpected error reading published revisions for ${version} (transient?). Proceeding without the guard."
@@ -144,7 +151,7 @@ jobs:
             echo "::error::This build would publish ${local_rrev}, which is not on the remote. Refusing to overwrite a released version."
             echo "::error::Cut a new version, or re-run via workflow_dispatch with allow_republish=true to repair a botched release."
             echo "Currently published for ${version}:"
-            conan list "plotjuggler_sdk/${version}#*" -r plotjuggler-cloudsmith 2>/dev/null || true
+            conan list "plotjuggler_sdk/${version}#*" -r plotjuggler-conan 2>/dev/null || true
             exit 1
           fi
 
@@ -161,7 +168,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15-intel, windows-latest]
+        # One leg per consumer image (see the header comment). Intel macOS is
+        # intentionally absent: not a supported PlotJuggler target.
+        os:
+          - ubuntu-22.04        # Linux x86_64, gcc 11
+          - ubuntu-22.04-arm    # Linux aarch64, gcc 11
+          - macos-14            # macOS arm64, apple-clang 15
+          - windows-2022        # Windows x64, msvc 194
+          - windows-11-arm      # Windows arm64, msvc 194
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -198,27 +212,27 @@ jobs:
             -s build_type=Release \
             -s compiler.cppstd=20
 
-      - name: Configure Cloudsmith remote
+      - name: Configure JFrog Conan remote
         env:
-          CLOUDSMITH_USER: ${{ secrets.CLOUDSMITH_USER }}
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+          JFROG_USER: ${{ secrets.JFROG_USER }}
+          JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
         run: |
-          if [[ -z "$CLOUDSMITH_USER" || -z "$CLOUDSMITH_API_KEY" ]]; then
-            echo "::error::CLOUDSMITH_USER / CLOUDSMITH_API_KEY secrets not configured"
+          if [[ -z "$JFROG_USER" || -z "$JFROG_TOKEN" ]]; then
+            echo "::error::JFROG_USER / JFROG_TOKEN secrets not available (org-level secrets on PlotJuggler)"
             exit 1
           fi
           # `add ... --force` makes the step idempotent across re-runs.
-          conan remote add plotjuggler-cloudsmith https://conan.cloudsmith.io/plotjuggler/plotjuggler --force
-          conan remote login plotjuggler-cloudsmith "$CLOUDSMITH_USER" -p "$CLOUDSMITH_API_KEY"
+          conan remote add plotjuggler-conan "${JFROG_CONAN_URL}" --force
+          conan remote login plotjuggler-conan "$JFROG_USER" -p "$JFROG_TOKEN"
 
-      - name: Upload package to Cloudsmith
+      - name: Upload package to JFrog
         # Each matrix leg uploads the recipe + its own binary. The recipe
         # revision is identical across platforms (same recipe content), so
         # concurrent recipe uploads are idempotent — only the per-platform
         # binary differs. `--check` verifies integrity before/after transfer.
         run: |
           conan upload "plotjuggler_sdk/${{ needs.prepare.outputs.version }}" \
-            -r plotjuggler-cloudsmith \
+            -r plotjuggler-conan \
             --confirm \
             --check
 
@@ -243,7 +257,7 @@ jobs:
             ## Install via Conan
 
             ```bash
-            conan remote add plotjuggler https://conan.cloudsmith.io/plotjuggler/plotjuggler
+            conan remote add plotjuggler-conan https://plotjuggler.jfrog.io/artifactory/api/conan/plotjuggler-conan
             ```
 
             Add to your `conanfile.py` / `conanfile.txt`:
