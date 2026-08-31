@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "pj_base/sdk/descriptor_import/request_cache.hpp"
+#include "pj_base/sdk/testing/request_cache_probe.hpp"
 
 namespace {
 
@@ -27,6 +28,7 @@ using PJ::sdk::descriptor_import::CleanupPolicy;
 using PJ::sdk::descriptor_import::IdentityScheme;
 using PJ::sdk::descriptor_import::ReadLease;
 using PJ::sdk::descriptor_import::RequestArtifactCache;
+using PJ::sdk::descriptor_import::testing::cleanupWithProbe;
 
 const std::string kPrefix = "test:v1:sha256/128:";
 const std::string kSuffix = ".artifact";
@@ -299,6 +301,20 @@ TEST_F(RequestCacheTest, CleanupRemovesStaleOrphanPartialsOnly) {
   EXPECT_FALSE(result.had_errors);
 }
 
+TEST_F(RequestCacheTest, CleanupPreservesPartialRefreshedAfterScan) {
+  const fs::path partial = root() / (kHexA + kSuffix + ".partial.99999");
+  writeFile(partial, "stale");
+  fs::last_write_time(partial, fs::file_time_type::clock::now() - std::chrono::hours(48));
+
+  const auto result = cleanupWithProbe(
+      cache(), CleanupPolicy{}, [&] { fs::last_write_time(partial, fs::file_time_type::clock::now()); });
+
+  EXPECT_TRUE(fs::exists(partial));
+  EXPECT_EQ(result.bytes_reclaimed, 0u);
+  EXPECT_TRUE(result.target_met);
+  EXPECT_FALSE(result.had_errors);
+}
+
 TEST_F(RequestCacheTest, CleanupEvictsOldestTouchedFirstAndStopsAtCap) {
   auto a = materialize(kHexA, std::string(1024, 'a'));
   auto b = materialize(kHexB, std::string(1024, 'b'));
@@ -320,6 +336,37 @@ TEST_F(RequestCacheTest, CleanupEvictsOldestTouchedFirstAndStopsAtCap) {
   EXPECT_EQ(result.bytes_reclaimed, 1024u);
   EXPECT_TRUE(result.target_met);
   EXPECT_EQ(result.bytes_held_over_target, 0u);
+}
+
+TEST_F(RequestCacheTest, CleanupPreservesRepublishedVictimAfterScan) {
+  auto old = materialize(kHexA, "old!");
+  ASSERT_TRUE(old.has_value());
+  old->lease.release();
+  fs::last_write_time(
+      fs::path(old->path.string() + ".touch"), fs::file_time_type::clock::now() - std::chrono::hours(10));
+
+  CleanupPolicy policy;
+  policy.max_total_bytes = 0;
+  const auto result = cleanupWithProbe(cache(), policy, [&] {
+    ASSERT_TRUE(fs::remove(old->path));
+    auto txn = cache().beginWrite(identityFor(kHexA));
+    ASSERT_TRUE(txn) << txn.error().message;
+    writeFile(txn->partialPath(), "new!");
+    auto fresh = txn->commit();
+    ASSERT_TRUE(fresh) << fresh.error().message;
+    fresh->lease.release();
+  });
+
+  EXPECT_TRUE(fs::is_regular_file(old->path));
+  std::ifstream in(old->path, std::ios::binary);
+  std::string content;
+  in >> content;
+  EXPECT_EQ(content, "new!");
+  EXPECT_EQ(result.bytes_scanned, 4u);
+  EXPECT_EQ(result.bytes_reclaimed, 0u);
+  EXPECT_FALSE(result.target_met);
+  EXPECT_EQ(result.bytes_held_over_target, 4u);
+  EXPECT_FALSE(result.had_errors);
 }
 
 TEST_F(RequestCacheTest, CleanupSkipsLeasedVictimAndReportsTheShortfall) {
