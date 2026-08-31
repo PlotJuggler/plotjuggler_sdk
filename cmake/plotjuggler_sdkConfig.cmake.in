@@ -23,9 +23,10 @@ foreach(_comp ${plotjuggler_sdk_FIND_COMPONENTS})
 
   elseif(_comp STREQUAL "plugin_sdk")
     find_dependency(nlohmann_json)
-    # Ship the cmake/PjPluginManifest.cmake helper so plugin authors can call
-    # pj_emit_plugin_manifest() without copying the helper into their tree.
-    include("${CMAKE_CURRENT_LIST_DIR}/PjPluginManifest.cmake")
+    # Plugin-authoring CMake helpers (pj_configure_plugin, pj_embed_file,
+    # pj_harden_plugin_exports) ship with the component so plugin authors never
+    # copy them into their tree.
+    include("${CMAKE_CURRENT_LIST_DIR}/PjPlugin.cmake")
     set(plotjuggler_sdk_plugin_sdk_FOUND TRUE)
 
   elseif(_comp STREQUAL "descriptor_import_support")

@@ -143,10 +143,11 @@ class PlotjugglerSdkConan(ConanFile):
         # the package level (self.cpp_info), not at component level — declaring
         # it on the `sdk` component below silently produced an empty
         # plotjuggler_sdk_BUILD_MODULES_PATHS_RELEASE in the generated data
-        # file. Ship the PjPluginManifest helper from the package root so
-        # CMakeDeps actually include()s it after find_package() returns.
+        # file. Ship the plugin-authoring helpers (PjPlugin.cmake) and the
+        # parser-module helper from the package root so CMakeDeps actually
+        # include()s them after find_package() returns.
         self.cpp_info.set_property("cmake_build_modules", [
-            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPluginManifest.cmake"),
+            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPlugin.cmake"),
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjParserModule.cmake"),
         ])
 
