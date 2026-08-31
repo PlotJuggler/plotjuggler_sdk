@@ -153,11 +153,26 @@ add_test(NAME dialog_handle_test COMMAND dialog_handle_test)
 # Protocol-level validation of the canonical installed-SDK example. Compiling
 # the same Qt-free source into the test exercises its exported static manifest
 # and vtable directly, without loading Qt or opening a native picker.
+set(_pj_dialog_example_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../examples/sdk_consumer")
 add_executable(dialog_controls_example_test
   tests/dialog_controls_example_test.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/sdk_consumer/dialog_controls.cpp
+  "${_pj_dialog_example_dir}/dialog_controls.cpp"
 )
 target_link_libraries(dialog_controls_example_test PRIVATE pj_dialog_host pj_dialog_sdk GTest::gtest_main)
+# The example takes its manifest and .ui from headers that
+# examples/sdk_consumer/CMakeLists.txt generates with the shipped helpers;
+# generate the same two here (this is a test executable, not a plugin DSO,
+# so pj_configure_plugin does not apply).
+pj_embed_file(dialog_controls_example_test
+  FILE     "${_pj_dialog_example_dir}/dialog_manifest.json"
+  HEADER   dialog_controls_example_generated/dialog_controls_manifest.hpp
+  VAR_NAME kManifestJson
+)
+pj_embed_file(dialog_controls_example_test
+  FILE     "${_pj_dialog_example_dir}/dialog_controls.ui"
+  HEADER   dialog_controls_example_generated/dialog_controls_ui.hpp
+  VAR_NAME kUiContent
+)
 add_test(NAME dialog_controls_example_test COMMAND dialog_controls_example_test)
 
 add_executable(widget_data_view_test tests/widget_data_view_test.cpp)

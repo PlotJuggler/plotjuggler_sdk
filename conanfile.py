@@ -11,8 +11,8 @@ A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
     find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
 
-The `plugin_sdk` component also ships `PjPluginManifest.cmake`, so authors can
-call `pj_emit_plugin_manifest()` without copying the helper into their tree.
+The `plugin_sdk` component also ships `PjPlugin.cmake`, so authors can call
+`pj_configure_plugin()` / `pj_embed_file()` without copying helpers into their tree.
 
 The columnar storage engine (formerly the `datastore` component) is no longer
 part of this SDK package — it now lives in the PlotJuggler application repo,

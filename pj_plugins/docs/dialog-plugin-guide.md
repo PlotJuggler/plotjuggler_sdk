@@ -988,7 +988,7 @@ within your main dialog. The sub-dialog is shown as a nested modal — the main
 dialog is blocked until the user closes the sub-dialog.
 
 ```cpp
-// Store the sub-dialog UI XML (typically embedded via pj_embed_ui)
+// Store the sub-dialog UI XML (typically embedded via pj_embed_file)
 #include "help_dialog_ui.hpp"
 
 bool onClicked(std::string_view name) override {
