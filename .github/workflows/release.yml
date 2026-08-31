@@ -73,19 +73,23 @@ jobs:
     steps:
       - name: Resolve ref
         id: ref
+        env:
+          # Through env, not inline interpolation, so a hostile/odd input cannot
+          # break out of the script.
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [[ -n "${{ inputs.tag }}" ]]; then
-            echo "ref=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${INPUT_TAG}" ]]; then
+            # workflow_dispatch runs on a branch, so GITHUB_REF_NAME is e.g.
+            # "main": everything must derive from the tag input.
+            tag="${INPUT_TAG}"
+            echo "ref=refs/tags/${tag}" >> "$GITHUB_OUTPUT"
           else
+            tag="${GITHUB_REF_NAME}"
             echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           # Strip leading 'v' for the Conan version (v0.1.0 -> 0.1.0).
-          version="${GITHUB_REF_NAME#v}"
-          version="${version:-${{ inputs.tag }}}"
-          version="${version#v}"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -142,8 +146,13 @@ jobs:
           if grep -q -E "RECIPEUNKNOWN|404: Not Found" /tmp/remote_revs.json; then
             echo "Version ${version} is not yet published — first release, proceeding."
           elif grep -q '"error"' /tmp/remote_revs.json; then
-            echo "::warning::Unexpected error reading published revisions for ${version} (transient?). Proceeding without the guard."
+            # Fail closed: proceeding blind could publish changed sources under an
+            # already-released version. The later authenticated upload would
+            # succeed even if this anonymous read hit a 401/403/5xx.
+            echo "::error::Could not read the published revisions of ${version} from the remote:"
             cat /tmp/remote_revs.json
+            echo "::error::Refusing to publish without the re-publish guard. Re-run once the remote is reachable, or use workflow_dispatch with allow_republish=true if you have verified the state by hand."
+            exit 1
           elif grep -q "${local_rrev}" /tmp/remote_revs.json; then
             echo "Recipe revision ${local_rrev} is already published for ${version} — idempotent re-run, proceeding."
           else
