@@ -58,12 +58,14 @@ tests:
       files:
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfig.cmake
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
-        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjPluginManifest.cmake
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjPlugin.cmake
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjCheckElfPluginExports.cmake
+        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjParserModule.cmake
         - ${{ "include" if unix else "Library/include" }}/pj_base/sdk/version.hpp
         - ${{ "include" if unix else "Library/include" }}/pj_base/sdk/semver.hpp
   # Actually exercise the package: build the repo's example consumer, which
   # find_package(plotjuggler_sdk COMPONENTS plugin_sdk), links a plugin lib, and
-  # runs pj_emit_plugin_manifest(). Catches broken CMake config / find_dependency
+  # runs pj_configure_plugin() + pj_embed_file(). Catches broken CMake config / find_dependency
   # / manifest helper — failure modes the file checks above cannot see. Kept
   # unix-only for now: the Windows package build itself is the win-64 gate, and
   # the plugin-shared-lib example needs separate validation on MSVC (follow-up).

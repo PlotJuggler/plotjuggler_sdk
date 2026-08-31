@@ -1,0 +1,6 @@
+{
+  "id": "cmake-helpers-fixture",
+  "name": "CMake Helpers Fixture",
+  "version": "1.2.3",
+  "description": "Exercises pj_configure_plugin / pj_embed_file / pj_harden_plugin_exports."
+}

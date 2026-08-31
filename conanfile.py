@@ -11,8 +11,8 @@ A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
     find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
     target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
 
-The `plugin_sdk` component also ships `PjPluginManifest.cmake`, so authors can
-call `pj_emit_plugin_manifest()` without copying the helper into their tree.
+The `plugin_sdk` component also ships `PjPlugin.cmake`, so authors can call
+`pj_configure_plugin()` / `pj_embed_file()` without copying helpers into their tree.
 
 The columnar storage engine (formerly the `datastore` component) is no longer
 part of this SDK package — it now lives in the PlotJuggler application repo,
@@ -143,10 +143,11 @@ class PlotjugglerSdkConan(ConanFile):
         # the package level (self.cpp_info), not at component level — declaring
         # it on the `sdk` component below silently produced an empty
         # plotjuggler_sdk_BUILD_MODULES_PATHS_RELEASE in the generated data
-        # file. Ship the PjPluginManifest helper from the package root so
-        # CMakeDeps actually include()s it after find_package() returns.
+        # file. Ship the plugin-authoring helpers (PjPlugin.cmake) and the
+        # parser-module helper from the package root so CMakeDeps actually
+        # include()s them after find_package() returns.
         self.cpp_info.set_property("cmake_build_modules", [
-            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPluginManifest.cmake"),
+            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPlugin.cmake"),
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjParserModule.cmake"),
         ])
 

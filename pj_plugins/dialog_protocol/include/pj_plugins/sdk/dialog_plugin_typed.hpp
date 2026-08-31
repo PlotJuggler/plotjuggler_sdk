@@ -13,6 +13,12 @@ namespace PJ {
 /// Level 3: Typed event dispatch.
 /// Extends DialogPluginBase by parsing event JSON and dispatching to typed virtual methods.
 /// Plugin authors override only the typed methods they need (all default to returning false).
+///
+/// Connection-dialog building blocks live next door — do not reimplement them:
+/// the parser-encoding selector and visible-selection merge in
+/// pj_plugins/sdk/streaming_dialog.hpp (+ parseEncodingsJson in encoding_utils.hpp),
+/// endpoint composition in pj_plugins/sdk/endpoint.hpp, and the strict port parse
+/// in pj_base/sdk/text_utils.hpp.
 class DialogPluginTyped : public DialogPluginBase {
  public:
   // --- Override these instead of onWidgetEvent() ---

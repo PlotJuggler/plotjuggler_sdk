@@ -214,7 +214,10 @@ previously-circulated pre-v4 design included):
   candidates are reported as diagnostics while discovery continues.
 - **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
   only (DEEPBIND was a documented ASAN/allocator-interposition trap).
-  Plugin-local symbol isolation is left to `-fvisibility=hidden`.
+  Plugin-local symbol isolation is the plugin build's job: `pj_configure_plugin`
+  (`cmake/PjPlugin.cmake`, shipped with `plugin_sdk`) applies hidden visibility,
+  `-Wl,-Bsymbolic-functions`, and a version-script export allowlist gated
+  post-build against `STB_GNU_UNIQUE` leaks and missing entry points.
 - **Declined loader alternatives.** Admission does not use
   `RTLD_NODELETE` as its lifetime contract, `RTLD_DEEPBIND`, `dlmopen`, or a
   manifest-format change. Shared handle ownership controls lifetime, while

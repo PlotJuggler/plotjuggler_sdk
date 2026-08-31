@@ -13,6 +13,14 @@
  * Both manage the lifecycle state machine automatically — derived classes
  * only implement the domain-specific work.
  *
+ * A StreamSourceBase with its own receive thread should NOT hand-roll the
+ * thread -> onPoll() buffer: pj_plugins/sdk/streaming_source.hpp ships
+ * PJ::sdk::DrainQueue / LatestValueSlot for that handoff, and
+ * DelegatedIngestCache + parserConfigOverride for kCapabilityDelegatedIngest
+ * sources. Connection-dialog helpers (encoding selector, endpoint composition,
+ * visible-selection merge) are in pj_plugins/sdk/streaming_dialog.hpp and
+ * pj_plugins/sdk/endpoint.hpp.
+ *
  * Minimal file-importer plugin (complete):
  * @code
  *   #include <pj_base/sdk/data_source_patterns.hpp>

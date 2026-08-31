@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DialogControlsExample</class>
+ <widget class="QWidget" name="DialogControlsExample">
+  <property name="windowTitle">
+   <string>SDK 0.21 Dialog Controls</string>
+  </property>
+  <layout class="QVBoxLayout" name="root_layout">
+   <item>
+    <layout class="QHBoxLayout" name="page_navigation_layout">
+     <item>
+      <widget class="QLabel" name="page_selector_label">
+       <property name="text">
+        <string>Example page:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="page_selector"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="example_stack">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="host_too_old_page">
+      <layout class="QVBoxLayout" name="host_too_old_layout">
+       <item>
+        <spacer name="host_too_old_top_spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="host_too_old_label">
+         <property name="text">
+          <string>This example needs PlotJuggler SDK 0.21 or newer.</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="host_too_old_bottom_spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="basic_page">
+      <layout class="QVBoxLayout" name="basic_page_layout">
+       <item>
+        <widget class="QLabel" name="tree_help_label">
+         <property name="text">
+          <string>Filter the static topic catalog, select topics, check column 0, or expand Diagnostics to load its children.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="topic_filter">
+         <property name="placeholderText">
+          <string>Filter topics...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTreeWidget" name="topic_tree">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="rootIsDecorated">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="selection_label">
+         <property name="text">
+          <string>No topics selected.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="advanced_page">
+      <layout class="QVBoxLayout" name="advanced_page_layout">
+       <item>
+        <widget class="QLabel" name="picker_help_label">
+         <property name="text">
+          <string>The structured picker requests multiple files and reports cancellation or unsupported operations honestly.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="open_files_button">
+         <property name="text">
+          <string>Open sample data...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="picker_status_label">
+         <property name="text">
+          <string>No files selected.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="stack_event_label">
+         <property name="text">
+          <string>The basic page is active.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="advanced_page_spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

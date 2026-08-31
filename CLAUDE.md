@@ -36,6 +36,11 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
   duplicate-resolution *catalog* (which copy wins by priority/version/compatibility) is host policy
   and lives in the app (`pj_runtime`), built on these discovery primitives. Note the split: the DataSource/MessageParser/Toolbox C-ABI
   protocol headers live in `pj_base`; the **Dialog** protocol header lives here, not in `pj_base`.
+- **cmake/** — the plugin-authoring CMake helpers shipped with `plugin_sdk`
+  (`PjPlugin.cmake`: `pj_configure_plugin`, `pj_embed_file`, `pj_harden_plugin_exports`;
+  `PjCheckElfPluginExports.cmake`: its post-build ELF gate) and `PjParserModule.cmake`
+  (`pj_add_parser_module`). These are public API: renaming or changing their arguments follows
+  the same versioning contract as headers.
 
 ### Dependency graph
 
