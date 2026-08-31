@@ -11,6 +11,7 @@ C++20 foundation libraries for [PlotJuggler](https://github.com/facontidavide/Pl
 |--------|-------------|--------------|---------|
 | **pj_base** | Vocabulary types: `Timestamp`, `DatasetId`, `TopicId`, type trees, `Expected<T>`, `Span<T>` | None | Apache-2.0 |
 | **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox families), C++ SDK base classes, plugin discovery, host-side loaders, and config helpers | pj_base, nlohmann/json | Apache-2.0 |
+| **cmake/** | Plugin-authoring CMake helpers shipped with `plugin_sdk`: `pj_configure_plugin()` (symbol isolation, export allowlist + gate, manifest validation/sidecar/embed), `pj_embed_file()`, `pj_harden_plugin_exports()`, `pj_add_parser_module()` — see `examples/sdk_consumer` | — | Apache-2.0 |
 
 ## Getting Started
 
@@ -42,6 +43,8 @@ cd plotjuggler_sdk
 ```
 pj_base/                   Vocabulary types (zero deps)
 pj_plugins/                C-ABI plugin protocol, SDK, host loaders
+cmake/                     Installed CMake helpers for plugin authors (PjPlugin.cmake, PjParserModule.cmake)
+examples/sdk_consumer/     find_package() consumer exercising the helpers (built by the release + conda checks)
 docs/                      Project-wide design guides
 ```
 

@@ -58,7 +58,7 @@ plotjuggler_sdk::plugin_sdk)` — only the acquisition step differs:
   the package is in your environment.
 - **git submodule / vendored source** — `add_subdirectory(plotjuggler_sdk)`; the
   same `plotjuggler_sdk::plugin_sdk` alias exists in-tree, and
-  `pj_emit_plugin_manifest` becomes available too, so the CMake below is identical.
+  `pj_configure_plugin` / `pj_embed_file` are available too, so the CMake below is identical.
   (Editing the SDK repo itself is this world: the raw umbrella target is
   `pj_plugin_sdk`; bare `pj_base` lacks the MessageParser and dialog SDK headers,
   so prefer the umbrella. The `pj_plugins/docs/*-guide.md` snippets show
@@ -127,34 +127,35 @@ find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
 add_library(my_plugin SHARED my_plugin.cpp)
 target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)  # same in all worlds
 
-pj_emit_plugin_manifest(my_plugin
-  FAMILY        data_source     # data_source | message_parser | toolbox | dialog
-  MANIFEST_FILE ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+pj_configure_plugin(my_plugin
+  FAMILIES        data_source                 # data_source | message_parser | toolbox | dialog
+                                              # (list several: `data_source dialog` for an embedded dialog)
+  MANIFEST_FILE   ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+  MANIFEST_HEADER generated/my_manifest.hpp   # -> #include "my_manifest.hpp"
+  MANIFEST_VAR    kMyManifest                 # -> PJ_DATA_SOURCE_PLUGIN(MyPlugin, kMyManifest)
 )
+# Dialog UI kept as a real Qt Designer file:
+# pj_embed_file(my_plugin FILE ui/my_dialog.ui HEADER generated/my_dialog_ui.hpp VAR_NAME kMyDialogUi)
 ```
 
 The single `plotjuggler_sdk::plugin_sdk` component is the whole author surface —
-base + parser SDK + dialog SDK. You do **not** link a separate dialog target
-downstream (`pj_dialog_sdk` is an in-tree name).
+base + parser SDK + dialog SDK + these CMake helpers. You do **not** link a separate
+dialog target downstream (`pj_dialog_sdk` is an in-tree name).
 
-**Manifest — two things named "manifest", only one is authoritative:**
-
-1. **The JSON literal you pass to `PJ_*_PLUGIN(Class, "…")`** is embedded in the
-   library and is the **source of truth** the host reads at discovery/load.
-   Required keys: `id`, `name`, `version`. Family extras: MessageParser **must**
-   include `"encoding": ["json", …]` (the host routes payloads by these names, case-
-   sensitive); DataSource may add `"file_extensions": [".csv"]`.
-2. **`manifest.json` + `pj_emit_plugin_manifest(...)`** is **optional but
-   recommended**. It writes a human-readable `<target>.pjmanifest.json` sidecar
-   (for tooling/packaging — runtime discovery does *not* read it) **and**, more
-   importantly, applies the symbol-isolation settings that stop your plugin's
-   symbols from clashing with the host's (hidden visibility everywhere;
-   `-Wl,-Bsymbolic-functions` on Linux/ELF — macOS's two-level namespace and
-   Windows' export model give the equivalent natively). Keep its `id/name/version` in sync with the macro literal — best by
-   making `manifest.json` the single source: generate a constexpr header from it at
-   build time and pass that to the macro (the official plugins do this with a small
-   CMake embed helper; see `pj-official-plugins/cmake/EmbedManifest.cmake` for a
-   ready-made one), instead of maintaining two hand-written copies.
+**`pj_configure_plugin` is not optional in practice.** It (1) validates
+`manifest.json` (`id`, `name`, `version` required), (2) applies the symbol-isolation
+settings that stop your plugin's symbols from clashing with the host's (hidden
+visibility everywhere; `-Wl,-Bsymbolic-functions` on Linux/ELF), (3) writes a
+human-readable `<target>.pjmanifest.json` sidecar for tooling (runtime discovery
+does *not* read it — the JSON embedded in the library via `PJ_*_PLUGIN` is the
+source of truth), (4) with `MANIFEST_HEADER` generates the `constexpr` header you
+pass to `PJ_*_PLUGIN(Class, kMyManifest)` so `manifest.json` is that single source,
+and (5) on Linux links a version-script allowlist that exports **only** the ABI
+entry points and fails the build post-link if a `STB_GNU_UNIQUE` symbol leaks or an
+entry point is missing. Family extras in the manifest: MessageParser **must**
+include `"encoding": ["json", …]` (the host routes payloads by these names,
+case-sensitive); DataSource may add `"file_extensions": [".csv"]`.
+`pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 
 ## Step 4 — The rules that silently break a plugin
 

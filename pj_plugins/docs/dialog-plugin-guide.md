@@ -240,17 +240,17 @@ const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 > raw string literal. Just make sure every interactive widget has a descriptive
 > `objectName`.
 
-#### EmbedUi — external `.ui` files
+#### `pj_embed_file` — external `.ui` files
 
-For larger dialogs, keeping the XML inline becomes unwieldy. The `EmbedUi`
-CMake helper converts a `.ui` file into a generated header with the XML as a
-`constexpr` string:
+For larger dialogs, keeping the XML inline becomes unwieldy (and MSVC rejects a
+single string literal above 16380 characters, C2026). `pj_embed_file`, shipped
+with the `plotjuggler_sdk::plugin_sdk` component, converts any file into a
+generated header holding it as a `constexpr char` array:
 
 ```cmake
-include(cmake/EmbedUi.cmake)
-pj_embed_ui(my_plugin
-  UI_FILE  ${CMAKE_CURRENT_SOURCE_DIR}/ui/my_dialog.ui
-  HEADER   ${CMAKE_CURRENT_BINARY_DIR}/generated/my_dialog_ui.hpp
+pj_embed_file(my_plugin
+  FILE     ${CMAKE_CURRENT_SOURCE_DIR}/ui/my_dialog.ui
+  HEADER   generated/my_dialog_ui.hpp
   VAR_NAME kMyDialogUi
 )
 ```
@@ -264,7 +264,9 @@ std::string ui_content() const override { return kMyDialogUi; }
 ```
 
 The `.ui` file is tracked as a CMake configure dependency — editing it
-triggers header regeneration.
+triggers header regeneration. The same helper (through
+`pj_configure_plugin(... MANIFEST_HEADER ...)`) embeds `manifest.json`; see
+`examples/sdk_consumer` for both in use.
 
 ### 3. Build the widget state
 

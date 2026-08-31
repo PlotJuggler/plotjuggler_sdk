@@ -164,7 +164,7 @@ Two patterns the official plugins converge on for embedded dialogs:
   owner-installed callback instead.
 
 For anything beyond a trivial UI, keep the `.ui` as a real Qt Designer file and
-embed it at build time (`pj_embed_ui` — see `pj_plugins/docs/dialog-plugin-guide.md`)
+embed it at build time (`pj_embed_file` — see `pj_plugins/docs/dialog-plugin-guide.md`)
 rather than growing an inline XML string; the file stays editable in Designer and
 the plugin still links no Qt.
 
