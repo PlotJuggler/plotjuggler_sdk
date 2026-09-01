@@ -1022,6 +1022,33 @@ inline PrimitiveType formatToPrimitiveType(const char* fmt) noexcept {
       return PrimitiveType::kUnspecified;
   }
 }
+
+/// Two-call "count then fill" marshalling for any vtable slot that enumerates
+/// borrowed strings: ask for the count, size a buffer, ask again, copy out.
+/// The copies are made here on purpose — the views the host fills in point into
+/// its own storage, which the next call on that vtable may invalidate.
+///
+/// `slot` is the raw function pointer; the caller has already established that
+/// the host is bound, since only it knows which view is speaking.
+template <class ListSlot>
+[[nodiscard]] inline Expected<std::vector<std::string>> listBorrowedStrings(void* ctx, ListSlot slot) {
+  PJ_error_t err{};
+  uint64_t count = 0;
+  if (!slot(ctx, nullptr, 0, &count, &err)) {
+    return unexpected(errorToString(err));
+  }
+  std::vector<PJ_string_view_t> borrowed(count);
+  uint64_t filled = 0;
+  if (count != 0 && !slot(ctx, borrowed.data(), borrowed.size(), &filled, &err)) {
+    return unexpected(errorToString(err));
+  }
+  std::vector<std::string> out;
+  out.reserve(filled);
+  for (uint64_t i = 0; i < filled; ++i) {
+    out.emplace_back(toStringView(borrowed[i]));
+  }
+  return out;
+}
 }  // namespace detail
 
 /// Typed view over the two-column Arrow struct returned by
@@ -1809,6 +1836,121 @@ class ViewportHostView {
 
  private:
   PJ_viewport_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
+// PlotTabHostView — typed C++ view over PJ_plot_tab_host_t
+// ---------------------------------------------------------------------------
+
+/// C++ wrapper around PJ_plot_tab_host_t for plugins that compose plotting tabs of
+/// their own (see the C ABI doc-comment on PJ_plot_tab_host_vtable_t). Every call is
+/// scoped by the host to the tabs THIS plugin created; ids naming anything else are
+/// rejected like unknown ids. Empty-constructible; `valid()` tells whether the host
+/// exposed the service. Strings returned by `list()`/`configOf()` are owned copies, so
+/// they stay valid past the next vtable call.
+class PlotTabHostView {
+ public:
+  PlotTabHostView() = default;
+  explicit PlotTabHostView(PJ_plot_tab_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Create (or replace, upsert by id) a tab holding one empty plot. An empty
+  /// `title` lets the host name it.
+  [[nodiscard]] Status create(std::string_view id, std::string_view title = {}) const {
+    if (!valid() || host_.vtable->create_tab == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->create_tab(host_.ctx, toAbiString(id), toAbiString(title), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Close one of this plugin's tabs. Any derived series or markers drawn in it
+  /// are data and outlive the view.
+  [[nodiscard]] Status close(std::string_view id) const {
+    if (!valid() || host_.vtable->close_tab == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->close_tab(host_.ctx, toAbiString(id), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Enumerate the ids of this plugin's live tabs (owned copies). Owning none is
+  /// success with an empty vector.
+  [[nodiscard]] Expected<std::vector<std::string>> list() const {
+    if (!valid() || host_.vtable->list_tab_ids == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    return detail::listBorrowedStrings(host_.ctx, host_.vtable->list_tab_ids);
+  }
+
+  /// Read back what a tab actually holds, as JSON (owned copy) — the way to
+  /// report what was drawn rather than what was asked for.
+  [[nodiscard]] Expected<std::string> configOf(std::string_view id) const {
+    if (!valid() || host_.vtable->tab_config == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    PJ_string_view_t out{};
+    if (!host_.vtable->tab_config(host_.ctx, toAbiString(id), &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(out));
+  }
+
+  /// Draw one curve. An empty `dataset_source` requires the topic/field to be
+  /// unique across loaded datasets; an ambiguous one is refused by the host with
+  /// the qualified candidates rather than guessed.
+  [[nodiscard]] Status addCurve(
+      std::string_view id, std::string_view topic, std::string_view field, std::string_view dataset_source = {}) const {
+    if (!valid() || host_.vtable->add_curve == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->add_curve(
+            host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(field), toAbiString(dataset_source), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Take one curve back out, resolved by the same rule as addCurve. A curve
+  /// that is not there is an error.
+  [[nodiscard]] Status removeCurve(
+      std::string_view id, std::string_view topic, std::string_view field, std::string_view dataset_source = {}) const {
+    if (!valid() || host_.vtable->remove_curve == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->remove_curve(
+            host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(field), toAbiString(dataset_source), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Remove every curve from a tab, keeping the tab itself.
+  [[nodiscard]] Status clear(std::string_view id) const {
+    if (!valid() || host_.vtable->clear_tab == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->clear_tab(host_.ctx, toAbiString(id), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+ private:
+  PJ_plot_tab_host_t host_{};
 };
 
 // ---------------------------------------------------------------------------

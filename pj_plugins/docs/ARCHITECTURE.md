@@ -262,10 +262,17 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   `sdk::PlaybackHostView`; every time in the service is display-axis seconds
   (the numbers the plot X axes and the playback slider show), valid for the
   current frame only because display offsets are per-dataset and user-editable.
-  `"pj.viewport.v1"` (optional) zooms every open time-series plot to a
-  display-seconds X window or resets all plots to fit
-  (`sdk::ViewportHostView`); hosts without plots (headless) simply do not
-  register it.
+  `"pj.plot_tabs.v1"` (optional) lets a plugin compose plotting tabs **of its
+  own** — create one, place and remove curves by (topic, field, dataset),
+  read back what it actually holds, close it (`sdk::PlotTabHostView`). Ids are
+  plugin-chosen and namespaced per plugin, as in `"pj.data_processors.v1"`, and
+  every slot is scoped to the caller's own tabs: a tab the plugin did not create
+  is rejected exactly as an unknown id, so the user's tabs are never disclosed
+  or touched. `"pj.viewport.v1"` (optional) zooms to a display-seconds X window
+  or resets to fit (`sdk::ViewportHostView`), **bounded to those same owned
+  tabs** — the boundary is the view, not the transport, which is why
+  `"pj.playback.v1"` stays global. Hosts without plots (headless) simply do not
+  register either.
 - **Structured errors everywhere.** All fallible ABI calls take a
   `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
   slot is gone.

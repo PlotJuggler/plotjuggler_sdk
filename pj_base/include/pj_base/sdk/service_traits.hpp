@@ -213,6 +213,19 @@ struct ViewportHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// "pj.plot_tabs.v1" — compose plotting tabs of the plugin's own: create, place
+/// and remove curves, read back what they hold, close. Scoped by the host to
+/// this plugin's tabs, which is also what bounds "pj.viewport.v1". Hosts with
+/// no plot workspace (headless) simply do not register it.
+struct PlotTabHostService {
+  static constexpr const char* kName = "pj.plot_tabs.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_plot_tab_host_t;
+  using Vtable = PJ_plot_tab_host_vtable_t;
+  using View = PlotTabHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Optional QSettings-like key/value persistence exposed to any plugin family.
 /// Host-backed (QSettings in the GUI app, JSON in a headless host); keys are
 /// namespaced per plugin by the host.

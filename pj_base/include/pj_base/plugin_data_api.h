@@ -1120,23 +1120,38 @@ typedef struct {
 /**
  * Viewport host service ("pj.viewport.v1", protocol_version 1).
  *
- * Optional zoom control over the host's open time-series plots. All slots are
- * [main-thread]. Times are display-axis seconds (same convention as
- * "pj.playback.v1"). ABI-APPENDABLE: new slots may be added at the tail;
+ * Optional zoom control, SCOPED to the tabs the calling plugin owns (see
+ * "pj.plot_tabs.v1"). A host that grants a plugin its own tabs must confine
+ * these slots to them: the user's plots are not a plugin's to reframe. A
+ * plugin owning no tab therefore has nothing to zoom, which is an error, not a
+ * silent no-op.
+ *
+ * That makes this service dependent on the other in practice, even though the
+ * registry treats the two as independently optional: a host offering this one
+ * WITHOUT "pj.plot_tabs.v1" leaves every plugin with nothing it may zoom, so
+ * these two are registered together or not at all.
+ *
+ * Note the boundary is the VIEW, not the transport: "pj.playback.v1" stays
+ * global by nature, since one time cursor is shared by every plot.
+ *
+ * All slots are [main-thread]. Times are display-axis seconds (same convention
+ * as "pj.playback.v1"). ABI-APPENDABLE: new slots may be added at the tail;
  * struct_size gates read.
  */
 typedef struct PJ_viewport_host_vtable_t {
   uint32_t protocol_version; /* = 1 */
   uint32_t struct_size;      /* = sizeof(PJ_viewport_host_vtable_t) */
 
-  /* [main-thread] Set every open time-series plot's visible X window to
-   * [t0_s, t1_s] (display-axis seconds). Each plot keeps its own Y range;
-   * XY plots and empty plots are untouched. Requires finite t0_s < t1_s;
-   * no open time plot to act on is an error. */
+  /* [main-thread] Set the visible X window of every time-series plot the
+   * calling plugin owns to [t0_s, t1_s] (display-axis seconds). Each plot keeps
+   * its own Y range; XY plots and empty plots are untouched. Requires finite
+   * t0_s < t1_s. Owning no such plot is an error, and the host is expected to
+   * say which kind — no tab at all, or a tab with nothing to zoom — since the
+   * caller's remedy differs. */
   bool (*zoom_to_time_range)(void* ctx, double t0_s, double t1_s, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Reset every open plot to fit its data (the host's
-   * "zoom out all" action). */
+  /* [main-thread] Reset every plot the calling plugin owns to fit its data.
+   * Like zoom_to_time_range, owning nothing is an error. */
   bool (*zoom_reset)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_viewport_host_vtable_t;
 
@@ -1144,6 +1159,98 @@ typedef struct {
   void* ctx;
   const PJ_viewport_host_vtable_t* vtable;
 } PJ_viewport_host_t;
+
+/**
+ * Plot-tab host service ("pj.plot_tabs.v1", protocol_version 1).
+ *
+ * Lets a plugin compose plotting tabs OF ITS OWN: create one, place and remove
+ * curves in it, read back what it holds, close it. Every slot is scoped to the
+ * calling binding — a tab this plugin did not create is rejected exactly as an
+ * unknown id is, so the service never discloses, mutates or even confirms the
+ * existence of the user's tabs. That scoping is the host's job, not the
+ * plugin's: it is enforced where ownership is known, and ownership is derived
+ * from `ctx`, never passed in.
+ *
+ * Ids are chosen by the plugin and namespaced per plugin by the host (the
+ * "pj.data_processors.v1" discipline), so an id is unique within this binding
+ * and cannot collide with another plugin's. The resemblance stops there, and
+ * the difference matters: a data processor's id survives a session reload
+ * because the host replays it from a persisted recipe, whereas a tab is a VIEW
+ * and this service promises nothing of the sort. Treat an id as live only for
+ * as long as `list_tab_ids` still returns it, and re-read rather than assume
+ * after anything that could have rebuilt the workspace.
+ *
+ * A tab created here is the host's to present: it carries whatever permanent
+ * mark the host uses for model-authored views, and the plugin cannot suppress
+ * it. Whether such a tab is saved with the workspace is likewise the host's
+ * policy, not this service's contract.
+ *
+ * All slots are [main-thread]. ABI-APPENDABLE: new slots may be added at the
+ * tail; struct_size gates read.
+ */
+typedef struct PJ_plot_tab_host_vtable_t {
+  uint32_t protocol_version; /* = 1 */
+  uint32_t struct_size;      /* = sizeof(PJ_plot_tab_host_vtable_t) */
+
+  /* [main-thread] Create (or replace, upsert by id) a tab owned by this plugin,
+   * holding one empty plot. An empty `title` lets the host name it. All string
+   * arguments are borrowed for the duration of the call. */
+  bool (*create_tab)(void* ctx, PJ_string_view_t id, PJ_string_view_t title, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Close one of this plugin's tabs. Unknown id is an error.
+   * Closing a tab discards the VIEW only: any derived series or markers drawn
+   * in it are data and outlive it. */
+  bool (*close_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Enumerate the ids of THIS plugin's live tabs.
+   * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
+   * buffer of that size. On success the first min(capacity, *out_count) entries
+   * of out_ids are filled and point into host storage valid only until the next
+   * call on this vtable. Owning no tab is success with *out_count == 0. */
+  bool (*list_tab_ids)(
+      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Read back what a tab actually holds, as JSON
+   * {"title":"...","curves":[{"topic":"...","field":"...","dataset":"..."}]}.
+   * This is how a caller reports what was drawn instead of what it asked for:
+   * a curve the host could not resolve is simply absent. "dataset" is always
+   * the RESOLVED source name, even where the caller left it empty, so the
+   * report says which run a curve actually came from. The host emits valid
+   * JSON: any character needing escaping in a topic or field is escaped here.
+   * *out_config_json is borrowed, valid only until the next call on this
+   * vtable. Unknown id is an error. */
+  bool (*tab_config)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t* out_config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Draw one curve in a tab of this plugin's. The series is named
+   * by its parts, not a joined path, because field paths legitimately contain
+   * '/' and dataset names contain ':' — splitting a joined form is guesswork the
+   * host should not have to do. An empty `dataset_source` means the topic/field
+   * must be unique across loaded datasets; the host refuses an ambiguous one
+   * with the qualified candidates rather than picking. Adding a curve already
+   * present is not an error. */
+  bool (*add_curve)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field,
+      PJ_string_view_t dataset_source, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Take one curve back out. `dataset_source` resolves by the
+   * same rule as in add_curve — empty means "the topic/field must be unique" —
+   * so a curve can be removed with whatever form was used to add it, or with
+   * the resolved name tab_config reports. A curve that is not there is an
+   * error, so a mistaken path is visible rather than silently accepted. */
+  bool (*remove_curve)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field,
+      PJ_string_view_t dataset_source, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Remove every curve from a tab, keeping the tab itself. */
+  bool (*clear_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_plot_tab_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_plot_tab_host_vtable_t* vtable;
+} PJ_plot_tab_host_t;
 
 #ifdef __cplusplus
 }
