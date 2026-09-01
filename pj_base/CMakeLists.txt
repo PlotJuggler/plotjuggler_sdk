@@ -151,6 +151,7 @@ if(PJ_BUILD_TESTS)
     tests/parser_module_abi_test.cpp
     tests/parser_module_manifest_test.cpp
     tests/data_processors_api_test.cpp
+    tests/dataset_qualified_name_test.cpp
     tests/settings_store_host_test.cpp
     tests/parser_runtime_host_test.cpp
     tests/data_source_protocol_test.cpp

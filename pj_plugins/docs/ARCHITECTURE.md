@@ -239,7 +239,11 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   `pj_base/descriptor_import_protocol.h`. `"pj.data_processors.v1"` (optional) lets a toolbox create
   catalog-resident transform nodes in the host by data — a script plus
   input/output names and a params JSON blob; nothing executable crosses the
-  boundary (the host owns execution). The script payload is **binary-safe**
+  boundary (the host owns execution). Input names may carry the dataset
+  qualifier `dataset_source:topic/field`, so a name several loaded datasets
+  share is addressed rather than guessed — rules are normative in
+  `plugin_data_api.h` (DATASET-QUALIFIED NAMES), shared parser/composer in
+  `pj_base/sdk/dataset_qualified_name.hpp`. The script payload is **binary-safe**
   (`PJ_string_view_t {data,size}`), so the native "door" is WASM bytes through
   this same data-only surface (a future host-owned WASM/Python backend is purely
   additive and survives plugin unload) — deliberately *not* a C++ kernel vtable

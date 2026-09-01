@@ -913,7 +913,8 @@ typedef struct {
  *   - language    : script backend, "luau" today; the host rejects anything else.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
  *                   "pose/orientation/x") the script reads; the host resolves them
- *                   and exact-joins co-timestamped inputs.
+ *                   and exact-joins co-timestamped inputs. A name MAY carry the
+ *                   dataset qualifier, see DATASET-QUALIFIED NAMES below.
  *   - outputs     : target topic key(s). MAY be empty for an ephemeral preview
  *                   (flags & PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host
  *                   names the sink(s) and returns the resolved names in out_topics.
@@ -930,6 +931,23 @@ typedef struct {
  *                   absent = active dataset.
  *   - flags       : bitset; PJ_DATA_PROCESSOR_FLAG_EPHEMERAL marks a preview (never
  *                   persisted, dropped on remove). Reserved bits must be 0.
+ *
+ * DATASET-QUALIFIED NAMES — a series' full identity is (dataset, topic, field); a
+ * bare "topic/field" name is an abbreviation that stops being unique the moment
+ * two loaded datasets share topic names. An input MAY therefore carry the
+ * qualifier "dataset_source:topic/field" — the same form hosts print as a series
+ * identity (shared parser/composer: sdk/dataset_qualified_name.hpp). The qualifier
+ * is matched against the LOADED source names (longest match wins), never split
+ * blindly at ':', so source names need no escaping. The host MUST enforce:
+ *   - a qualifier matching no loaded dataset is an error — no fallback to reading
+ *     the whole string as a bare name;
+ *   - a bare name that exists in SEVERAL loaded datasets is refused, reporting the
+ *     qualified candidates — NEVER resolved by load order;
+ *   - all qualified inputs of one processor agree on a single dataset.
+ * Marker output keys (per-series, see markerSeriesKey) accept the qualifier the
+ * same way; transform outputs name NEW topics and are never qualified. Addressing
+ * two datasets that share one source name is outside this contract (ambiguous ->
+ * error); that needs a typed dataset id, which would be a tail-appended addition.
  *
  * FORWARD-COMPAT — the native door is WASM, not a C++ kernel. Because the script
  * slot is a binary-safe blob the host owns and runs (today Luau; tomorrow a

@@ -1490,7 +1490,10 @@ class DataProcessorsHostView {
   /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s).
   /// Returns the resolved physical output topic name(s) (owned copies) so the caller
   /// can read results back through the kind's read surface. `params_json` is forwarded
-  /// verbatim to the script.
+  /// verbatim to the script. Input names MAY carry the dataset qualifier
+  /// "dataset_source:topic/field" (see DATASET-QUALIFIED NAMES in plugin_data_api.h;
+  /// shared parser/composer in sdk/dataset_qualified_name.hpp) — required to address a
+  /// series whose bare name exists in several loaded datasets.
   [[nodiscard]] Expected<std::vector<std::string>> create(
       std::string_view id, std::string_view kind, std::string_view language, Span<const std::string_view> inputs,
       Span<const std::string_view> outputs, std::string_view script, std::string_view params_json,
@@ -1546,7 +1549,8 @@ class DataProcessorsHostView {
 
   /// Convenience: create a kind="transform" node (DerivedEngine timeseries). `outputs`
   /// must be non-empty. Discards the resolved topic names (the caller supplied them);
-  /// use create() directly if you need them back.
+  /// use create() directly if you need them back. Inputs MAY be dataset-qualified (see
+  /// create()); outputs name NEW topics and are never qualified.
   [[nodiscard]] Status createTransform(
       std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
       std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
@@ -1572,6 +1576,7 @@ class DataProcessorsHostView {
   /// key (kGlobalMarkerTopic or markerSeriesKey). Pass
   /// flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL for a live preview (output may be left empty
   /// to let the host name the preview topic). Returns the resolved object topic(s).
+  /// Inputs and per-series output keys MAY be dataset-qualified (see create()).
   [[nodiscard]] Expected<std::vector<std::string>> createMarkers(
       std::string_view id, Span<const std::string_view> inputs, std::string_view output_marker_topic,
       std::string_view script, std::string_view params_json, uint32_t flags = 0) const {

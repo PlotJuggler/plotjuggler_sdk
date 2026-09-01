@@ -3,6 +3,35 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.26.0]
+
+### Feature: dataset-qualified series names — contract and shared helper (MINOR)
+
+`pj.data_processors.v1` addressed input series by bare `topic/field` names and never said
+what a name means when several loaded datasets share topic names — so conforming hosts
+filled the gap incompatibly (PJ4's transform path refused duplicates while its marker path
+silently bound the first-loaded dataset; fixed by PlotJuggler/PJ4#619). The contract is now
+explicit in the `PJ_data_processors_host_vtable_t` doc block (DATASET-QUALIFIED NAMES):
+
+- A series' full identity is (dataset, topic, field); a bare name is an abbreviation. An
+  input MAY carry the qualifier `dataset_source:topic/field` — the same form hosts print
+  as a series identity, so displayed names round-trip as inputs.
+- The qualifier is matched against the **loaded** source names (longest match wins), never
+  split blindly at `:` — stream-style source names like `[stream] UDP Server` need no
+  escaping.
+- A qualifier matching no loaded dataset is an error (no fallback to the bare reading); a
+  bare name that exists in several datasets MUST be refused with the qualified candidates,
+  never resolved by load order; qualified inputs of one processor must agree on a single
+  dataset. Marker per-series output keys accept the qualifier the same way.
+
+New installed header `pj_base/sdk/dataset_qualified_name.hpp` ships the shared
+parser/composer (`splitDatasetQualifier` / `qualifiedSeriesName`, header-only) so hosts
+and plugins use one implementation instead of the two copies that exist today.
+
+Plugins that emit qualified names pin `plotjuggler_sdk/[>=0.26.0 <1.0.0]`. No ABI change;
+`abi/baseline.abi` is untouched. Addressing two datasets that share one source name stays
+out of contract (ambiguous → error); a typed dataset id would be a tail-appended addition.
+
 ## [0.25.0]
 
 ### Feature: plugin-authoring CMake helpers ship with the SDK (MINOR)
