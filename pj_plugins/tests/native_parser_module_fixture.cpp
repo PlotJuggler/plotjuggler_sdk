@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "pj_base/builtin/grid_map_codec.hpp"
 #include "pj_base/builtin/point_cloud_codec.hpp"
 #include "pj_base/builtin_object_abi.h"
 #include "pj_base/parser_module_abi.h"
@@ -45,7 +46,8 @@ constexpr char kManifest[] = R"({
     {"claim_id":"splice-ineligible","encoding":"protobuf","type_name":"fixture.SpliceIneligible","routes":["object"],"object_type":"kPointCloud","priority":0},
     {"claim_id":"bad-token","encoding":"protobuf","type_name":"fixture.BadToken","routes":["scalar"],"priority":0},
     {"claim_id":"route-mismatch","encoding":"protobuf","type_name":"fixture.RouteMismatch","routes":["scalar"],"priority":0},
-    {"claim_id":"type-mismatch","encoding":"protobuf","type_name":"fixture.TypeMismatch","routes":["object"],"object_type":"kPointCloud","priority":0}
+    {"claim_id":"type-mismatch","encoding":"protobuf","type_name":"fixture.TypeMismatch","routes":["object"],"object_type":"kPointCloud","priority":0},
+    {"claim_id":"splice-grid-map","encoding":"protobuf","type_name":"fixture.SpliceGridMap","routes":["object"],"object_type":"kGridMap","priority":0}
   ]
 })";
 
@@ -226,6 +228,22 @@ PJ_FIXTURE_EXPORT int32_t pj_module_parse(
             .wire = {},
         };
         break;
+      case kSpliceGridMap: {
+        PJ::sdk::GridMap grid;  // header only: the two cell bytes arrive as the splice
+        grid.column_count = 2;
+        grid.row_count = 1;
+        grid.cell_stride = 1;
+        grid.row_stride = 2;
+        grid.fields.push_back(
+            {.name = "cost", .offset = 0, .datatype = PJ::sdk::PointField::Datatype::kUint8, .count = 1});
+        wire = PJ::serializeGridMap(grid);
+        descriptor = PJ::parser_module::ObjectOutputV1{
+            .object_type = PJ_BUILTIN_OBJECT_TYPE_GRID_MAP,
+            .splice = PJ::parser_module::ObjectSpliceV1{.field_number = 10, .input_offset = 1, .input_length = 2},
+            .wire = wire,
+        };
+        break;
+      }
       default: {
         const std::array<uint8_t, 4> point_data{1, 2, 3, 4};
         PJ::sdk::PointCloud cloud;

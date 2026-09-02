@@ -3,6 +3,25 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.26.0]
+
+### Feature: `GridMap` canonical builtin object (MINOR)
+
+`sdk::GridMap` (`pj_base/builtin/grid_map.hpp`, `BuiltinObjectType::kGridMap` = 20,
+`PJ_BUILTIN_OBJECT_TYPE_GRID_MAP`) is a 2D grid whose cells carry named channels — the
+layered, generic-valued sibling of `OccupancyGrid` for elevation maps and multi-layer
+costmaps (`grid_map_msgs/GridMap`, `foxglove.Grid`). Row-major fixed-size cell records
+described by the shared `PointField` channel model, the packed layout `foxglove.Grid` uses,
+so producers with that layout hand `data` over zero-copy; a NaN in a float channel means
+"no data". `PJ.GridMap` wire format + `grid_map_codec.hpp` (`serializeGridMap`,
+`deserializeGridMap`, and `validateGridMap` for the full layout check once spliced bytes are
+attached), an entry in the type-erased dispatcher, in the frozen splice table (`data` =
+field 10) and in both host splice-attachment paths, a `GridMapBuilder` (`gridMap()`) in the
+parser-module `ObjectWriter`, and `sdk::Vector2` in the geometry vocabulary (already present
+as `PJ.Vector2` on the wire). The `PointField` wire helpers shared by the PointCloud,
+VoxelGrid and GridMap codecs now live in one private header. Additive: no existing struct,
+slot, or wire format changes.
+
 ## [0.25.0]
 
 ### Feature: plugin-authoring CMake helpers ship with the SDK (MINOR)

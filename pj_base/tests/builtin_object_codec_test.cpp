@@ -12,7 +12,7 @@
 namespace {
 
 TEST(BuiltinObjectCodec, DispatchesEveryStableBuiltinType) {
-  const std::array<PJ::sdk::BuiltinObject, 17> objects{
+  const std::array<PJ::sdk::BuiltinObject, 18> objects{
       PJ::sdk::Image{},
       PJ::sdk::PointCloud{},
       PJ::sdk::DepthImage{},
@@ -41,6 +41,7 @@ TEST(BuiltinObjectCodec, DispatchesEveryStableBuiltinType) {
       PJ::sdk::Log{},
       PJ::sdk::PosesInFrame{},
       PJ::sdk::VoxelGrid{},
+      PJ::sdk::GridMap{},
       [] {
         PJ::sdk::PlotMarkers markers;
         markers.markers.emplace_back();
@@ -74,7 +75,7 @@ TEST(BuiltinObjectCodec, RejectsEmptyAndUnknownTypeTags) {
 }
 
 TEST(BuiltinObjectCodec, RoundTripsDefaultObjectsIncludingZeroByteProtoMessages) {
-  const std::array<PJ::sdk::BuiltinObject, 17> defaults{
+  const std::array<PJ::sdk::BuiltinObject, 18> defaults{
       PJ::sdk::Image{},
       PJ::sdk::PointCloud{},
       PJ::sdk::DepthImage{},
@@ -91,6 +92,7 @@ TEST(BuiltinObjectCodec, RoundTripsDefaultObjectsIncludingZeroByteProtoMessages)
       PJ::sdk::Log{},
       PJ::sdk::PosesInFrame{},
       PJ::sdk::VoxelGrid{},
+      PJ::sdk::GridMap{},
       PJ::sdk::PlotMarkers{},
   };
 

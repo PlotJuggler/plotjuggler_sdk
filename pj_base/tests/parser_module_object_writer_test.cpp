@@ -14,6 +14,7 @@
 #include "pj_base/builtin/builtin_object_codec.hpp"
 #include "pj_base/builtin/compressed_point_cloud.hpp"
 #include "pj_base/builtin/depth_image.hpp"
+#include "pj_base/builtin/grid_map.hpp"
 #include "pj_base/builtin/image.hpp"
 #include "pj_base/builtin/mesh3d.hpp"
 #include "pj_base/builtin/occupancy_grid.hpp"
@@ -520,6 +521,37 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   ASSERT_EQ(voxel_value->fields.size(), 1U);
   EXPECT_EQ(voxel_value->fields[0].name, "occupancy");
   EXPECT_EQ(voxel_value->data.size(), 3U);
+
+  pj::ObjectWriter grid_map_writer;
+  auto grid_map = grid_map_writer.gridMap();
+  ASSERT_TRUE(grid_map.setTimestamp(7).isOk());
+  ASSERT_TRUE(grid_map.setFrameId("odom").isOk());
+  ASSERT_TRUE(grid_map.setOrigin(1, 2, 3).isOk());
+  ASSERT_TRUE(grid_map.setCellSize(0.1, 0.2).isOk());
+  ASSERT_TRUE(grid_map.setColumnCount(3).isOk());
+  ASSERT_TRUE(grid_map.setRowCount(1).isOk());
+  ASSERT_TRUE(grid_map.setCellStride(1).isOk());
+  ASSERT_TRUE(grid_map.setRowStride(3).isOk());
+  ASSERT_TRUE(grid_map.addField("cost", 0, pj::ObjectWriter::PointFieldDatatype::kUint8).isOk());
+  ASSERT_TRUE(grid_map.setData({data.data(), data.size()}).isOk());
+  auto grid_map_descriptor = grid_map_writer.finish();
+  ASSERT_TRUE(grid_map_descriptor.hasValue()) << grid_map_descriptor.status().message();
+  auto grid_map_output =
+      PJ::parser_module::readOutputDescriptorV1({grid_map_descriptor->data(), grid_map_descriptor->size()});
+  ASSERT_TRUE(grid_map_output.has_value()) << grid_map_output.error();
+  const auto& grid_map_wire = std::get<PJ::parser_module::ObjectOutputV1>(*grid_map_output).wire;
+  auto decoded_grid_map =
+      PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kGridMap, grid_map_wire.data(), grid_map_wire.size());
+  ASSERT_TRUE(decoded_grid_map.has_value()) << decoded_grid_map.error();
+  const auto* grid_map_value = std::any_cast<PJ::sdk::GridMap>(&*decoded_grid_map);
+  ASSERT_NE(grid_map_value, nullptr);
+  EXPECT_EQ(grid_map_value->frame_id, "odom");
+  EXPECT_DOUBLE_EQ(grid_map_value->cell_size.x, 0.1);
+  EXPECT_DOUBLE_EQ(grid_map_value->cell_size.y, 0.2);
+  EXPECT_EQ(grid_map_value->column_count, 3U);
+  ASSERT_EQ(grid_map_value->fields.size(), 1U);
+  EXPECT_EQ(grid_map_value->fields[0].name, "cost");
+  EXPECT_EQ(grid_map_value->data.size(), 3U);
 }
 
 TEST(ParserModuleObjectWriter, EveryEligibleBuilderSupportsValidatedSpliceOutput) {
@@ -558,6 +590,9 @@ TEST(ParserModuleObjectWriter, EveryEligibleBuilderSupportsValidatedSpliceOutput
   pj::ObjectWriter voxel({payload.data(), payload.size()});
   ASSERT_TRUE(voxel.voxelGrid().setDataFromInput({2, 3}).isOk());
   expect_splice(voxel, 18, 12);
+  pj::ObjectWriter grid_map({payload.data(), payload.size()});
+  ASSERT_TRUE(grid_map.gridMap().setDataFromInput({2, 3}).isOk());
+  expect_splice(grid_map, 20, 10);
 }
 
 TEST(ParserModuleObjectWriter, RejectsConflictingOrOutOfBoundsBulkDataSelection) {

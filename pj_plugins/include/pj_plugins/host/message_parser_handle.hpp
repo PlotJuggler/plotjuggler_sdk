@@ -494,6 +494,9 @@ class MessageParserHandle {
         case sdk::BuiltinObjectType::kVoxelGrid:
           attached = attach.template operator()<sdk::VoxelGrid>();
           break;
+        case sdk::BuiltinObjectType::kGridMap:
+          attached = attach.template operator()<sdk::GridMap>();
+          break;
         default:
           break;
       }

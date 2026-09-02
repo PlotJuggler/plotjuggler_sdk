@@ -64,6 +64,8 @@ rationale.
   - `PosesInFrame`
 - **`VoxelGrid.proto`** — dense 3D voxel grid (the volumetric sibling of `OccupancyGrid`); reuses `PointField` for the per-voxel channel layout and mirrors `foxglove.VoxelGrid`'s Z-Y-X byte layout so `data` stays a zero-copy view. Serves occupancy/cost/ESDF/semantic grids; the draw predicate is viewer-side.
   - `VoxelGrid`
+- **`GridMap.proto`** — 2D grid of per-cell channels (the layered sibling of `OccupancyGrid`: elevation maps, multi-layer costmaps); reuses `PointField` for the per-cell channel layout and mirrors `foxglove.Grid`'s row-major record layout so `data` stays a zero-copy view. Which channel is height/color is viewer-side.
+  - `GridMap`
 
 ### 2D image annotations (vector overlays)
 
