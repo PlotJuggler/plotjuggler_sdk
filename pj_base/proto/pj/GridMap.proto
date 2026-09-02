@@ -15,8 +15,11 @@ package PJ;
 
 // A 2D grid whose cells carry named channels — the layered, generic-valued
 // sibling of OccupancyGrid: elevation maps, multi-layer costmaps, terrain
-// classification. Mirrors foxglove.Grid field for field (plus an explicit
-// row_count) so a parser can expose `data` as a zero-copy view.
+// classification. The packed cell layout is the one foxglove.Grid uses, so a
+// parser can expose that message's `data` as a zero-copy view; the header and
+// field descriptors are converted (this message has its own field numbers and
+// an explicit row_count, and PJ.PointField's datatype numbering differs from
+// PackedElementField's).
 //
 // Cells are fixed-size records of `cell_stride` bytes in row-major order
 // (x / column varies fastest), `row_stride` bytes per row; the byte offset of
@@ -24,7 +27,7 @@ package PJ;
 // least `row_count * row_stride`. `fields` describes the channels inside one
 // record; a NaN in a float channel means "no data" for that cell.
 //
-// Cell (c, r) center is at `origin + ((c+.5)*cell_size.x, (r+.5)*cell_size.y, 0)`
+// Cell (c, r) center is at `origin ∘ ((c+.5)*cell_size.x, (r+.5)*cell_size.y, 0)`
 // in `frame_id`, where `origin` is the corner of cell (0,0) and the grid lies
 // in the origin's local xy-plane. Which channel is height, which is color and
 // the colormap are viewer-side. Conventional channel names: `elevation` for
@@ -51,7 +54,7 @@ message GridMap {
   // Number of cells along the local y axis
   uint32 row_count = 6;
 
-  // Bytes per cell record (>= sum of field element sizes)
+  // Bytes per cell record (>= the largest field end: offset + element size * count)
   uint32 cell_stride = 7;
 
   // Bytes per row (>= column_count * cell_stride)

@@ -4,7 +4,7 @@
 //
 // Internal helpers shared across builtin-object codecs. Provides write /
 // decode functions for the geometric primitives reused by multiple types
-// (Vector3, Point3, Quaternion, Pose), for the canonical Timestamp encoding
+// (Vector2, Vector3, Point3, Quaternion, Pose), for the canonical Timestamp encoding
 // (proto seconds + nanos <-> SDK int64 nanoseconds), and for Color (proto
 // double [0..1] RGBA <-> SDK ColorRGBA uint8 [0..255]).
 //
@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <limits>
 
-#include "pj_base/builtin/frame_transforms.hpp"   // Vector3, Quaternion, Pose
+#include "pj_base/builtin/frame_transforms.hpp"   // Vector2, Vector3, Quaternion, Pose
 #include "pj_base/builtin/image_annotations.hpp"  // ColorRGBA
 #include "pj_base/builtin/scene_entities.hpp"     // Point3
 #include "pj_base/types.hpp"

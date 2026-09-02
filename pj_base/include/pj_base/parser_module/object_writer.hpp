@@ -155,6 +155,7 @@ class ObjectWriter {
   static constexpr uint16_t kVideoFrameObjectType = 10;
   static constexpr uint16_t kOccupancyGridUpdateObjectType = 15;
   static constexpr uint16_t kVoxelGridObjectType = 18;
+  static constexpr uint16_t kGridMapObjectType = 20;
   static constexpr uint32_t kImageDataField = 7;
   static constexpr uint32_t kPointCloudDataField = 9;
   static constexpr uint32_t kDepthImageDataField = 5;
@@ -164,6 +165,7 @@ class ObjectWriter {
   static constexpr uint32_t kVideoFrameDataField = 3;
   static constexpr uint32_t kOccupancyGridUpdateDataField = 7;
   static constexpr uint32_t kVoxelGridDataField = 12;
+  static constexpr uint32_t kGridMapDataField = 10;
 
   enum class PointFieldDatatype : uint32_t {
     kUnknown = 0,
@@ -186,6 +188,7 @@ class ObjectWriter {
   class VideoFrameBuilder;
   class OccupancyGridUpdateBuilder;
   class VoxelGridBuilder;
+  class GridMapBuilder;
 
   explicit ObjectWriter(PayloadView input_payload = {}) : input_payload_(input_payload) {}
 
@@ -198,6 +201,7 @@ class ObjectWriter {
   [[nodiscard]] VideoFrameBuilder videoFrame();
   [[nodiscard]] OccupancyGridUpdateBuilder occupancyGridUpdate();
   [[nodiscard]] VoxelGridBuilder voxelGrid();
+  [[nodiscard]] GridMapBuilder gridMap();
 
   [[nodiscard]] const Status& status() const noexcept {
     return status_;
@@ -266,6 +270,12 @@ class ObjectWriter {
     kVideoFrame,
     kOccupancyGridUpdate,
     kVoxelGrid,
+    kGridMap,
+  };
+
+  struct Vector2State {
+    double x = 0;
+    double y = 0;
   };
 
   struct Vector3State {
@@ -401,6 +411,19 @@ class ObjectWriter {
     Blob data;
   };
 
+  struct GridMapState {
+    int64_t timestamp_ns = 0;
+    std::string frame_id;
+    PoseState origin;
+    Vector2State cell_size;
+    uint32_t column_count = 0;
+    uint32_t row_count = 0;
+    uint32_t cell_stride = 0;
+    uint32_t row_stride = 0;
+    std::vector<PointFieldState> fields;
+    Blob data;
+  };
+
   struct SpliceState {
     bool has_value = false;
     InputSpanRef reference;
@@ -504,6 +527,15 @@ class ObjectWriter {
     return status.isOk() ? writer.messageField(1, nested) : status;
   }
 
+  [[nodiscard]] static Status writeVector2(WireWriter& writer, uint32_t field, const Vector2State& value) {
+    WireWriter nested;
+    Status status = nested.doubleField(1, value.x);
+    if (status.isOk()) {
+      status = nested.doubleField(2, value.y);
+    }
+    return status.isOk() ? writer.messageField(field, nested) : status;
+  }
+
   [[nodiscard]] static Status writeVector3(WireWriter& writer, uint32_t field, const Vector3State& value) {
     WireWriter nested;
     Status status = nested.doubleField(1, value.x);
@@ -600,6 +632,8 @@ class ObjectWriter {
         return writeOccupancyGridUpdate();
       case Kind::kVoxelGrid:
         return writeVoxelGrid();
+      case Kind::kGridMap:
+        return writeGridMap();
       case Kind::kNone:
         break;
     }
@@ -626,6 +660,8 @@ class ObjectWriter {
         return kOccupancyGridUpdateObjectType;
       case Kind::kVoxelGrid:
         return kVoxelGridObjectType;
+      case Kind::kGridMap:
+        return kGridMapObjectType;
       case Kind::kNone:
         return 0;
     }
@@ -652,6 +688,8 @@ class ObjectWriter {
         return kOccupancyGridUpdateDataField;
       case Kind::kVoxelGrid:
         return kVoxelGridDataField;
+      case Kind::kGridMap:
+        return kGridMapDataField;
       case Kind::kNone:
         return 0;
     }
@@ -882,6 +920,41 @@ class ObjectWriter {
     return status.isOk() ? Expected<Blob>(writer.take()) : Expected<Blob>(status);
   }
 
+  [[nodiscard]] Expected<Blob> writeGridMap() {
+    WireWriter writer;
+    Status status = writeTimestamp(writer, grid_map_.timestamp_ns);
+    if (status.isOk()) {
+      status = writer.stringField(2, grid_map_.frame_id);
+    }
+    if (status.isOk()) {
+      status = writePose(writer, 3, grid_map_.origin);
+    }
+    if (status.isOk()) {
+      status = writeVector2(writer, 4, grid_map_.cell_size);
+    }
+    if (status.isOk()) {
+      status = writer.varintField(5, grid_map_.column_count);
+    }
+    if (status.isOk()) {
+      status = writer.varintField(6, grid_map_.row_count);
+    }
+    if (status.isOk()) {
+      status = writer.varintField(7, grid_map_.cell_stride);
+    }
+    if (status.isOk()) {
+      status = writer.varintField(8, grid_map_.row_stride);
+    }
+    for (const auto& field : grid_map_.fields) {
+      if (status.isOk()) {
+        status = writePointField(writer, 9, field);
+      }
+    }
+    if (status.isOk() && !splice_.has_value) {
+      status = writer.lengthDelimited(10, grid_map_.data.view());
+    }
+    return status.isOk() ? Expected<Blob>(writer.take()) : Expected<Blob>(status);
+  }
+
   [[nodiscard]] Expected<Blob> writeVoxelGrid() {
     WireWriter writer;
     Status status = writeTimestamp(writer, voxel_grid_.timestamp_ns);
@@ -936,6 +1009,7 @@ class ObjectWriter {
   VideoFrameState video_frame_;
   OccupancyGridUpdateState occupancy_grid_update_;
   VoxelGridState voxel_grid_;
+  GridMapState grid_map_;
   SpliceState splice_;
 
   friend class PointCloudBuilder;
@@ -947,6 +1021,7 @@ class ObjectWriter {
   friend class VideoFrameBuilder;
   friend class OccupancyGridUpdateBuilder;
   friend class VoxelGridBuilder;
+  friend class GridMapBuilder;
   friend class ScalarWriter;
 };
 
@@ -1416,6 +1491,79 @@ inline ObjectWriter::OccupancyGridUpdateBuilder ObjectWriter::occupancyGridUpdat
 
 inline ObjectWriter::VoxelGridBuilder ObjectWriter::voxelGrid() {
   return VoxelGridBuilder(*this);
+}
+
+class ObjectWriter::GridMapBuilder {
+ public:
+  explicit GridMapBuilder(ObjectWriter& owner) : owner_(&owner) {
+    (void)owner_->select(Kind::kGridMap);
+  }
+  [[nodiscard]] Status setTimestamp(int64_t value) {
+    owner_->grid_map_.timestamp_ns = value;
+    return owner_->status_;
+  }
+  [[nodiscard]] Status setFrameId(std::string_view value) {
+    return owner_->setString(owner_->grid_map_.frame_id, value);
+  }
+  [[nodiscard]] Status setOrigin(
+      double px, double py, double pz, double qx = 0, double qy = 0, double qz = 0, double qw = 1) {
+    owner_->grid_map_.origin = {{px, py, pz}, {qx, qy, qz, qw}};
+    return owner_->status_;
+  }
+  [[nodiscard]] Status setCellSize(double x, double y) {
+    owner_->grid_map_.cell_size = {x, y};
+    return owner_->status_;
+  }
+  [[nodiscard]] Status setColumnCount(uint32_t value) {
+    owner_->grid_map_.column_count = value;
+    return owner_->status_;
+  }
+  [[nodiscard]] Status setRowCount(uint32_t value) {
+    owner_->grid_map_.row_count = value;
+    return owner_->status_;
+  }
+  [[nodiscard]] Status setCellStride(uint32_t value) {
+    owner_->grid_map_.cell_stride = value;
+    return owner_->status_;
+  }
+  [[nodiscard]] Status setRowStride(uint32_t value) {
+    owner_->grid_map_.row_stride = value;
+    return owner_->status_;
+  }
+  [[nodiscard]] Status addField(
+      std::string_view name, uint32_t offset, PointFieldDatatype datatype, uint32_t count = 1) {
+    if (!owner_->status_.isOk()) {
+      return owner_->status_;
+    }
+    PJ_PARSER_MODULE_TRY {
+      PointFieldState field;
+      field.name.assign(name.data(), name.size());
+      field.offset = offset;
+      field.datatype = datatype;
+      field.count = count;
+      owner_->grid_map_.fields.push_back(std::move(field));
+      return Status::ok();
+    }
+    PJ_PARSER_MODULE_CATCH_BAD_ALLOC {
+      return owner_->fail("ObjectWriter grid-map-field allocation failed");
+    }
+    PJ_PARSER_MODULE_CATCH_ALL {
+      return owner_->fail("ObjectWriter grid-map-field creation failed");
+    }
+  }
+  [[nodiscard]] Status setData(PayloadView value) {
+    return owner_->setData(owner_->grid_map_.data, value);
+  }
+  [[nodiscard]] Status setDataFromInput(InputSpanRef value) {
+    return owner_->setDataFromInput(value);
+  }
+
+ private:
+  ObjectWriter* owner_;
+};
+
+inline ObjectWriter::GridMapBuilder ObjectWriter::gridMap() {
+  return GridMapBuilder(*this);
 }
 
 class ScalarWriter {

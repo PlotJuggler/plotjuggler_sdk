@@ -30,10 +30,13 @@ namespace sdk {
 /// and `data.size()` must be at least `row_count * row_stride`. `fields`
 /// describes the channels inside one record with the same `PointField` model
 /// PointCloud and VoxelGrid use; a NaN in a float channel means "no data" for
-/// that cell, integer channels have no empty sentinel. The layout mirrors
-/// `foxglove.Grid` so a parser can hand out `data` as a zero-copy view;
-/// producers with another layout (grid_map's column-major ring buffer)
-/// transcode once at the boundary.
+/// that cell, integer channels have no empty sentinel. The packed cell layout
+/// is the one `foxglove.Grid` uses (row-major records, x fastest), so a parser
+/// can hand that message's `data` over as a zero-copy view; its header and
+/// field descriptors still need conversion (different wire field numbers, a
+/// `PackedElementField` datatype numbering that differs from `PointField`'s,
+/// and `count` always 1). Producers with another layout (grid_map's
+/// column-major ring buffer) transcode once at the boundary.
 ///
 /// Cell (c, r) has its **center** at, in `frame_id`:
 ///   origin ∘ ((c + .5)*cell_size.x, (r + .5)*cell_size.y, 0)
@@ -56,7 +59,7 @@ struct GridMap {
   Vector2 cell_size;          ///< Metric cell size along local x (columns) and y (rows), meters.
   uint32_t column_count = 0;  ///< Cells along x (fastest-varying).
   uint32_t row_count = 0;     ///< Cells along y.
-  uint32_t cell_stride = 0;   ///< Bytes per cell record (>= sum of field element sizes).
+  uint32_t cell_stride = 0;   ///< Bytes per cell record (>= the largest field end: offset + size * count).
   uint32_t row_stride = 0;    ///< Bytes per row (>= column_count * cell_stride).
   std::vector<PointField> fields;
   Span<const uint8_t> data;

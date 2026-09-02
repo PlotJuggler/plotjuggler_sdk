@@ -47,7 +47,7 @@ GridMap makeGrid(std::vector<uint8_t>& storage) {
 float cellValue(const GridMap& grid, uint32_t column, uint32_t row, uint32_t field_offset) {
   float value = 0.0f;
   std::memcpy(
-      &value, grid.data.data() + row * grid.row_stride + column * grid.cell_stride + field_offset, sizeof(float));
+      &value, grid.data.data() + (row * grid.row_stride) + (column * grid.cell_stride) + field_offset, sizeof(float));
   return value;
 }
 
@@ -137,6 +137,57 @@ TEST(GridMapCodecTest, RejectsRowStrideShorterThanColumns) {
   in.row_stride = 16;  // 3 columns x 8 bytes need 24
   const auto bytes = serializeGridMap(in);
   EXPECT_FALSE(deserializeGridMap(bytes.data(), bytes.size()).has_value());
+}
+
+TEST(GridMapCodecTest, RejectsUnknownDatatype) {
+  std::vector<uint8_t> storage;
+  GridMap in = makeGrid(storage);
+  in.fields[1].datatype = PointField::Datatype::kUnknown;
+  const auto bytes = serializeGridMap(in);
+  EXPECT_FALSE(deserializeGridMap(bytes.data(), bytes.size()).has_value());
+}
+
+TEST(GridMapCodecTest, RejectsZeroFieldCount) {
+  std::vector<uint8_t> storage;
+  GridMap in = makeGrid(storage);
+  in.fields[1].count = 0;
+  const auto bytes = serializeGridMap(in);
+  EXPECT_FALSE(deserializeGridMap(bytes.data(), bytes.size()).has_value());
+}
+
+TEST(GridMapCodecTest, RejectsFieldOnEmptyGridWithZeroCellStride) {
+  GridMap in;  // no cells, cell_stride 0, but a channel that needs 4 bytes
+  in.fields.push_back({.name = "elevation", .offset = 0, .datatype = PointField::Datatype::kFloat32, .count = 1});
+  const auto bytes = serializeGridMap(in);
+  EXPECT_FALSE(deserializeGridMap(bytes.data(), bytes.size()).has_value());
+}
+
+// The functional-v2 splice contract: the canonical wire omits `data` (the host
+// attaches the bytes afterwards), so a header-only wire must decode. The full
+// check, including the data length, is validateGridMap(), run once the bytes
+// are attached.
+TEST(GridMapCodecTest, HeaderOnlyWireDecodesForSpliceAndValidateChecksAttachedData) {
+  std::vector<uint8_t> storage;
+  GridMap in = makeGrid(storage);
+  in.data = Span<const uint8_t>{};
+  const auto bytes = serializeGridMap(in);
+
+  auto out = deserializeGridMap(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  EXPECT_EQ(out->column_count, 3u);
+  EXPECT_TRUE(out->data.empty());
+  EXPECT_FALSE(validateGridMap(*out).has_value());
+
+  out->data = Span<const uint8_t>(storage.data(), 40);  // one row short
+  EXPECT_FALSE(validateGridMap(*out).has_value());
+  out->data = Span<const uint8_t>(storage.data(), storage.size());
+  EXPECT_TRUE(validateGridMap(*out).has_value());
+}
+
+TEST(GridMapCodecTest, ValidateAcceptsFieldEndingExactlyAtCellStride) {
+  std::vector<uint8_t> storage;
+  const GridMap in = makeGrid(storage);  // cost: offset 4 + 4 bytes == cell_stride 8
+  EXPECT_TRUE(validateGridMap(in).has_value());
 }
 
 }  // namespace
