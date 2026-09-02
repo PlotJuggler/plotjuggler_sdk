@@ -23,6 +23,7 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
   standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), the host-side
   wasm parser-module manifest custom-section codec, and the test-only static WASI ABI auditor. The
   0.22 authoring helper builds native parser modules only; wasm loading/execution is not present.
+  The absolute-time spine now also carries checked arithmetic shared across those layers.
 - **descriptor_import_support** — a separate compiled component
   (`plotjuggler_sdk::descriptor_import_support`, headers under
   `pj_base/sdk/descriptor_import/`): the callee side of the descriptor-import

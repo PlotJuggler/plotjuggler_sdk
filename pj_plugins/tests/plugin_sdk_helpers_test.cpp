@@ -350,62 +350,40 @@ TEST(TimestampPolicyTest, SupportAndWarningsCoverEveryTimeKind) {
   }
 }
 
-TEST(TimestampPolicyTest, SecondsToNanosecondsUsesIntegerSplitAndStableRounding) {
-  struct ConversionCase {
-    double seconds;
-    int64_t nanoseconds;
-  };
-  const ConversionCase cases[] = {
-      {1.5, 1'500'000'000}, {1.7e9 + 0.125, 1'700'000'000'125'000'000}, {-1.6e-9, -2}, {1.6e-9, 2}, {2.4e-9, 2},
-  };
-
-  for (const ConversionCase& test_case : cases) {
-    const auto converted = PJ::sdk::secondsToNanoseconds(test_case.seconds);
-    ASSERT_TRUE(converted);
-    EXPECT_EQ(*converted, test_case.nanoseconds);
-  }
-}
-
-TEST(TimestampPolicyTest, SecondsToNanosecondsRejectsNonFiniteAndOverflow) {
-  EXPECT_FALSE(PJ::sdk::secondsToNanoseconds(std::numeric_limits<double>::quiet_NaN()));
-  EXPECT_FALSE(PJ::sdk::secondsToNanoseconds(std::numeric_limits<double>::infinity()));
-  EXPECT_FALSE(PJ::sdk::secondsToNanoseconds(-std::numeric_limits<double>::infinity()));
-  EXPECT_FALSE(PJ::sdk::secondsToNanoseconds(9.3e9));
-  EXPECT_FALSE(PJ::sdk::secondsToNanoseconds(9223372036.0 + 0.999999999));
-}
-
 TEST(TimestampPolicyTest, TimestampUnitsReadEverySpellingAndRoundTrip) {
   struct UnitCase {
     const char* spelling;
-    PJ::sdk::TimestampUnit unit;
+    PJ::TimeUnit unit;
     int64_t nanoseconds_per_unit;
   };
   const UnitCase cases[] = {
-      {"ns", PJ::sdk::TimestampUnit::kNanoseconds, 1},
-      {"us", PJ::sdk::TimestampUnit::kMicroseconds, 1'000},
-      {"ms", PJ::sdk::TimestampUnit::kMilliseconds, 1'000'000},
-      {"s", PJ::sdk::TimestampUnit::kSeconds, 1'000'000'000},
+      {"ns", PJ::TimeUnit::kNanoseconds, 1},
+      {"us", PJ::TimeUnit::kMicroseconds, 1'000},
+      {"ms", PJ::TimeUnit::kMilliseconds, 1'000'000},
+      {"s", PJ::TimeUnit::kSeconds, 1'000'000'000},
   };
 
   for (const UnitCase& test_case : cases) {
     const nlohmann::json input = {{"timestamp_unit", test_case.spelling}};
-    EXPECT_EQ(PJ::sdk::timestampUnitFromJson(input), std::optional<PJ::sdk::TimestampUnit>{test_case.unit});
-    EXPECT_EQ(PJ::sdk::nanosecondsPer(test_case.unit), test_case.nanoseconds_per_unit);
+    EXPECT_EQ(PJ::sdk::timestampUnitFromJson(input), std::optional<PJ::TimeUnit>{test_case.unit});
+    EXPECT_EQ(PJ::nanosecondsPer(test_case.unit), test_case.nanoseconds_per_unit);
 
     nlohmann::json output;
     PJ::sdk::timestampUnitToJson(output, test_case.unit);
     EXPECT_EQ(output.at("timestamp_unit"), test_case.spelling);
-    EXPECT_EQ(PJ::sdk::timestampUnitFromJson(output), std::optional<PJ::sdk::TimestampUnit>{test_case.unit});
+    EXPECT_EQ(PJ::sdk::timestampUnitFromJson(output), std::optional<PJ::TimeUnit>{test_case.unit});
   }
 }
 
 TEST(TimestampPolicyTest, MissingUnitDefaultsToNanosecondsAndUnknownIsRejected) {
   EXPECT_EQ(
       PJ::sdk::timestampUnitFromJson(nlohmann::json::object()),
-      std::optional<PJ::sdk::TimestampUnit>{PJ::sdk::TimestampUnit::kNanoseconds});
+      std::optional<PJ::TimeUnit>{PJ::TimeUnit::kNanoseconds});
   EXPECT_FALSE(PJ::sdk::timestampUnitFromJson(nlohmann::json{{"timestamp_unit", "minutes"}}));
   EXPECT_EQ(PJ::sdk::kTimestampColumnKey, "timestamp_column");
   EXPECT_EQ(PJ::sdk::kTimestampUnitKey, "timestamp_unit");
+  EXPECT_EQ(PJ::sdk::kSyntheticIntervalKey, "synthetic_interval_ns");
+  EXPECT_EQ(PJ::sdk::kFlattenStructsKey, "flatten_structs");
 }
 
 }  // namespace

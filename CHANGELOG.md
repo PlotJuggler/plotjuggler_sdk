@@ -5,18 +5,22 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.27.0]
 
-### Feature: shared timestamp-axis policy for plugins (MINOR)
+### Feature: shared timestamp arithmetic and axis policy (MINOR)
 
-`pj_plugins/sdk/timestamp_policy.hpp` is meant to replace the five divergent per-plugin
-timestamp-axis detectors inventoried in
-[#186](https://github.com/PlotJuggler/plotjuggler_sdk/issues/186) with one
-header-only contract: native timestamp storage first, then canonical names restricted to
-plausible scalar storage (`TIMESTAMP`, `int64`, `uint64`, or `double`), never expanded list
-elements. Explicit narrow-integer, `uint32`, and `float32` axes carry a shared warning.
-Canonical `timestamp_column` / `timestamp_unit` (`ns` | `us` | `ms` | `s`) JSON keys stop
-unit inference from being private plugin policy, and the integer-split seconds-to-nanoseconds
-helper makes rounding and overflow handling platform-independent. No ABI change;
-`abi/baseline.abi` untouched.
+`pj_base/time_math.hpp` adds C++17-clean, checked time arithmetic usable by parser modules,
+the host, and plugins: `nanosecondsPer`, `scaleToNanoseconds`, `widenUnsignedTicks`,
+`secondsToNanoseconds`, `combineSecondsAndNanos`, `syntheticInstant`, and
+`fitSyntheticInterval`. The absolute-time spine re-exports this arithmetic through
+`pj_base/time.hpp`.
+
+Layered on that spine, `pj_plugins/sdk/timestamp_policy.hpp` is meant to replace the five
+divergent per-plugin timestamp-axis detectors inventoried in
+[#186](https://github.com/PlotJuggler/plotjuggler_sdk/issues/186) with one header-only
+detection and configuration contract: native timestamp storage first, then canonical names
+restricted to plausible scalar storage (`TIMESTAMP`, `int64`, `uint64`, or `double`), never
+expanded list elements. Explicit narrow-integer, `uint32`, and `float32` axes carry a shared
+warning, while canonical axis configuration keys and `PJ::TimeUnit` stop unit inference from
+being private plugin policy. No ABI change; `abi/baseline.abi` untouched.
 
 ## [0.26.0]
 

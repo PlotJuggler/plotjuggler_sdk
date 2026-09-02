@@ -14,14 +14,14 @@
 #pragma once
 
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <span>
 #include <string_view>
+
+#include "pj_base/time.hpp"
 
 namespace PJ {
 namespace sdk {
@@ -181,78 +181,25 @@ namespace detail {
   return std::nullopt;
 }
 
-/// Converts seconds to nanoseconds without platform-dependent long-double
-/// arithmetic. Fractional nanoseconds round halfway away from zero; non-finite
-/// input and either whole-second or final-addition overflow return nullopt.
-[[nodiscard]] inline std::optional<int64_t> secondsToNanoseconds(double seconds) noexcept {
-  if (!std::isfinite(seconds)) {
-    return std::nullopt;
-  }
-
-  constexpr int64_t kNanosecondsPerSecond = 1'000'000'000;
-  constexpr int64_t kMaximumWholeSeconds = std::numeric_limits<int64_t>::max() / kNanosecondsPerSecond;
-  constexpr int64_t kMinimumWholeSeconds = std::numeric_limits<int64_t>::min() / kNanosecondsPerSecond;
-
-  double whole_seconds = 0.0;
-  const double fractional_seconds = std::modf(seconds, &whole_seconds);
-  if (whole_seconds > static_cast<double>(kMaximumWholeSeconds) ||
-      whole_seconds < static_cast<double>(kMinimumWholeSeconds)) {
-    return std::nullopt;
-  }
-
-  const int64_t whole_nanoseconds = static_cast<int64_t>(whole_seconds) * kNanosecondsPerSecond;
-  const int64_t fractional_nanoseconds =
-      static_cast<int64_t>(std::llround(fractional_seconds * static_cast<double>(kNanosecondsPerSecond)));
-
-  if ((fractional_nanoseconds > 0 &&
-       whole_nanoseconds > std::numeric_limits<int64_t>::max() - fractional_nanoseconds) ||
-      (fractional_nanoseconds < 0 &&
-       whole_nanoseconds < std::numeric_limits<int64_t>::min() - fractional_nanoseconds)) {
-    return std::nullopt;
-  }
-  return whole_nanoseconds + fractional_nanoseconds;
-}
-
 /// Canonical JSON key for the selected timestamp column.
 inline constexpr std::string_view kTimestampColumnKey = "timestamp_column";
 
 /// Canonical JSON key for an integer timestamp column's unit.
 inline constexpr std::string_view kTimestampUnitKey = "timestamp_unit";
 
-/// Units accepted by the shared timestamp-axis configuration contract.
-enum class TimestampUnit : uint8_t {
-  /// Nanoseconds ("ns"); the compatibility default for integer columns.
-  kNanoseconds,
-  /// Microseconds ("us").
-  kMicroseconds,
-  /// Milliseconds ("ms").
-  kMilliseconds,
-  /// Seconds ("s").
-  kSeconds,
-};
+/// Canonical JSON key for a synthesized axis interval in nanoseconds.
+inline constexpr std::string_view kSyntheticIntervalKey = "synthetic_interval_ns";
 
-/// Returns the integral nanosecond scale for a configured timestamp unit.
-[[nodiscard]] constexpr int64_t nanosecondsPer(TimestampUnit unit) noexcept {
-  switch (unit) {
-    case TimestampUnit::kNanoseconds:
-      return 1;
-    case TimestampUnit::kMicroseconds:
-      return 1'000;
-    case TimestampUnit::kMilliseconds:
-      return 1'000'000;
-    case TimestampUnit::kSeconds:
-      return 1'000'000'000;
-  }
-  return 0;
-}
+/// Canonical JSON key controlling whether structured columns are flattened.
+inline constexpr std::string_view kFlattenStructsKey = "flatten_structs";
 
 /// Reads "ns", "us", "ms", or "s" from kTimestampUnitKey. A missing key
 /// preserves the historical nanosecond default; malformed or unknown values
 /// return nullopt so callers can reject the named config field.
-[[nodiscard]] inline std::optional<TimestampUnit> timestampUnitFromJson(const nlohmann::json& object) {
+[[nodiscard]] inline std::optional<PJ::TimeUnit> timestampUnitFromJson(const nlohmann::json& object) {
   const auto unit_it = object.find(kTimestampUnitKey.data());
   if (unit_it == object.end()) {
-    return TimestampUnit::kNanoseconds;
+    return PJ::TimeUnit::kNanoseconds;
   }
   if (!unit_it->is_string()) {
     return std::nullopt;
@@ -260,34 +207,34 @@ enum class TimestampUnit : uint8_t {
 
   const auto& value = unit_it->get_ref<const nlohmann::json::string_t&>();
   if (value == "ns") {
-    return TimestampUnit::kNanoseconds;
+    return PJ::TimeUnit::kNanoseconds;
   }
   if (value == "us") {
-    return TimestampUnit::kMicroseconds;
+    return PJ::TimeUnit::kMicroseconds;
   }
   if (value == "ms") {
-    return TimestampUnit::kMilliseconds;
+    return PJ::TimeUnit::kMilliseconds;
   }
   if (value == "s") {
-    return TimestampUnit::kSeconds;
+    return PJ::TimeUnit::kSeconds;
   }
   return std::nullopt;
 }
 
-/// Writes a TimestampUnit using the canonical short spelling under
+/// Writes a TimeUnit using the canonical short spelling under
 /// kTimestampUnitKey, converting a null JSON value to an object as needed.
-inline void timestampUnitToJson(nlohmann::json& object, TimestampUnit unit) {
+inline void timestampUnitToJson(nlohmann::json& object, PJ::TimeUnit unit) {
   switch (unit) {
-    case TimestampUnit::kNanoseconds:
+    case PJ::TimeUnit::kNanoseconds:
       object[kTimestampUnitKey.data()] = "ns";
       return;
-    case TimestampUnit::kMicroseconds:
+    case PJ::TimeUnit::kMicroseconds:
       object[kTimestampUnitKey.data()] = "us";
       return;
-    case TimestampUnit::kMilliseconds:
+    case PJ::TimeUnit::kMilliseconds:
       object[kTimestampUnitKey.data()] = "ms";
       return;
-    case TimestampUnit::kSeconds:
+    case PJ::TimeUnit::kSeconds:
       object[kTimestampUnitKey.data()] = "s";
       return;
   }
