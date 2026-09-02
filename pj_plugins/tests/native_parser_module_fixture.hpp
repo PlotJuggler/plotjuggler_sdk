@@ -23,7 +23,8 @@ enum ClaimIndex : uint32_t {
   kRouteMismatch = 10,
   kTypeMismatch = 11,
   kSpliceGridMap = 12,
-  kClaimCount = 13,
+  kSpliceGridMapShort = 13,
+  kClaimCount = 14,
 };
 
 }  // namespace pj_fixture
