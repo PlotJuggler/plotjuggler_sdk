@@ -11,6 +11,7 @@ using PJ::sdk::CameraInfo;
 using PJ::sdk::CompressedPointCloud;
 using PJ::sdk::DepthImage;
 using PJ::sdk::FrameTransforms;
+using PJ::sdk::GridMap;
 using PJ::sdk::Image;
 using PJ::sdk::ImageAnnotations;
 using PJ::sdk::Log;
@@ -46,6 +47,7 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{Log{}}), BuiltinObjectType::kLog);
   EXPECT_EQ(typeOf(BuiltinObject{PosesInFrame{}}), BuiltinObjectType::kPosesInFrame);
   EXPECT_EQ(typeOf(BuiltinObject{VoxelGrid{}}), BuiltinObjectType::kVoxelGrid);
+  EXPECT_EQ(typeOf(BuiltinObject{GridMap{}}), BuiltinObjectType::kGridMap);
   EXPECT_EQ(typeOf(BuiltinObject{PlotMarkers{}}), BuiltinObjectType::kPlotMarkers);
 }
 
@@ -69,6 +71,7 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kPosesInFrame,
            BuiltinObjectType::kVoxelGrid,
            BuiltinObjectType::kPlotMarkers,
+           BuiltinObjectType::kGridMap,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);

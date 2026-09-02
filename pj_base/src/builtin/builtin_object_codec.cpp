@@ -13,6 +13,7 @@
 #include "pj_base/builtin/compressed_point_cloud_codec.hpp"
 #include "pj_base/builtin/depth_image_codec.hpp"
 #include "pj_base/builtin/frame_transforms_codec.hpp"
+#include "pj_base/builtin/grid_map_codec.hpp"
 #include "pj_base/builtin/image_annotations_codec.hpp"
 #include "pj_base/builtin/image_codec.hpp"
 #include "pj_base/builtin/log_codec.hpp"
@@ -98,6 +99,8 @@ Expected<std::vector<uint8_t>> serializeBuiltinObject(const sdk::BuiltinObject& 
       return serializeAs<sdk::VoxelGrid>(object, type, serializeVoxelGrid);
     case sdk::BuiltinObjectType::kPlotMarkers:
       return serializeAs<sdk::PlotMarkers>(object, type, serializePlotMarkers);
+    case sdk::BuiltinObjectType::kGridMap:
+      return serializeAs<sdk::GridMap>(object, type, serializeGridMap);
     case sdk::BuiltinObjectType::kNone:
       return unexpected(std::string("cannot serialize builtin object with type kNone"));
   }
@@ -140,6 +143,8 @@ Expected<sdk::BuiltinObject> deserializeBuiltinObject(sdk::BuiltinObjectType typ
       return deserializeAs<sdk::VoxelGrid>(data, size, deserializeVoxelGrid);
     case sdk::BuiltinObjectType::kPlotMarkers:
       return deserializeAs<sdk::PlotMarkers>(data, size, deserializePlotMarkers);
+    case sdk::BuiltinObjectType::kGridMap:
+      return deserializeAs<sdk::GridMap>(data, size, deserializeGridMap);
     case sdk::BuiltinObjectType::kNone:
       return unexpected(std::string("cannot deserialize builtin object with type kNone"));
   }

@@ -15,10 +15,10 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
 ### Modules
 
 - **pj_base** — vocabulary types (`Timestamp`, `DatasetId`, `Expected<T>`, `Span<T>`, type trees),
-  the canonical builtin object vocabulary (`pj_base/builtin/`: 17 struct headers — Image, DepthImage,
+  the canonical builtin object vocabulary (`pj_base/builtin/`: 18 struct headers — Image, DepthImage,
   PointCloud, CompressedPointCloud, OccupancyGrid(+Update), Mesh3D, VideoFrame,
   SceneEntities, RobotDescription, CameraInfo, Log, ImageAnnotations, FrameTransforms, PosesInFrame,
-  VoxelGrid, PlotMarkers) and their canonical wire codecs, the C-ABI protocol headers for
+  VoxelGrid, PlotMarkers, GridMap) and their canonical wire codecs, the C-ABI protocol headers for
   DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them, the
   standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), the host-side
   wasm parser-module manifest custom-section codec, and the test-only static WASI ABI auditor. The

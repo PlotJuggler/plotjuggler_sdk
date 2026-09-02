@@ -244,7 +244,7 @@ TEST(ParserModuleAbi, OutputReaderRejectsTruncationAndMalformedDescriptors) {
 }
 
 TEST(BuiltinObjectSpliceTable, ContainsOnlyUnambiguousTopLevelBulkByteFields) {
-  const std::array<PJ_builtin_object_splice_field_v1_t, 9> expected{
+  const std::array<PJ_builtin_object_splice_field_v1_t, 10> expected{
       PJ_builtin_object_splice_field_v1_t{PJ_BUILTIN_OBJECT_TYPE_IMAGE, 0, 7},
       PJ_builtin_object_splice_field_v1_t{PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD, 0, 9},
       PJ_builtin_object_splice_field_v1_t{PJ_BUILTIN_OBJECT_TYPE_DEPTH_IMAGE, 0, 5},
@@ -254,6 +254,7 @@ TEST(BuiltinObjectSpliceTable, ContainsOnlyUnambiguousTopLevelBulkByteFields) {
       PJ_builtin_object_splice_field_v1_t{PJ_BUILTIN_OBJECT_TYPE_VIDEO_FRAME, 0, 3},
       PJ_builtin_object_splice_field_v1_t{PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID_UPDATE, 0, 7},
       PJ_builtin_object_splice_field_v1_t{PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID, 0, 12},
+      PJ_builtin_object_splice_field_v1_t{PJ_BUILTIN_OBJECT_TYPE_GRID_MAP, 0, 10},
   };
   uint32_t count = 0;
   const auto* table = pj_builtin_object_splice_fields_v1(&count);

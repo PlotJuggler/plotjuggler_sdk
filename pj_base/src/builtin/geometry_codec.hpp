@@ -92,6 +92,34 @@ inline bool readTimestampMessage(Reader& reader, Timestamp& out) {
   return reader.readMessage(nested) && decodeTimestamp(nested, out);
 }
 
+// ---------- Vector2 ----------
+
+inline void writeVector2(Writer& writer, const sdk::Vector2& v) {
+  writer.doubleField(1, v.x);
+  writer.doubleField(2, v.y);
+}
+
+inline bool decodeVector2(Reader& reader, sdk::Vector2& out) {
+  return parseFields(reader, [&](Tag tag, Reader& r) {
+    if (tag.type != WireType::kFixed64) {
+      return false;
+    }
+    switch (tag.field) {
+      case 1:
+        return r.readDouble(out.x);
+      case 2:
+        return r.readDouble(out.y);
+      default:
+        return false;
+    }
+  });
+}
+
+inline bool readVector2Message(Reader& reader, sdk::Vector2& out) {
+  Reader nested;
+  return reader.readMessage(nested) && decodeVector2(nested, out);
+}
+
 // ---------- Vector3 ----------
 
 inline void writeVector3(Writer& writer, const sdk::Vector3& v) {

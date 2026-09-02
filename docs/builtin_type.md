@@ -31,6 +31,7 @@ The public headers live under:
 #include <pj_base/builtin/camera_info.hpp>
 #include <pj_base/builtin/log.hpp>
 #include <pj_base/builtin/voxel_grid.hpp>
+#include <pj_base/builtin/grid_map.hpp>
 #include <pj_base/builtin/plot_markers.hpp>
 // Codecs — one per type, all share the canonical PJ.<Type> wire format under pj_base/proto/pj/.
 #include <pj_base/builtin/builtin_object_codec.hpp>
@@ -50,6 +51,7 @@ The public headers live under:
 #include <pj_base/builtin/camera_info_codec.hpp>
 #include <pj_base/builtin/log_codec.hpp>
 #include <pj_base/builtin/voxel_grid_codec.hpp>
+#include <pj_base/builtin/grid_map_codec.hpp>
 #include <pj_base/builtin/plot_markers_codec.hpp>
 ```
 
@@ -138,6 +140,7 @@ annotations, frame transforms, or no builtin object.
 | `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
 | `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
 | `kVoxelGrid` | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
+| `kGridMap` | `PJ::sdk::GridMap` | 2D grid of per-cell channels (elevation maps, layered costmaps) in world coordinates. |
 | `kPlotMarkers` | `PJ::sdk::PlotMarkers` | Findings on a time-series plot (regions, events, bands, and labels). |
 
 ### Object-topic renderer metadata
@@ -618,6 +621,48 @@ viewer-side, so one type serves occupancy/cost/ESDF/semantic grids.
 `pj_base/builtin/voxel_grid_codec.hpp` serializes and deserializes this type
 using the canonical `PJ.VoxelGrid` protobuf wire format.
 
+## GridMap
+
+`GridMap` is a 2D grid whose cells carry named channels — the layered,
+generic-valued sibling of `OccupancyGrid` — for elevation maps, multi-layer
+costmaps, and terrain classification (e.g. `grid_map_msgs/GridMap`,
+`foxglove.Grid`).
+
+It is a byte-backed view: `column_count * row_count` fixed-size cell records
+live in `data` (a `Span<const uint8_t>` + `BufferAnchor`) in row-major order
+(x / column fastest), `row_stride` bytes per row, and the channels inside one
+record are described by `fields` — the same `PointField` model `PointCloud`
+and `VoxelGrid` use. The layout mirrors `foxglove.Grid` (plus an explicit
+`row_count`) so a parser can hand out `data` zero-copy; a producer with another
+layout (grid_map's column-major ring buffer) transcodes once at the boundary.
+
+Unlike `OccupancyGrid` (one fixed `-1`/`0..100` channel), the per-cell **value
+is generic** and there can be many channels per cell. A NaN in a float channel
+means "no data" for that cell; integer channels have no empty sentinel. Which
+channel is height, which one drives color, and the colormap are viewer-side
+choices. Channel-name conventions consumers may rely on: `elevation` is the
+conventional height channel; `red`, `green`, `blue`, `alpha` are the RGBA color
+channels, as in `foxglove.Grid`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Time of the grid. `0` when the source had none. |
+| `frame_id` | `std::string` | Source coordinate frame; 3D consumers TF-transform from it. |
+| `origin` | `Pose` | Corner of cell `(0,0)` in `frame_id`; the grid lies in the pose's local xy-plane. |
+| `cell_size` | `Vector2` | Metric cell size along local x (columns) and y (rows), meters. |
+| `column_count` / `row_count` | `uint32_t` | Cells along x / y. |
+| `cell_stride` / `row_stride` | `uint32_t` | Byte spacing of a cell record / a row (padding allowed). |
+| `fields` | `std::vector<PointField>` | Per-cell channel layout. |
+| `data` | `Span<const uint8_t>` + `BufferAnchor` | Packed cell records in row-major order. |
+
+Cell `(c, r)` has its center at `origin ∘ ((c + .5)*cell_size.x, (r + .5)*cell_size.y, 0)`.
+
+`pj_base/builtin/grid_map_codec.hpp` serializes and deserializes this type
+using the canonical `PJ.GridMap` protobuf wire format. Decoding rejects a
+layout the cell math could not index safely: a zero stride with cells
+declared, a row shorter than its columns, `data` shorter than
+`row_count * row_stride`, or a field reaching past `cell_stride`.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -637,6 +682,8 @@ using the canonical `PJ.VoxelGrid` protobuf wire format.
 | ROS `sensor_msgs/CameraInfo` | `CameraInfo` | Map K / D / R / P plus dimensions; correlate to the image topic by name. Sub-window (binning / ROI) is dropped. |
 | ROS `map_msgs/OccupancyGridUpdate` | `OccupancyGridUpdate` | Forward the cell-space patch (`x`/`y`/`width`/`height` + bytes); the consumer pairs it with the base grid and supplies origin/resolution. |
 | `foxglove.VoxelGrid` / `costmap_2d/VoxelGrid` | `VoxelGrid` | Map counts/strides/`cell_size`/`origin` into the struct; keep voxel bytes zero-copy in Z-Y-X order. The draw predicate is viewer-side. |
+| `foxglove.Grid` / `foxglove_msgs/Grid` | `GridMap` | Map `pose`/`cell_size`/strides/`fields` into the struct; keep cell bytes zero-copy. `row_count` is `data.size / row_stride`. |
+| ROS `grid_map_msgs/GridMap` | `GridMap` | Transcode once: flip both axes (grid_map puts index (0,0) at the +x/+y corner), unwrap the ring-buffer start indices, interleave the column-major per-layer arrays into row-major cell records (one float32 channel per layer), and move the center pose to the corner of cell (0,0). |
 
 The builtin type is the boundary object. After conversion, consumers should not
 need to know which third-party schema produced it.
