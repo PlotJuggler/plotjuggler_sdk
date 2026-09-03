@@ -191,6 +191,17 @@ bool emitSplicedGridMapV2(
              PJ_bytes_view_t{kGridMapWire.data(), kGridMapWire.size()}, 10, 1, 2, out_error);
 }
 
+// Same header as emitSplicedGridMapV2 but two columns (row_stride 2) and a
+// one-byte splice: the attached bytes cannot cover the declared cells.
+bool emitSplicedGridMapTooShortV2(
+    void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t* sink, PJ_error_t* out_error) noexcept {
+  static constexpr std::array<uint8_t, 8> kGridMapWire{0x28, 0x02, 0x30, 0x01, 0x38, 0x01, 0x40, 0x02};
+  return sink != nullptr && sink->accept_object_spliced != nullptr &&
+         sink->accept_object_spliced(
+             sink->ctx, true, 90, PJ_BUILTIN_OBJECT_TYPE_GRID_MAP,
+             PJ_bytes_view_t{kGridMapWire.data(), kGridMapWire.size()}, 10, 1, 1, out_error);
+}
+
 bool emitMismatchedImageV2(
     void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t* sink, PJ_error_t* out_error) noexcept {
   static constexpr std::array<uint8_t, 2> kImageWire{0x10, 0x01};
@@ -470,6 +481,15 @@ TEST(MessageParserFunctionalExtension, HostV2PathReconstructsGridMapSplice) {
   EXPECT_EQ(grid->data[0], 20U);
   EXPECT_EQ(grid->data[1], 30U);
   EXPECT_TRUE(PJ::validateGridMap(*grid).has_value());
+}
+
+TEST(MessageParserFunctionalExtension, HostV2PathRejectsSplicedGridMapWhoseBytesDoNotCoverTheCells) {
+  PJ::MessageParserHandle handle(adversarialV2Vtable<emitSplicedGridMapTooShortV2, PJ_BUILTIN_OBJECT_TYPE_GRID_MAP>());
+  ASSERT_TRUE(handle.bindSchema("example/GridMap", {}));
+  const std::array<uint8_t, 4> payload{10, 20, 30, 40};
+  auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>(payload));
+  ASSERT_FALSE(record.has_value());
+  EXPECT_NE(record.error().find("GridMap"), std::string::npos) << record.error();
 }
 
 TEST(MessageParserFunctionalExtension, HostRejectsObjectTypeThatDiffersFromBindingClassification) {

@@ -201,6 +201,15 @@ TEST(ParserModuleRuntime, AttachesGridMapSpliceToTheDecodedHeader) {
   EXPECT_TRUE(validateGridMap(*grid).has_value());
 }
 
+TEST(ParserModuleRuntime, RejectsGridMapSpliceWhoseBytesDoNotCoverTheCells) {
+  auto module = loadFixture();
+  auto bound = createBound(module, kSpliceGridMapShort, parser_module::Route::kObject, PJ_BUILTIN_OBJECT_TYPE_GRID_MAP);
+  auto result = bound.parse(input());
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_EQ(result->fault, ParserModuleFaultKind::kContractViolation);
+  EXPECT_NE(result->message.find("GridMap"), std::string::npos) << result->message;
+}
+
 TEST(ParserModuleRuntime, StrikeTrackerQuarantinesReplaysAndThenDisables) {
   auto module = loadFixture();
   const ParserModuleClaimKey key{"org.plotjuggler.test.native-module", "malformed"};

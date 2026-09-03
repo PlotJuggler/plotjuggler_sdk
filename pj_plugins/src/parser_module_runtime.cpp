@@ -16,6 +16,7 @@
 
 #include "detail/native_parser_module_state.hpp"
 #include "pj_base/builtin/builtin_object_codec.hpp"
+#include "pj_base/builtin/grid_map_codec.hpp"
 #include "pj_base/builtin_object_abi.h"
 #include "pj_base/span.hpp"
 
@@ -145,6 +146,13 @@ Expected<ParserModuleObjectOutput> ownObjectOutput(
     }
     if (!attached) {
       return unexpected("output splice could not be attached to its canonical object");
+    }
+    // GridMap decodes header-only for splices; the data-length check waits
+    // until the bytes exist, which is now.
+    if (type == sdk::BuiltinObjectType::kGridMap) {
+      if (auto valid = validateGridMap(*std::any_cast<sdk::GridMap>(&owned.object)); !valid) {
+        return unexpected("output spliced GridMap layout is invalid: " + valid.error());
+      }
     }
     owned.splice = ParserModuleObjectSplice{
         .field_number = object.splice->field_number,
