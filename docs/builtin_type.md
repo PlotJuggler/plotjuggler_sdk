@@ -666,9 +666,9 @@ layout the cell math could not index safely (a field with an unknown datatype
 or zero count, a field reaching past `cell_stride`, a zero stride with cells
 declared, a row shorter than its columns, `data` shorter than
 `row_count * row_stride`); a wire that carries no `data` is the functional-v2
-splice form and decodes with an empty span, so hosts that attach spliced bytes
-and consumers that index cells run `validateGridMap()` once the bytes are in
-place.
+splice form and decodes with an empty span; the host runs `validateGridMap()`
+right after attaching the spliced bytes, and consumers that index cells run it
+again defensively.
 
 ## Conversion Examples
 

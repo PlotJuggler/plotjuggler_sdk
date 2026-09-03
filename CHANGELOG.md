@@ -28,6 +28,15 @@ explicitly so new plugins can detect it. Reachable from streaming sources and
 from toolbox parser-ingest contexts alike (both hold the runtime-host fat
 pointer). Runtime-host vtable size grows 104 → 112, `attach_source_record` at offset 104. ABI-appendable growth only; `abi/baseline.abi` untouched.
 
+## [0.27.1]
+
+### Fix: hosts validate a spliced `GridMap` right after attaching its bytes (PATCH)
+
+`deserializeGridMap` accepts a header-only wire (the functional-v2 splice form) and leaves the
+data-length check to `validateGridMap()`. Both host splice-attachment paths (the functional
+parser handle and the parser-module runtime) now run that check as soon as the bytes are attached,
+so a spliced GridMap whose bytes cannot cover its declared cells is rejected as a contract
+violation instead of reaching consumers. Host-side only; no header layout, ABI or wire change.
 ## [0.27.0]
 
 ### Feature: shared timestamp arithmetic and axis policy (MINOR)

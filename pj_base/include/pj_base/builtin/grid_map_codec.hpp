@@ -29,8 +29,8 @@ inline constexpr std::string_view kSchemaGridMap = "PJ.GridMap";
 /// Full layout check for a grid whose bytes are in place: every field has a
 /// known datatype, a non-zero count and ends within `cell_stride`; with cells
 /// declared, both strides are non-zero, a row holds its columns, and `data`
-/// covers `row_count * row_stride`. Consumers that index cells, and hosts that
-/// attach spliced bytes, call this before trusting the layout.
+/// covers `row_count * row_stride`. Hosts call it right after attaching spliced
+/// bytes; consumers that index cells call it again before trusting the layout.
 [[nodiscard]] Expected<void> validateGridMap(const sdk::GridMap& grid);
 
 }  // namespace PJ
