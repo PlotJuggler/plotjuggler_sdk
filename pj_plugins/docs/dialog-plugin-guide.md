@@ -25,22 +25,34 @@ compile-time error.
 | The `QDialogButtonBox` MUST set the `standardButtons` property in the XML | Without it, the box instantiates with no buttons even when found by name. |
 | Every interactive widget MUST have a unique `objectName` | All `WidgetData` setters and event handlers address widgets by name. |
 
-### Optional: conditional field enabling (`pj_enable_when`)
+### Optional: conditional field enabling and visibility (`pj_enable_when`, `pj_visible_when`)
 
-Any widget may carry a string **dynamic property** `pj_enable_when` with the
-value `"<comboObjectName>:<index>[,<index>...]"`. The host keeps the widget
-enabled only while the named `QComboBox` (looked up in the same widget tree)
-sits on one of those indices, applying the initial state at load and tracking
-index changes live — including inside modal sub-dialogs, whose nested event
-loop blocks the plugin from pushing `setEnabled` updates itself. Rules
-re-assert after every widget-data apply, so a rule always wins over a
-plugin-pushed `enabled` on the same widget. Malformed values or unknown combo
-names are ignored (the widget stays as authored). Typical use: a backend
-selector combo greying out the fields of the non-selected backend.
+Any widget may carry a string **dynamic property** `pj_enable_when` or
+`pj_visible_when` with the value `"<comboObjectName>:<index>[,<index>...]"`.
+The host keeps the widget enabled (or visible) only while the named
+`QComboBox` (looked up in the same widget tree) sits on one of those indices,
+applying the initial state at load and tracking index changes live —
+including inside modal sub-dialogs, whose nested event loop blocks the plugin
+from pushing `setEnabled`/`setVisible` updates itself. Several clauses may be
+joined with `;`; the widget is enabled/visible only while ALL of them hold
+(`"backendCombo:0;modelCombo:1"`: the custom-model field of backend 0, shown
+only when its model combo says "Custom"). Rules re-assert after every
+widget-data apply, so a rule always wins over a plugin-pushed
+`enabled`/`visible` on the same widget. Malformed values or unknown combo
+names are ignored (the widget stays as authored).
+
+Use `pj_visible_when` for sections that belong to one choice: a hidden widget
+leaves its layout, so tagging both the label and the editor of a
+`QFormLayout` row makes the whole row disappear and the dialog compact.
+`pj_enable_when` keeps the row in place, greyed — for a field that exists in
+every mode but only applies in some.
 
 ```xml
+<widget class="QLabel" name="ollamaUrlLabel">
+ <property name="pj_visible_when" stdset="0"><string>backendCombo:0</string></property>
+</widget>
 <widget class="QLineEdit" name="ollamaUrlEdit">
- <property name="pj_enable_when" stdset="0"><string>backendCombo:0</string></property>
+ <property name="pj_visible_when" stdset="0"><string>backendCombo:0</string></property>
 </widget>
 ```
 
