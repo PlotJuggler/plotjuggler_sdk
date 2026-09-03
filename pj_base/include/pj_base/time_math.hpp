@@ -40,8 +40,8 @@ enum class TimeUnit : uint8_t { kSeconds, kMilliseconds, kMicroseconds, kNanosec
   return ticks * scale;
 }
 
-/// Widens unsigned ticks to the signed timestamp representation, rejecting values above INT64_MAX.
-[[nodiscard]] constexpr std::optional<int64_t> widenUnsignedTicks(uint64_t ticks) noexcept {
+/// Checked uint64 -> int64 tick conversion; values above INT64_MAX return nullopt.
+[[nodiscard]] constexpr std::optional<int64_t> toSignedTicks(uint64_t ticks) noexcept {
   if (ticks > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
     return std::nullopt;
   }

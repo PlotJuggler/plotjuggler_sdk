@@ -252,8 +252,8 @@ TEST(DelegatedIngestTest, BindingFailureIsANonFatalDisposition) {
 
 TEST(TimestampPolicyTest, NativeTimestampTypePassWinsOverPreferredName) {
   const PJ::sdk::TimestampCandidate candidates[] = {
-      {.name = "timestamp_ns", .kind = PJ::sdk::TimeKind::kInt64},
-      {.name = "foo", .kind = PJ::sdk::TimeKind::kNativeTimestamp},
+      {.name = "timestamp_ns", .kind = PJ::sdk::TimestampStorage::kInt64},
+      {.name = "foo", .kind = PJ::sdk::TimestampStorage::kNativeTimestamp},
   };
 
   EXPECT_EQ(PJ::sdk::detectTimestampColumn(candidates), std::optional<std::size_t>{1});
@@ -261,17 +261,17 @@ TEST(TimestampPolicyTest, NativeTimestampTypePassWinsOverPreferredName) {
 
 TEST(TimestampPolicyTest, NamePriorityWinsOverCandidateOrder) {
   const PJ::sdk::TimestampCandidate candidates[] = {
-      {.name = "time", .kind = PJ::sdk::TimeKind::kInt64},
-      {.name = "recording_timestamp_ns", .kind = PJ::sdk::TimeKind::kInt64},
+      {.name = "time", .kind = PJ::sdk::TimestampStorage::kInt64},
+      {.name = "recording_timestamp_ns", .kind = PJ::sdk::TimestampStorage::kInt64},
   };
 
   EXPECT_EQ(PJ::sdk::detectTimestampColumn(candidates), std::optional<std::size_t>{1});
 }
 
-TEST(TimestampPolicyTest, NarrowIntegerNameIsSkippedForPlausibleInt64) {
+TEST(TimestampPolicyTest, NarrowIntegerNameIsSkippedForEligibleInt64) {
   const PJ::sdk::TimestampCandidate candidates[] = {
-      {.name = "timestamp_ns", .kind = PJ::sdk::TimeKind::kNarrowInt},
-      {.name = "time", .kind = PJ::sdk::TimeKind::kInt64},
+      {.name = "timestamp_ns", .kind = PJ::sdk::TimestampStorage::kNarrowInt},
+      {.name = "time", .kind = PJ::sdk::TimestampStorage::kInt64},
   };
 
   EXPECT_EQ(PJ::sdk::detectTimestampColumn(candidates), std::optional<std::size_t>{1});
@@ -279,9 +279,9 @@ TEST(TimestampPolicyTest, NarrowIntegerNameIsSkippedForPlausibleInt64) {
 
 TEST(TimestampPolicyTest, UInt32AndFloat32NamesAreSkippedForFloat64) {
   const PJ::sdk::TimestampCandidate candidates[] = {
-      {.name = "timestamp_ns", .kind = PJ::sdk::TimeKind::kUInt32},
-      {.name = "recording_timestamp_ns", .kind = PJ::sdk::TimeKind::kFloat32},
-      {.name = "time", .kind = PJ::sdk::TimeKind::kFloat64},
+      {.name = "timestamp_ns", .kind = PJ::sdk::TimestampStorage::kUInt32},
+      {.name = "recording_timestamp_ns", .kind = PJ::sdk::TimestampStorage::kFloat32},
+      {.name = "time", .kind = PJ::sdk::TimestampStorage::kFloat64},
   };
 
   EXPECT_EQ(PJ::sdk::detectTimestampColumn(candidates), std::optional<std::size_t>{2});
@@ -289,7 +289,7 @@ TEST(TimestampPolicyTest, UInt32AndFloat32NamesAreSkippedForFloat64) {
 
 TEST(TimestampPolicyTest, ListElementIsNeverSelected) {
   const PJ::sdk::TimestampCandidate candidates[] = {
-      {.name = "timestamp", .kind = PJ::sdk::TimeKind::kNativeTimestamp, .is_list_element = true},
+      {.name = "timestamp", .kind = PJ::sdk::TimestampStorage::kNativeTimestamp, .is_list_element = true},
   };
 
   EXPECT_FALSE(PJ::sdk::detectTimestampColumn(candidates));
@@ -297,10 +297,10 @@ TEST(TimestampPolicyTest, ListElementIsNeverSelected) {
 
 TEST(TimestampPolicyTest, CanonicalNamesMatchAsciiCaseInsensitively) {
   const PJ::sdk::TimestampCandidate title_case[] = {
-      {.name = "Timestamp", .kind = PJ::sdk::TimeKind::kInt64},
+      {.name = "Timestamp", .kind = PJ::sdk::TimestampStorage::kInt64},
   };
   const PJ::sdk::TimestampCandidate upper_case[] = {
-      {.name = "DATETIME", .kind = PJ::sdk::TimeKind::kFloat64},
+      {.name = "DATETIME", .kind = PJ::sdk::TimestampStorage::kFloat64},
   };
 
   EXPECT_EQ(PJ::sdk::detectTimestampColumn(title_case), std::optional<std::size_t>{0});
@@ -309,8 +309,8 @@ TEST(TimestampPolicyTest, CanonicalNamesMatchAsciiCaseInsensitively) {
 
 TEST(TimestampPolicyTest, ExactCaseWinsWithinPreferredNameRegardlessOfOrder) {
   const PJ::sdk::TimestampCandidate candidates[] = {
-      {.name = "Timestamp", .kind = PJ::sdk::TimeKind::kInt64},
-      {.name = "timestamp", .kind = PJ::sdk::TimeKind::kInt64},
+      {.name = "Timestamp", .kind = PJ::sdk::TimestampStorage::kInt64},
+      {.name = "timestamp", .kind = PJ::sdk::TimestampStorage::kInt64},
   };
 
   EXPECT_EQ(PJ::sdk::detectTimestampColumn(candidates), std::optional<std::size_t>{1});
@@ -320,59 +320,101 @@ TEST(TimestampPolicyTest, CaseSensitiveCustomPolicyRejectsFoldedMatch) {
   const std::string_view names[] = {"timestamp"};
   const PJ::sdk::TimestampPolicy policy{.names = names, .case_insensitive = false};
   const PJ::sdk::TimestampCandidate candidates[] = {
-      {.name = "Timestamp", .kind = PJ::sdk::TimeKind::kInt64},
+      {.name = "Timestamp", .kind = PJ::sdk::TimestampStorage::kInt64},
   };
 
   EXPECT_FALSE(PJ::sdk::detectTimestampColumn(candidates, policy));
 }
 
-TEST(TimestampPolicyTest, MatchesTimestampNameReturnsCanonicalPriority) {
-  EXPECT_EQ(PJ::sdk::matchesTimestampName("timestamp_ns"), std::optional<std::size_t>{0});
+TEST(TimestampPolicyTest, TimestampNamePriorityReturnsCanonicalPriority) {
+  EXPECT_EQ(PJ::sdk::timestampNamePriority("timestamp_ns"), std::optional<std::size_t>{0});
 }
 
-TEST(TimestampPolicyTest, MatchesTimestampNameHonorsCaseSensitivity) {
+TEST(TimestampPolicyTest, TimestampNamePriorityHonorsCaseSensitivity) {
   const PJ::sdk::TimestampPolicy case_sensitive_policy{
       .names = PJ::sdk::kCanonicalTimestampNames,
       .case_insensitive = false,
   };
 
-  EXPECT_EQ(PJ::sdk::matchesTimestampName("Timestamp"), std::optional<std::size_t>{2});
-  EXPECT_FALSE(PJ::sdk::matchesTimestampName("Timestamp", case_sensitive_policy));
+  EXPECT_EQ(PJ::sdk::timestampNamePriority("Timestamp"), std::optional<std::size_t>{2});
+  EXPECT_FALSE(PJ::sdk::timestampNamePriority("Timestamp", case_sensitive_policy));
 }
 
-TEST(TimestampPolicyTest, MatchesTimestampNameRejectsUnrelatedName) {
-  EXPECT_FALSE(PJ::sdk::matchesTimestampName("speed"));
+TEST(TimestampPolicyTest, TimestampNamePriorityRejectsUnrelatedName) {
+  EXPECT_FALSE(PJ::sdk::timestampNamePriority("speed"));
 }
 
-TEST(TimestampPolicyTest, MatchesTimestampNamePrefersExactCaseAcrossPolicyNames) {
+TEST(TimestampPolicyTest, TimestampNamePriorityPrefersExactCaseAcrossPolicyNames) {
   const std::string_view names[] = {"timestamp", "Timestamp"};
   const PJ::sdk::TimestampPolicy policy{.names = names, .case_insensitive = true};
 
-  EXPECT_EQ(PJ::sdk::matchesTimestampName("Timestamp", policy), std::optional<std::size_t>{1});
+  EXPECT_EQ(PJ::sdk::timestampNamePriority("Timestamp", policy), std::optional<std::size_t>{1});
 }
 
-TEST(TimestampPolicyTest, SupportAndWarningsCoverEveryTimeKind) {
-  struct SupportCase {
-    PJ::sdk::TimeKind kind;
-    PJ::sdk::AxisSupport support;
+TEST(TimestampPolicyTest, EligibilityAndWarningsCoverEveryTimeKindAtNanoseconds) {
+  struct EligibilityCase {
+    PJ::sdk::TimestampStorage kind;
+    PJ::sdk::TimestampEligibility eligibility;
   };
-  constexpr std::array<SupportCase, 8> cases = {{
-      {PJ::sdk::TimeKind::kNativeTimestamp, PJ::sdk::AxisSupport::kPlausible},
-      {PJ::sdk::TimeKind::kInt64, PJ::sdk::AxisSupport::kPlausible},
-      {PJ::sdk::TimeKind::kUInt64, PJ::sdk::AxisSupport::kPlausible},
-      {PJ::sdk::TimeKind::kFloat64, PJ::sdk::AxisSupport::kPlausible},
-      {PJ::sdk::TimeKind::kUInt32, PJ::sdk::AxisSupport::kAcceptedWithWarning},
-      {PJ::sdk::TimeKind::kNarrowInt, PJ::sdk::AxisSupport::kAcceptedWithWarning},
-      {PJ::sdk::TimeKind::kFloat32, PJ::sdk::AxisSupport::kAcceptedWithWarning},
-      {PJ::sdk::TimeKind::kOther, PJ::sdk::AxisSupport::kUnsupported},
+  constexpr std::array<EligibilityCase, 9> cases = {{
+      {PJ::sdk::TimestampStorage::kNativeTimestamp, PJ::sdk::TimestampEligibility::kEligible},
+      {PJ::sdk::TimestampStorage::kInt64, PJ::sdk::TimestampEligibility::kEligible},
+      {PJ::sdk::TimestampStorage::kUInt64, PJ::sdk::TimestampEligibility::kEligible},
+      {PJ::sdk::TimestampStorage::kFloat64, PJ::sdk::TimestampEligibility::kEligible},
+      {PJ::sdk::TimestampStorage::kInt32, PJ::sdk::TimestampEligibility::kExplicitOnly},
+      {PJ::sdk::TimestampStorage::kUInt32, PJ::sdk::TimestampEligibility::kExplicitOnly},
+      {PJ::sdk::TimestampStorage::kNarrowInt, PJ::sdk::TimestampEligibility::kExplicitOnly},
+      {PJ::sdk::TimestampStorage::kFloat32, PJ::sdk::TimestampEligibility::kExplicitOnly},
+      {PJ::sdk::TimestampStorage::kOther, PJ::sdk::TimestampEligibility::kIneligible},
   }};
 
-  for (const SupportCase& test_case : cases) {
-    EXPECT_EQ(PJ::sdk::axisSupport(test_case.kind), test_case.support);
+  for (const EligibilityCase& test_case : cases) {
+    EXPECT_EQ(PJ::sdk::timestampEligibility(test_case.kind, PJ::TimeUnit::kNanoseconds), test_case.eligibility);
     EXPECT_EQ(
-        PJ::sdk::explicitAxisWarning(test_case.kind).empty(),
-        test_case.support != PJ::sdk::AxisSupport::kAcceptedWithWarning);
+        PJ::sdk::explicitOnlyWarning(test_case.kind, PJ::TimeUnit::kNanoseconds).empty(),
+        test_case.eligibility != PJ::sdk::TimestampEligibility::kExplicitOnly);
   }
+}
+
+TEST(TimestampPolicyTest, IntegerEligibilityFollowsTheConfiguredUnit) {
+  using PJ::TimeUnit;
+  using PJ::sdk::TimestampEligibility;
+  using PJ::sdk::TimestampStorage;
+
+  // Unix seconds in 32 bits reach 2038 (int32) or 2106 (uint32): eligible.
+  EXPECT_EQ(
+      PJ::sdk::timestampEligibility(TimestampStorage::kInt32, TimeUnit::kSeconds), TimestampEligibility::kEligible);
+  EXPECT_EQ(
+      PJ::sdk::timestampEligibility(TimestampStorage::kUInt32, TimeUnit::kSeconds), TimestampEligibility::kEligible);
+  EXPECT_TRUE(PJ::sdk::explicitOnlyWarning(TimestampStorage::kUInt32, TimeUnit::kSeconds).empty());
+  // The same widths in milliseconds end within weeks of the epoch.
+  EXPECT_EQ(
+      PJ::sdk::timestampEligibility(TimestampStorage::kUInt32, TimeUnit::kMilliseconds),
+      TimestampEligibility::kExplicitOnly);
+  EXPECT_EQ(
+      PJ::sdk::timestampEligibility(TimestampStorage::kInt32, TimeUnit::kMilliseconds),
+      TimestampEligibility::kExplicitOnly);
+  // 8/16-bit storage and float32 never become eligible; 64-bit always is.
+  EXPECT_EQ(
+      PJ::sdk::timestampEligibility(TimestampStorage::kNarrowInt, TimeUnit::kSeconds),
+      TimestampEligibility::kExplicitOnly);
+  EXPECT_EQ(
+      PJ::sdk::timestampEligibility(TimestampStorage::kFloat32, TimeUnit::kSeconds),
+      TimestampEligibility::kExplicitOnly);
+  EXPECT_EQ(
+      PJ::sdk::timestampEligibility(TimestampStorage::kInt64, TimeUnit::kSeconds), TimestampEligibility::kEligible);
+}
+
+TEST(TimestampPolicyTest, DetectorAutoSelectsInt32SecondsOnlyWhenPolicyUnitIsSeconds) {
+  const PJ::sdk::TimestampCandidate candidates[] = {
+      {.name = "timestamp", .kind = PJ::sdk::TimestampStorage::kInt32},
+      {.name = "time", .kind = PJ::sdk::TimestampStorage::kInt64},
+  };
+  const PJ::sdk::TimestampPolicy seconds_policy{
+      .names = PJ::sdk::kCanonicalTimestampNames, .case_insensitive = true, .unit = PJ::TimeUnit::kSeconds};
+
+  EXPECT_EQ(PJ::sdk::detectTimestampColumn(candidates), std::optional<std::size_t>{1});
+  EXPECT_EQ(PJ::sdk::detectTimestampColumn(candidates, seconds_policy), std::optional<std::size_t>{0});
 }
 
 TEST(TimestampPolicyTest, TimestampUnitsReadEverySpellingAndRoundTrip) {

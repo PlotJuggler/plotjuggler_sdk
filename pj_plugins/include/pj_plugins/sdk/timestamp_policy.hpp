@@ -16,6 +16,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <span>
@@ -26,72 +27,103 @@
 namespace PJ {
 namespace sdk {
 
-/// How a candidate column's storage relates to an epoch-nanosecond axis.
-enum class TimeKind : uint8_t {
+/// Storage classification of a candidate column. Integer kinds carry ticks in
+/// the policy's TimeUnit; floating kinds carry seconds.
+enum class TimestampStorage : uint8_t {
   /// A native timestamp whose unit is known to the caller.
   kNativeTimestamp,
-  /// A signed 64-bit integer containing nanoseconds.
   kInt64,
-  /// An unsigned 64-bit integer containing nanoseconds.
   kUInt64,
   /// Double-precision seconds, with about 238 ns resolution at the present epoch.
   kFloat64,
-  /// Unsigned 32-bit nanoseconds, which end about 4.3 seconds after the epoch.
+  kInt32,
   kUInt32,
-  /// Signed 8/16/32-bit or unsigned 8/16-bit nanoseconds.
+  /// Signed or unsigned 8/16-bit integers.
   kNarrowInt,
-  /// Single-precision seconds, whose spacing reaches one second at 2^23 seconds.
+  /// Single-precision seconds: 24 significant bits, so spacing exceeds 100 s at the present epoch.
   kFloat32,
   /// Storage that cannot serve as a timestamp axis.
   kOther,
 };
 
-/// Whether a TimeKind can be auto-selected or must be handled explicitly.
-enum class AxisSupport : uint8_t {
-  /// Safe enough for automatic timestamp-axis selection.
-  kPlausible,
-  /// Available only after surfacing explicitAxisWarning().
-  kAcceptedWithWarning,
-  /// Cannot serve as a timestamp axis.
-  kUnsupported,
+/// When a TimestampStorage may become the time axis.
+enum class TimestampEligibility : uint8_t {
+  /// May be picked automatically by detectTimestampColumn().
+  kEligible,
+  /// Only when named explicitly, after surfacing explicitOnlyWarning().
+  kExplicitOnly,
+  /// Never.
+  kIneligible,
 };
 
-/// Classifies timestamp-axis support without inspecting a column name.
-[[nodiscard]] constexpr AxisSupport axisSupport(TimeKind kind) noexcept {
+/// An integer column is eligible for automatic selection when its width can hold instants at
+/// least this far past the Unix epoch at the configured unit: int32 seconds (2038-01-19), the
+/// narrowest storage in common use for absolute time.
+inline constexpr int64_t kEligibleHorizonSeconds = std::numeric_limits<int32_t>::max();
+
+namespace detail {
+
+/// Largest tick count the integer kind can hold; nullopt for non-integer kinds.
+[[nodiscard]] constexpr std::optional<uint64_t> maxIntegerTicks(TimestampStorage kind) noexcept {
   switch (kind) {
-    case TimeKind::kNativeTimestamp:
-    case TimeKind::kInt64:
-    case TimeKind::kUInt64:
-    case TimeKind::kFloat64:
-      return AxisSupport::kPlausible;
-    case TimeKind::kUInt32:
-    case TimeKind::kNarrowInt:
-    case TimeKind::kFloat32:
-      return AxisSupport::kAcceptedWithWarning;
-    case TimeKind::kOther:
-      return AxisSupport::kUnsupported;
+    case TimestampStorage::kInt64:
+      return static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+    case TimestampStorage::kUInt64:
+      return std::numeric_limits<uint64_t>::max();
+    case TimestampStorage::kInt32:
+      return static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
+    case TimestampStorage::kUInt32:
+      return std::numeric_limits<uint32_t>::max();
+    case TimestampStorage::kNarrowInt:
+      return static_cast<uint64_t>(std::numeric_limits<int8_t>::max());
+    case TimestampStorage::kNativeTimestamp:
+    case TimestampStorage::kFloat64:
+    case TimestampStorage::kFloat32:
+    case TimestampStorage::kOther:
+      return std::nullopt;
   }
-  return AxisSupport::kUnsupported;
+  return std::nullopt;
 }
 
-/// Returns the warning a plugin must surface for an explicitly selected lossy
-/// or short-range axis; all other kinds return an empty view without allocating.
-[[nodiscard]] constexpr std::string_view explicitAxisWarning(TimeKind kind) noexcept {
+}  // namespace detail
+
+/// Whether storage holding ticks of `unit` may become the time axis, without inspecting a column
+/// name: kEligible for automatic selection, kExplicitOnly when a producer must name it and surface
+/// explicitOnlyWarning(), kIneligible never. Integers are eligible when they reach
+/// kEligibleHorizonSeconds at that unit; float32 is always explicit-only because its precision,
+/// not its range, is the problem.
+[[nodiscard]] constexpr TimestampEligibility timestampEligibility(TimestampStorage kind, PJ::TimeUnit unit) noexcept {
   switch (kind) {
-    case TimeKind::kUInt32:
-      return "uint32 can express at most 4294967295 ns since the Unix epoch.";
-    case TimeKind::kNarrowInt:
-      return "Narrow integers can express at most 2147483647 ns since the Unix epoch.";
-    case TimeKind::kFloat32:
-      return "float32 seconds reach 1-second spacing at 2^23 (8388608) seconds from the Unix epoch.";
-    case TimeKind::kNativeTimestamp:
-    case TimeKind::kInt64:
-    case TimeKind::kUInt64:
-    case TimeKind::kFloat64:
-    case TimeKind::kOther:
-      return {};
+    case TimestampStorage::kNativeTimestamp:
+    case TimestampStorage::kFloat64:
+      return TimestampEligibility::kEligible;
+    case TimestampStorage::kFloat32:
+      return TimestampEligibility::kExplicitOnly;
+    case TimestampStorage::kOther:
+      return TimestampEligibility::kIneligible;
+    case TimestampStorage::kInt64:
+    case TimestampStorage::kUInt64:
+    case TimestampStorage::kInt32:
+    case TimestampStorage::kUInt32:
+    case TimestampStorage::kNarrowInt:
+      break;
   }
-  return {};
+  const uint64_t ticks_per_second = static_cast<uint64_t>(1'000'000'000 / PJ::nanosecondsPer(unit));
+  const uint64_t horizon_ticks = static_cast<uint64_t>(kEligibleHorizonSeconds) * ticks_per_second;
+  return *detail::maxIntegerTicks(kind) >= horizon_ticks ? TimestampEligibility::kEligible
+                                                         : TimestampEligibility::kExplicitOnly;
+}
+
+/// The warning a plugin must surface when a kExplicitOnly column is selected by name;
+/// every other eligibility returns an empty view.
+[[nodiscard]] constexpr std::string_view explicitOnlyWarning(TimestampStorage kind, PJ::TimeUnit unit) noexcept {
+  if (timestampEligibility(kind, unit) != TimestampEligibility::kExplicitOnly) {
+    return {};
+  }
+  if (kind == TimestampStorage::kFloat32) {
+    return "float32 keeps 24 significant bits, so instants near the present epoch are spaced over 100 s apart.";
+  }
+  return "Integer storage too narrow to reach present-day instants at the configured timestamp unit.";
 }
 
 /// Arrow-independent description of a flattened column considered for the axis.
@@ -99,7 +131,7 @@ struct TimestampCandidate {
   /// Flattened leaf path; separators are '/', with source dots already normalized.
   std::string_view name;
   /// Storage classification supplied by the importing plugin.
-  TimeKind kind;
+  TimestampStorage kind;
   /// Expanded list elements are never eligible for automatic selection.
   bool is_list_element = false;
 };
@@ -110,6 +142,8 @@ struct TimestampPolicy {
   std::span<const std::string_view> names;
   /// Whether the name pass also accepts ASCII case-folded matches.
   bool case_insensitive = true;
+  /// Unit of integer candidates (the configured kTimestampUnitKey); decides which widths are eligible.
+  PJ::TimeUnit unit = PJ::TimeUnit::kNanoseconds;
 };
 
 /// Union of timestamp names used by official plugins, most specific first.
@@ -121,7 +155,7 @@ inline constexpr std::array<std::string_view, 11> kCanonicalTimestampNames = {"t
                                                                               "_time"};
 
 /// Default policy shared by official plugins.
-inline constexpr TimestampPolicy kCanonicalPolicy{kCanonicalTimestampNames, true};
+inline constexpr TimestampPolicy kCanonicalPolicy{kCanonicalTimestampNames, true, PJ::TimeUnit::kNanoseconds};
 
 namespace detail {
 
@@ -148,8 +182,9 @@ namespace detail {
 
 /// The name pass on its own: the priority index (into `policy.names`) of the first policy name that `name` matches —
 /// exact-case first, then ASCII case-folded when `policy.case_insensitive` — or nullopt. Says nothing about type or
-/// list-ness; pair it with axisSupport() for a full verdict. detectTimestampColumn's name pass is built on this.
-[[nodiscard]] constexpr std::optional<std::size_t> matchesTimestampName(
+/// list-ness; pair it with timestampEligibility() for a full verdict. detectTimestampColumn's name pass is built on
+/// this.
+[[nodiscard]] constexpr std::optional<std::size_t> timestampNamePriority(
     std::string_view name, const TimestampPolicy& policy = kCanonicalPolicy) noexcept {
   for (std::size_t index = 0; index < policy.names.size(); ++index) {
     if (name == policy.names[index]) {
@@ -168,24 +203,25 @@ namespace detail {
   return std::nullopt;
 }
 
-/// Selects a timestamp column with a native-type pass followed by a plausible
-/// scalar name pass. Exact-case matches win within each preferred name before
+/// Selects a timestamp column with a native-type pass followed by a name pass
+/// over kEligible scalars. Exact-case matches win within each preferred name before
 /// allocation-free ASCII case folding is considered.
 [[nodiscard]] constexpr std::optional<std::size_t> detectTimestampColumn(
     std::span<const TimestampCandidate> candidates, const TimestampPolicy& policy = kCanonicalPolicy) {
   for (std::size_t index = 0; index < candidates.size(); ++index) {
     const TimestampCandidate& candidate = candidates[index];
-    if (!candidate.is_list_element && candidate.kind == TimeKind::kNativeTimestamp) {
+    if (!candidate.is_list_element && candidate.kind == TimestampStorage::kNativeTimestamp) {
       return index;
     }
   }
 
   for (std::size_t name_index = 0; name_index < policy.names.size(); ++name_index) {
-    const TimestampPolicy exact_policy{policy.names.subspan(name_index, 1), false};
+    const TimestampPolicy exact_policy{policy.names.subspan(name_index, 1), false, policy.unit};
     for (std::size_t index = 0; index < candidates.size(); ++index) {
       const TimestampCandidate& candidate = candidates[index];
-      if (!candidate.is_list_element && axisSupport(candidate.kind) == AxisSupport::kPlausible &&
-          matchesTimestampName(candidate.name, exact_policy)) {
+      if (!candidate.is_list_element &&
+          timestampEligibility(candidate.kind, policy.unit) == TimestampEligibility::kEligible &&
+          timestampNamePriority(candidate.name, exact_policy)) {
         return index;
       }
     }
@@ -193,11 +229,12 @@ namespace detail {
     if (!policy.case_insensitive) {
       continue;
     }
-    const TimestampPolicy folded_policy{policy.names.subspan(name_index, 1), true};
+    const TimestampPolicy folded_policy{policy.names.subspan(name_index, 1), true, policy.unit};
     for (std::size_t index = 0; index < candidates.size(); ++index) {
       const TimestampCandidate& candidate = candidates[index];
-      if (!candidate.is_list_element && axisSupport(candidate.kind) == AxisSupport::kPlausible &&
-          matchesTimestampName(candidate.name, folded_policy)) {
+      if (!candidate.is_list_element &&
+          timestampEligibility(candidate.kind, policy.unit) == TimestampEligibility::kEligible &&
+          timestampNamePriority(candidate.name, folded_policy)) {
         return index;
       }
     }

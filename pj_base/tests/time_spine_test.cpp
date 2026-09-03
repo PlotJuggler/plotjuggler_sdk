@@ -47,10 +47,10 @@ TEST(TimeMath, ScalesTicksAndRejectsOverflow) {
   EXPECT_FALSE(PJ::scaleToNanoseconds(9'223'372'037, PJ::TimeUnit::kSeconds));
 }
 
-TEST(TimeMath, WidensUnsignedTicksWithinSignedRange) {
-  EXPECT_FALSE(PJ::widenUnsignedTicks(std::numeric_limits<uint64_t>::max()));
+TEST(TimeMath, ConvertsUnsignedTicksWithinSignedRange) {
+  EXPECT_FALSE(PJ::toSignedTicks(std::numeric_limits<uint64_t>::max()));
   EXPECT_EQ(
-      PJ::widenUnsignedTicks(static_cast<uint64_t>(std::numeric_limits<int64_t>::max())),
+      PJ::toSignedTicks(static_cast<uint64_t>(std::numeric_limits<int64_t>::max())),
       std::optional<int64_t>{std::numeric_limits<int64_t>::max()});
 }
 
