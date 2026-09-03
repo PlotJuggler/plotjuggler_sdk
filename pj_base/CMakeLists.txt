@@ -293,6 +293,7 @@ if(PJ_BUILD_TESTS)
         -Wl,--export=pj_module_free
         -o "${_pj_wasm_raw}"
       DEPENDS "${_pj_wasm_source}" ${_pj_parser_module_headers}
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/pj_base/time_math.hpp"
       COMMENT "Compiling C++17 parser-module WASI reactor fixture"
       VERBATIM
     )
