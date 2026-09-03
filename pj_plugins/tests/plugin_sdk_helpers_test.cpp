@@ -326,6 +326,31 @@ TEST(TimestampPolicyTest, CaseSensitiveCustomPolicyRejectsFoldedMatch) {
   EXPECT_FALSE(PJ::sdk::detectTimestampColumn(candidates, policy));
 }
 
+TEST(TimestampPolicyTest, MatchesTimestampNameReturnsCanonicalPriority) {
+  EXPECT_EQ(PJ::sdk::matchesTimestampName("timestamp_ns"), std::optional<std::size_t>{0});
+}
+
+TEST(TimestampPolicyTest, MatchesTimestampNameHonorsCaseSensitivity) {
+  const PJ::sdk::TimestampPolicy case_sensitive_policy{
+      .names = PJ::sdk::kCanonicalTimestampNames,
+      .case_insensitive = false,
+  };
+
+  EXPECT_EQ(PJ::sdk::matchesTimestampName("Timestamp"), std::optional<std::size_t>{2});
+  EXPECT_FALSE(PJ::sdk::matchesTimestampName("Timestamp", case_sensitive_policy));
+}
+
+TEST(TimestampPolicyTest, MatchesTimestampNameRejectsUnrelatedName) {
+  EXPECT_FALSE(PJ::sdk::matchesTimestampName("speed"));
+}
+
+TEST(TimestampPolicyTest, MatchesTimestampNamePrefersExactCaseAcrossPolicyNames) {
+  const std::string_view names[] = {"timestamp", "Timestamp"};
+  const PJ::sdk::TimestampPolicy policy{.names = names, .case_insensitive = true};
+
+  EXPECT_EQ(PJ::sdk::matchesTimestampName("Timestamp", policy), std::optional<std::size_t>{1});
+}
+
 TEST(TimestampPolicyTest, SupportAndWarningsCoverEveryTimeKind) {
   struct SupportCase {
     PJ::sdk::TimeKind kind;

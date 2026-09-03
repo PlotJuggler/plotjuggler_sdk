@@ -146,6 +146,28 @@ namespace detail {
 
 }  // namespace detail
 
+/// The name pass on its own: the priority index (into `policy.names`) of the first policy name that `name` matches —
+/// exact-case first, then ASCII case-folded when `policy.case_insensitive` — or nullopt. Says nothing about type or
+/// list-ness; pair it with axisSupport() for a full verdict. detectTimestampColumn's name pass is built on this.
+[[nodiscard]] constexpr std::optional<std::size_t> matchesTimestampName(
+    std::string_view name, const TimestampPolicy& policy = kCanonicalPolicy) noexcept {
+  for (std::size_t index = 0; index < policy.names.size(); ++index) {
+    if (name == policy.names[index]) {
+      return index;
+    }
+  }
+
+  if (!policy.case_insensitive) {
+    return std::nullopt;
+  }
+  for (std::size_t index = 0; index < policy.names.size(); ++index) {
+    if (detail::timestampNamesEqualFolded(name, policy.names[index])) {
+      return index;
+    }
+  }
+  return std::nullopt;
+}
+
 /// Selects a timestamp column with a native-type pass followed by a plausible
 /// scalar name pass. Exact-case matches win within each preferred name before
 /// allocation-free ASCII case folding is considered.
@@ -158,11 +180,12 @@ namespace detail {
     }
   }
 
-  for (const std::string_view preferred_name : policy.names) {
+  for (std::size_t name_index = 0; name_index < policy.names.size(); ++name_index) {
+    const TimestampPolicy exact_policy{policy.names.subspan(name_index, 1), false};
     for (std::size_t index = 0; index < candidates.size(); ++index) {
       const TimestampCandidate& candidate = candidates[index];
       if (!candidate.is_list_element && axisSupport(candidate.kind) == AxisSupport::kPlausible &&
-          candidate.name == preferred_name) {
+          matchesTimestampName(candidate.name, exact_policy)) {
         return index;
       }
     }
@@ -170,10 +193,11 @@ namespace detail {
     if (!policy.case_insensitive) {
       continue;
     }
+    const TimestampPolicy folded_policy{policy.names.subspan(name_index, 1), true};
     for (std::size_t index = 0; index < candidates.size(); ++index) {
       const TimestampCandidate& candidate = candidates[index];
       if (!candidate.is_list_element && axisSupport(candidate.kind) == AxisSupport::kPlausible &&
-          detail::timestampNamesEqualFolded(candidate.name, preferred_name)) {
+          matchesTimestampName(candidate.name, folded_policy)) {
         return index;
       }
     }

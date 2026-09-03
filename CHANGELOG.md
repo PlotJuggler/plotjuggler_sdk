@@ -20,7 +20,8 @@ detection and configuration contract: native timestamp storage first, then canon
 restricted to plausible scalar storage (`TIMESTAMP`, `int64`, `uint64`, or `double`), never
 expanded list elements. Explicit narrow-integer, `uint32`, and `float32` axes carry a shared
 warning, while canonical axis configuration keys and `PJ::TimeUnit` stop unit inference from
-being private plugin policy. No ABI change; `abi/baseline.abi` untouched.
+being private plugin policy. `PJ::sdk::matchesTimestampName` exposes the allocation-free name pass
+beside `PJ::sdk::detectTimestampColumn`. No ABI change; `abi/baseline.abi` untouched.
 
 ## [0.26.0]
 
