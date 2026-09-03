@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.26.1]
+## [0.27.1]
 
 ### Fix: hosts validate a spliced `GridMap` right after attaching its bytes (PATCH)
 
@@ -12,6 +12,26 @@ data-length check to `validateGridMap()`. Both host splice-attachment paths (the
 parser handle and the parser-module runtime) now run that check as soon as the bytes are attached,
 so a spliced GridMap whose bytes cannot cover its declared cells is rejected as a contract
 violation instead of reaching consumers. Host-side only; no header layout, ABI or wire change.
+## [0.27.0]
+
+### Feature: shared timestamp arithmetic and axis policy (MINOR)
+
+`pj_base/time_math.hpp` adds C++17-clean, checked time arithmetic usable by parser modules,
+the host, and plugins: `nanosecondsPer`, `scaleToNanoseconds`, `toSignedTicks`,
+`secondsToNanoseconds`, `combineSecondsAndNanos`, `syntheticInstant`, and
+`fitSyntheticInterval`. The absolute-time spine re-exports this arithmetic through
+`pj_base/time.hpp`.
+
+Layered on that spine, `pj_plugins/sdk/timestamp_policy.hpp` is meant to replace the five
+divergent per-plugin timestamp-axis detectors inventoried in
+[#186](https://github.com/PlotJuggler/plotjuggler_sdk/issues/186) with one header-only
+detection and configuration contract: native timestamp storage first, then canonical names
+restricted to eligible scalar storage, never expanded list elements. `PJ::sdk::timestampEligibility`
+judges storage against the configured `timestamp_unit`: 64-bit integers, native timestamps and
+`double` are always eligible, 32-bit integers only when the unit is seconds, and 8/16-bit integers
+and `float32` are explicit-only. Explicitly selected explicit-only storage carries a shared warning, while canonical axis configuration keys and `PJ::TimeUnit` stop unit inference from
+being private plugin policy. `PJ::sdk::timestampNamePriority` exposes the allocation-free name pass
+beside `PJ::sdk::detectTimestampColumn`. No ABI change; `abi/baseline.abi` untouched.
 
 ## [0.26.0]
 
