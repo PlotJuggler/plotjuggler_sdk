@@ -42,6 +42,78 @@ value into range. Negative inputs are rebased toward zero before multiplication,
 the conversion stays checked and C++17-compatible at both signed boundaries. Invalid
 nanosecond fractions and final overflow remain rejected. No API or ABI change.
 
+### Feature: dataset-qualified series names — contract and shared helper (MINOR)
+
+`pj.data_processors.v1` addressed input series by bare `topic/field` names and never said
+what a name means when several loaded datasets share topic names — so conforming hosts
+filled the gap incompatibly (PJ4's transform path refused duplicates while its marker path
+silently bound the first-loaded dataset; fixed by PlotJuggler/PJ4#619). The contract is now
+explicit in the `PJ_data_processors_host_vtable_t` doc block (DATASET-QUALIFIED NAMES):
+
+- A series' full identity is (dataset, topic, field); a bare name is an abbreviation. An
+  input MAY carry the qualifier `dataset_source:topic/field` — the same form hosts print
+  as a series identity, so displayed names round-trip as inputs.
+- The qualifier is matched against the **loaded** source names (longest match wins), never
+  split blindly at `:` — stream-style source names like `[stream] UDP Server` need no
+  escaping.
+- A qualifier matching no loaded dataset is an error (no fallback to the bare reading); a
+  bare name that exists in several datasets MUST be refused with the qualified candidates,
+  never resolved by load order; qualified inputs of one processor must agree on a single
+  dataset. Marker per-series output keys accept the qualifier the same way.
+
+New installed header `pj_base/sdk/dataset_qualified_name.hpp` ships the shared
+parser/composer (`splitDatasetQualifier` / `qualifiedSeriesName`, header-only) so hosts
+and plugins use one implementation instead of the two copies that exist today.
+
+Plugins that emit qualified names pin `plotjuggler_sdk/[>=0.28.0 <1.0.0]`. No ABI change;
+`abi/baseline.abi` is untouched. Addressing two datasets that share one source name stays
+out of contract (ambiguous → error); a typed dataset id would be a tail-appended addition.
+
+### Added — host services `pj.playback.v1` and `pj.viewport.v1` (MINOR, additions only)
+
+Two new optional host services so a plugin (first consumer: the Assistant Agent
+toolbox) can drive the app like a user — transport and zoom — without any new
+executable surface crossing the ABI:
+
+- **`pj.playback.v1`** (`PJ_playback_host_vtable_t`, `sdk::PlaybackHostView`,
+  `sdk::PlaybackHostService`): `play` / `pause` / `seek` / `set_playback_rate` /
+  `get_state` (ABI-frozen `PJ_playback_state_t` snapshot) / `to_display_time`
+  (absolute int64 ns → display-axis seconds, per-topic dataset offset;
+  current-frame semantics). All times are display-axis seconds.
+- **`pj.viewport.v1`** (`PJ_viewport_host_vtable_t`, `sdk::ViewportHostView`,
+  `sdk::ViewportHostService`): `zoom_to_time_range` (X window in display-axis
+  seconds; per-plot Y preserved; XY/empty plots untouched) and `zoom_reset`
+  (fit). Both are **scoped to the tabs the calling plugin owns** — see
+  `pj.plot_tabs.v1` below; a plugin owning none has nothing to zoom, which is an
+  error rather than a silent no-op.
+- **`pj.plot_tabs.v1`** (`PJ_plot_tab_host_vtable_t`, `sdk::PlotTabHostView`,
+  `sdk::PlotTabHostService`): a plugin composes plotting tabs of its own —
+  `create_tab` / `close_tab` / `list_tab_ids` / `tab_config` / `add_curve` /
+  `remove_curve` / `clear_tab`. Ids are plugin-chosen and namespaced per plugin
+  (the `pj.data_processors.v1` discipline), and every slot is scoped to the
+  caller's own tabs, so the user's tabs are neither disclosed nor mutable
+  through it. Curves are addressed by their parts — topic, field, dataset
+  source — rather than a joined path, because field paths contain `/` and
+  dataset names contain `:`, and an empty dataset source requires the pair to be
+  unique. `tab_config` reads back what a tab actually holds, so a caller can
+  report what was drawn instead of what it asked for.
+
+The boundary these two draw is the VIEW. `pj.playback.v1` stays global by
+nature: one time cursor is shared by every plot.
+
+No existing struct or vtable slot was touched — every already-built plugin keeps
+working with no recompile (`abidiff`: additions only). `pj.viewport.v1`'s two
+slots keep their signatures; only their documented scope narrowed, and it has
+never shipped.
+
+### Fixed — `deserializePlotMarkers` accepts the empty buffer as an empty set
+
+An empty buffer is the canonical proto encoding of an empty `PlotMarkers` set —
+the "clear my markers" tombstone a producer publishes to a replace-only store —
+but the decoder rejected `size == 0` as an error, making the tombstone
+unrepresentable on the wire. It now decodes to an empty set; null-with-size,
+truncated, and malformed payloads still error.
+
 ## [0.27.1]
 
 ### Fix: hosts validate a spliced `GridMap` right after attaching its bytes (PATCH)
@@ -90,14 +162,6 @@ parser-module `ObjectWriter`, and `sdk::Vector2` in the geometry vocabulary (alr
 as `PJ.Vector2` on the wire). The `PointField` wire helpers shared by the PointCloud,
 VoxelGrid and GridMap codecs now live in one private header. Additive: no existing struct,
 slot, or wire format changes.
-
-### Fixed — `deserializePlotMarkers` accepts the empty buffer as an empty set
-
-An empty buffer is the canonical proto encoding of an empty `PlotMarkers` set —
-the "clear my markers" tombstone a producer publishes to a replace-only store —
-but the decoder rejected `size == 0` as an error, making the tombstone
-unrepresentable on the wire. It now decodes to an empty set; null-with-size,
-truncated, and malformed payloads still error.
 
 ## [0.25.0]
 
