@@ -478,6 +478,7 @@ Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
 | `ensureParserBinding(request)` | Bind a parser for delegated ingest (see below). |
 | `pushMessage(handle, timestamp, fetch_message_data)` | Push a message through a parser binding via a deferred fetcher callable; the host invokes it per the active ObjectIngestPolicy (eager/lazy). |
 | `notifyAvailableTopics(topics)` | Advertise the full set of topics you *can* stream but have not subscribed, so the host lists and a-priori classifies them with no data flowing. See *Per-topic pause* below. |
+| `attachSourceRecord(descriptor_json)` | Declare the canonical descriptor of the reproducible request this source answers, so the host can cache the download and restore it from disk next time. Last attach before the first `pushMessage` wins; errors on hosts that predate the slot (no caching). |
 
 ## Optional Features
 

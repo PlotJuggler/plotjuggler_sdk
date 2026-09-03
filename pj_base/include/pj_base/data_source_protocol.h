@@ -343,28 +343,34 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
       PJ_NOEXCEPT;
 
   /**
-   * [thread-safe] Declare, once per source, the reproducible request this
-   * source's data answers: the canonical descriptor JSON of the download (its
-   * "source record"), so the host can cache the ingested bytes and serve the
-   * next restore of the same request from disk. The host copies the bytes
-   * during the call, canonicalizes them under its descriptor policy and
-   * derives the record identity ITSELF, scoped by this source's provider —
-   * the plugin never supplies an identity, so it cannot alias one request's
-   * artifact to another's (same doctrine as descriptor_import_protocol.h).
+   * [stream-thread] Declare the reproducible request this source's data
+   * answers: the canonical descriptor JSON of the download (its "source
+   * record"), so the host can cache the ingested bytes and serve the next
+   * restore of the same request from disk. The host copies the bytes during
+   * the call and stores them VERBATIM; its cache is keyed on its own digest
+   * of those bytes — an internal keyspace, never required to agree with any
+   * provider identity scheme, and a layout round-trips the same bytes. What
+   * the plugin cannot spoof is the provider id: the host takes it from this
+   * binding and scopes the record with it.
    *
-   * The descriptor is request identity, never parser policy: interpretation
-   * (timestamp fields, array limits) lives in the layout. It must never carry
-   * authentication material; the host's allowlist rejects credential-shaped
-   * fields (api_key, cert_path, allow_insecure) and refuses the record.
+   * The host bounds and parses the descriptor and refuses anything it cannot
+   * fully account for (allowlist semantics: unknown fields are an error,
+   * never silently ignored; credential material never belongs in one). The
+   * descriptor is request identity, never parser policy — interpretation
+   * (timestamp fields, array limits) lives in the layout. Matching is
+   * byte-exact, so a provider re-serializing the same request must emit
+   * identical bytes.
    *
-   * Call at download start, before the first push_message; ingest that
-   * happened before the call may not be captured. At most one record per
-   * source: repeating the call with byte-identical JSON is an idempotent
-   * success, different bytes fail. Failure (malformed, over policy bounds,
-   * conflicting re-attach) returns false + error and never affects ingest —
-   * a contract failure, not a trust verdict (trust is decided by the host at
-   * import time, and a refused record only means no caching). A host that
-   * predates this slot never caches; gate with PJ_HAS_TAIL_SLOT. Tail slot.
+   * Call at download start: the last attach before the first push_message on
+   * this ingest context wins; an attach after ingest has begun is the error.
+   * The host may defer APPLYING the record until its ingest transaction
+   * commits (staged on the ingest context) — a committed in-place refill
+   * detaches records and a replacing reload gets a fresh context, so an
+   * early attach is not lost to either. Failure (malformed, over policy
+   * bounds, attach-after-ingest) returns false + error and never affects
+   * ingest — a contract failure, not a trust verdict (a refused record only
+   * means no caching). A host that predates this slot never caches; gate
+   * with PJ_HAS_TAIL_SLOT. Tail slot.
    */
   bool (*attach_source_record)(void* ctx, PJ_string_view_t descriptor_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;

@@ -14,7 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
-#include <cstring>
+#include <cstdio>
 #include <string>
 
 #include "pj_base/data_source_protocol.h"
@@ -34,8 +34,15 @@ class MockHost {
   }
 
   // Simulate an older host that predates the slot.
+  // Old host: shrink struct_size AND null the field.
   void dropAttachSourceRecord() {
     vtable_.attach_source_record = nullptr;
+    vtable_.struct_size = offsetof(PJ_data_source_runtime_host_vtable_t, attach_source_record);
+  }
+
+  // Host that reports a short struct_size but left a stale non-null pointer:
+  // the size gate alone must keep the slot unreachable.
+  void shrinkStructSizeOnly() {
     vtable_.struct_size = offsetof(PJ_data_source_runtime_host_vtable_t, attach_source_record);
   }
 
@@ -67,7 +74,7 @@ class MockHost {
 
 TEST(AttachSourceRecordTest, DescriptorFlowsThroughSlot) {
   MockHost host;
-  const std::string descriptor = R"({"kind":"mosaico-sequence","v":1,"topics":["/a","/b"]})";
+  const std::string descriptor = R"({"kind":"example-request","v":1,"topics":["/a","/b"]})";
 
   auto status = host.view().attachSourceRecord(descriptor);
   ASSERT_TRUE(status) << (status ? "" : status.error());
@@ -91,6 +98,22 @@ TEST(AttachSourceRecordTest, ReturnsErrorWhenSlotMissing) {
   auto status = host.view().attachSourceRecord(R"({"v":1})");
   EXPECT_FALSE(status);  // explicit failure so a new plugin can fall back
   EXPECT_EQ(host.call_count, 0);
+}
+
+TEST(AttachSourceRecordTest, ShortStructSizeAloneGatesTheSlot) {
+  MockHost host;
+  host.shrinkStructSizeOnly();  // stale non-null pointer past the reported size
+
+  auto status = host.view().attachSourceRecord(R"({"v":1})");
+  EXPECT_FALSE(status);
+  EXPECT_EQ(host.call_count, 0);
+}
+
+TEST(AttachSourceRecordTest, UnboundHostReportsNotBound) {
+  PJ::DataSourceRuntimeHostView view;  // default: no host
+  auto status = view.attachSourceRecord(R"({"v":1})");
+  ASSERT_FALSE(status);
+  EXPECT_NE(status.error().find("not bound"), std::string::npos);
 }
 
 }  // namespace

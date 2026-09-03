@@ -26,7 +26,7 @@ never carry authentication material. A host that predates the slot reads as
 "no caching" through `PJ_HAS_TAIL_SLOT`; the wrapper reports the absence
 explicitly so new plugins can detect it. Reachable from streaming sources and
 from toolbox parser-ingest contexts alike (both hold the runtime-host fat
-pointer). ABI-appendable growth only; `abi/baseline.abi` untouched.
+pointer). Runtime-host vtable size grows 104 → 112, `attach_source_record` at offset 104. ABI-appendable growth only; `abi/baseline.abi` untouched.
 
 ## [0.27.0]
 

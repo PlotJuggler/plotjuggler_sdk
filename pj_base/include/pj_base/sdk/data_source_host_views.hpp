@@ -435,6 +435,13 @@ class DatasetIngestHostView {
     return host_.pushMessage(handle, host_timestamp_ns, std::forward<FetchMessageData>(fetch_message_data));
   }
 
+  /// Declare this dataset's source record (the canonical descriptor of the
+  /// download) so the host can cache it. See
+  /// DataSourceRuntimeHostView::attachSourceRecord for the full contract.
+  [[nodiscard]] Status attachSourceRecord(std::string_view descriptor_json) const {
+    return host_.attachSourceRecord(descriptor_json);
+  }
+
   /// Narrow parser-only facade over the same underlying context.
   [[nodiscard]] ParserIngestHostView parserIngest() const noexcept {
     return host_.parserIngest();

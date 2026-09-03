@@ -803,7 +803,11 @@ whole-source pause. Two independent additions, both `struct_size`/
 
 - **Plugin → host advertise.** A second tail slot on the runtime host,
   `notify_available_topics(ctx, topics, count, out_error)` (offset 96,
-  growing `sizeof(PJ_data_source_runtime_host_vtable_t)` 96 → 104), carrying
+  growing `sizeof(PJ_data_source_runtime_host_vtable_t) —
+  followed in 0.28 by `attach_source_record` (offset 104, size 104 → 112,
+  the source-cache record declaration)` 96 → 104) —
+  followed in 0.28 by `attach_source_record` (offset 104, size 104 → 112,
+  the source-cache record declaration), carrying
   `PJ_available_topic_t{topic_name, parser_encoding, type_name, schema}` —
   the same parser-identifying fields as `PJ_parser_binding_request_t` minus
   `parser_config_json` (not yet known pre-subscription), so the host can
