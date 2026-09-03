@@ -60,6 +60,7 @@ constexpr std::array kBuiltinObjectTypes{
     BuiltinObjectType::kPosesInFrame,
     BuiltinObjectType::kVoxelGrid,
     BuiltinObjectType::kPlotMarkers,
+    BuiltinObjectType::kGridMap,
 };
 
 struct RegistrationRecorder {

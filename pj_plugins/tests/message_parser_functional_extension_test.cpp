@@ -13,6 +13,7 @@
 #include <string_view>
 #include <utility>
 
+#include "pj_base/builtin/grid_map_codec.hpp"
 #include "pj_base/builtin/image.hpp"
 #include "pj_base/parser_functional_protocol.h"
 #include "pj_plugins/host/message_parser_handle.hpp"
@@ -179,6 +180,17 @@ bool emitSplicedPointCloudV2(
              PJ_bytes_view_t{kPointCloudWire.data(), kPointCloudWire.size()}, 9, 1, 2, out_error);
 }
 
+// Header-only PJ.GridMap wire: column_count=1, row_count=1, cell_stride=1,
+// row_stride=1 (fields 5..8); `data` (field 10) arrives as the splice.
+bool emitSplicedGridMapV2(
+    void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t* sink, PJ_error_t* out_error) noexcept {
+  static constexpr std::array<uint8_t, 8> kGridMapWire{0x28, 0x01, 0x30, 0x01, 0x38, 0x01, 0x40, 0x01};
+  return sink != nullptr && sink->accept_object_spliced != nullptr &&
+         sink->accept_object_spliced(
+             sink->ctx, true, 89, PJ_BUILTIN_OBJECT_TYPE_GRID_MAP,
+             PJ_bytes_view_t{kGridMapWire.data(), kGridMapWire.size()}, 10, 1, 2, out_error);
+}
+
 bool emitMismatchedImageV2(
     void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t* sink, PJ_error_t* out_error) noexcept {
   static constexpr std::array<uint8_t, 2> kImageWire{0x10, 0x01};
@@ -206,7 +218,7 @@ const PJ_message_parser_vtable_t* adversarialVtable() {
   return &vtable;
 }
 
-template <auto ParseObject>
+template <auto ParseObject, uint16_t ClassifiedType = PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD>
 const PJ_message_parser_vtable_t* adversarialV2Vtable() {
   static const PJ_parser_functional_v2_t extension{
       .struct_size = sizeof(PJ_parser_functional_v2_t),
@@ -220,7 +232,7 @@ const PJ_message_parser_vtable_t* adversarialV2Vtable() {
       if (out == nullptr) {
         return false;
       }
-      out->object_type = PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD;
+      out->object_type = ClassifiedType;
       out->reserved = 0;
       return true;
     };
@@ -443,6 +455,21 @@ TEST(MessageParserFunctionalExtension, HostV2PathReconstructsEligibleSplices) {
   ASSERT_EQ(cloud->data.size(), 2U);
   EXPECT_EQ(cloud->data[0], 20U);
   EXPECT_EQ(cloud->data[1], 30U);
+}
+
+TEST(MessageParserFunctionalExtension, HostV2PathReconstructsGridMapSplice) {
+  PJ::MessageParserHandle handle(adversarialV2Vtable<emitSplicedGridMapV2, PJ_BUILTIN_OBJECT_TYPE_GRID_MAP>());
+  ASSERT_TRUE(handle.bindSchema("example/GridMap", {}));
+  const std::array<uint8_t, 4> payload{10, 20, 30, 40};
+  auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>(payload));
+  ASSERT_TRUE(record.has_value()) << record.error();
+  EXPECT_EQ(record->ts, 89);
+  const auto* grid = std::any_cast<PJ::sdk::GridMap>(&record->object);
+  ASSERT_NE(grid, nullptr);
+  ASSERT_EQ(grid->data.size(), 2U);
+  EXPECT_EQ(grid->data[0], 20U);
+  EXPECT_EQ(grid->data[1], 30U);
+  EXPECT_TRUE(PJ::validateGridMap(*grid).has_value());
 }
 
 TEST(MessageParserFunctionalExtension, HostRejectsObjectTypeThatDiffersFromBindingClassification) {

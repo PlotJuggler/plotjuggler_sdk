@@ -28,6 +28,7 @@ add_library(pj_base STATIC
   src/builtin/scene_entities_codec.cpp
   src/builtin/video_frame_codec.cpp
   src/builtin/voxel_grid_codec.cpp
+  src/builtin/grid_map_codec.cpp
   src/number_parse.cpp
   src/parser_module_abi.cpp
   src/parser_module_manifest.cpp
@@ -191,6 +192,7 @@ if(PJ_BUILD_TESTS)
     tests/time_spine_test.cpp
     tests/poses_in_frame_codec_test.cpp
     tests/voxel_grid_codec_test.cpp
+    tests/grid_map_codec_test.cpp
     tests/plot_markers_codec_test.cpp
   )
 
