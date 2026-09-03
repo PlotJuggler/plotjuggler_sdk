@@ -3,6 +3,31 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.28.0]
+
+### Feature: source-record attachment for the host source cache (MINOR)
+
+`PJ_data_source_runtime_host_vtable_t` gains one tail slot,
+`attach_source_record(ctx, descriptor_json, out_error)`, with the C++ wrapper
+`DataSourceRuntimeHostView::attachSourceRecord`. A provider states once, at
+download start, the canonical descriptor of the reproducible request its
+source answers; the host copies the bytes, canonicalizes them under its
+descriptor policy, and derives the record identity itself (the plugin never
+supplies an identity — the `descriptor_import_protocol.h` doctrine), enabling
+the host-driven transparent source cache: captured downloads replayed from
+disk on the next restore of the same request, with no provider involvement on
+a hit.
+
+Contract: thread-safe; bytes copied during the call; at most one record per
+source (byte-identical repeat = idempotent success, different bytes = error);
+failure is a contract failure, never a trust verdict, and never affects
+ingest. The descriptor is request identity, never parser policy, and must
+never carry authentication material. A host that predates the slot reads as
+"no caching" through `PJ_HAS_TAIL_SLOT`; the wrapper reports the absence
+explicitly so new plugins can detect it. Reachable from streaming sources and
+from toolbox parser-ingest contexts alike (both hold the runtime-host fat
+pointer). ABI-appendable growth only; `abi/baseline.abi` untouched.
+
 ## [0.27.0]
 
 ### Feature: shared timestamp arithmetic and axis policy (MINOR)

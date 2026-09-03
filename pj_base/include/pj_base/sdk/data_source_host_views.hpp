@@ -198,6 +198,14 @@ class DataSourceRuntimeHostView {
   /// fall back to legacy behavior. Call on the poll/stream thread.
   [[nodiscard]] Status notifyAvailableTopics(Span<const AvailableTopic> topics) const;
 
+  /// Declare, once per source at download start, the canonical descriptor of
+  /// the reproducible request this source answers, so the host can cache the
+  /// download (attach_source_record tail slot). The host copies the bytes and
+  /// derives the record identity itself. Errors when the host predates the
+  /// slot — a NEW plugin on an OLD host can detect the absence (no caching)
+  /// instead of degrading silently.
+  [[nodiscard]] Status attachSourceRecord(std::string_view descriptor_json) const;
+
   /// Push a message via a deferred FetchMessageData callable. The DataSource
   /// hands the host a callable that produces the payload bytes when invoked.
   /// The host applies the active ObjectIngestPolicy (resolved via the

@@ -341,6 +341,32 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    */
   bool (*notify_available_topics)(void* ctx, const PJ_available_topic_t* topics, uint64_t count, PJ_error_t* out_error)
       PJ_NOEXCEPT;
+
+  /**
+   * [thread-safe] Declare, once per source, the reproducible request this
+   * source's data answers: the canonical descriptor JSON of the download (its
+   * "source record"), so the host can cache the ingested bytes and serve the
+   * next restore of the same request from disk. The host copies the bytes
+   * during the call, canonicalizes them under its descriptor policy and
+   * derives the record identity ITSELF, scoped by this source's provider —
+   * the plugin never supplies an identity, so it cannot alias one request's
+   * artifact to another's (same doctrine as descriptor_import_protocol.h).
+   *
+   * The descriptor is request identity, never parser policy: interpretation
+   * (timestamp fields, array limits) lives in the layout. It must never carry
+   * authentication material; the host's allowlist rejects credential-shaped
+   * fields (api_key, cert_path, allow_insecure) and refuses the record.
+   *
+   * Call at download start, before the first push_message; ingest that
+   * happened before the call may not be captured. At most one record per
+   * source: repeating the call with byte-identical JSON is an idempotent
+   * success, different bytes fail. Failure (malformed, over policy bounds,
+   * conflicting re-attach) returns false + error and never affects ingest —
+   * a contract failure, not a trust verdict (trust is decided by the host at
+   * import time, and a refused record only means no caching). A host that
+   * predates this slot never caches; gate with PJ_HAS_TAIL_SLOT. Tail slot.
+   */
+  bool (*attach_source_record)(void* ctx, PJ_string_view_t descriptor_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

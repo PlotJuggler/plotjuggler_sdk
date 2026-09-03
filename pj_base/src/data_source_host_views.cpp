@@ -80,6 +80,20 @@ Status DataSourceRuntimeHostView::notifyAvailableTopics(Span<const AvailableTopi
   return okStatus();
 }
 
+Status DataSourceRuntimeHostView::attachSourceRecord(std::string_view descriptor_json) const {
+  if (!valid()) {
+    return unexpected(std::string("runtime host is not bound"));
+  }
+  if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, attach_source_record)) {
+    return unexpected(std::string("runtime host does not expose attach_source_record"));
+  }
+  PJ_error_t err{};
+  if (!host_.vtable->attach_source_record(host_.ctx, sdk::toAbiString(descriptor_json), &err)) {
+    return unexpected(errorToString(err));
+  }
+  return okStatus();
+}
+
 MessageBoxButton DataSourceRuntimeHostView::showMessageBox(
     MessageBoxType type, std::string_view title, std::string_view message, int buttons) const {
   if (!valid() || host_.vtable->show_message_box == nullptr) {
