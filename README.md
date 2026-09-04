@@ -35,7 +35,7 @@ cd plotjuggler_sdk
 ./build.sh              # RelWithDebInfo (build/)
 ./build.sh --debug      # Debug + ASAN (build/debug_asan)
 ./test.sh               # runs tests in all discovered build dirs
-./run_clang_tidy.sh     # clang-tidy via clangd-22
+git ls-files -z '*.cpp' | xargs -0 clang-tidy-22 -p build   # clang-tidy
 ```
 
 ## Project Layout

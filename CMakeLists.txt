@@ -55,8 +55,8 @@ else()
   # -Werror only when explicitly requested (default ON, see option above) and
   # never on wasm32: there size_t is 32-bit, so many uint64_t->size_t
   # conversions trip -Wshorten-64-to-32 / -Wsign-conversion that never fire on
-  # 64-bit desktop (see SUSTAINABILITY.md T0-3). TODO: make the ABI/size types
-  # 32-bit-clean, then wasm can opt back into -Werror.
+  # 64-bit desktop. TODO: make the ABI/size types 32-bit-clean, then wasm can
+  # opt back into -Werror.
   if(PJ_WARNINGS_AS_ERRORS AND NOT EMSCRIPTEN)
     list(APPEND PJ_WARNING_FLAGS -Werror)
   endif()

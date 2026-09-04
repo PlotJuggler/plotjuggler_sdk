@@ -773,7 +773,7 @@ PJ::FilePickerOptions options;
 options.mode = PJ::FilePickerMode::OpenFiles;
 options.title = "Select ROS bag files";
 options.accept_label = "Open";
-options.initial_directory = "/data/bags";
+options.initial_directory = {};  // host picks; set only if you have a real one
 options.filters = {
     {"bags", "ROS bag files", {"*.bag", "*.db3", "*.mcap"}},
     {"all", "All files", {"*"}},

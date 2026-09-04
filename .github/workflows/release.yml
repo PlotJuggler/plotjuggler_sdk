@@ -138,22 +138,24 @@ jobs:
           # Anonymous read is enabled on the remote, so no login is needed here.
           conan remote add plotjuggler-conan "${JFROG_CONAN_URL}" --force
 
+          remote_revs="$(mktemp "${RUNNER_TEMP}/remote_revs.XXXXXX.json")"
+          trap 'rm -f "${remote_revs}"' EXIT
           conan list "plotjuggler_sdk/${version}#*" -r plotjuggler-conan --format=json \
-            > /tmp/remote_revs.json 2>/dev/null || true
+            > "${remote_revs}" 2>/dev/null || true
 
           # Artifactory reports an unknown recipe as a plain "404: Not Found";
           # conan_server / Cloudsmith use RECIPEUNKNOWN. Accept both.
-          if grep -q -E "RECIPEUNKNOWN|404: Not Found" /tmp/remote_revs.json; then
+          if grep -q -E "RECIPEUNKNOWN|404: Not Found" "${remote_revs}"; then
             echo "Version ${version} is not yet published — first release, proceeding."
-          elif grep -q '"error"' /tmp/remote_revs.json; then
+          elif grep -q '"error"' "${remote_revs}"; then
             # Fail closed: proceeding blind could publish changed sources under an
             # already-released version. The later authenticated upload would
             # succeed even if this anonymous read hit a 401/403/5xx.
             echo "::error::Could not read the published revisions of ${version} from the remote:"
-            cat /tmp/remote_revs.json
+            cat "${remote_revs}"
             echo "::error::Refusing to publish without the re-publish guard. Re-run once the remote is reachable, or use workflow_dispatch with allow_republish=true if you have verified the state by hand."
             exit 1
-          elif grep -q "${local_rrev}" /tmp/remote_revs.json; then
+          elif grep -q "${local_rrev}" "${remote_revs}"; then
             echo "Recipe revision ${local_rrev} is already published for ${version} — idempotent re-run, proceeding."
           else
             echo "::error::plotjuggler_sdk/${version} is already published with a different recipe revision."
