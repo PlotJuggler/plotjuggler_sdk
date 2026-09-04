@@ -106,6 +106,17 @@ working with no recompile (`abidiff`: additions only). `pj.viewport.v1`'s two
 slots keep their signatures; only their documented scope narrowed, and it has
 never shipped.
 
+### Added — `QListWidget` row context menu: `onItemContextAction` (MINOR, additions only)
+
+A dialog plugin can now learn that a row's right-click context menu fired one
+of its actions: `WidgetEventBuilder::itemContextAction(index, action_id)` /
+`WidgetEvent::itemContextAction()` (the pair, optional) /
+`DialogPluginTyped::onItemContextAction(widget_name, index, action_id)`,
+dispatched ahead of the selection/double-click chain. The action set itself is
+not part of this ABI — it is a host-side `.ui` dynamic property
+(`pj_context_actions`, see `dialog-plugin-guide.md`), the same shape as
+`pj_enable_when`/`pj_visible_when`. No struct or vtable slot changed.
+
 ### Fixed — `deserializePlotMarkers` accepts the empty buffer as an empty set
 
 An empty buffer is the canonical proto encoding of an empty `PlotMarkers` set —
