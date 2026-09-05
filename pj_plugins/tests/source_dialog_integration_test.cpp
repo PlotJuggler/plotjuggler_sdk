@@ -197,7 +197,7 @@ TEST(SourceDialogIntegration, BorrowedDialogHandleWorks) {
   EXPECT_FALSE(j.is_discarded());
 
   // sendEvent should work
-  bool refresh = dialog.sendEvent("host_input", R"({"text": "10.0.0.1"})");
+  bool refresh = dialog.sendEvent("host_input", R"({"text": "192.0.2.1"})");
   EXPECT_TRUE(refresh);
 
   // save_config should return valid JSON
