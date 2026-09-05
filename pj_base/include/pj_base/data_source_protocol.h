@@ -199,6 +199,52 @@ typedef struct {
   PJ_bytes_view_t schema;           /**< Optional schema bytes for a-priori classify_schema. */
 } PJ_available_topic_t;
 
+/** Terminal outcome of one finite ingest (see complete_ingest below). */
+typedef enum PJ_ingest_outcome_t {
+  PJ_INGEST_FAILED = 0,
+  PJ_INGEST_CANCELLED = 1,
+  /** The ENTIRE declared request finished successfully: every requested
+   *  topic, over its full requested range. Anything less is FAILED or
+   *  CANCELLED — "mostly done" does not exist in this enum. */
+  PJ_INGEST_COMPLETED = 2,
+  PJ_INGEST_OUTCOME_FORCE_INT32 = 0x7FFFFFFF
+} PJ_ingest_outcome_t;
+
+/** Completion modes. A host treats any bit outside
+ *  PJ_INGEST_COMPLETION_FLAGS_V1_MASK as unknown and fails CLOSED for
+ *  caching (the ingest itself is unaffected). */
+typedef uint64_t PJ_ingest_completion_flags_t;
+#define PJ_INGEST_COMPLETION_FLAG_NONE UINT64_C(0)
+/** Only meaningful with PJ_INGEST_COMPLETED: attests that every requested
+ *  topic that produced ZERO captured messages was successfully fetched and
+ *  genuinely empty over its requested range — not skipped. It never
+ *  overrides host-observed failures, skipped payloads, cancellation, or
+ *  recorder losses, and it does not authorize an empty requested set. A
+ *  COMPLETED terminal without this flag leaves zero-message topics
+ *  indistinguishable from skips, making the request non-cacheable. */
+#define PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS (UINT64_C(1) << 0)
+#define PJ_INGEST_COMPLETION_FLAGS_V1_MASK PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS
+
+/**
+ * Terminal report for one finite ingest context (complete_ingest below).
+ *
+ * `requested_topics` is the FULL requested set from the request snapshot the
+ * source-record descriptor was built from — including topics whose pull
+ * later failed or produced no messages. It must never be assembled from the
+ * pulls that happened to succeed: the host cross-checks it against parser
+ * bindings and captured messages to establish coverage, so a list derived
+ * from outcomes would make every failure self-certifying. Topic names use
+ * the same spelling as the parser binding requests. The array is borrowed
+ * for the duration of the call; the host copies what it retains.
+ */
+typedef struct PJ_ingest_completion_t {
+  uint32_t struct_size; /**< sizeof(PJ_ingest_completion_t) — for forward-compatible growth. */
+  PJ_ingest_outcome_t outcome;
+  PJ_ingest_completion_flags_t flags; /**< PJ_INGEST_COMPLETION_FLAG_NONE; nonzero fails closed for caching. */
+  const PJ_string_view_t* requested_topics;
+  uint64_t requested_topic_count;
+} PJ_ingest_completion_t;
+
 /**
  * DataSource runtime host vtable — control-plane callbacks provided by the
  * host and delivered to the plugin via the service registry under the name
@@ -373,6 +419,44 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * with PJ_HAS_TAIL_SLOT. Tail slot.
    */
   bool (*attach_source_record)(void* ctx, PJ_string_view_t descriptor_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /**
+   * [stream-thread] Report the terminal outcome of THIS ingest context. Call
+   * once, after every producer and push_message call on the context has
+   * quiesced. The call SEALS the context for capture purposes: a later push,
+   * attach_source_record, or conflicting terminal is rejected and vetoes
+   * caching (an identical repeated completion before release is idempotent).
+   * Completion binds to the context it is called on — the host keys any
+   * deferred work to that context's generation, so a stale completion can
+   * never bless a replacement ingest on the same dataset id.
+   *
+   * A `true` return means "terminal accepted", never "artifact published":
+   * publication additionally requires release, the owning transaction's
+   * commit, recorder drain/close, and the host's coverage checks against
+   * `requested_topics`. Reporting FAILED or CANCELLED is a valid, expected
+   * call — it lets the host finalize per its normal data-retention policy
+   * while guaranteeing the capture is never published.
+   *
+   * This slot is NOT a cancellation mechanism: cancellation must go through
+   * the host's thread-safe stop path first (it has to wake producers blocked
+   * on lossless capture backpressure before they can quiesce); completion is
+   * what the stream thread reports afterwards.
+   *
+   * The topic list supplies COVERAGE evidence only; descriptor validation
+   * and allowlisting (attach_source_record's contract) remain a separate
+   * host obligation and are not weakened by any completion.
+   *
+   * A malformed completion (unknown outcome, unknown flags, inconsistent or
+   * over-bound topic list) PERMANENTLY vetoes caching for this context — the
+   * ingest itself is unaffected. A terminalized context cannot be restarted:
+   * reacquiring the ingest for the same dataset returns the same sealed
+   * generation until it is released; the next request gets a fresh context.
+   *
+   * Contexts that never call this (older plugins, or paths that predate the
+   * slot) ingest exactly as before and are simply never cacheable. Gate with
+   * PJ_HAS_TAIL_SLOT. Tail slot.
+   */
+  bool (*complete_ingest)(void* ctx, const PJ_ingest_completion_t* completion, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

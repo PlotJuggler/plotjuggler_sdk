@@ -26,6 +26,7 @@
 #include "pj_base/buffer_anchor.hpp"
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
+#include "pj_base/sdk/ingest_completion.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 
 namespace PJ {
@@ -208,6 +209,20 @@ class DataSourceRuntimeHostView {
   /// without affecting ingest. See PJ_data_source_runtime_host_vtable_t's
   /// attach_source_record documentation for validation and commit semantics.
   [[nodiscard]] Status attachSourceRecord(std::string_view descriptor_json) const;
+
+  /// Report, on the stream thread AFTER every producer and pushMessage on this
+  /// context has quiesced, the terminal outcome of this finite ingest
+  /// (complete_ingest tail slot). `requested_topics` is the FULL requested set
+  /// from the request snapshot — never assembled from successful pulls; kCompleted
+  /// attests the entire declared request finished. The call seals the context
+  /// for capture: later pushes/attachments/conflicting terminals veto caching
+  /// (an identical repeat is idempotent). Success means "terminal accepted",
+  /// never "published". Not a cancellation mechanism — stop goes through the
+  /// host's thread-safe stop path first. Old hosts (no slot) return an error;
+  /// the plugin proceeds uncached.
+  [[nodiscard]] Status completeIngest(
+      sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
+      PJ_ingest_completion_flags_t flags = PJ_INGEST_COMPLETION_FLAG_NONE) const;
 
   /// Push a message via a deferred FetchMessageData callable. The DataSource
   /// hands the host a callable that produces the payload bytes when invoked.
@@ -443,6 +458,21 @@ class DatasetIngestHostView {
   /// DataSourceRuntimeHostView::attachSourceRecord for the full contract.
   [[nodiscard]] Status attachSourceRecord(std::string_view descriptor_json) const {
     return host_.attachSourceRecord(descriptor_json);
+  }
+
+  /// See DataSourceRuntimeHostView::completeIngest for the full contract.
+  [[nodiscard]] Status completeIngest(
+      sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
+      PJ_ingest_completion_flags_t flags = PJ_INGEST_COMPLETION_FLAG_NONE) const {
+    return host_.completeIngest(outcome, requested_topics, flags);
+  }
+
+  /// Rider forward of the runtime host's thread-safe stop request: a provider
+  /// cancelling a finite download must call this BEFORE joining producers —
+  /// it is what wakes a producer blocked on lossless capture backpressure.
+  /// Safe from any thread; see DataSourceRuntimeHostView::requestStop.
+  void requestStop(DataSourceState terminal_state, std::string_view reason) const {
+    return host_.requestStop(terminal_state, reason);
   }
 
   /// Narrow parser-only facade over the same underlying context.

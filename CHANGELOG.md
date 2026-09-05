@@ -3,6 +3,76 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.30.0]
+
+### Feature: explicit completion contract for cacheable finite ingests (MINOR)
+
+`PJ_data_source_runtime_host_vtable_t` gains one tail slot,
+`complete_ingest(ctx, PJ_ingest_completion_t*, out_error)`, with the C++
+wrapper `DataSourceRuntimeHostView::completeIngest` (also forwarded on
+`DatasetIngestHostView`). A finite source reports its terminal outcome —
+FAILED / CANCELLED / COMPLETED — where COMPLETED attests that the ENTIRE
+declared request finished: every requested topic over its full range. The
+completion carries the full requested-topic set from the request snapshot
+(never assembled from successful pulls), giving the host structural coverage
+checks against parser bindings and captured messages without parsing
+provider-specific descriptor JSON.
+
+Semantics: call on the stream thread after all producers quiesce; the call
+seals the context for capture (later pushes, attachments, or conflicting
+terminals veto caching; identical repeats are idempotent); `true` means
+"terminal accepted", never "artifact published" — publication additionally
+requires release, transaction commit, recorder drain/close and coverage
+checks. Cancellation still goes through the host's thread-safe stop path
+first. Contexts that never call the slot ingest exactly as before and are
+simply never cacheable; cacheability is negotiated from slot presence, not a
+manifest flag.
+
+`pj_base/sdk/ingest_completion.hpp` ships the shared fail-closed validator
+(`copyIngestCompletion`): undersized structs, unknown outcomes, nonzero
+flags, and malformed/duplicate topic lists all refuse as capture evidence
+while never affecting ingest.
+
+### Feature: discard_parser_ingest formalized on the toolbox runtime host (MINOR)
+
+The rollback twin of `release_parser_ingest` — abort a provisional ingest
+without committing (staged source records dropped, capture never published) —
+moves from a private plugin-side compatibility extension into the public
+`PJ_toolbox_runtime_host_vtable_t` tail, with
+`ToolboxRuntimeHostView::discardParserIngest` and the
+`PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST` feature macro so plugins can drop
+their local struct-size probes.
+
+### Feature: empty-topic attestation flag (MINOR)
+
+`PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS` — set with a COMPLETED
+terminal, a provider attests that requested topics with zero captured
+messages were successfully fetched and genuinely empty, not skipped. It
+never overrides host-observed failures and does not authorize an empty
+requested set; without it, zero-message topics keep the request
+non-cacheable. The validator admits only bits inside
+`PJ_INGEST_COMPLETION_FLAGS_V1_MASK` and refuses the flag on any other
+outcome. Both `completeIngest` wrappers take a defaulted flags argument.
+
+### Feature: Darwin export hardening in pj_configure_plugin (build-only)
+
+`pj_harden_plugin_exports` gains a macOS branch: plugin dylibs link with an
+ld64 `-exported_symbols_list` restricted to the C-ABI entry points (family
+getters as one glob — ld64 treats literal entries as required). Exported weak
+C++ symbols otherwise join dyld's process-wide weak coalescing at dlopen,
+letting plugins share one copy's statics and breaking pointer-based identity
+inside a plugin. The cmake-helpers fixture tests now run on macOS too.
+
+### Addition: DatasetIngestHostView::requestStop forwarding
+
+The canonical dataset-ingest facade exposed a stop *query* but hid the
+runtime host's thread-safe stop *request*; a provider cancelling a finite
+download must call it before joining producers (it is what wakes a producer
+blocked on lossless capture backpressure). Plain forwarding, no ABI change.
+
+No protocol version bumps, no minimum vtable size changes: additive tail
+slots only, gated by `PJ_HAS_TAIL_SLOT`.
+
 ## [0.29.0]
 
 ### Breaking (C++ source): BuiltinObject records its type tag explicitly

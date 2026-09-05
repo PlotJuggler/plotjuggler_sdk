@@ -177,6 +177,7 @@ if(PJ_BUILD_TESTS)
     tests/object_topic_metadata_test.cpp
     tests/push_message_test.cpp
     tests/attach_source_record_test.cpp
+    tests/ingest_completion_test.cpp
     tests/notify_available_topics_test.cpp
     tests/dataset_ingest_view_test.cpp
     tests/descriptor_import_extension_test.cpp

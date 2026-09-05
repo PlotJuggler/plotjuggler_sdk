@@ -16,7 +16,7 @@
 #include <pj_plugins/host/dialog_library.hpp>
 #include <string>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <dlfcn.h>
 #endif
 
@@ -45,7 +45,7 @@ std::filesystem::path sidecarFor(const std::filesystem::path& dso, const std::st
   return dso.parent_path() / (target + ".pjmanifest.json");
 }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 bool exportsSymbol(const char* dso_path, const char* symbol) {
   void* handle = dlopen(dso_path, RTLD_NOW | RTLD_LOCAL);
   EXPECT_NE(handle, nullptr) << dlerror();
@@ -94,7 +94,7 @@ TEST(PluginCmakeHelpers, LegacyAliasStillConfiguresALoadablePlugin) {
   EXPECT_EQ(nlohmann::json::parse(readFile(sidecar)).at("family"), "data_source");
 }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 TEST(PluginCmakeHelpers, ExportAllowlistLocalizesEverythingButEntryPoints) {
   // pj_configure_plugin applied the version script: the probe is gone ...
   EXPECT_FALSE(exportsSymbol(PJ_CMAKE_HELPERS_FIXTURE_PLUGIN_PATH, "pj_cmake_fixture_probe"));

@@ -43,6 +43,20 @@ Status ToolboxRuntimeHostView::releaseParserIngest(uint32_t data_source_id) cons
   return okStatus();
 }
 
+Status ToolboxRuntimeHostView::discardParserIngest(uint32_t data_source_id) const {
+  if (!valid()) {
+    return unexpected("toolbox runtime host is not bound");
+  }
+  if (!PJ_HAS_TAIL_SLOT(PJ_toolbox_runtime_host_vtable_t, host_.vtable, discard_parser_ingest)) {
+    return unexpected("toolbox runtime host does not support discard_parser_ingest (older host)");
+  }
+  PJ_error_t err{};
+  if (!host_.vtable->discard_parser_ingest(host_.ctx, data_source_id, &err)) {
+    return unexpected(errorToString(err));
+  }
+  return okStatus();
+}
+
 Expected<DatasetIngestHostView> ToolboxRuntimeHostView::createDatasetIngest(uint32_t data_source_id) const {
   auto raw = acquireParserIngestContext(data_source_id);
   if (!raw) {

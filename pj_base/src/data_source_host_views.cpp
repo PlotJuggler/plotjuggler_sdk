@@ -94,6 +94,33 @@ Status DataSourceRuntimeHostView::attachSourceRecord(std::string_view descriptor
   return okStatus();
 }
 
+Status DataSourceRuntimeHostView::completeIngest(
+    sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
+    PJ_ingest_completion_flags_t flags) const {
+  if (!valid()) {
+    return unexpected(std::string("runtime host is not bound"));
+  }
+  if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, complete_ingest)) {
+    return unexpected(std::string("runtime host does not expose complete_ingest"));
+  }
+  std::vector<PJ_string_view_t> raw;
+  raw.reserve(requested_topics.size());
+  for (const auto& topic : requested_topics) {
+    raw.push_back(sdk::toAbiString(topic));
+  }
+  PJ_ingest_completion_t completion{};
+  completion.struct_size = sizeof(PJ_ingest_completion_t);
+  completion.outcome = static_cast<PJ_ingest_outcome_t>(outcome);
+  completion.flags = flags;
+  completion.requested_topics = raw.data();
+  completion.requested_topic_count = raw.size();
+  PJ_error_t err{};
+  if (!host_.vtable->complete_ingest(host_.ctx, &completion, &err)) {
+    return unexpected(errorToString(err));
+  }
+  return okStatus();
+}
+
 MessageBoxButton DataSourceRuntimeHostView::showMessageBox(
     MessageBoxType type, std::string_view title, std::string_view message, int buttons) const {
   if (!valid() || host_.vtable->show_message_box == nullptr) {

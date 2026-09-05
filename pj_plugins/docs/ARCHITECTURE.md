@@ -872,3 +872,35 @@ affects ingest. The descriptor identifies the request, carries no credentials,
 and leaves parser policy to the layout. `DataSourceRuntimeHostView` and
 `DatasetIngestHostView` expose `attachSourceRecord`; hosts predating the slot
 are detected with `PJ_HAS_TAIL_SLOT` and reported as an error (no caching).
+
+## Ingest completion and rollback
+
+SDK 0.30 appends `complete_ingest(ctx, completion, out_error)` to the
+runtime-host vtable at offset 112 (size 112 → 120). A finite source reports
+its terminal outcome — `FAILED` / `CANCELLED` / `COMPLETED` — on the stream
+thread once every producer and `push_message` has quiesced. `COMPLETED`
+attests the ENTIRE declared request: the completion carries the full
+requested-topic set from the request snapshot (never assembled from the pulls
+that happened to succeed), so the host can cross-check coverage against
+parser bindings and captured messages without parsing provider JSON. The call
+seals the context for capture: later pushes, attachments, or a conflicting
+terminal veto caching (identical repeats are idempotent). A `true` return
+means "terminal accepted", never "artifact published" — publication also
+requires release, the owning transaction's commit, recorder drain/close and
+the host's coverage checks. Cancellation goes through the host's thread-safe
+stop path first; completion is what the stream thread reports afterwards.
+Contexts that never call the slot ingest exactly as before and are simply
+never cacheable — cacheability is negotiated from slot presence, not a
+manifest flag. `pj_base/sdk/ingest_completion.hpp` provides the shared
+fail-closed validator (`copyIngestCompletion`) hosts use to copy the borrowed
+completion. The initial capture policy additionally excludes requests with
+zero-message topics from caching: absence of a recorded message cannot yet be
+distinguished from a skipped topic, so such downloads succeed normally but
+are not cacheable until an explicit empty-topic declaration exists.
+
+The same release also formalizes `discard_parser_ingest` (toolbox runtime
+host, offset 40, size 40 → 48): the rollback twin of `release_parser_ingest`
+— abort a provisional ingest without committing, dropping staged source
+records and vetoing publication. Previously a private plugin-side
+compatibility extension; `PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST` lets plugins
+drop their local struct-size probes.

@@ -69,6 +69,18 @@ class ToolboxRuntimeHostView {
   /// createParserIngest must not be used afterwards.
   [[nodiscard]] Status releaseParserIngest(uint32_t data_source_id) const;
 
+  /// Abort the provisional ingest WITHOUT committing (discard_parser_ingest
+  /// tail slot): staged source records are dropped and any capture is never
+  /// published — the rollback twin of releaseParserIngest. Quiesce every user
+  /// of the ingest view first, and serialize release/discard per dataset id.
+  /// Idempotent for an unknown id. An older host without the slot returns an
+  /// error; releaseParserIngest is NOT a substitute for abort — it is normal
+  /// finalization, and after a COMPLETED terminal it can authorize the very
+  /// capture the caller meant to discard. Fall back to it only once
+  /// publication has been vetoed and the owning transaction aborted by other
+  /// means; slot absence alone establishes neither.
+  [[nodiscard]] Status discardParserIngest(uint32_t data_source_id) const;
+
   /// Generic alias over the same context as createParserIngest: the canonical
   /// dataset-scoped ingest lifecycle for BOTH delegated parsing and direct
   /// toolbox writes (progress/stop + optional parser access). Same threading
