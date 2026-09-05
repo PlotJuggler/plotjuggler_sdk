@@ -3,16 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.28.1]
-
-### Fix: accept the full signed nanosecond range when combining seconds and nanos (PATCH)
-
-`combineSecondsAndNanos` now accepts negative timestamps whose whole-second product
-would fall below `INT64_MIN` but whose positive nanosecond fraction brings the final
-value into range. Negative inputs are rebased toward zero before multiplication, so
-the conversion stays checked and C++17-compatible at both signed boundaries. Invalid
-nanosecond fractions and final overflow remain rejected. No API or ABI change.
-## [0.28.0]
+## [0.28.0] (Unreleased)
 
 ### Feature: source-record attachment for the host source cache (MINOR)
 
@@ -42,6 +33,14 @@ explicitly so new plugins can detect it. Reachable from streaming sources and
 from toolbox parser-ingest contexts alike (both hold the runtime-host fat
 pointer). Runtime-host vtable size grows 104 → 112, `attach_source_record`
 at offset 104. ABI-appendable growth only; `abi/baseline.abi` untouched.
+
+### Fix: accept the full signed nanosecond range when combining seconds and nanos
+
+`combineSecondsAndNanos` now accepts negative timestamps whose whole-second product
+would fall below `INT64_MIN` but whose positive nanosecond fraction brings the final
+value into range. Negative inputs are rebased toward zero before multiplication, so
+the conversion stays checked and C++17-compatible at both signed boundaries. Invalid
+nanosecond fractions and final overflow remain rejected. No API or ABI change.
 
 ## [0.27.1]
 
