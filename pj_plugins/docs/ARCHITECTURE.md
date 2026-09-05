@@ -893,7 +893,10 @@ Contexts that never call the slot ingest exactly as before and are simply
 never cacheable — cacheability is negotiated from slot presence, not a
 manifest flag. `pj_base/sdk/ingest_completion.hpp` provides the shared
 fail-closed validator (`copyIngestCompletion`) hosts use to copy the borrowed
-completion.
+completion. The initial capture policy additionally excludes requests with
+zero-message topics from caching: absence of a recorded message cannot yet be
+distinguished from a skipped topic, so such downloads succeed normally but
+are not cacheable until an explicit empty-topic declaration exists.
 
 The same release also formalizes `discard_parser_ingest` (toolbox runtime
 host, offset 40, size 40 → 48): the rollback twin of `release_parser_ingest`

@@ -184,6 +184,35 @@ TEST(CopyIngestCompletionTest, MalformedTopicListsRefuse) {
   EXPECT_NE(result.error().find("/dup"), std::string::npos);
 }
 
+TEST(CopyIngestCompletionTest, OversizedTopicNamesRefuseBeforeMaterializing) {
+  // A u64 length beyond the per-name bound must refuse by comparing the raw
+  // u64 — never by constructing a (possibly size_t-truncated) view first.
+  const char tiny[] = "/t";
+  const std::vector<PJ_string_view_t> huge_length{PJ_string_view_t{tiny, (uint64_t{1} << 32) + 1}};
+  auto aliased = validCompletion(huge_length);
+  EXPECT_FALSE(copyIngestCompletion(&aliased));
+
+  const std::string too_long(static_cast<size_t>(PJ::sdk::kMaxIngestCompletionTopicNameBytes) + 1, 'x');
+  const std::vector<PJ_string_view_t> oversized{abi(too_long)};
+  auto over = validCompletion(oversized);
+  EXPECT_FALSE(copyIngestCompletion(&over));
+}
+
+TEST(CopyIngestCompletionTest, AggregateNameBytesAreBounded) {
+  const std::string chunk(static_cast<size_t>(PJ::sdk::kMaxIngestCompletionTopicNameBytes), 'y');
+  std::vector<std::string> storage;
+  std::vector<PJ_string_view_t> names;
+  const uint64_t needed = PJ::sdk::kMaxIngestCompletionTotalNameBytes / PJ::sdk::kMaxIngestCompletionTopicNameBytes + 1;
+  for (uint64_t index = 0; index <= needed; ++index) {
+    storage.push_back(chunk + std::to_string(index));  // unique names
+    names.push_back(abi(storage.back()));
+  }
+  auto completion = validCompletion(names);
+  auto result = copyIngestCompletion(&completion);
+  ASSERT_FALSE(result);
+  EXPECT_NE(result.error().find("byte bound"), std::string::npos);
+}
+
 TEST(CopyIngestCompletionTest, EmptyListIsStructurallyValid) {
   auto completion = validCompletion({});
   auto result = copyIngestCompletion(&completion);

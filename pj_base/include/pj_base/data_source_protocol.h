@@ -434,6 +434,12 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * on lossless capture backpressure before they can quiesce); completion is
    * what the stream thread reports afterwards.
    *
+   * A malformed completion (unknown outcome, unknown flags, inconsistent or
+   * over-bound topic list) PERMANENTLY vetoes caching for this context — the
+   * ingest itself is unaffected. A terminalized context cannot be restarted:
+   * reacquiring the ingest for the same dataset returns the same sealed
+   * generation until it is released; the next request gets a fresh context.
+   *
    * Contexts that never call this (older plugins, or paths that predate the
    * slot) ingest exactly as before and are simply never cacheable. Gate with
    * PJ_HAS_TAIL_SLOT. Tail slot.

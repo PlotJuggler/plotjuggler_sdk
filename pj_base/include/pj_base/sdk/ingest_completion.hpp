@@ -37,9 +37,14 @@ struct IngestCompletionRecord {
   std::vector<std::string> requested_topics;
 };
 
-/// Topic-list bound: a request declaring more topics than this is refused as
-/// capture evidence (structural sanity, not a product limit).
+/// Structural bounds on the topic list (sanity limits, not product limits):
+/// a completion exceeding any of them is refused as capture evidence. Byte
+/// limits are enforced BEFORE any name is materialized, with the u64 sizes
+/// compared as u64 — a size_t narrowing (wasm32) must never alias an
+/// oversized name into a valid-looking short one.
 inline constexpr uint64_t kMaxIngestCompletionTopics = 100'000;
+inline constexpr uint64_t kMaxIngestCompletionTopicNameBytes = 4096;
+inline constexpr uint64_t kMaxIngestCompletionTotalNameBytes = uint64_t{4} << 20;
 
 /// Validate a borrowed completion and copy it into host-owned storage.
 /// Fail-closed rules (the caching verdict, never an ingest error):
@@ -81,12 +86,20 @@ inline constexpr uint64_t kMaxIngestCompletionTopics = 100'000;
   record.requested_topics.reserve(static_cast<size_t>(completion->requested_topic_count));
   std::unordered_set<std::string_view> seen;
   seen.reserve(static_cast<size_t>(completion->requested_topic_count));
+  uint64_t total_name_bytes = 0;
   for (uint64_t index = 0; index < completion->requested_topic_count; ++index) {
     const PJ_string_view_t& name = completion->requested_topics[index];
     if (name.data == nullptr || name.size == 0) {
       return unexpected(std::string("empty topic name in the requested set"));
     }
-    const std::string_view view(name.data, name.size);
+    if (name.size > kMaxIngestCompletionTopicNameBytes) {
+      return unexpected(std::string("topic name exceeds the structural byte bound"));
+    }
+    total_name_bytes += name.size;  // bounded per-name above, so no overflow within the count cap
+    if (total_name_bytes > kMaxIngestCompletionTotalNameBytes) {
+      return unexpected(std::string("requested topic set exceeds the structural byte bound"));
+    }
+    const std::string_view view(name.data, static_cast<size_t>(name.size));
     if (!seen.insert(view).second) {
       return unexpected(std::string("duplicate topic name in the requested set: ") + std::string(view));
     }

@@ -264,6 +264,13 @@ static_assert(
 static_assert(
     offsetof(PJ_data_source_runtime_host_vtable_t, attach_source_record) == 104,
     "attach_source_record tail slot pinned");
+static_assert(sizeof(PJ_ingest_outcome_t) == 4, "ingest outcome enum width pinned (force-int32)");
+static_assert(offsetof(PJ_ingest_completion_t, struct_size) == 0, "completion struct_size pinned");
+static_assert(offsetof(PJ_ingest_completion_t, outcome) == 4, "completion outcome pinned");
+static_assert(offsetof(PJ_ingest_completion_t, flags) == 8, "completion flags pinned");
+static_assert(offsetof(PJ_ingest_completion_t, requested_topics) == 16, "completion topic list pinned");
+static_assert(offsetof(PJ_ingest_completion_t, requested_topic_count) == 24, "completion topic count pinned");
+static_assert(sizeof(PJ_ingest_completion_t) == 32, "completion struct size (update deliberately on append)");
 static_assert(
     offsetof(PJ_data_source_runtime_host_vtable_t, complete_ingest) == 112, "complete_ingest tail slot pinned");
 static_assert(
