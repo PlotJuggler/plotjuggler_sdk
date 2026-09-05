@@ -655,9 +655,10 @@ handler.parse_object =
   (`width`, `height`, `frame_id`, …) plus an optional parser-controlled
   timestamp.
 - `parse_object` returns an `ObjectRecord`: the actual builtin value,
-  type-erased as `PJ::sdk::BuiltinObject` (which is `std::any`), plus an
-  optional parser-controlled timestamp. The host downcasts with
-  `std::any_cast<PJ::sdk::Image>(&obj)` to dispatch to the matching viewer.
+  type-erased as `PJ::sdk::BuiltinObject` (an explicit `BuiltinObjectType`
+  tag plus the opaque value), plus an optional parser-controlled timestamp.
+  The host downcasts with `obj.get<PJ::sdk::Image>()` to dispatch to the
+  matching viewer.
 
 The types above are plugin-author C++ conveniences, not the binary boundary.
 After `bindSchema`, `MessageParserPluginBase` advertises functional v1 and v2
@@ -684,7 +685,7 @@ For large objects, pass the `sdk::PayloadView` overload rather than a bare
 allowing handlers to propagate the input buffer without an initial copy. The
 DSO boundary still performs one canonical serialization and one host decode;
 that explicit cost is the price of not exporting plugin allocators,
-destructors, RTTI, STL layout, or `std::any` manager functions. Measure this
+destructors, RTTI, STL layout, or type-erasure internals. Measure this
 path for image/point-cloud workloads instead of bypassing it with direct C++
 calls.
 
@@ -701,8 +702,8 @@ codec as well. A zero-byte payload is the valid proto3 default message when the
 separate type tag is known. `sdk::Image` carries an open-ended `std::string encoding`
 (`"rgb8"`, `"bgr8"`, `"mono8"`, `"jpeg"`, `"png"`, `"compressedDepth"`,
 …) so raw and compressed images share a single type. New types are
-appended without changing the `BuiltinObject` type (its `std::any`
-nature is forward-compatible by construction).
+appended without changing the `BuiltinObject` type (its tag-plus-opaque-value
+erasure is forward-compatible by construction).
 
 Reference implementation: `pj_ported_plugins/parser_ros` —
 `SchemaHandler` table driven by a static `catalog()`. See

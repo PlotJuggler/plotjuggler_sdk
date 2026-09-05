@@ -458,7 +458,7 @@ class MessageParserHandle {
         anchor = std::move(owned);
       }
       const auto attach = [&]<typename Object>() {
-        auto* typed = std::any_cast<Object>(&*object);
+        auto* typed = object->get<Object>();
         if (typed == nullptr) {
           return false;
         }
@@ -508,7 +508,7 @@ class MessageParserHandle {
       // GridMap decodes header-only for splices; the data-length check waits
       // until the bytes exist, which is now.
       if (type == sdk::BuiltinObjectType::kGridMap) {
-        if (auto valid = validateGridMap(*std::any_cast<sdk::GridMap>(&*object)); !valid) {
+        if (auto valid = validateGridMap(*object->get<sdk::GridMap>()); !valid) {
           fillContractViolation(out_error, "spliced GridMap layout is invalid: " + valid.error());
           return false;
         }

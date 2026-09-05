@@ -435,7 +435,7 @@ TEST(MessageParserFunctionalExtension, ObjectRouteReturnsAHostOwnedTypedValue) {
   ASSERT_TRUE(record) << record.error();
   EXPECT_EQ(record->ts, 2007);
   EXPECT_EQ(PJ::sdk::typeOf(record->object), PJ::sdk::BuiltinObjectType::kImage);
-  const auto* image = std::any_cast<PJ::sdk::Image>(&record->object);
+  const auto* image = record->object.get<PJ::sdk::Image>();
   ASSERT_NE(image, nullptr);
   EXPECT_EQ(image->width, 4U);
   EXPECT_EQ(image->height, 1U);
@@ -461,7 +461,7 @@ TEST(MessageParserFunctionalExtension, HostV2PathReconstructsEligibleSplices) {
   auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>(payload));
   ASSERT_TRUE(record.has_value()) << record.error();
   EXPECT_EQ(record->ts, 88);
-  const auto* cloud = std::any_cast<PJ::sdk::PointCloud>(&record->object);
+  const auto* cloud = record->object.get<PJ::sdk::PointCloud>();
   ASSERT_NE(cloud, nullptr);
   ASSERT_EQ(cloud->data.size(), 2U);
   EXPECT_EQ(cloud->data[0], 20U);
@@ -475,7 +475,7 @@ TEST(MessageParserFunctionalExtension, HostV2PathReconstructsGridMapSplice) {
   auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>(payload));
   ASSERT_TRUE(record.has_value()) << record.error();
   EXPECT_EQ(record->ts, 89);
-  const auto* grid = std::any_cast<PJ::sdk::GridMap>(&record->object);
+  const auto* grid = record->object.get<PJ::sdk::GridMap>();
   ASSERT_NE(grid, nullptr);
   ASSERT_EQ(grid->data.size(), 2U);
   EXPECT_EQ(grid->data[0], 20U);

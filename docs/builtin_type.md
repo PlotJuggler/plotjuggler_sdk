@@ -159,9 +159,12 @@ produce this field without a free-form type string.
 classification, encoding, and schema, and custom untyped object topics remain
 valid.
 
-`BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
-consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
-`typeOf(object)` for the type supported by the current SDK build.
+`BuiltinObject` stores a concrete builtin value together with its
+`BuiltinObjectType` tag, recorded at construction. Producers wrap a concrete
+value (the converting constructor records the tag); consumers recover the
+concrete type with `object.get<T>()` — guarded by the stored tag, never RTTI —
+or ask `typeOf(object)` for the tag itself. Copies share the payload; treat it
+as immutable once a record can have been copied.
 
 ## Image
 

@@ -84,7 +84,7 @@ TEST(ParserModuleAuthoringE2E, LoadsAdmitsBindsAndParsesFullAndSplicedPointCloud
   const auto* full_object = std::get_if<ParserModuleObjectOutput>(&*full_result->output);
   ASSERT_NE(full_object, nullptr);
   EXPECT_FALSE(full_object->splice.has_value());
-  const auto* full_cloud = std::any_cast<sdk::PointCloud>(&full_object->object);
+  const auto* full_cloud = full_object->object.get<sdk::PointCloud>();
   ASSERT_NE(full_cloud, nullptr);
   EXPECT_EQ(full_cloud->width, 2U);
   EXPECT_EQ(full_cloud->frame_id, "map");
@@ -106,7 +106,7 @@ TEST(ParserModuleAuthoringE2E, LoadsAdmitsBindsAndParsesFullAndSplicedPointCloud
   EXPECT_EQ(splice_object->splice->field_number, 9U);
   EXPECT_EQ(splice_object->splice->input_offset, 20U);
   EXPECT_EQ(splice_object->splice->payload_bytes, (std::vector<uint8_t>{1, 2, 3, 4, 5, 6, 7, 8}));
-  const auto* splice_cloud = std::any_cast<sdk::PointCloud>(&splice_object->object);
+  const auto* splice_cloud = splice_object->object.get<sdk::PointCloud>();
   ASSERT_NE(splice_cloud, nullptr);
   EXPECT_EQ(splice_cloud->timestamp_ns, 4242);
   ASSERT_EQ(splice_cloud->data.size(), 8U);

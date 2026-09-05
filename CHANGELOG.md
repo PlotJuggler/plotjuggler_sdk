@@ -3,6 +3,36 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.29.0]
+
+### Breaking (C++ source): BuiltinObject records its type tag explicitly
+
+`BuiltinObject` is no longer `std::any`: it is a small holder that stores the
+`BuiltinObjectType` tag at construction next to the opaque value, so
+recovering the concrete type is an integer compare instead of RTTI identity.
+`std::any` made `typeOf()`/`any_cast` depend on `typeid`/manager-function
+identity — a linker property that silently failed inside macOS plugin dylibs
+whenever the producing and consuming TUs were compiled with different type
+visibility (observed as `cannot serialize builtin object with type kNone` in
+parser_arrow). The tag was already the source of truth at every other
+boundary (the C ABI ships `(uint16 type, wire bytes)`, and
+`deserializeBuiltinObject` takes the type explicitly); this closes the last
+gap. The erasure stays open-ended exactly like `std::any`: no TU references a
+full alternative list, and unknown tags degrade to `kNone`.
+
+Migration (mechanical, source-only — the C ABI and wire contracts are
+unchanged, so no protocol or baseline.abi impact):
+
+- Construction is source-compatible: `ObjectRecord{ts, std::move(img)}` and
+  `record.object = value` still compile (implicit converting constructor).
+- Extraction: `std::any_cast<T>(&obj)` becomes `obj.get<T>()`.
+- `typeOf(obj)` and `obj.has_value()` are unchanged; `obj.type()` now returns
+  the `BuiltinObjectType` tag rather than `std::type_info`.
+- One semantic change: copies share the payload (`shared_ptr`, not
+  `std::any`'s deep copy). Mutate through the non-const `get<T>()` only while
+  the holder is the single owner — e.g. right after construction or
+  deserialization, which covers every existing use.
+
 ## [0.28.0]
 
 ### Feature: source-record attachment for the host source cache (MINOR)

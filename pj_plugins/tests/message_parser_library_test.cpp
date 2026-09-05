@@ -104,7 +104,7 @@ TEST(MessageParserLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectD
   handle.reset();
 }
 
-// GCC 14's -O2 inliner falsely reports the moved-into optional's std::any
+// GCC 14's -O2 inliner falsely reports the moved-into optional’s type-erased
 // payload as maybe-uninitialized when ~ObjectRecord() is fully inlined
 // (observed with GCC 14.4). Clang has no -Wmaybe-uninitialized group.
 #if defined(__GNUC__) && !defined(__clang__)
@@ -137,7 +137,7 @@ TEST(MessageParserLibraryTest, FunctionalObjectRemainsHostOwnedAfterPluginAndLib
   ASSERT_TRUE(functional_plugin_unloaded.load()) << "test plugin DSO was retained instead of being unloaded";
   ASSERT_TRUE(record.has_value());
   EXPECT_FALSE(record->ts.has_value());
-  const auto* image = std::any_cast<PJ::sdk::Image>(&record->object);
+  const auto* image = record->object.get<PJ::sdk::Image>();
   ASSERT_NE(image, nullptr);
   EXPECT_EQ(image->timestamp_ns, 777);
   EXPECT_EQ(image->frame_id, "plugin-owned-frame");

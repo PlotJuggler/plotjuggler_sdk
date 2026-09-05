@@ -2,29 +2,35 @@
  * @file builtin_object.hpp
  * @brief Type-erased holder for any builtin object a MessageParser may produce.
  *
- * BuiltinObject is `std::any`. A producer constructs it by passing a
- * concrete builtin value (`sdk::Image`, `sdk::PointCloud`, `sdk::DepthImage`,
- * `sdk::ImageAnnotations`, `sdk::FrameTransforms`, ...); a consumer recovers
- * the concrete type via `std::any_cast<T>(&obj)` and obtains the type tag via
- * `typeOf(obj)`.
+ * BuiltinObject wraps one concrete builtin value (`sdk::Image`,
+ * `sdk::PointCloud`, `sdk::DepthImage`, `sdk::ImageAnnotations`,
+ * `sdk::FrameTransforms`, ...) together with its `BuiltinObjectType` tag,
+ * recorded at construction. A consumer recovers the concrete type via
+ * `obj.get<T>()` and the tag via `typeOf(obj)` — an integer compare, never
+ * RTTI. `std::any` filled this role before, but its `typeid`/manager identity
+ * is a linker property that broke inside macOS plugin dylibs whenever the
+ * producing and consuming TUs were compiled with different type visibility;
+ * an explicit tag is immune to visibility, linkers, and dlopen on every
+ * platform.
  *
- * The type erasure is deliberate: choosing `std::any` over `std::variant`
- * keeps the SDK forward-compatible. Plugins built against an older SDK can
- * keep producing the alternatives they know without any TU referencing the
- * (later-extended) full alternative list; hosts built against an older SDK
- * that receive an unknown type simply see `BuiltinObjectType::kNone` from
- * `typeOf` and reject the message. No protocol bump required when a new
- * builtin type is appended to BuiltinObjectType.
+ * The type erasure stays deliberately open-ended (a tag + opaque pointer, not
+ * `std::variant`): no TU ever references a full alternative list, so plugins
+ * built against an older SDK keep producing the alternatives they know, and a
+ * host that receives a tag it does not know sees `BuiltinObjectType::kNone`
+ * from `typeOf` and rejects the message. No protocol bump is required when a
+ * new builtin type is appended to BuiltinObjectType.
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include <any>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 #include "pj_base/builtin/camera_info.hpp"
 #include "pj_base/builtin/compressed_point_cloud.hpp"
@@ -186,71 +192,89 @@ struct SchemaClassification {
   return std::nullopt;
 }
 
-using BuiltinObject = std::any;
+/// Maps each concrete builtin value type to its BuiltinObjectType tag.
+/// Specialized below for every alternative; a type without a specialization
+/// cannot enter a BuiltinObject (the wrapping constructor fails to compile).
+template <typename T>
+struct BuiltinObjectTraits;
+
+#define PJ_BUILTIN_OBJECT_TRAIT(TYPE)                                      \
+  template <>                                                              \
+  struct BuiltinObjectTraits<TYPE> {                                       \
+    static constexpr BuiltinObjectType kType = BuiltinObjectType::k##TYPE; \
+  };
+PJ_BUILTIN_OBJECT_TRAIT(Image)
+PJ_BUILTIN_OBJECT_TRAIT(PointCloud)
+PJ_BUILTIN_OBJECT_TRAIT(DepthImage)
+PJ_BUILTIN_OBJECT_TRAIT(ImageAnnotations)
+PJ_BUILTIN_OBJECT_TRAIT(FrameTransforms)
+PJ_BUILTIN_OBJECT_TRAIT(OccupancyGrid)
+PJ_BUILTIN_OBJECT_TRAIT(CompressedPointCloud)
+PJ_BUILTIN_OBJECT_TRAIT(Mesh3D)
+PJ_BUILTIN_OBJECT_TRAIT(VideoFrame)
+PJ_BUILTIN_OBJECT_TRAIT(SceneEntities)
+PJ_BUILTIN_OBJECT_TRAIT(RobotDescription)
+PJ_BUILTIN_OBJECT_TRAIT(CameraInfo)
+PJ_BUILTIN_OBJECT_TRAIT(OccupancyGridUpdate)
+PJ_BUILTIN_OBJECT_TRAIT(Log)
+PJ_BUILTIN_OBJECT_TRAIT(PosesInFrame)
+PJ_BUILTIN_OBJECT_TRAIT(VoxelGrid)
+PJ_BUILTIN_OBJECT_TRAIT(PlotMarkers)
+PJ_BUILTIN_OBJECT_TRAIT(GridMap)
+#undef PJ_BUILTIN_OBJECT_TRAIT
+
+/// Tag + opaque value. See the file comment for why the tag is explicit
+/// rather than recovered through RTTI.
+///
+/// Copies SHARE the underlying value (shared_ptr semantics — `std::any`
+/// deep-copied). Treat the payload as immutable once the record can have
+/// been copied; mutate through the non-const get() only while this holder
+/// is the single owner, e.g. right after construction or deserialization.
+class BuiltinObject {
+ public:
+  BuiltinObject() = default;
+
+  /// Wraps a concrete builtin value and records its tag. Participates in
+  /// overload resolution only for types with a BuiltinObjectTraits
+  /// specialization, so copy/move construction is unaffected.
+  template <typename T, typename Decayed = std::decay_t<T>, BuiltinObjectType = BuiltinObjectTraits<Decayed>::kType>
+  // NOLINTNEXTLINE(google-explicit-constructor,bugprone-forwarding-reference-overload): mirrors std::any's
+  // converting constructor; the traits default argument excludes BuiltinObject itself, so copy/move stay visible.
+  BuiltinObject(T&& value)
+      : type_(BuiltinObjectTraits<Decayed>::kType), value_(std::make_shared<Decayed>(std::forward<T>(value))) {}
+
+  [[nodiscard]] bool has_value() const noexcept {
+    return value_ != nullptr;
+  }
+
+  /// The tag recorded at construction; kNone when empty.
+  [[nodiscard]] BuiltinObjectType type() const noexcept {
+    return value_ ? type_ : BuiltinObjectType::kNone;
+  }
+
+  /// The stored value as T — nullptr when empty or tagged as another type.
+  template <typename T>
+  [[nodiscard]] const T* get() const noexcept {
+    return value_ && type_ == BuiltinObjectTraits<T>::kType ? static_cast<const T*>(value_.get()) : nullptr;
+  }
+
+  /// Mutable access — see the class comment for the single-owner caveat.
+  template <typename T>
+  [[nodiscard]] T* get() noexcept {
+    return value_ && type_ == BuiltinObjectTraits<T>::kType ? static_cast<T*>(value_.get()) : nullptr;
+  }
+
+ private:
+  BuiltinObjectType type_ = BuiltinObjectType::kNone;
+  std::shared_ptr<void> value_;
+};
 
 /// Get the type tag for a BuiltinObject without copying it.
-/// Returns kNone for an empty BuiltinObject or one that wraps a type
-/// unknown to this SDK build.
+/// Returns kNone for an empty BuiltinObject. (A tag appended by a NEWER SDK
+/// never reaches this build as a live C++ object — unknown types only arrive
+/// serialized, and deserializeBuiltinObject rejects tags it does not know.)
 [[nodiscard]] inline BuiltinObjectType typeOf(const BuiltinObject& obj) noexcept {
-  if (!obj.has_value()) {
-    return BuiltinObjectType::kNone;
-  }
-  const auto& t = obj.type();
-  if (t == typeid(Image)) {
-    return BuiltinObjectType::kImage;
-  }
-  if (t == typeid(PointCloud)) {
-    return BuiltinObjectType::kPointCloud;
-  }
-  if (t == typeid(DepthImage)) {
-    return BuiltinObjectType::kDepthImage;
-  }
-  if (t == typeid(ImageAnnotations)) {
-    return BuiltinObjectType::kImageAnnotations;
-  }
-  if (t == typeid(FrameTransforms)) {
-    return BuiltinObjectType::kFrameTransforms;
-  }
-  if (t == typeid(OccupancyGrid)) {
-    return BuiltinObjectType::kOccupancyGrid;
-  }
-  if (t == typeid(CompressedPointCloud)) {
-    return BuiltinObjectType::kCompressedPointCloud;
-  }
-  if (t == typeid(Mesh3D)) {
-    return BuiltinObjectType::kMesh3D;
-  }
-  if (t == typeid(VideoFrame)) {
-    return BuiltinObjectType::kVideoFrame;
-  }
-  if (t == typeid(SceneEntities)) {
-    return BuiltinObjectType::kSceneEntities;
-  }
-  if (t == typeid(RobotDescription)) {
-    return BuiltinObjectType::kRobotDescription;
-  }
-  if (t == typeid(CameraInfo)) {
-    return BuiltinObjectType::kCameraInfo;
-  }
-  if (t == typeid(OccupancyGridUpdate)) {
-    return BuiltinObjectType::kOccupancyGridUpdate;
-  }
-  if (t == typeid(Log)) {
-    return BuiltinObjectType::kLog;
-  }
-  if (t == typeid(PosesInFrame)) {
-    return BuiltinObjectType::kPosesInFrame;
-  }
-  if (t == typeid(VoxelGrid)) {
-    return BuiltinObjectType::kVoxelGrid;
-  }
-  if (t == typeid(PlotMarkers)) {
-    return BuiltinObjectType::kPlotMarkers;
-  }
-  if (t == typeid(GridMap)) {
-    return BuiltinObjectType::kGridMap;
-  }
-  return BuiltinObjectType::kNone;
+  return obj.type();
 }
 
 }  // namespace sdk

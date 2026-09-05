@@ -87,7 +87,7 @@ TEST(ParserModuleRuntime, RunsObjectAndScalarLifecyclesAndOwnsOutputs) {
   EXPECT_EQ(sdk::typeOf(object->object), sdk::BuiltinObjectType::kPointCloud);
   EXPECT_FALSE(object->wire.empty());
   EXPECT_FALSE(object->splice.has_value());
-  const auto* cloud = std::any_cast<sdk::PointCloud>(&object->object);
+  const auto* cloud = object->object.get<sdk::PointCloud>();
   ASSERT_NE(cloud, nullptr);
   EXPECT_EQ(cloud->data.size(), 4U);
   EXPECT_EQ(cloud->data[2], 3U);
@@ -161,7 +161,7 @@ TEST(ParserModuleRuntime, AcceptsEligibleSpliceAndRejectsInvalidReferences) {
   EXPECT_EQ(valid_object->splice->field_number, 9U);
   EXPECT_EQ(valid_object->splice->input_offset, 1U);
   EXPECT_EQ(valid_object->splice->payload_bytes, (std::vector<uint8_t>{20, 30}));
-  const auto* valid_cloud = std::any_cast<sdk::PointCloud>(&valid_object->object);
+  const auto* valid_cloud = valid_object->object.get<sdk::PointCloud>();
   ASSERT_NE(valid_cloud, nullptr);
   ASSERT_EQ(valid_cloud->data.size(), 2U);
   EXPECT_EQ(valid_cloud->data[0], 20U);
@@ -192,7 +192,7 @@ TEST(ParserModuleRuntime, AttachesGridMapSpliceToTheDecodedHeader) {
   ASSERT_NE(object, nullptr);
   ASSERT_TRUE(object->splice.has_value());
   EXPECT_EQ(object->splice->field_number, 10U);
-  const auto* grid = std::any_cast<sdk::GridMap>(&object->object);
+  const auto* grid = object->object.get<sdk::GridMap>();
   ASSERT_NE(grid, nullptr);
   EXPECT_EQ(grid->column_count, 2U);
   ASSERT_EQ(grid->data.size(), 2U);

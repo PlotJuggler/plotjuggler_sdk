@@ -90,6 +90,21 @@ TEST(BuiltinObjectTest, ParsesRobotDescriptionTypeName) {
   EXPECT_FALSE(parseBuiltinObjectType("RobotDescription").has_value());
 }
 
+TEST(BuiltinObjectTest, GetIsGuardedByTheStoredTagNotRtti) {
+  BuiltinObject empty;
+  EXPECT_FALSE(empty.has_value());
+  EXPECT_EQ(empty.get<Image>(), nullptr);
+
+  BuiltinObject obj{Image{}};
+  EXPECT_TRUE(obj.has_value());
+  EXPECT_NE(obj.get<Image>(), nullptr);
+  EXPECT_EQ(obj.get<PointCloud>(), nullptr);
+
+  // Copies share the payload (shared_ptr semantics, not std::any's deep copy).
+  BuiltinObject copy = obj;
+  EXPECT_EQ(copy.get<Image>(), obj.get<Image>());
+}
+
 TEST(BuiltinObjectTest, PointCloudCarriesFrameId) {
   PointCloud in;
   in.width = 100;
@@ -101,7 +116,7 @@ TEST(BuiltinObjectTest, PointCloudCarriesFrameId) {
   BuiltinObject obj{in};
   ASSERT_EQ(typeOf(obj), BuiltinObjectType::kPointCloud);
 
-  const auto* out = std::any_cast<PointCloud>(&obj);
+  const auto* out = obj.get<PointCloud>();
   ASSERT_NE(out, nullptr);
   EXPECT_EQ(out->frame_id, "velodyne");
   EXPECT_EQ(out->width, 100u);
@@ -118,7 +133,7 @@ TEST(BuiltinObjectTest, RobotDescriptionRoundtripPreservesFields) {
   BuiltinObject obj{in};
   ASSERT_EQ(typeOf(obj), BuiltinObjectType::kRobotDescription);
 
-  const auto* out = std::any_cast<RobotDescription>(&obj);
+  const auto* out = obj.get<RobotDescription>();
   ASSERT_NE(out, nullptr);
   EXPECT_EQ(out->timestamp_ns, in.timestamp_ns);
   EXPECT_EQ(out->topic, in.topic);
