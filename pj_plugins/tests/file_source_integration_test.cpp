@@ -155,6 +155,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state) {
       .list_available_encodings = nullptr,
       .push_message = nullptr,
       .notify_available_topics = nullptr,
+      .attach_source_record = nullptr,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }

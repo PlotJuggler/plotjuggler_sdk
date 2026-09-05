@@ -201,8 +201,10 @@ void JobControl::armWatchdog(std::chrono::milliseconds timeout, std::function<vo
     state_.watchdog_stop = false;
   }
   detail::JobState* state = &state_;
-  state_.watchdog = std::thread([state, timeout, on_expire = std::move(on_expire)]() {
+  std::binary_semaphore started{0};
+  state_.watchdog = std::thread([state, timeout, on_expire = std::move(on_expire), &started]() {
     std::unique_lock<std::mutex> lock(state->watchdog_mu);
+    started.release();
     const bool stopped = state->watchdog_cv.wait_for(lock, timeout, [state] { return state->watchdog_stop; });
     lock.unlock();
     if (!stopped) {
@@ -211,6 +213,7 @@ void JobControl::armWatchdog(std::chrono::milliseconds timeout, std::function<vo
       } catch (...) {}
     }
   });
+  started.acquire();
 }
 
 // ---------------------------------------------------------------------------
