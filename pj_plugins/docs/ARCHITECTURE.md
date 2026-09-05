@@ -777,7 +777,7 @@ that cascades `topic > source > type > default`:
 
 Parsers participate through `classifySchema`, `parseScalars`, and
 `parseObject`, backed by the per-schema `SchemaHandler` table. Those C++
-methods and their `ScalarRecord` / `ObjectRecord` / `std::any` values stay
+methods and their `ScalarRecord` / `ObjectRecord` / `BuiltinObject` values stay
 inside the plugin DSO. The base exposes both `pj.parser_functional.v1` and v2;
 `MessageParserHandle` negotiates v2 first and falls back to v1:
 
@@ -793,8 +793,8 @@ inside the plugin DSO. The base exposes both `pj.parser_functional.v1` and v2;
 - `MessageParserHandle::parseObjectFunctional` decodes those bytes before the
   callback returns, reconstructs a v2 splice into the canonical object, and
   rejects a type different from the binding's expected object type. The result
-  is an entirely host-owned `ObjectRecord`; its destructor and `std::any`
-  manager contain no plugin function pointer, so the value remains safe after
+  is an entirely host-owned `ObjectRecord`; its destructor and type-erased
+  payload contain no plugin function pointer, so the value remains safe after
   the parser and DSO lease are destroyed.
 - Provider exceptions, consumer exceptions, malformed/undersized sinks,
   unknown object tags, missing calls, and duplicate calls fail closed through

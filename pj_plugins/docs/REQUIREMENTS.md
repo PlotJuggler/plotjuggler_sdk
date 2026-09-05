@@ -115,7 +115,7 @@ Independent decoder, typically driven by a DataSource via the host.
 - Scalar views are callback-duration-only. Canonical objects cross as a stable
   numeric builtin tag plus canonical wire bytes and are decoded into host-owned
   storage before the extension call returns. No plugin allocator, destructor,
-  RTTI object, `std::any`, `std::string`, or `BufferAnchor` crosses back.
+  RTTI object, `BuiltinObject`, `std::string`, or `BufferAnchor` crosses back.
 - The object route consumes exactly one `PJ_payload_t` anchor reference and
   releases it exactly once on success and every failure path. This permits
   zero-copy input when the host already owns an anchored payload; output still

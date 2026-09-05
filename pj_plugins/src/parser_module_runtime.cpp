@@ -101,7 +101,7 @@ Expected<ParserModuleObjectOutput> ownObjectOutput(
         input_payload.begin() + static_cast<ptrdiff_t>(offset),
         input_payload.begin() + static_cast<ptrdiff_t>(offset + length));
     const auto attach = [&]<typename Object>() -> bool {
-      auto* typed = std::any_cast<Object>(&owned.object);
+      auto* typed = owned.object.get<Object>();
       if (typed == nullptr) {
         return false;
       }
@@ -150,7 +150,7 @@ Expected<ParserModuleObjectOutput> ownObjectOutput(
     // GridMap decodes header-only for splices; the data-length check waits
     // until the bytes exist, which is now.
     if (type == sdk::BuiltinObjectType::kGridMap) {
-      if (auto valid = validateGridMap(*std::any_cast<sdk::GridMap>(&owned.object)); !valid) {
+      if (auto valid = validateGridMap(*owned.object.get<sdk::GridMap>()); !valid) {
         return unexpected("output spliced GridMap layout is invalid: " + valid.error());
       }
     }

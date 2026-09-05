@@ -3,7 +3,6 @@
 
 #include "pj_base/builtin/builtin_object_codec.hpp"
 
-#include <any>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -33,7 +32,7 @@ namespace {
 template <typename T, typename Serialize>
 Expected<std::vector<uint8_t>> serializeAs(
     const sdk::BuiltinObject& object, sdk::BuiltinObjectType type, Serialize&& serialize) {
-  const auto* value = std::any_cast<T>(&object);
+  const T* value = object.get<T>();
   if (value == nullptr) {
     return unexpected(std::string("builtin object/type mismatch for ") + std::string(sdk::name(type)));
   }

@@ -265,7 +265,7 @@ TEST(ParserModuleObjectWriter, PointCloudFullWireMatchesGoldenDescriptorAndHostC
   auto canonical =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kPointCloud, object->wire.data(), object->wire.size());
   ASSERT_TRUE(canonical.has_value()) << canonical.error();
-  const auto* result = std::any_cast<PJ::sdk::PointCloud>(&*canonical);
+  const auto* result = canonical->get<PJ::sdk::PointCloud>();
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->data.size(), 2U);
   EXPECT_EQ(result->data[1], 0xBB);
@@ -328,7 +328,7 @@ TEST(ParserModuleObjectWriter, ImageFullWireDecodesWithHostCodec) {
   auto canonical =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kImage, object.wire.data(), object.wire.size());
   ASSERT_TRUE(canonical.has_value()) << canonical.error();
-  const auto* result = std::any_cast<PJ::sdk::Image>(&*canonical);
+  const auto* result = canonical->get<PJ::sdk::Image>();
   ASSERT_NE(result, nullptr);
   EXPECT_EQ(result->timestamp_ns, -1);
   EXPECT_EQ(result->width, 2U);
@@ -379,7 +379,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_depth =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kDepthImage, depth_wire.data(), depth_wire.size());
   ASSERT_TRUE(decoded_depth.has_value()) << decoded_depth.error();
-  const auto* depth_value = std::any_cast<PJ::sdk::DepthImage>(&*decoded_depth);
+  const auto* depth_value = decoded_depth->get<PJ::sdk::DepthImage>();
   ASSERT_NE(depth_value, nullptr);
   EXPECT_EQ(depth_value->data[2], 9U);
   EXPECT_EQ(depth_value->K[4], 3.0);
@@ -402,7 +402,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_grid =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kOccupancyGrid, grid_wire.data(), grid_wire.size());
   ASSERT_TRUE(decoded_grid.has_value()) << decoded_grid.error();
-  const auto* grid_value = std::any_cast<PJ::sdk::OccupancyGrid>(&*decoded_grid);
+  const auto* grid_value = decoded_grid->get<PJ::sdk::OccupancyGrid>();
   ASSERT_NE(grid_value, nullptr);
   EXPECT_EQ(grid_value->frame_id, "map");
   EXPECT_EQ(grid_value->data.size(), 3U);
@@ -422,7 +422,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_compressed = PJ::deserializeBuiltinObject(
       PJ::sdk::BuiltinObjectType::kCompressedPointCloud, compressed_wire.data(), compressed_wire.size());
   ASSERT_TRUE(decoded_compressed.has_value()) << decoded_compressed.error();
-  const auto* compressed_value = std::any_cast<PJ::sdk::CompressedPointCloud>(&*decoded_compressed);
+  const auto* compressed_value = decoded_compressed->get<PJ::sdk::CompressedPointCloud>();
   ASSERT_NE(compressed_value, nullptr);
   EXPECT_EQ(compressed_value->format, "draco");
   EXPECT_EQ(compressed_value->data[0], 7U);
@@ -446,7 +446,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_mesh =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kMesh3D, mesh_wire.data(), mesh_wire.size());
   ASSERT_TRUE(decoded_mesh.has_value()) << decoded_mesh.error();
-  const auto* mesh_value = std::any_cast<PJ::sdk::Mesh3D>(&*decoded_mesh);
+  const auto* mesh_value = decoded_mesh->get<PJ::sdk::Mesh3D>();
   ASSERT_NE(mesh_value, nullptr);
   EXPECT_EQ(mesh_value->data.size(), 3U);
   EXPECT_EQ(mesh_value->scale.y, 3.0);
@@ -466,7 +466,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_video =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kVideoFrame, video_wire.data(), video_wire.size());
   ASSERT_TRUE(decoded_video.has_value()) << decoded_video.error();
-  const auto* video_value = std::any_cast<PJ::sdk::VideoFrame>(&*decoded_video);
+  const auto* video_value = decoded_video->get<PJ::sdk::VideoFrame>();
   ASSERT_NE(video_value, nullptr);
   EXPECT_EQ(video_value->format, "h264");
   EXPECT_EQ(video_value->data[1], 8U);
@@ -489,7 +489,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_update = PJ::deserializeBuiltinObject(
       PJ::sdk::BuiltinObjectType::kOccupancyGridUpdate, update_wire.data(), update_wire.size());
   ASSERT_TRUE(decoded_update.has_value()) << decoded_update.error();
-  const auto* update_value = std::any_cast<PJ::sdk::OccupancyGridUpdate>(&*decoded_update);
+  const auto* update_value = decoded_update->get<PJ::sdk::OccupancyGridUpdate>();
   ASSERT_NE(update_value, nullptr);
   EXPECT_EQ(update_value->x, -2);
   EXPECT_EQ(update_value->data[2], 9U);
@@ -516,7 +516,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_voxel =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kVoxelGrid, voxel_wire.data(), voxel_wire.size());
   ASSERT_TRUE(decoded_voxel.has_value()) << decoded_voxel.error();
-  const auto* voxel_value = std::any_cast<PJ::sdk::VoxelGrid>(&*decoded_voxel);
+  const auto* voxel_value = decoded_voxel->get<PJ::sdk::VoxelGrid>();
   ASSERT_NE(voxel_value, nullptr);
   ASSERT_EQ(voxel_value->fields.size(), 1U);
   EXPECT_EQ(voxel_value->fields[0].name, "occupancy");
@@ -543,7 +543,7 @@ TEST(ParserModuleObjectWriter, AllAdditionalSpliceEligibleBuildersRoundTripFullW
   auto decoded_grid_map =
       PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kGridMap, grid_map_wire.data(), grid_map_wire.size());
   ASSERT_TRUE(decoded_grid_map.has_value()) << decoded_grid_map.error();
-  const auto* grid_map_value = std::any_cast<PJ::sdk::GridMap>(&*decoded_grid_map);
+  const auto* grid_map_value = decoded_grid_map->get<PJ::sdk::GridMap>();
   ASSERT_NE(grid_map_value, nullptr);
   EXPECT_EQ(grid_map_value->frame_id, "odom");
   EXPECT_DOUBLE_EQ(grid_map_value->cell_size.x, 0.1);
