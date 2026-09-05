@@ -85,9 +85,14 @@ enum class TimeUnit : uint8_t { kSeconds, kMilliseconds, kMicroseconds, kNanosec
   if (nanos < 0 || nanos >= kNanosecondsPerSecond) {
     return std::nullopt;
   }
-  const int64_t positive_room = (std::numeric_limits<int64_t>::max() - nanos) / kNanosecondsPerSecond;
-  const int64_t negative_room = std::numeric_limits<int64_t>::min() / kNanosecondsPerSecond;
-  if (seconds > positive_room || seconds < negative_room) {
+  if (seconds < 0) {
+    // Rebase toward zero so the seconds product fits whenever the final timestamp does.
+    ++seconds;
+    nanos -= kNanosecondsPerSecond;
+    if (seconds < (std::numeric_limits<int64_t>::min() - nanos) / kNanosecondsPerSecond) {
+      return std::nullopt;
+    }
+  } else if (seconds > (std::numeric_limits<int64_t>::max() - nanos) / kNanosecondsPerSecond) {
     return std::nullopt;
   }
   return seconds * kNanosecondsPerSecond + nanos;
