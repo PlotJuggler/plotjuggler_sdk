@@ -17,9 +17,9 @@ submodule-internal modules; `pj_base` carries none).
 - `include/pj_plugins/host/` — host loaders + RAII handles for DataSource /
   MessageParser / Toolbox, the embedded-manifest `plugin_catalog` scanner
   (`scanPluginDsos` / `inspectPluginDso`), parser claim admission + per-route
-  resolution (`ParserClaimCatalog`, `ParserRouteResolver`), native functional
-  parser-module loading/execution (`NativeParserModule`,
-  `NativeParserModuleInstance`, `ParserModuleStrikeTracker`),
+  resolution (`ParserClaimCatalog`, `ParserRouteResolver`), native and Wasmer
+  functional parser-module loading/execution (`NativeParserModule`,
+  `WasmParserModule`, their instance wrappers, `ParserModuleStrikeTracker`),
   `ServiceRegistryBuilder`, `ConfigEnvelope`. The DSO duplicate-resolution
   catalog that composes loaded plugin families into a set is **host policy** and
   lives in the app (`pj_runtime`, `PluginRuntimeCatalog`), not here.
@@ -53,6 +53,20 @@ submodule-internal modules; `pj_base` carries none).
   the complete per-handle export set and retains every opened DSO for the
   process session, including rejected artifacts. Instance wrappers still call
   `pj_module_destroy`; only the code mapping has session lifetime.
+- **Wasm parser modules have an empty import allow-list in v1.** The loader
+  admits reactors with the exact operational exports, `_initialize`, exported
+  memory with a bounded declared maximum, tables with a bounded declared
+  maximum, no start function, and no imports — the same `pj_base` audit the
+  embed tool runs. One engine-owned compiled Wasmer module (Singlepass when
+  available) creates independent stores per instance. Sequential cross-thread
+  use is supported, but overlapping calls on one instance are forbidden and
+  must be serialized by the application host. Wasmer metering is reset for
+  every ABI call; exhaustion is a contract violation the host strikes (the wasm
+  wrapper classifies faults exactly like the native one; strike, quarantine,
+  and replay policy stay in the host's `ParserModuleStrikeTracker`). The pinned
+  static archive has no public interrupt/epoch API, and native stack depth uses
+  Wasmer's guarded default. The executor is in-tree only (`PJ_WASMER_ROOT`);
+  installed packages are wasmer-free.
 
 ## Read deeper
 | For | Read |
@@ -63,7 +77,7 @@ submodule-internal modules; `pj_base` carries none).
 | Host loader + factory pattern | `include/pj_plugins/host/data_source_library.hpp`, `…/data_source_handle.hpp` |
 | Discovery from embedded manifests | `include/pj_plugins/host/plugin_catalog.hpp` (the duplicate-resolution catalog is host-side in `pj_runtime`) |
 | Parser claim admission and route selection | `include/pj_plugins/host/parser_claim_catalog.hpp`, `parser_route_resolver.hpp` |
-| Native functional parser modules | `include/pj_plugins/host/native_parser_module.hpp`, `parser_module_runtime.hpp` |
-| Authoring native functional parser modules | `../pj_base/include/pj_base/parser_module/README.md`, `module.hpp`, `../.claude/skills/plotjuggler-plugin/references/parser-module.md` |
+| Native and wasm functional parser modules | `include/pj_plugins/host/native_parser_module.hpp`, `parser_module_runtime.hpp`, `wasm_parser_module.hpp`, `wasm_parser_module_runtime.hpp` |
+| Authoring functional parser modules | `../pj_base/include/pj_base/parser_module/README.md`, `module.hpp`, `../.claude/skills/plotjuggler-plugin/references/parser-module.md` |
 | Service wiring into `bind()` | `include/pj_plugins/host/service_registry_builder.hpp` |
 | Builtin-object ingest policy | `include/pj_plugins/sdk/object_ingest_policy.hpp` |

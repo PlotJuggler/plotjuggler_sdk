@@ -8,12 +8,15 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "native_parser_module_fixture.hpp"
 #include "pj_base/parser_module_abi.h"
 #include "pj_plugins/host/parser_claim_catalog.hpp"
+#include "pj_plugins/host/parser_module_runtime.hpp"
+#include "pj_plugins/host/parser_module_session_budget.hpp"
 
 namespace PJ {
 namespace {
@@ -128,6 +131,46 @@ TEST(NativeParserModule, ReportsSpecificLoaderFailureCauses) {
   auto unreadable = NativeParserModule::load(PJ_NATIVE_MODULE_UNREADABLE_MANIFEST_PATH);
   ASSERT_FALSE(unreadable.has_value());
   EXPECT_NE(unreadable.error().find("manifest is unreadable"), std::string::npos);
+}
+
+TEST(NativeParserModule, EnforcesAggregateBudgetsAtLoadAndCreate) {
+  const uint64_t artifact_size = std::filesystem::file_size(PJ_NATIVE_MODULE_FIXTURE_PATH);
+  const auto make_budget = [&](ParserModuleSessionBudgetLimits limits) {
+    return std::make_shared<ParserModuleSessionBudgetTracker>(limits);
+  };
+  ParserModuleSessionBudgetLimits limits;
+  limits.maximum_modules = 0;
+  auto module_budget = make_budget(limits);
+  auto module_decline = NativeParserModule::load(PJ_NATIVE_MODULE_FIXTURE_PATH, module_budget);
+  ASSERT_FALSE(module_decline.has_value());
+  EXPECT_NE(module_decline.error().find("module_count"), std::string::npos);
+  EXPECT_EQ(module_budget->usage().modules, 0U);
+
+  limits = {};
+  limits.maximum_artifact_bytes = artifact_size - 1;
+  auto artifact_budget = make_budget(limits);
+  auto artifact = NativeParserModule::load(PJ_NATIVE_MODULE_FIXTURE_PATH, artifact_budget);
+  ASSERT_FALSE(artifact.has_value());
+  EXPECT_NE(artifact.error().find("artifact_file_size"), std::string::npos);
+  EXPECT_EQ(artifact_budget->usage().modules, 0U);
+
+  limits = {};
+  limits.maximum_claims = pj_fixture::kClaimCount - 1;
+  auto claim_budget = make_budget(limits);
+  auto claims = NativeParserModule::load(PJ_NATIVE_MODULE_FIXTURE_PATH, claim_budget);
+  ASSERT_FALSE(claims.has_value());
+  EXPECT_NE(claims.error().find("total_claims"), std::string::npos);
+  EXPECT_EQ(claim_budget->usage().modules, 0U);
+
+  limits = {};
+  limits.maximum_active_instances = 0;
+  auto instance_budget = make_budget(limits);
+  auto module = NativeParserModule::load(PJ_NATIVE_MODULE_FIXTURE_PATH, instance_budget);
+  ASSERT_TRUE(module.has_value()) << module.error();
+  auto instance = NativeParserModuleInstance::create(*module, 0);
+  ASSERT_FALSE(instance.has_value());
+  EXPECT_NE(instance.error().find("active_instances"), std::string::npos);
+  EXPECT_EQ(instance_budget->usage().active_instances, 0U);
 }
 
 }  // namespace

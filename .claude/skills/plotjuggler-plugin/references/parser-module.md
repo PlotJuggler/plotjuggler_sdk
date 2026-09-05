@@ -111,20 +111,24 @@ embedded bytes; catalog ingestion validates the complete JSON transactionally.
 ## Build
 
 ```cmake
-find_package(plotjuggler_sdk 0.22 REQUIRED COMPONENTS parser_module)
+find_package(plotjuggler_sdk 0.29 REQUIRED COMPONENTS parser_module)
 
 pj_add_parser_module(raw_mono_image_parser
   SOURCE raw_mono_image_parser.cpp
   MANIFEST raw_mono_image_parser.module.json
-  TARGETS native
+  TARGETS native wasm   # either, or both from the same source
 )
 ```
 
 The helper embeds the manifest, hides every non-ABI symbol, and exports the
-complete native `pj_module_*` set. SDK 0.22 accepts only `TARGETS native`;
-requesting `TARGETS wasm` stops configuration with “wasm support arrives with
-the SDK wasm loader milestone”. The shipped WASI check is structural
-conformance testing, not a wasm authoring or execution target.
+complete native `pj_module_*` set. `TARGETS wasm` (SDK 0.29+) requires
+`PJ_WASI_SDK_ROOT` pointing at wasi-sdk 27: it builds a C++17 WASI reactor
+with exceptions disabled, omits the native manifest address/length exports,
+embeds the manifest in the `pj_parser_module_manifest` custom section via the
+installed `pj-wasm-embed-manifest` tool, and audits the export set post-link.
+Wasm reactors import nothing and must declare a linear-memory maximum
+(default 256 MiB; override with `PJ_PARSER_MODULE_WASM_MAX_MEMORY_BYTES`) and a
+function-table maximum (wasm-ld emits one; the host caps it at 65536 elements).
 
 ## Choose a schema-compatibility strategy
 
@@ -170,8 +174,12 @@ invalid descriptor.
 ## Traps
 
 - The kit is header-only and WASI-clean: no threads, filesystem, iostream, host
-  SDK linkage, or exceptions across its API. In SDK 0.22 the supported build
-  product is nevertheless native-only.
+  SDK linkage, or exceptions across its API. The same source builds the native
+  and the wasm artifact; keep it that way even if you only ship one today.
+- Wasm execution is instruction-metered per guest call (an instruction budget,
+  not a wall-clock deadline) and memory-capped by the declared maximum; a trap
+  or metering exhaustion is a contract violation the host strikes, not a data
+  error. Native and wasm instances share one host-side strike/quarantine loop.
 - Return `pj::Status` / `pj::Expected<T>`; do not throw. `Blob` uses nothrow
   allocation and protobuf matching is bounded, so allocation failure is a
   reported data error rather than a process abort or contract strike.

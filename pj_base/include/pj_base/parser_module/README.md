@@ -47,11 +47,19 @@ claims. `ObjectWriter` provides `image`, `pointCloud`, `depthImage`,
 `occupancyGrid`, `compressedPointCloud`, `mesh3D`, `videoFrame`,
 `occupancyGridUpdate`, and `voxelGrid` builders.
 
-Native modules are built with `pj_add_parser_module(... TARGETS native)`. The
-target links no SDK library; it receives this subtree only as an include path.
-`TARGETS wasm` is not available in SDK 0.22. The wasi-sdk gate compiles and
-statically audits a reactor fixture, but it does not provide wasm authoring or
-execution.
+Native and wasm modules are built with `pj_add_parser_module` using `TARGETS
+native`, `TARGETS wasm`, or both. Each target links no SDK library; it receives
+this subtree only as an include path. Wasm targets require `PJ_WASI_SDK_ROOT`
+to select wasi-sdk 27 and are post-linked through the installed
+`pj-wasm-embed-manifest` embed-and-audit frontend.
+
+WASI reactor modules use the same operational exports and compile with
+exceptions disabled. Their manifest is delivered in the
+`pj_parser_module_manifest` custom section, so the native-only manifest address
+and length exports are omitted automatically when targeting wasm. Authored
+reactors have an empty import set, a declared linear-memory maximum (default
+256 MiB, configurable with `PJ_PARSER_MODULE_WASM_MAX_MEMORY_BYTES`), and a
+declared table maximum (wasm-ld emits one; the host caps it at 65536 elements).
 
 See
 `.claude/skills/plotjuggler-plugin/references/parser-module.md` at the repository

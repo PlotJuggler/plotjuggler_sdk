@@ -162,6 +162,7 @@ if(PJ_INSTALL_SDK)
     cmake/PjPlugin.cmake
     cmake/PjCheckElfPluginExports.cmake
     cmake/PjParserModule.cmake
+    cmake/parser_module_wasi_no_io_stubs.cpp
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 endif()

@@ -21,9 +21,10 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
   VoxelGrid, PlotMarkers, GridMap) and their canonical wire codecs, the C-ABI protocol headers for
   DataSource/MessageParser/Toolbox + the C++ SDK base classes / host-view helpers built on them, the
   standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), the host-side
-  wasm parser-module manifest custom-section codec, and the test-only static WASI ABI auditor. The
-  0.22 authoring helper builds native parser modules only; wasm loading/execution is not present.
-  The absolute-time spine now also carries checked arithmetic shared across those layers.
+  wasm parser-module manifest custom-section codec + static wasm ABI inspector, and the installed
+  `pj-wasm-embed-manifest` CLI. `pj_add_parser_module(... TARGETS native wasm)` builds both
+  artifacts from one source (wasm needs `PJ_WASI_SDK_ROOT`, wasi-sdk 27). The absolute-time spine
+  now also carries checked arithmetic shared across those layers.
 - **descriptor_import_support** — a separate compiled component
   (`plotjuggler_sdk::descriptor_import_support`, headers under
   `pj_base/sdk/descriptor_import/`): the callee side of the descriptor-import
@@ -32,7 +33,9 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
   Only plugins that provide `pj.descriptor_import.v1` link it.
 - **pj_plugins** — host-side loaders + RAII handles + plugin **discovery** (directory scan +
   embedded-manifest inspection) for four plugin families (DataSource, MessageParser, Dialog, Toolbox),
-  parser claim admission/resolution and native functional parser-module execution,
+  parser claim admission/resolution, native functional parser-module execution, the optional
+  sandboxed wasm parser-module loader/runtime (Wasmer 7.0.1, in-tree only: gated on
+  `PJ_WASMER_ROOT`, never part of an installed package) with optional session budgets,
   config-envelope helpers, shared plugin-authoring policies
   (`pj_plugins/sdk/parser_array_policy.hpp`, `pj_plugins/sdk/timestamp_policy.hpp`), and the
   **dialog C ABI** (`pj_plugins/dialog_protocol/`). The
