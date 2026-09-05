@@ -220,7 +220,9 @@ class DataSourceRuntimeHostView {
   /// never "published". Not a cancellation mechanism — stop goes through the
   /// host's thread-safe stop path first. Old hosts (no slot) return an error;
   /// the plugin proceeds uncached.
-  [[nodiscard]] Status completeIngest(sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics) const;
+  [[nodiscard]] Status completeIngest(
+      sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
+      PJ_ingest_completion_flags_t flags = PJ_INGEST_COMPLETION_FLAG_NONE) const;
 
   /// Push a message via a deferred FetchMessageData callable. The DataSource
   /// hands the host a callable that produces the payload bytes when invoked.
@@ -459,8 +461,18 @@ class DatasetIngestHostView {
   }
 
   /// See DataSourceRuntimeHostView::completeIngest for the full contract.
-  [[nodiscard]] Status completeIngest(sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics) const {
-    return host_.completeIngest(outcome, requested_topics);
+  [[nodiscard]] Status completeIngest(
+      sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
+      PJ_ingest_completion_flags_t flags = PJ_INGEST_COMPLETION_FLAG_NONE) const {
+    return host_.completeIngest(outcome, requested_topics, flags);
+  }
+
+  /// Rider forward of the runtime host's thread-safe stop request: a provider
+  /// cancelling a finite download must call this BEFORE joining producers —
+  /// it is what wakes a producer blocked on lossless capture backpressure.
+  /// Safe from any thread; see DataSourceRuntimeHostView::requestStop.
+  void requestStop(DataSourceState terminal_state, std::string_view reason) const {
+    return host_.requestStop(terminal_state, reason);
   }
 
   /// Narrow parser-only facade over the same underlying context.

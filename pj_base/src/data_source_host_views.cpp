@@ -95,7 +95,8 @@ Status DataSourceRuntimeHostView::attachSourceRecord(std::string_view descriptor
 }
 
 Status DataSourceRuntimeHostView::completeIngest(
-    sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics) const {
+    sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
+    PJ_ingest_completion_flags_t flags) const {
   if (!valid()) {
     return unexpected(std::string("runtime host is not bound"));
   }
@@ -110,7 +111,7 @@ Status DataSourceRuntimeHostView::completeIngest(
   PJ_ingest_completion_t completion{};
   completion.struct_size = sizeof(PJ_ingest_completion_t);
   completion.outcome = static_cast<PJ_ingest_outcome_t>(outcome);
-  completion.flags = PJ_INGEST_COMPLETION_FLAG_NONE;
+  completion.flags = flags;
   completion.requested_topics = raw.data();
   completion.requested_topic_count = raw.size();
   PJ_error_t err{};

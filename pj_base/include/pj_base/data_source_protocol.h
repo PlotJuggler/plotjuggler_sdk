@@ -210,12 +210,20 @@ typedef enum PJ_ingest_outcome_t {
   PJ_INGEST_OUTCOME_FORCE_INT32 = 0x7FFFFFFF
 } PJ_ingest_outcome_t;
 
-/** Reserved for future completion modes. No flags are defined yet; a host
- *  treats any nonzero value as unknown and fails CLOSED for caching (the
- *  ingest itself is unaffected). */
+/** Completion modes. A host treats any bit outside
+ *  PJ_INGEST_COMPLETION_FLAGS_V1_MASK as unknown and fails CLOSED for
+ *  caching (the ingest itself is unaffected). */
 typedef uint64_t PJ_ingest_completion_flags_t;
 #define PJ_INGEST_COMPLETION_FLAG_NONE UINT64_C(0)
-#define PJ_INGEST_COMPLETION_FLAGS_V1_MASK UINT64_C(0)
+/** Only meaningful with PJ_INGEST_COMPLETED: attests that every requested
+ *  topic that produced ZERO captured messages was successfully fetched and
+ *  genuinely empty over its requested range — not skipped. It never
+ *  overrides host-observed failures, skipped payloads, cancellation, or
+ *  recorder losses, and it does not authorize an empty requested set. A
+ *  COMPLETED terminal without this flag leaves zero-message topics
+ *  indistinguishable from skips, making the request non-cacheable. */
+#define PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS (UINT64_C(1) << 0)
+#define PJ_INGEST_COMPLETION_FLAGS_V1_MASK PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS
 
 /**
  * Terminal report for one finite ingest context (complete_ingest below).
@@ -433,6 +441,10 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * the host's thread-safe stop path first (it has to wake producers blocked
    * on lossless capture backpressure before they can quiesce); completion is
    * what the stream thread reports afterwards.
+   *
+   * The topic list supplies COVERAGE evidence only; descriptor validation
+   * and allowlisting (attach_source_record's contract) remain a separate
+   * host obligation and are not weakened by any completion.
    *
    * A malformed completion (unknown outcome, unknown flags, inconsistent or
    * over-bound topic list) PERMANENTLY vetoes caching for this context — the

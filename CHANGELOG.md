@@ -43,6 +43,33 @@ moves from a private plugin-side compatibility extension into the public
 `PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST` feature macro so plugins can drop
 their local struct-size probes.
 
+### Feature: empty-topic attestation flag (MINOR)
+
+`PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS` — set with a COMPLETED
+terminal, a provider attests that requested topics with zero captured
+messages were successfully fetched and genuinely empty, not skipped. It
+never overrides host-observed failures and does not authorize an empty
+requested set; without it, zero-message topics keep the request
+non-cacheable. The validator admits only bits inside
+`PJ_INGEST_COMPLETION_FLAGS_V1_MASK` and refuses the flag on any other
+outcome. Both `completeIngest` wrappers take a defaulted flags argument.
+
+### Feature: Darwin export hardening in pj_configure_plugin (build-only)
+
+`pj_harden_plugin_exports` gains a macOS branch: plugin dylibs link with an
+ld64 `-exported_symbols_list` restricted to the C-ABI entry points (family
+getters as one glob — ld64 treats literal entries as required). Exported weak
+C++ symbols otherwise join dyld's process-wide weak coalescing at dlopen,
+letting plugins share one copy's statics and breaking pointer-based identity
+inside a plugin. The cmake-helpers fixture tests now run on macOS too.
+
+### Addition: DatasetIngestHostView::requestStop forwarding
+
+The canonical dataset-ingest facade exposed a stop *query* but hid the
+runtime host's thread-safe stop *request*; a provider cancelling a finite
+download must call it before joining producers (it is what wakes a producer
+blocked on lossless capture backpressure). Plain forwarding, no ABI change.
+
 No protocol version bumps, no minimum vtable size changes: additive tail
 slots only, gated by `PJ_HAS_TAIL_SLOT`.
 

@@ -4,7 +4,7 @@ pj_base is the **Level 0** foundation and the **SDK boundary** for plugin author
 
 ## Layout
 - `include/pj_base/` — vocabulary primitives: `types.hpp`, `time.hpp` (absolute time spine: `Timepoint`/`Duration` + `fromRaw`/`toRaw`), `type_tree.hpp`, `dataset.hpp`, `expected.hpp`, `span.hpp`, `number_parse.hpp`, `assert.hpp`, `diagnostic_sink.hpp`, `buffer_anchor.hpp`.
-- `include/pj_base/builtin/` — 18 builtin object struct headers (`*.hpp`; stable numeric tags with values 2 and 12 permanently reserved) + all 18 wire codecs (`*_codec.hpp`) + the `BuiltinObject` (`std::any`) type-erased holder and type-erased codec dispatcher.
+- `include/pj_base/builtin/` — 18 builtin object struct headers (`*.hpp`; stable numeric tags with values 2 and 12 permanently reserved) + all 18 wire codecs (`*_codec.hpp`) + the `BuiltinObject` tagged type-erased holder and the type-erased codec dispatcher.
 - `include/pj_base/sdk/` — C++ SDK over the ABI: DataSource + Toolbox `*_plugin_base.hpp`, `service_registry.hpp`/`service_traits.hpp`, host views, Arrow RAII holders, `testing/`.
 - `include/pj_base/*_protocol.h`, `plugin_data_api.h`, `builtin_object_abi.h`, `plugin_abi_export.hpp` — the stable C-ABI surface for DataSource/MessageParser/Toolbox (the Dialog protocol header lives in `pj_plugins/dialog_protocol/`).
 - `proto/pj/` — canonical `.proto` wire contracts for the builtin types (see its README).
@@ -14,7 +14,7 @@ pj_base is the **Level 0** foundation and the **SDK boundary** for plugin author
 ## Gotchas
 - ABI numbering is **frozen**: `BuiltinObjectType` (builtin_object.hpp) and `PJ_builtin_object_type_t` (builtin_object_abi.h) share stable numeric values — never renumber; types 2 and 12 are permanently reserved. Append-only.
 - Every vtable slot is `PJ_NOEXCEPT`; a throw across the ABI boundary calls `std::terminate`. See the header block in `plugin_data_api.h`.
-- `BuiltinObject` is `std::any`, deliberately not `std::variant`, for forward-compat — recover via `std::any_cast<T>` / `sdk::typeOf`. See `builtin/builtin_object.hpp`.
+- `BuiltinObject` stores its `BuiltinObjectType` tag explicitly next to the opaque value (deliberately not `std::variant`, for forward-compat; RTTI-free by design) — recover via `obj.get<T>()` / `sdk::typeOf`. See `builtin/builtin_object.hpp`.
 - Versioning follows the authoritative submodule CLAUDE.md → Release Versioning: a **tail-appended slot / new capability** (backward-compatible ABI *addition*, `abidiff` shows additions-only) is a **MINOR** and does **not** touch `abi/baseline.abi`; a **struct-layout reorder or signature change** (an ABI *break*) is a **MAJOR** — that is what refreshes `abi/baseline.abi` and bumps `PJ_*_PROTOCOL_VERSION`/`PJ_ABI_VERSION`.
 
 ## Read deeper

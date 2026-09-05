@@ -159,7 +159,7 @@ TEST(CopyIngestCompletionTest, UnknownOutcomeAndFlagsRefuse) {
   EXPECT_FALSE(copyIngestCompletion(&completion));
 
   completion = validCompletion({});
-  completion.flags = UINT64_C(1);  // no v1 flags exist
+  completion.flags = UINT64_C(1) << 1;  // outside the v1 mask
   EXPECT_FALSE(copyIngestCompletion(&completion));
 }
 
@@ -211,6 +211,37 @@ TEST(CopyIngestCompletionTest, AggregateNameBytesAreBounded) {
   auto result = copyIngestCompletion(&completion);
   ASSERT_FALSE(result);
   EXPECT_NE(result.error().find("byte bound"), std::string::npos);
+}
+
+TEST(CopyIngestCompletionTest, EmptyTopicAttestationFlagRules) {
+  // The known flag rides through with COMPLETED and is copied.
+  auto completion = validCompletion({});
+  completion.flags = PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS;
+  auto result = copyIngestCompletion(&completion);
+  ASSERT_TRUE(result) << result.error();
+  EXPECT_TRUE(result->attestsEmptyTopics());
+
+  // A failed or cancelled request cannot attest anything.
+  for (const auto outcome : {PJ_INGEST_FAILED, PJ_INGEST_CANCELLED}) {
+    completion = validCompletion({});
+    completion.outcome = outcome;
+    completion.flags = PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS;
+    EXPECT_FALSE(copyIngestCompletion(&completion));
+  }
+
+  // Any bit outside the v1 mask still fails closed.
+  completion = validCompletion({});
+  completion.flags = PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS | (UINT64_C(1) << 1);
+  EXPECT_FALSE(copyIngestCompletion(&completion));
+}
+
+TEST(IngestCompletionTest, FlagsFlowThroughTheWrapper) {
+  MockRuntimeHost host;
+  auto status =
+      host.view().completeIngest(IngestOutcome::kCompleted, {}, PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS);
+  ASSERT_TRUE(status) << status.error();
+  ASSERT_TRUE(host.copied);
+  EXPECT_TRUE(host.copied->attestsEmptyTopics());
 }
 
 TEST(CopyIngestCompletionTest, EmptyListIsStructurallyValid) {

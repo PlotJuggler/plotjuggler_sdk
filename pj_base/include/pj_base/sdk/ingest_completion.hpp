@@ -34,7 +34,12 @@ enum class IngestOutcome : int32_t {
 /// Host-owned copy of a validated completion (the C struct borrows its list).
 struct IngestCompletionRecord {
   IngestOutcome outcome = IngestOutcome::kFailed;
+  PJ_ingest_completion_flags_t flags = PJ_INGEST_COMPLETION_FLAG_NONE;
   std::vector<std::string> requested_topics;
+
+  [[nodiscard]] bool attestsEmptyTopics() const noexcept {
+    return (flags & PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS) != 0;
+  }
 };
 
 /// Structural bounds on the topic list (sanity limits, not product limits):
@@ -51,7 +56,9 @@ inline constexpr uint64_t kMaxIngestCompletionTotalNameBytes = uint64_t{4} << 20
 ///  - struct_size must cover the v1 fields; larger (newer) structs are fine —
 ///    only the known fields are read.
 ///  - outcome must be a known PJ_ingest_outcome_t value.
-///  - flags must be PJ_INGEST_COMPLETION_FLAG_NONE (no v1 flags exist).
+///  - flags must stay within PJ_INGEST_COMPLETION_FLAGS_V1_MASK, and
+///    ATTESTS_EMPTY_TOPICS is only meaningful with kCompleted — on any other
+///    outcome it refuses (a failed request cannot attest anything).
 ///  - the topic list must be self-consistent: a null pointer with a nonzero
 ///    count, an over-bound count, an empty or duplicate topic name all refuse.
 ///  - an empty list is structurally VALID (the empty-topic cacheability rule
@@ -71,8 +78,12 @@ inline constexpr uint64_t kMaxIngestCompletionTotalNameBytes = uint64_t{4} << 20
     default:
       return unexpected(std::string("unknown ingest outcome"));
   }
-  if (completion->flags != PJ_INGEST_COMPLETION_FLAG_NONE) {
+  if ((completion->flags & ~PJ_INGEST_COMPLETION_FLAGS_V1_MASK) != 0) {
     return unexpected(std::string("unknown completion flags"));
+  }
+  if ((completion->flags & PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS) != 0 &&
+      completion->outcome != PJ_INGEST_COMPLETED) {
+    return unexpected(std::string("empty-topic attestation requires a COMPLETED outcome"));
   }
   if (completion->requested_topics == nullptr && completion->requested_topic_count != 0) {
     return unexpected(std::string("null topic list with nonzero count"));
@@ -83,6 +94,7 @@ inline constexpr uint64_t kMaxIngestCompletionTotalNameBytes = uint64_t{4} << 20
 
   IngestCompletionRecord record;
   record.outcome = static_cast<IngestOutcome>(completion->outcome);
+  record.flags = completion->flags;
   record.requested_topics.reserve(static_cast<size_t>(completion->requested_topic_count));
   std::unordered_set<std::string_view> seen;
   seen.reserve(static_cast<size_t>(completion->requested_topic_count));
