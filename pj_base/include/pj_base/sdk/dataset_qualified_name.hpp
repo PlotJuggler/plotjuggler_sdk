@@ -21,7 +21,7 @@ namespace PJ::sdk {
 
 /// Result of splitting a series name that may carry the dataset qualifier,
 /// "dataset_source:topic/field".
-/// @since 0.26.0
+/// @since 0.28.0
 struct DatasetQualifierSplit {
   bool qualified = false;
   std::string dataset_source;  ///< the matched source name; empty when unqualified
@@ -32,7 +32,7 @@ struct DatasetQualifierSplit {
 /// Matching against known names instead of parsing at ':' means source names
 /// need no escaping — "[stream] UDP Server:/udp/data" works as-is — and a ':'
 /// inside an ordinary name can never be misread as a qualifier.
-/// @since 0.26.0
+/// @since 0.28.0
 [[nodiscard]] inline DatasetQualifierSplit splitDatasetQualifier(
     std::string_view name, Span<const std::string> source_names) {
   DatasetQualifierSplit out;
@@ -52,7 +52,7 @@ struct DatasetQualifierSplit {
 
 /// The canonical dataset-qualified form, "dataset_source:bare" — the inverse of
 /// splitDatasetQualifier for a loaded source name.
-/// @since 0.26.0
+/// @since 0.28.0
 [[nodiscard]] inline std::string qualifiedSeriesName(std::string_view dataset_source, std::string_view bare) {
   std::string out;
   out.reserve(dataset_source.size() + 1 + bare.size());

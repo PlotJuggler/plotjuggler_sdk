@@ -1126,8 +1126,7 @@ typedef struct PJ_playback_host_vtable_t {
    * representative dataset. Current-frame semantics (see the service
    * doc-comment). An unknown topic is an error. */
   bool (*to_display_time)(
-      void* ctx, PJ_string_view_t topic, int64_t absolute_ns, double* out_display_s, PJ_error_t* out_error)
-      PJ_NOEXCEPT;
+      void* ctx, PJ_string_view_t topic, int64_t absolute_ns, double* out_display_s, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_playback_host_vtable_t;
 
 typedef struct {
@@ -1226,8 +1225,7 @@ typedef struct PJ_plot_tab_host_vtable_t {
    * of out_ids are filled and point into host storage valid only until the next
    * call on this vtable. Owning no tab is success with *out_count == 0. */
   bool (*list_tab_ids)(
-      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
+      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Read back what a tab actually holds, as JSON
    * {"title":"...","curves":[{"topic":"...","field":"...","dataset":"..."}]}.
@@ -1238,8 +1236,8 @@ typedef struct PJ_plot_tab_host_vtable_t {
    * JSON: any character needing escaping in a topic or field is escaped here.
    * *out_config_json is borrowed, valid only until the next call on this
    * vtable. Unknown id is an error. */
-  bool (*tab_config)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t* out_config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+  bool (*tab_config)(void* ctx, PJ_string_view_t id, PJ_string_view_t* out_config_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 
   /* [main-thread] Draw one curve in a tab of this plugin's. The series is named
    * by its parts, not a joined path, because field paths legitimately contain
@@ -1249,8 +1247,8 @@ typedef struct PJ_plot_tab_host_vtable_t {
    * with the qualified candidates rather than picking. Adding a curve already
    * present is not an error. */
   bool (*add_curve)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field,
-      PJ_string_view_t dataset_source, PJ_error_t* out_error) PJ_NOEXCEPT;
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Take one curve back out. `dataset_source` resolves by the
    * same rule as in add_curve — empty means "the topic/field must be unique" —
@@ -1258,8 +1256,8 @@ typedef struct PJ_plot_tab_host_vtable_t {
    * the resolved name tab_config reports. A curve that is not there is an
    * error, so a mistaken path is visible rather than silently accepted. */
   bool (*remove_curve)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field,
-      PJ_string_view_t dataset_source, PJ_error_t* out_error) PJ_NOEXCEPT;
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Remove every curve from a tab, keeping the tab itself. */
   bool (*clear_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;

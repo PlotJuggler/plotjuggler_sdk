@@ -1042,6 +1042,9 @@ template <class ListSlot>
   if (count != 0 && !slot(ctx, borrowed.data(), borrowed.size(), &filled, &err)) {
     return unexpected(errorToString(err));
   }
+  if (filled > borrowed.size()) {
+    return unexpected("host string list grew during enumeration; retry the call");
+  }
   std::vector<std::string> out;
   out.reserve(filled);
   for (uint64_t i = 0; i < filled; ++i) {
@@ -1889,7 +1892,8 @@ class PlotTabHostView {
   }
 
   /// Enumerate the ids of this plugin's live tabs (owned copies). Owning none is
-  /// success with an empty vector.
+  /// success with an empty vector. If the list grows between the count and fill
+  /// calls, returns an error so the caller can retry instead of reading a partial list.
   [[nodiscard]] Expected<std::vector<std::string>> list() const {
     if (!valid() || host_.vtable->list_tab_ids == nullptr) {
       return unexpected("plot tab host is not bound");

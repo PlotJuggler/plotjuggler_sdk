@@ -95,7 +95,7 @@ bool ptListTabIds(
   for (uint64_t i = 0; i < filled; ++i) {
     out_ids[i] = sdk::toAbiString(self->tabs[i].id);
   }
-  *out_count = filled;
+  *out_count = total;
   return true;
 }
 
@@ -223,6 +223,26 @@ TEST(PlotTabApiTest, ListOnAnEmptyHostSucceedsWithNoTabs) {
   auto ids = view.list();
   ASSERT_TRUE(ids) << ids.error();
   EXPECT_TRUE(ids->empty());
+}
+
+TEST(PlotTabApiTest, ListGrowthReturnsAnErrorWithoutReadingPastCapacity) {
+  int calls = 0;
+  auto vtable = makePlotTabVtable();
+  vtable.list_tab_ids = [](void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count,
+                           PJ_error_t*) noexcept {
+    ++*static_cast<int*>(ctx);
+    *out_count = capacity == 0 ? 1 : 2;
+    if (capacity != 0) {
+      out_ids[0] = sdk::toAbiString("tab-a");
+    }
+    return true;
+  };
+  sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &calls, .vtable = &vtable});
+
+  auto ids = view.list();
+  ASSERT_FALSE(ids);
+  EXPECT_NE(ids.error().find("retry"), std::string::npos);
+  EXPECT_EQ(calls, 2);
 }
 
 TEST(PlotTabApiTest, ConfigReadsBackWhatWasActuallyAdded) {

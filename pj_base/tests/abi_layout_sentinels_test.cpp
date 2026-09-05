@@ -69,7 +69,7 @@ static_assert(offsetof(PJ_error_t, extended_kind) == 272, "PJ_error_t layout pin
 // --- PJ_playback_state_t (ABI-FROZEN) -----------------------------------------
 // bool + 7 padding bytes + 4 doubles: the alignment-hole shape this test exists
 // to pin. Growth goes through a get_state_v2 tail slot, never through this struct.
-static_assert(sizeof(PJ_playback_state_t) == 40, "PJ_playback_state_t size pinned at introduction (0.16.0)");
+static_assert(sizeof(PJ_playback_state_t) == 40, "PJ_playback_state_t size pinned at introduction (0.28.0)");
 static_assert(alignof(PJ_playback_state_t) == 8, "PJ_playback_state_t alignment pinned");
 static_assert(offsetof(PJ_playback_state_t, is_playing) == 0, "PJ_playback_state_t layout pinned");
 static_assert(offsetof(PJ_playback_state_t, current_time_s) == 8, "PJ_playback_state_t layout pinned");

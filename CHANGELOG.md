@@ -69,9 +69,9 @@ Plugins that emit qualified names pin `plotjuggler_sdk/[>=0.28.0 <1.0.0]`. No AB
 `abi/baseline.abi` is untouched. Addressing two datasets that share one source name stays
 out of contract (ambiguous → error); a typed dataset id would be a tail-appended addition.
 
-### Added — host services `pj.playback.v1` and `pj.viewport.v1` (MINOR, additions only)
+### Added — host services `pj.playback.v1`, `pj.viewport.v1`, and `pj.plot_tabs.v1` (MINOR)
 
-Two new optional host services so a plugin (first consumer: the Assistant Agent
+Three new optional host services so a plugin (first consumer: the Assistant Agent
 toolbox) can drive the app like a user — transport and zoom — without any new
 executable surface crossing the ABI:
 
@@ -96,15 +96,15 @@ executable surface crossing the ABI:
   source — rather than a joined path, because field paths contain `/` and
   dataset names contain `:`, and an empty dataset source requires the pair to be
   unique. `tab_config` reads back what a tab actually holds, so a caller can
-  report what was drawn instead of what it asked for.
+  report what was drawn instead of what it asked for. The C++ list wrapper
+  reports an error if the count grows between enumeration calls, allowing a
+  retry without reading past the allocated buffer.
 
 The boundary these two draw is the VIEW. `pj.playback.v1` stays global by
 nature: one time cursor is shared by every plot.
 
-No existing struct or vtable slot was touched — every already-built plugin keeps
-working with no recompile (`abidiff`: additions only). `pj.viewport.v1`'s two
-slots keep their signatures; only their documented scope narrowed, and it has
-never shipped.
+These services add new types without changing existing vtable slots, so
+already-built plugins keep working with no recompile.
 
 ### Added — `QListWidget` row context menu: `onItemContextAction` (MINOR, additions only)
 
