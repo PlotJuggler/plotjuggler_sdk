@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.28.0] (Unreleased)
+## [0.28.0]
 
 ### Feature: source-record attachment for the host source cache (MINOR)
 
