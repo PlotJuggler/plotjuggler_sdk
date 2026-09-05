@@ -1,12 +1,12 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include "pj_base/sdk/dataset_qualified_name.hpp"
-
 #include <gtest/gtest.h>
 
 #include <string>
 #include <vector>
+
+#include "pj_base/sdk/dataset_qualified_name.hpp"
 
 namespace PJ::sdk {
 namespace {
@@ -65,6 +65,32 @@ TEST(QualifiedSeriesName, RoundTripsThroughSplit) {
   EXPECT_TRUE(split.qualified);
   EXPECT_EQ(split.dataset_source, "session 12.mcap");
   EXPECT_EQ(split.bare, "/imu/accel/x");
+}
+
+TEST(QualifiedSeriesName, OverlappingPrefixesAreCatalogDependent) {
+  const std::string name = qualifiedSeriesName("a", "b:/t/f");
+  EXPECT_EQ(name, qualifiedSeriesName("a:b", "/t/f"));
+
+  const std::vector<std::string> both = {"a", "a:b"};
+  const auto longest = splitDatasetQualifier(name, both);
+  EXPECT_EQ(longest.dataset_source, "a:b");
+  EXPECT_EQ(longest.bare, "/t/f");
+
+  const std::vector<std::string> only_a = {"a"};
+  const auto shorter = splitDatasetQualifier(name, only_a);
+  EXPECT_EQ(shorter.dataset_source, "a");
+  EXPECT_EQ(shorter.bare, "b:/t/f");
+}
+
+TEST(SplitDatasetQualifier, ColonsStayBareUnlessALoadedPrefixMatches) {
+  const std::vector<std::string> sources = {"run"};
+  const auto bare = splitDatasetQualifier("sensor:status/value", sources);
+  EXPECT_FALSE(bare.qualified);
+  EXPECT_EQ(bare.bare, "sensor:status/value");
+
+  const auto qualified = splitDatasetQualifier("run:sensor:status/value", sources);
+  EXPECT_EQ(qualified.dataset_source, "run");
+  EXPECT_EQ(qualified.bare, "sensor:status/value");
 }
 
 }  // namespace

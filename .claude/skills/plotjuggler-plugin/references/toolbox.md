@@ -65,6 +65,18 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
   it returns a nullable `const ToolboxObjectReadHostView*`. Null-check it before
   reading ObjectStore data.
 - **`runtimeHost()`** — control plane: `notifyDataChanged()`, `reportMessage()`.
+- **SDK 0.28.0 optional services**, via `services().get<T>()` from
+  `pj_base/sdk/service_traits.hpp`: `PlaybackHostService`, `ViewportHostService`,
+  and `PlotTabHostService`. Playback is global; viewport and tabs are scoped to
+  the caller's own tabs. Tab IDs are independent of visible titles and indices.
+  Prefer `playback->toDisplayTimeForSource(source_handle, absolute_ns)` for
+  dataset-specific time conversion; get the handle from catalog `dataSources()`
+  or a topic's `source`. Check errors: older hosts may lack the tail slot, and
+  unloaded handles fail. `toDisplayTime(topic, ns)` rejects ambiguous topics;
+  empty topic explicitly selects the representative dataset. Recompute display
+  seconds after offset edits. Full examples and the catalog-dependent
+  `dataset_source:topic/field` lookup rules are in
+  `pj_plugins/docs/toolbox-guide.md` → "Playback, viewport, and owned tabs".
 
 ## Reading a series (Arrow)
 

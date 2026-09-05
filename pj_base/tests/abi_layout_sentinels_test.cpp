@@ -77,6 +77,11 @@ static_assert(offsetof(PJ_playback_state_t, range_min_s) == 16, "PJ_playback_sta
 static_assert(offsetof(PJ_playback_state_t, range_max_s) == 24, "PJ_playback_state_t layout pinned");
 static_assert(offsetof(PJ_playback_state_t, playback_rate) == 32, "PJ_playback_state_t layout pinned");
 
+// Playback vtable: source selection extends the existing topic-based prefix.
+static_assert(offsetof(PJ_playback_host_vtable_t, to_display_time) == 48, "topic conversion slot stays fixed");
+static_assert(offsetof(PJ_playback_host_vtable_t, to_display_time_for_source) == 56, "source conversion is appended");
+static_assert(sizeof(PJ_playback_host_vtable_t) == 64, "playback vtable size in 0.28.0");
+
 // --- Service registry (fat pointer types) ------------------------------------
 static_assert(sizeof(PJ_service_t) == 16, "PJ_service_t fat pointer pinned");
 static_assert(sizeof(PJ_service_registry_t) == 16, "PJ_service_registry_t fat pointer pinned");

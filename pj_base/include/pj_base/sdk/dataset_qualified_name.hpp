@@ -6,10 +6,9 @@
 // string across the plugin boundary (normative statement in plugin_data_api.h,
 // DATASET-QUALIFIED NAMES). A series' full identity is (dataset, topic, field);
 // a bare "topic/field" name is an abbreviation that stops being unique the
-// moment two loaded datasets share topic names. The canonical serialized
-// identity is "dataset_source:topic/field" — the same form hosts print — and
-// this header is the shared parser/composer for it, so hosts and plugins never
-// drift.
+// moment two loaded datasets share topic names. The catalog-dependent lookup
+// form is "dataset_source:topic/field". This helper splits that form; the host
+// still validates the resulting name and rejects ambiguous dataset matches.
 
 #include <cstddef>
 #include <string>
@@ -29,9 +28,11 @@ struct DatasetQualifierSplit {
 };
 
 /// Split `name` against the KNOWN dataset source names (longest match wins).
-/// Matching against known names instead of parsing at ':' means source names
-/// need no escaping — "[stream] UDP Server:/udp/data" works as-is — and a ':'
-/// inside an ordinary name can never be misread as a qualifier.
+/// Source names may contain ':' or spaces, e.g. "[stream] UDP Server".
+/// With no matching prefix the entire input stays bare, including any colons;
+/// an unknown qualifier cannot be distinguished from a colon in a bare name.
+/// A matching loaded prefix takes precedence over a bare interpretation.
+/// This does not validate existence or uniqueness of the resolved dataset/series.
 /// @since 0.28.0
 [[nodiscard]] inline DatasetQualifierSplit splitDatasetQualifier(
     std::string_view name, Span<const std::string> source_names) {
@@ -50,8 +51,10 @@ struct DatasetQualifierSplit {
   return out;
 }
 
-/// The canonical dataset-qualified form, "dataset_source:bare" — the inverse of
-/// splitDatasetQualifier for a loaded source name.
+/// Compose "dataset_source:bare". This round-trips through splitDatasetQualifier
+/// only while dataset_source is the longest loaded matching prefix. For example,
+/// ("a", "b:/t/f") and ("a:b", "/t/f") compose identically; with both sources
+/// loaded the splitter chooses "a:b". This string is not a persistent identity.
 /// @since 0.28.0
 [[nodiscard]] inline std::string qualifiedSeriesName(std::string_view dataset_source, std::string_view bare) {
   std::string out;

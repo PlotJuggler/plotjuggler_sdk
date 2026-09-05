@@ -52,12 +52,13 @@ explicit in the `PJ_data_processors_host_vtable_t` doc block (DATASET-QUALIFIED 
 
 - A series' full identity is (dataset, topic, field); a bare name is an abbreviation. An
   input MAY carry the qualifier `dataset_source:topic/field` — the same form hosts print
-  as a series identity, so displayed names round-trip as inputs.
+  as a series label. This is a catalog-dependent lookup syntax.
 - The qualifier is matched against the **loaded** source names (longest match wins), never
   split blindly at `:` — stream-style source names like `[stream] UDP Server` need no
-  escaping.
-- A qualifier matching no loaded dataset is an error (no fallback to the bare reading); a
-  bare name that exists in several datasets MUST be refused with the qualified candidates,
+  escaping. Colons in both source and bare names can create overlapping prefixes;
+  composition round-trips only while the intended source is the longest loaded match.
+- An unmatched prefix leaves the entire name as a bare lookup, without stripping it;
+  unknown whole names fail. A bare name in several datasets MUST be refused with qualified candidates,
   never resolved by load order; qualified inputs of one processor must agree on a single
   dataset. Marker per-series output keys accept the qualifier the same way.
 
@@ -79,7 +80,12 @@ executable surface crossing the ABI:
   `sdk::PlaybackHostService`): `play` / `pause` / `seek` / `set_playback_rate` /
   `get_state` (ABI-frozen `PJ_playback_state_t` snapshot) / `to_display_time`
   (absolute int64 ns → display-axis seconds, per-topic dataset offset;
-  current-frame semantics). All times are display-axis seconds.
+  current-frame semantics). Nonempty topics must identify exactly one dataset;
+  unknown or ambiguous topics fail. The optional tail slot `to_display_time_for_source`
+  (`sdk::PlaybackHostView::toDisplayTimeForSource`) selects a catalog data-source
+  handle explicitly, allowing conversion when topic or source names repeat. Invalid
+  or unloaded handles fail. Its wrapper checks `struct_size` and reports unsupported
+  on older hosts, preserving the existing topic-based call. All times are display-axis seconds.
 - **`pj.viewport.v1`** (`PJ_viewport_host_vtable_t`, `sdk::ViewportHostView`,
   `sdk::ViewportHostService`): `zoom_to_time_range` (X window in display-axis
   seconds; per-plot Y preserved; XY/empty plots untouched) and `zoom_reset`
@@ -90,7 +96,9 @@ executable surface crossing the ABI:
   `sdk::PlotTabHostService`): a plugin composes plotting tabs of its own —
   `create_tab` / `close_tab` / `list_tab_ids` / `tab_config` / `add_curve` /
   `remove_curve` / `clear_tab`. Ids are plugin-chosen and namespaced per plugin
-  (the `pj.data_processors.v1` discipline), and every slot is scoped to the
+  (the `pj.data_processors.v1` discipline). IDs are independent of visible titles,
+  which may repeat or be renamed; recreating an ID replaces its tab contents.
+  Every slot is scoped to the
   caller's own tabs, so the user's tabs are neither disclosed nor mutable
   through it. Curves are addressed by their parts — topic, field, dataset
   source — rather than a joined path, because field paths contain `/` and

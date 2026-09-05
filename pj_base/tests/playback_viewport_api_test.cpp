@@ -4,6 +4,8 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
+#include <memory>
 #include <string>
 
 #include "pj_base/plugin_data_api.h"
@@ -25,6 +27,7 @@ struct FakePlaybackHost {
   PJ_playback_state_t state{};
 
   std::string last_topic;
+  PJ_data_source_handle_t last_source{};
   int64_t last_absolute_ns = 0;
   int64_t display_offset_ns = 0;
 };
@@ -94,6 +97,19 @@ bool pbToDisplayTime(
   return true;
 }
 
+bool pbToDisplayTimeForSource(
+    void* ctx, PJ_data_source_handle_t source, int64_t absolute_ns, double* out_display_s,
+    PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<FakePlaybackHost*>(ctx);
+  if (pbFail(self, out_error)) {
+    return false;
+  }
+  self->last_source = source;
+  self->last_absolute_ns = absolute_ns;
+  *out_display_s = static_cast<double>(absolute_ns - self->display_offset_ns) * 1e-9;
+  return true;
+}
+
 PJ_playback_host_vtable_t makePlaybackVtable() {
   return PJ_playback_host_vtable_t{
       .protocol_version = 1,
@@ -104,6 +120,7 @@ PJ_playback_host_vtable_t makePlaybackVtable() {
       .set_playback_rate = pbSetRate,
       .get_state = pbGetState,
       .to_display_time = pbToDisplayTime,
+      .to_display_time_for_source = pbToDisplayTimeForSource,
   };
 }
 
@@ -207,6 +224,47 @@ TEST(PlaybackApiTest, HostFailureSurfacesError) {
   auto status = view.play();
   EXPECT_FALSE(status);
   EXPECT_NE(status.error().find("playback boom"), std::string::npos);
+}
+
+TEST(PlaybackApiTest, SourceConversionForwardsHandleTimestampAndHostError) {
+  FakePlaybackHost host;
+  host.display_offset_ns = 1'000'000'000;
+  const auto vtable = makePlaybackVtable();
+  sdk::PlaybackHostView view(PJ_playback_host_t{.ctx = &host, .vtable = &vtable});
+
+  const auto result = view.toDisplayTimeForSource({42}, 3'500'000'000);
+  ASSERT_TRUE(result) << result.error();
+  EXPECT_EQ(host.last_source.id, 42u);
+  EXPECT_EQ(host.last_absolute_ns, 3'500'000'000);
+  EXPECT_DOUBLE_EQ(*result, 2.5);
+
+  host.should_fail = true;
+  const auto failed = view.toDisplayTimeForSource({42}, 0);
+  ASSERT_FALSE(failed);
+  EXPECT_NE(failed.error().find("playback boom"), std::string::npos);
+}
+
+TEST(PlaybackApiTest, SourceConversionIsOptionalOnLegacyHosts) {
+  FakePlaybackHost host;
+  auto vtable = makePlaybackVtable();
+  vtable.to_display_time_for_source = nullptr;
+  sdk::PlaybackHostView view(PJ_playback_host_t{.ctx = &host, .vtable = &vtable});
+  EXPECT_FALSE(view.toDisplayTimeForSource({42}, 0));
+  EXPECT_TRUE(view.toDisplayTime("topic", 0));
+
+  // The allocation ends at the legacy vtable boundary, so ASAN detects a tail
+  // read performed before checking struct_size.
+  constexpr auto legacy_size = offsetof(PJ_playback_host_vtable_t, to_display_time_for_source);
+  vtable.struct_size = legacy_size;
+  auto legacy = std::make_unique<unsigned char[]>(legacy_size);
+  std::memcpy(legacy.get(), &vtable, legacy_size);
+  const sdk::PlaybackHostView old_view(
+      PJ_playback_host_t{.ctx = &host, .vtable = reinterpret_cast<const PJ_playback_host_vtable_t*>(legacy.get())});
+  const auto result = old_view.toDisplayTimeForSource({42}, 0);
+  ASSERT_FALSE(result);
+  EXPECT_NE(result.error().find("not supported"), std::string::npos);
+  EXPECT_TRUE(old_view.toDisplayTime("topic", 0));
+  EXPECT_FALSE(sdk::PlaybackHostView{}.toDisplayTimeForSource({42}, 0));
 }
 
 TEST(PlaybackApiTest, UnboundViewReportsNotBound) {

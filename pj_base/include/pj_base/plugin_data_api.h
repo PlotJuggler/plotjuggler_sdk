@@ -947,9 +947,12 @@ typedef struct {
  * qualifier "dataset_source:topic/field" — the same form hosts print as a series
  * identity (shared parser/composer: sdk/dataset_qualified_name.hpp). The qualifier
  * is matched against the LOADED source names (longest match wins), never split
- * blindly at ':', so source names need no escaping. The host MUST enforce:
- *   - a qualifier matching no loaded dataset is an error — no fallback to reading
- *     the whole string as a bare name;
+ * blindly at ':'. This is a catalog-dependent lookup syntax: an unmatched prefix
+ * leaves the ENTIRE string as a bare name; the host must never guess by stripping
+ * it. Colons are legal in both source and bare names, so composition round-trips
+ * only when the intended source remains the longest loaded matching prefix.
+ * The host MUST enforce:
+ *   - an unknown whole name is an error;
  *   - a bare name that exists in SEVERAL loaded datasets is refused, reporting the
  *     qualified candidates — NEVER resolved by load order;
  *   - all qualified inputs of one processor agree on a single dataset.
@@ -1124,9 +1127,20 @@ typedef struct PJ_playback_host_vtable_t {
    * read/write surfaces speak) into display-axis seconds, using the display
    * offset of the dataset that owns `topic`. An empty topic uses the host's
    * representative dataset. Current-frame semantics (see the service
-   * doc-comment). An unknown topic is an error. */
+   * doc-comment). A nonempty topic must identify exactly one loaded dataset;
+   * unknown or ambiguous topics are errors. Use to_display_time_for_source to
+   * select a dataset explicitly when topic names repeat. */
   bool (*to_display_time)(
       void* ctx, PJ_string_view_t topic, int64_t absolute_ns, double* out_display_s, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Convert absolute nanoseconds using the display offset of
+   * `source`, a data-source handle obtained from this host's catalog. Invalid
+   * (id == 0) or unloaded handles are errors; no representative-dataset fallback.
+   * The result has the same current-frame semantics as to_display_time.
+   * Optional tail slot: test struct_size and the function pointer before use. */
+  bool (*to_display_time_for_source)(
+      void* ctx, PJ_data_source_handle_t source, int64_t absolute_ns, double* out_display_s,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_playback_host_vtable_t;
 
 typedef struct {
@@ -1188,6 +1202,8 @@ typedef struct {
  * plugin's: it is enforced where ownership is known, and ownership is derived
  * from `ctx`, never passed in.
  *
+ * Ids are independent of visible titles: titles may repeat or be renamed
+ * without changing an id. Tab indices are presentation order, not identity.
  * Ids are chosen by the plugin and namespaced per plugin by the host (the
  * "pj.data_processors.v1" discipline), so an id is unique within this binding
  * and cannot collide with another plugin's. The resemblance stops there, and

@@ -1782,7 +1782,9 @@ class PlaybackHostView {
 
   /// Convert an ABSOLUTE nanosecond timestamp into display-axis seconds using
   /// the display offset of the dataset owning `topic` (empty topic = the
-  /// host's representative dataset). Current-frame semantics.
+  /// host's representative dataset). Unknown or ambiguous nonempty topics are
+  /// errors; use toDisplayTimeForSource to select a dataset explicitly.
+  /// Current-frame semantics.
   [[nodiscard]] Expected<double> toDisplayTime(std::string_view topic, int64_t absolute_ns) const {
     if (!valid() || host_.vtable->to_display_time == nullptr) {
       return unexpected("playback host is not bound");
@@ -1790,6 +1792,21 @@ class PlaybackHostView {
     double display_s = 0.0;
     PJ_error_t err{};
     if (!host_.vtable->to_display_time(host_.ctx, toAbiString(topic), absolute_ns, &display_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return display_s;
+  }
+
+  /// Convert absolute nanoseconds using this catalog source's display offset.
+  /// Invalid or unloaded handles are errors. Re-query after source-offset edits.
+  /// Hosts without the optional tail slot report unsupported.
+  [[nodiscard]] Expected<double> toDisplayTimeForSource(DataSourceHandle source, int64_t absolute_ns) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_playback_host_vtable_t, host_.vtable, to_display_time_for_source)) {
+      return unexpected("source-scoped display-time conversion is not supported by this host");
+    }
+    double display_s = 0.0;
+    PJ_error_t err{};
+    if (!host_.vtable->to_display_time_for_source(host_.ctx, source, absolute_ns, &display_s, &err)) {
       return unexpected(errorToString(err));
     }
     return display_s;
@@ -1804,7 +1821,7 @@ class PlaybackHostView {
 // ---------------------------------------------------------------------------
 
 /// C++ wrapper around PJ_viewport_host_t — optional zoom control over the
-/// host's open time-series plots (service "pj.viewport.v1").
+/// calling plugin's own plots (service "pj.viewport.v1").
 /// Empty-constructible; `valid()` tells whether the host exposed the service.
 /// All calls are main-thread; times are display-axis seconds.
 class ViewportHostView {
@@ -1816,7 +1833,7 @@ class ViewportHostView {
     return host_.vtable != nullptr && host_.ctx != nullptr;
   }
 
-  /// Set every open time-series plot's visible X window to [t0_s, t1_s].
+  /// Set every time-series plot in this plugin's tabs to the X window [t0_s, t1_s].
   /// Each plot keeps its own Y range; XY and empty plots are untouched.
   /// Requires finite t0_s < t1_s.
   [[nodiscard]] Status zoomToTimeRange(double t0_s, double t1_s) const {
@@ -1830,7 +1847,7 @@ class ViewportHostView {
     return okStatus();
   }
 
-  /// Reset every open plot to fit its data (the host's "zoom out all").
+  /// Reset every plot in this plugin's tabs to fit its data.
   [[nodiscard]] Status zoomReset() const {
     if (!valid() || host_.vtable->zoom_reset == nullptr) {
       return unexpected("viewport host is not bound");

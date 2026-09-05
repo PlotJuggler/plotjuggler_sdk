@@ -201,8 +201,8 @@ struct PlaybackHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
-/// Optional viewport control: zoom every open time-series plot to a
-/// display-seconds X window, or reset all plots to fit their data. Hosts
+/// Optional viewport control: zoom the calling plugin's own time-series plots to
+/// a display-seconds X window, or reset its own plots to fit their data. Hosts
 /// without plots (headless) simply do not register it.
 struct ViewportHostService {
   static constexpr const char* kName = "pj.viewport.v1";
