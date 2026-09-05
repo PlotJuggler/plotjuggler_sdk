@@ -3,6 +3,37 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.28.0]
+
+### Feature: source-record attachment for the host source cache (MINOR)
+
+`PJ_data_source_runtime_host_vtable_t` gains one tail slot,
+`attach_source_record(ctx, descriptor_json, out_error)`, with the C++ wrapper
+`DataSourceRuntimeHostView::attachSourceRecord`, also exposed on
+`DatasetIngestHostView`. At download start, a provider declares the canonical
+descriptor of the reproducible request its source answers. The host copies
+and stores the bytes verbatim, keys its cache on its own digest of those
+bytes, and scopes the record by the provider id from the binding, enabling
+the host-driven transparent source cache: captured downloads replayed from
+disk on the next restore of the same request, with no provider involvement on
+a hit.
+
+Contract: call on the stream thread; the last attachment before the first
+`push_message` on this ingest context wins. Byte-identical repeats before
+ingest are idempotent; any attachment after ingest begins is an error.
+The host may stage the record until its ingest transaction commits, so an
+in-place refill or replacing reload does not discard an early attachment.
+The host bounds and parses the descriptor and rejects unknown fields.
+Failure is a contract failure, never a trust verdict, and never affects
+ingest. Matching is byte-exact, so providers must serialize the same request
+identically. The descriptor is request identity, never parser policy, and
+must never carry authentication material. A host that predates the slot reads as
+"no caching" through `PJ_HAS_TAIL_SLOT`; the wrapper reports the absence
+explicitly so new plugins can detect it. Reachable from streaming sources and
+from toolbox parser-ingest contexts alike (both hold the runtime-host fat
+pointer). Runtime-host vtable size grows 104 → 112, `attach_source_record`
+at offset 104. ABI-appendable growth only; `abi/baseline.abi` untouched.
+
 ## [0.27.1]
 
 ### Fix: hosts validate a spliced `GridMap` right after attaching its bytes (PATCH)
