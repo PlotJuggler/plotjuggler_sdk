@@ -40,6 +40,7 @@ The wasm executor is an in-tree component gated on `PJ_WASMER_ROOT`; installed
 packages stay wasmer-free and ship the authoring preset and tool only.
 `NativeParserModule::load(path, sink)` is unchanged from 0.22: admission
 accounting happens only through the new budget overload.
+
 ## [0.28.0]
 
 ### Feature: source-record attachment for the host source cache (MINOR)
