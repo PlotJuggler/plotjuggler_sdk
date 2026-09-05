@@ -5,7 +5,7 @@
 //
 //   1. DataSourceRuntimeHostView::attachSourceRecord flows the descriptor
 //      bytes through the slot; the host copies during the call.
-//   2. A host error (e.g. conflicting re-attach) surfaces as the host's own
+//   2. A host error (e.g. exceeding descriptor bounds) surfaces as the host's own
 //      message, never as a silent success.
 //   3. When the host predates the slot (short struct_size / NULL field), the
 //      call returns an explicit error — a NEW plugin on an OLD host detects
@@ -61,7 +61,7 @@ class MockHost {
     self->captured.assign(descriptor_json.data, descriptor_json.size);
     if (self->refuse) {
       if (err != nullptr) {
-        std::snprintf(err->message, sizeof(err->message), "source already carries a different record");
+        std::snprintf(err->message, sizeof(err->message), "descriptor exceeds host policy bounds");
       }
       return false;
     }
@@ -88,7 +88,7 @@ TEST(AttachSourceRecordTest, HostRefusalCarriesTheHostsReason) {
 
   auto status = host.view().attachSourceRecord(R"({"v":1})");
   ASSERT_FALSE(status);
-  EXPECT_NE(status.error().find("different record"), std::string::npos);
+  EXPECT_NE(status.error().find("policy bounds"), std::string::npos);
 }
 
 TEST(AttachSourceRecordTest, ReturnsErrorWhenSlotMissing) {

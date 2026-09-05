@@ -803,11 +803,7 @@ whole-source pause. Two independent additions, both `struct_size`/
 
 - **Plugin → host advertise.** A second tail slot on the runtime host,
   `notify_available_topics(ctx, topics, count, out_error)` (offset 96,
-  growing `sizeof(PJ_data_source_runtime_host_vtable_t) —
-  followed in 0.28 by `attach_source_record` (offset 104, size 104 → 112,
-  the source-cache record declaration)` 96 → 104) —
-  followed in 0.28 by `attach_source_record` (offset 104, size 104 → 112,
-  the source-cache record declaration), carrying
+  growing `sizeof(PJ_data_source_runtime_host_vtable_t)` 96 → 104), carrying
   `PJ_available_topic_t{topic_name, parser_encoding, type_name, schema}` —
   the same parser-identifying fields as `PJ_parser_binding_request_t` minus
   `parser_config_json` (not yet known pre-subscription), so the host can
@@ -828,3 +824,21 @@ whole-source pause. Two independent additions, both `struct_size`/
 
 See `docs/data-source-guide.md` → "Per-topic pause (demand-driven
 subscription)" for the plugin-author walkthrough.
+
+## Source-cache attachment
+
+SDK 0.28 appends `attach_source_record(ctx, descriptor_json, out_error)` to
+the runtime-host vtable at offset 104, growing its size 104 → 112. Providers
+call it on the stream thread at download start. The host copies and stores
+the descriptor bytes verbatim, keys its cache on its own digest, and scopes
+the record by the provider id from the binding. Matching is byte-exact;
+the host bounds and parses the descriptor and rejects unknown fields.
+
+The last attachment before the ingest context's first `push_message` wins;
+byte-identical repeats before ingest are idempotent. Any attachment after
+ingest begins is an error. The host may stage the record until its ingest
+transaction commits so a refill or reload does not discard it. Failure never
+affects ingest. The descriptor identifies the request, carries no credentials,
+and leaves parser policy to the layout. `DataSourceRuntimeHostView` and
+`DatasetIngestHostView` expose `attachSourceRecord`; hosts predating the slot
+are detected with `PJ_HAS_TAIL_SLOT` and reported as an error (no caching).
