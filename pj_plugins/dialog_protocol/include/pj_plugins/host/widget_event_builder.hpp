@@ -168,6 +168,15 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
+  /// QListWidget: a row's context menu (declared via the widget's
+  /// pj_context_actions .ui property, not part of this protocol) fired one of
+  /// its actions.
+  [[nodiscard]] static std::string itemContextAction(int index, std::string_view action_id) {
+    nlohmann::json j;
+    j["item_context_action"] = {{"index", index}, {"action", action_id}};
+    return j.dump();
+  }
+
   /// QTableWidget: a horizontal-header section was clicked (column index).
   /// Lets a plugin own column sorting — it re-sorts its row model and re-emits
   /// rows, keeping index-based selection/visibility consistent.

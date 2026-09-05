@@ -42,6 +42,97 @@ value into range. Negative inputs are rebased toward zero before multiplication,
 the conversion stays checked and C++17-compatible at both signed boundaries. Invalid
 nanosecond fractions and final overflow remain rejected. No API or ABI change.
 
+### Feature: dataset-qualified series names — contract and shared helper (MINOR)
+
+`pj.data_processors.v1` addressed input series by bare `topic/field` names and never said
+what a name means when several loaded datasets share topic names — so conforming hosts
+filled the gap incompatibly (PJ4's transform path refused duplicates while its marker path
+silently bound the first-loaded dataset; fixed by PlotJuggler/PJ4#619). The contract is now
+explicit in the `PJ_data_processors_host_vtable_t` doc block (DATASET-QUALIFIED NAMES):
+
+- A series' full identity is (dataset, topic, field); a bare name is an abbreviation. An
+  input MAY carry the qualifier `dataset_source:topic/field` — the same form hosts print
+  as a series label. This is a catalog-dependent lookup syntax.
+- The qualifier is matched against the **loaded** source names (longest match wins), never
+  split blindly at `:` — stream-style source names like `[stream] UDP Server` need no
+  escaping. Colons in both source and bare names can create overlapping prefixes;
+  composition round-trips only while the intended source is the longest loaded match.
+- An unmatched prefix leaves the entire name as a bare lookup, without stripping it;
+  unknown whole names fail. A bare name in several datasets MUST be refused with qualified candidates,
+  never resolved by load order; qualified inputs of one processor must agree on a single
+  dataset. Marker per-series output keys accept the qualifier the same way.
+
+New installed header `pj_base/sdk/dataset_qualified_name.hpp` ships the shared
+parser/composer (`splitDatasetQualifier` / `qualifiedSeriesName`, header-only) so hosts
+and plugins use one implementation instead of the two copies that exist today.
+
+Plugins that emit qualified names pin `plotjuggler_sdk/[>=0.28.0 <1.0.0]`. No ABI change;
+`abi/baseline.abi` is untouched. Addressing two datasets that share one source name stays
+out of contract (ambiguous → error); a typed dataset id would be a tail-appended addition.
+
+### Added — host services `pj.playback.v1`, `pj.viewport.v1`, and `pj.plot_tabs.v1` (MINOR)
+
+Three new optional host services so a plugin (first consumer: the Assistant Agent
+toolbox) can drive the app like a user — transport and zoom — without any new
+executable surface crossing the ABI:
+
+- **`pj.playback.v1`** (`PJ_playback_host_vtable_t`, `sdk::PlaybackHostView`,
+  `sdk::PlaybackHostService`): `play` / `pause` / `seek` / `set_playback_rate` /
+  `get_state` (ABI-frozen `PJ_playback_state_t` snapshot) / `to_display_time`
+  (absolute int64 ns → display-axis seconds, per-topic dataset offset;
+  current-frame semantics). Nonempty topics must identify exactly one dataset;
+  unknown or ambiguous topics fail. The optional tail slot `to_display_time_for_source`
+  (`sdk::PlaybackHostView::toDisplayTimeForSource`) selects a catalog data-source
+  handle explicitly, allowing conversion when topic or source names repeat. Invalid
+  or unloaded handles fail. Its wrapper checks `struct_size` and reports unsupported
+  on older hosts, preserving the existing topic-based call. All times are display-axis seconds.
+- **`pj.viewport.v1`** (`PJ_viewport_host_vtable_t`, `sdk::ViewportHostView`,
+  `sdk::ViewportHostService`): `zoom_to_time_range` (X window in display-axis
+  seconds; per-plot Y preserved; XY/empty plots untouched) and `zoom_reset`
+  (fit). Both are **scoped to the tabs the calling plugin owns** — see
+  `pj.plot_tabs.v1` below; a plugin owning none has nothing to zoom, which is an
+  error rather than a silent no-op.
+- **`pj.plot_tabs.v1`** (`PJ_plot_tab_host_vtable_t`, `sdk::PlotTabHostView`,
+  `sdk::PlotTabHostService`): a plugin composes plotting tabs of its own —
+  `create_tab` / `close_tab` / `list_tab_ids` / `tab_config` / `add_curve` /
+  `remove_curve` / `clear_tab`. Ids are plugin-chosen and namespaced per plugin
+  (the `pj.data_processors.v1` discipline). IDs are independent of visible titles,
+  which may repeat or be renamed; recreating an ID replaces its tab contents.
+  Every slot is scoped to the
+  caller's own tabs, so the user's tabs are neither disclosed nor mutable
+  through it. Curves are addressed by their parts — topic, field, dataset
+  source — rather than a joined path, because field paths contain `/` and
+  dataset names contain `:`, and an empty dataset source requires the pair to be
+  unique. `tab_config` reads back what a tab actually holds, so a caller can
+  report what was drawn instead of what it asked for. The C++ list wrapper
+  reports an error if the count grows between enumeration calls, allowing a
+  retry without reading past the allocated buffer.
+
+The boundary these two draw is the VIEW. `pj.playback.v1` stays global by
+nature: one time cursor is shared by every plot.
+
+These services add new types without changing existing vtable slots, so
+already-built plugins keep working with no recompile.
+
+### Added — `QListWidget` row context menu: `onItemContextAction` (MINOR, additions only)
+
+A dialog plugin can now learn that a row's right-click context menu fired one
+of its actions: `WidgetEventBuilder::itemContextAction(index, action_id)` /
+`WidgetEvent::itemContextAction()` (the pair, optional) /
+`DialogPluginTyped::onItemContextAction(widget_name, index, action_id)`,
+dispatched ahead of the selection/double-click chain. The action set itself is
+not part of this ABI — it is a host-side `.ui` dynamic property
+(`pj_context_actions`, see `dialog-plugin-guide.md`), the same shape as
+`pj_enable_when`/`pj_visible_when`. No struct or vtable slot changed.
+
+### Fixed — `deserializePlotMarkers` accepts the empty buffer as an empty set
+
+An empty buffer is the canonical proto encoding of an empty `PlotMarkers` set —
+the "clear my markers" tombstone a producer publishes to a replace-only store —
+but the decoder rejected `size == 0` as an error, making the tombstone
+unrepresentable on the wire. It now decodes to an empty set; null-with-size,
+truncated, and malformed payloads still error.
+
 ## [0.27.1]
 
 ### Fix: hosts validate a spliced `GridMap` right after attaching its bytes (PATCH)

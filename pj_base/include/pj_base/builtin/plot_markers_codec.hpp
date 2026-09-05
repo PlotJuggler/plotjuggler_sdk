@@ -20,7 +20,10 @@ inline constexpr std::string_view kSchemaPlotMarkers = "PJ.PlotMarkers";
 
 /// Decodes canonical PJ.PlotMarkers wire bytes into sdk::PlotMarkers.
 ///
-/// Returns an error for null, empty, truncated, or malformed payloads.
+/// An EMPTY buffer decodes to an empty set — the canonical "no markers"
+/// tombstone a producer publishes to clear its output (the object store is
+/// replace-only; markers are overwritten, never deleted). Returns an error for
+/// null-with-size, truncated, or malformed payloads.
 [[nodiscard]] Expected<sdk::PlotMarkers> deserializePlotMarkers(const uint8_t* data, size_t size);
 
 }  // namespace PJ

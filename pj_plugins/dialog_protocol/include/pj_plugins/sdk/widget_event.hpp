@@ -10,6 +10,7 @@
 #include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace PJ {
@@ -294,6 +295,26 @@ class WidgetEvent {
   }
   std::optional<int> itemDeleteRequestedIndex() const {
     return getInt("item_delete_index");
+  }
+
+  /// QListWidget: a row's context menu fired one of its actions. The pair is
+  /// (delivered-order row index, the .ui-declared action id).
+  std::optional<std::pair<int, std::string>> itemContextAction() const {
+    auto it = data_.find("item_context_action");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto index = it->find("index");
+    auto action = it->find("action");
+    if (index == it->end() || action == it->end() || !action->is_string() ||
+        action->get_ref<const std::string&>().empty()) {
+      return std::nullopt;
+    }
+    auto decoded_index = decodeInt(*index);
+    if (!decoded_index.has_value() || *decoded_index < 0) {
+      return std::nullopt;
+    }
+    return std::make_pair(*decoded_index, action->get<std::string>());
   }
 
   /// QTableWidget: horizontal-header section clicked (returns column index)

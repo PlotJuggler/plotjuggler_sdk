@@ -239,7 +239,11 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   `pj_base/descriptor_import_protocol.h`. `"pj.data_processors.v1"` (optional) lets a toolbox create
   catalog-resident transform nodes in the host by data — a script plus
   input/output names and a params JSON blob; nothing executable crosses the
-  boundary (the host owns execution). The script payload is **binary-safe**
+  boundary (the host owns execution). Input names may carry the dataset
+  qualifier `dataset_source:topic/field`, so a name several loaded datasets
+  share is addressed rather than guessed — rules are normative in
+  `plugin_data_api.h` (DATASET-QUALIFIED NAMES), shared parser/composer in
+  `pj_base/sdk/dataset_qualified_name.hpp`. The script payload is **binary-safe**
   (`PJ_string_view_t {data,size}`), so the native "door" is WASM bytes through
   this same data-only surface (a future host-owned WASM/Python backend is purely
   additive and survives plugin unload) — deliberately *not* a C++ kernel vtable
@@ -256,6 +260,32 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   non-blocking diagnostics channel. Parsers report severity, a machine-stable
   code, representative text, and an occurrence count; the host aggregates by
   parser identity and bound schema/type without changing parse success.
+  `"pj.playback.v1"` (optional) gives a plugin programmatic control of the
+  host's playback cursor — play/pause/seek/rate plus a state snapshot and an
+  absolute-ns → display-seconds conversion — via a Qt-free
+  `sdk::PlaybackHostView`; every time in the service is display-axis seconds
+  (the numbers the plot X axes and the playback slider show), valid for the
+  current frame only because display offsets are per-dataset and user-editable.
+  `toDisplayTime(topic, ns)` rejects ambiguous nonempty topics; an empty topic
+  explicitly selects the representative dataset. The optional tail slot
+  `to_display_time_for_source`, wrapped by `toDisplayTimeForSource(handle, ns)`,
+  selects a catalog data-source handle directly and rejects unloaded handles.
+  Its wrapper checks `struct_size` and returns unsupported on older hosts.
+  `"pj.plot_tabs.v1"` (optional) lets a plugin compose plotting tabs **of its
+  own** — create one, place and remove curves by (topic, field, dataset),
+  read back what it actually holds, close it (`sdk::PlotTabHostView`). Ids are
+  plugin-chosen and namespaced per plugin, as in `"pj.data_processors.v1"`.
+  They are independent of titles (which may repeat or be renamed) and tab order;
+  every slot is scoped to the caller's own tabs: a tab the plugin did not create
+  is rejected exactly as an unknown id, so the user's tabs are never disclosed
+  or touched. `"pj.viewport.v1"` (optional) zooms to a display-seconds X window
+  or resets to fit (`sdk::ViewportHostView`), **bounded to those same owned
+  tabs** — the boundary is the view, not the transport, which is why
+  `"pj.playback.v1"` stays global. Hosts without plots (headless) simply do not
+  register either.
+  Examples, handle selection, and the catalog-dependent qualifier limitations
+  are in `toolbox-guide.md` under "Playback, viewport, and owned tabs" and
+  "Dataset-qualified processor inputs".
 - **Structured errors everywhere.** All fallible ABI calls take a
   `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
   slot is gone.

@@ -79,6 +79,12 @@ documentation check before commit.
 **Plugin system** (`pj_plugins/docs/`): `REQUIREMENTS.md` (families, capability system, config
 contract) · `ARCHITECTURE.md` (C ABI protocols, SDK base classes, host loaders, dialog protocol) ·
 `data-source-guide.md` · `message-parser-guide.md` · `dialog-plugin-guide.md` · `toolbox-guide.md`.
+For SDK 0.28.0 playback, plugin-owned tabs, viewport control, and dataset-qualified
+inputs, start with `pj_plugins/docs/toolbox-guide.md` → "Playback, viewport, and
+owned tabs". It covers explicit source-handle time conversion, optional-slot
+compatibility, tab ID/title separation, and qualifier limits. The normative C
+contract is `pj_base/include/pj_base/plugin_data_api.h`; C++ wrappers and service
+traits live alongside it under `sdk/`.
 The concise native functional-module authoring reference is
 `.claude/skills/plotjuggler-plugin/references/parser-module.md`.
 

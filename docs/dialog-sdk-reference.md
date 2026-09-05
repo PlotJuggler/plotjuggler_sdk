@@ -510,3 +510,16 @@ public:
   }
 };
 ```
+
+## Conditional field enabling and visibility (`pj_enable_when`, `pj_visible_when`)
+
+Declarative, host-driven: give any widget the string dynamic property
+`pj_enable_when` (or `pj_visible_when`) = `"<comboObjectName>:<index>[,<index>...]"`
+and it stays enabled (or visible) only while that combo sits on one of the
+listed indices. Several clauses separated by `;` must ALL hold
+(`"backendCombo:0;modelCombo:1"`). Works inside modal sub-dialogs (where the
+plugin cannot push widget data); rules re-assert after every widget-data apply,
+so a rule wins over a plugin-pushed `enabled`/`visible`. A hidden widget leaves
+its layout row: tag the label and the editor of a form row both, and the row
+collapses. Malformed/unresolvable rules are ignored. See dialog-plugin-guide.md
+→ "Optional: conditional field enabling and visibility".

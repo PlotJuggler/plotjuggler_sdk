@@ -66,6 +66,22 @@ static_assert(offsetof(PJ_error_t, message) == 36, "PJ_error_t layout pinned");
 static_assert(offsetof(PJ_error_t, extended) == 264, "PJ_error_t layout pinned");
 static_assert(offsetof(PJ_error_t, extended_kind) == 272, "PJ_error_t layout pinned");
 
+// --- PJ_playback_state_t (ABI-FROZEN) -----------------------------------------
+// bool + 7 padding bytes + 4 doubles: the alignment-hole shape this test exists
+// to pin. Growth goes through a get_state_v2 tail slot, never through this struct.
+static_assert(sizeof(PJ_playback_state_t) == 40, "PJ_playback_state_t size pinned at introduction (0.28.0)");
+static_assert(alignof(PJ_playback_state_t) == 8, "PJ_playback_state_t alignment pinned");
+static_assert(offsetof(PJ_playback_state_t, is_playing) == 0, "PJ_playback_state_t layout pinned");
+static_assert(offsetof(PJ_playback_state_t, current_time_s) == 8, "PJ_playback_state_t layout pinned");
+static_assert(offsetof(PJ_playback_state_t, range_min_s) == 16, "PJ_playback_state_t layout pinned");
+static_assert(offsetof(PJ_playback_state_t, range_max_s) == 24, "PJ_playback_state_t layout pinned");
+static_assert(offsetof(PJ_playback_state_t, playback_rate) == 32, "PJ_playback_state_t layout pinned");
+
+// Playback vtable: source selection extends the existing topic-based prefix.
+static_assert(offsetof(PJ_playback_host_vtable_t, to_display_time) == 48, "topic conversion slot stays fixed");
+static_assert(offsetof(PJ_playback_host_vtable_t, to_display_time_for_source) == 56, "source conversion is appended");
+static_assert(sizeof(PJ_playback_host_vtable_t) == 64, "playback vtable size in 0.28.0");
+
 // --- Service registry (fat pointer types) ------------------------------------
 static_assert(sizeof(PJ_service_t) == 16, "PJ_service_t fat pointer pinned");
 static_assert(sizeof(PJ_service_registry_t) == 16, "PJ_service_registry_t fat pointer pinned");

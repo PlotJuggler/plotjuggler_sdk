@@ -73,6 +73,14 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// A QListWidget row's context menu fired one of its actions. The action set
+  /// itself is not part of this protocol — it is a `.ui` dynamic property
+  /// (`pj_context_actions`) the host reads, the same way `pj_enable_when` is;
+  /// this only reports that one fired. `index` is the delivered-order row.
+  virtual bool onItemContextAction(std::string_view /*widget_name*/, int /*index*/, std::string_view /*action_id*/) {
+    return false;
+  }
+
   /// QTableWidget: a horizontal-header section (column) was clicked. Plugins
   /// that drive their own column sorting override this, re-order their row
   /// model, and re-emit — index-based selection/visibility stays consistent.
@@ -276,6 +284,13 @@ class DialogPluginTyped : public DialogPluginBase {
       return onStackedPageChanged(widget_name, *index, *page);
     }
 
+    // Ahead of the selection/double-click chain below (first-match-wins): a
+    // context-menu action and a selection/double-click event are never
+    // reported together, so ordering only matters for which optional a
+    // malformed payload could spuriously satisfy.
+    if (auto v = event.itemContextAction()) {
+      return onItemContextAction(widget_name, v->first, v->second);
+    }
     if (auto v = event.chartViewChanged()) {
       return onChartViewChanged(widget_name, v->x_min, v->x_max, v->y_min, v->y_max);
     }

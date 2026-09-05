@@ -1022,6 +1022,36 @@ inline PrimitiveType formatToPrimitiveType(const char* fmt) noexcept {
       return PrimitiveType::kUnspecified;
   }
 }
+
+/// Two-call "count then fill" marshalling for any vtable slot that enumerates
+/// borrowed strings: ask for the count, size a buffer, ask again, copy out.
+/// The copies are made here on purpose — the views the host fills in point into
+/// its own storage, which the next call on that vtable may invalidate.
+///
+/// `slot` is the raw function pointer; the caller has already established that
+/// the host is bound, since only it knows which view is speaking.
+template <class ListSlot>
+[[nodiscard]] inline Expected<std::vector<std::string>> listBorrowedStrings(void* ctx, ListSlot slot) {
+  PJ_error_t err{};
+  uint64_t count = 0;
+  if (!slot(ctx, nullptr, 0, &count, &err)) {
+    return unexpected(errorToString(err));
+  }
+  std::vector<PJ_string_view_t> borrowed(count);
+  uint64_t filled = 0;
+  if (count != 0 && !slot(ctx, borrowed.data(), borrowed.size(), &filled, &err)) {
+    return unexpected(errorToString(err));
+  }
+  if (filled > borrowed.size()) {
+    return unexpected("host string list grew during enumeration; retry the call");
+  }
+  std::vector<std::string> out;
+  out.reserve(filled);
+  for (uint64_t i = 0; i < filled; ++i) {
+    out.emplace_back(toStringView(borrowed[i]));
+  }
+  return out;
+}
 }  // namespace detail
 
 /// Typed view over the two-column Arrow struct returned by
@@ -1490,7 +1520,10 @@ class DataProcessorsHostView {
   /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s).
   /// Returns the resolved physical output topic name(s) (owned copies) so the caller
   /// can read results back through the kind's read surface. `params_json` is forwarded
-  /// verbatim to the script.
+  /// verbatim to the script. Input names MAY carry the dataset qualifier
+  /// "dataset_source:topic/field" (see DATASET-QUALIFIED NAMES in plugin_data_api.h;
+  /// shared parser/composer in sdk/dataset_qualified_name.hpp) — required to address a
+  /// series whose bare name exists in several loaded datasets.
   [[nodiscard]] Expected<std::vector<std::string>> create(
       std::string_view id, std::string_view kind, std::string_view language, Span<const std::string_view> inputs,
       Span<const std::string_view> outputs, std::string_view script, std::string_view params_json,
@@ -1546,7 +1579,8 @@ class DataProcessorsHostView {
 
   /// Convenience: create a kind="transform" node (DerivedEngine timeseries). `outputs`
   /// must be non-empty. Discards the resolved topic names (the caller supplied them);
-  /// use create() directly if you need them back.
+  /// use create() directly if you need them back. Inputs MAY be dataset-qualified (see
+  /// create()); outputs name NEW topics and are never qualified.
   [[nodiscard]] Status createTransform(
       std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> outputs,
       std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
@@ -1572,6 +1606,7 @@ class DataProcessorsHostView {
   /// key (kGlobalMarkerTopic or markerSeriesKey). Pass
   /// flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL for a live preview (output may be left empty
   /// to let the host name the preview topic). Returns the resolved object topic(s).
+  /// Inputs and per-series output keys MAY be dataset-qualified (see create()).
   [[nodiscard]] Expected<std::vector<std::string>> createMarkers(
       std::string_view id, Span<const std::string_view> inputs, std::string_view output_marker_topic,
       std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
@@ -1651,6 +1686,297 @@ class DataProcessorsHostView {
 
  private:
   PJ_data_processors_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
+// PlaybackHostView — typed C++ view over PJ_playback_host_t
+// ---------------------------------------------------------------------------
+
+/// Snapshot of the host's playback state. All times are display-axis seconds
+/// (the numbers on the plot X axes and the playback slider).
+struct PlaybackState {
+  bool is_playing = false;
+  double current_time_s = 0.0;
+  double range_min_s = 0.0;
+  double range_max_s = 0.0;
+  double playback_rate = 1.0;
+};
+
+/// C++ wrapper around PJ_playback_host_t — optional programmatic control of
+/// the host's playback cursor (service "pj.playback.v1"). Empty-constructible;
+/// `valid()` tells whether the host exposed the service. All calls are
+/// main-thread. Times are display-axis seconds; conversions from absolute
+/// nanoseconds (`toDisplayTime`) hold for the current frame only — display
+/// offsets are per-dataset and user-editable (see the C ABI doc-comment).
+class PlaybackHostView {
+ public:
+  PlaybackHostView() = default;
+  explicit PlaybackHostView(PJ_playback_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Start advancing the playback cursor. Idempotent.
+  [[nodiscard]] Status play() const {
+    if (!valid() || host_.vtable->play == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->play(host_.ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Stop advancing the playback cursor. Idempotent.
+  [[nodiscard]] Status pause() const {
+    if (!valid() || host_.vtable->pause == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->pause(host_.ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Move the cursor to `time_s` (display-axis seconds); the host clamps into
+  /// the playback range. Play/pause state is unchanged.
+  [[nodiscard]] Status seek(double time_s) const {
+    if (!valid() || host_.vtable->seek == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->seek(host_.ctx, time_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Set the playback-speed multiplier (> 0; the host may clamp).
+  [[nodiscard]] Status setPlaybackRate(double rate) const {
+    if (!valid() || host_.vtable->set_playback_rate == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_playback_rate(host_.ctx, rate, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Snapshot the current playback state. During live streaming the range
+  /// (and a cursor glued to its tip) advances on every ingest tick.
+  [[nodiscard]] Expected<PlaybackState> state() const {
+    if (!valid() || host_.vtable->get_state == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    PJ_playback_state_t raw{};
+    PJ_error_t err{};
+    if (!host_.vtable->get_state(host_.ctx, &raw, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return PlaybackState{raw.is_playing, raw.current_time_s, raw.range_min_s, raw.range_max_s, raw.playback_rate};
+  }
+
+  /// Convert an ABSOLUTE nanosecond timestamp into display-axis seconds using
+  /// the display offset of the dataset owning `topic` (empty topic = the
+  /// host's representative dataset). Unknown or ambiguous nonempty topics are
+  /// errors; use toDisplayTimeForSource to select a dataset explicitly.
+  /// Current-frame semantics.
+  [[nodiscard]] Expected<double> toDisplayTime(std::string_view topic, int64_t absolute_ns) const {
+    if (!valid() || host_.vtable->to_display_time == nullptr) {
+      return unexpected("playback host is not bound");
+    }
+    double display_s = 0.0;
+    PJ_error_t err{};
+    if (!host_.vtable->to_display_time(host_.ctx, toAbiString(topic), absolute_ns, &display_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return display_s;
+  }
+
+  /// Convert absolute nanoseconds using this catalog source's display offset.
+  /// Invalid or unloaded handles are errors. Re-query after source-offset edits.
+  /// Hosts without the optional tail slot report unsupported.
+  [[nodiscard]] Expected<double> toDisplayTimeForSource(DataSourceHandle source, int64_t absolute_ns) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_playback_host_vtable_t, host_.vtable, to_display_time_for_source)) {
+      return unexpected("source-scoped display-time conversion is not supported by this host");
+    }
+    double display_s = 0.0;
+    PJ_error_t err{};
+    if (!host_.vtable->to_display_time_for_source(host_.ctx, source, absolute_ns, &display_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return display_s;
+  }
+
+ private:
+  PJ_playback_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
+// ViewportHostView — typed C++ view over PJ_viewport_host_t
+// ---------------------------------------------------------------------------
+
+/// C++ wrapper around PJ_viewport_host_t — optional zoom control over the
+/// calling plugin's own plots (service "pj.viewport.v1").
+/// Empty-constructible; `valid()` tells whether the host exposed the service.
+/// All calls are main-thread; times are display-axis seconds.
+class ViewportHostView {
+ public:
+  ViewportHostView() = default;
+  explicit ViewportHostView(PJ_viewport_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Set every time-series plot in this plugin's tabs to the X window [t0_s, t1_s].
+  /// Each plot keeps its own Y range; XY and empty plots are untouched.
+  /// Requires finite t0_s < t1_s.
+  [[nodiscard]] Status zoomToTimeRange(double t0_s, double t1_s) const {
+    if (!valid() || host_.vtable->zoom_to_time_range == nullptr) {
+      return unexpected("viewport host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->zoom_to_time_range(host_.ctx, t0_s, t1_s, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Reset every plot in this plugin's tabs to fit its data.
+  [[nodiscard]] Status zoomReset() const {
+    if (!valid() || host_.vtable->zoom_reset == nullptr) {
+      return unexpected("viewport host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->zoom_reset(host_.ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+ private:
+  PJ_viewport_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
+// PlotTabHostView — typed C++ view over PJ_plot_tab_host_t
+// ---------------------------------------------------------------------------
+
+/// C++ wrapper around PJ_plot_tab_host_t for plugins that compose plotting tabs of
+/// their own (see the C ABI doc-comment on PJ_plot_tab_host_vtable_t). Every call is
+/// scoped by the host to the tabs THIS plugin created; ids naming anything else are
+/// rejected like unknown ids. Empty-constructible; `valid()` tells whether the host
+/// exposed the service. Strings returned by `list()`/`configOf()` are owned copies, so
+/// they stay valid past the next vtable call.
+class PlotTabHostView {
+ public:
+  PlotTabHostView() = default;
+  explicit PlotTabHostView(PJ_plot_tab_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.vtable != nullptr && host_.ctx != nullptr;
+  }
+
+  /// Create (or replace, upsert by id) a tab holding one empty plot. An empty
+  /// `title` lets the host name it.
+  [[nodiscard]] Status create(std::string_view id, std::string_view title = {}) const {
+    if (!valid() || host_.vtable->create_tab == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->create_tab(host_.ctx, toAbiString(id), toAbiString(title), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Close one of this plugin's tabs. Any derived series or markers drawn in it
+  /// are data and outlive the view.
+  [[nodiscard]] Status close(std::string_view id) const {
+    if (!valid() || host_.vtable->close_tab == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->close_tab(host_.ctx, toAbiString(id), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Enumerate the ids of this plugin's live tabs (owned copies). Owning none is
+  /// success with an empty vector. If the list grows between the count and fill
+  /// calls, returns an error so the caller can retry instead of reading a partial list.
+  [[nodiscard]] Expected<std::vector<std::string>> list() const {
+    if (!valid() || host_.vtable->list_tab_ids == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    return detail::listBorrowedStrings(host_.ctx, host_.vtable->list_tab_ids);
+  }
+
+  /// Read back what a tab actually holds, as JSON (owned copy) — the way to
+  /// report what was drawn rather than what was asked for.
+  [[nodiscard]] Expected<std::string> configOf(std::string_view id) const {
+    if (!valid() || host_.vtable->tab_config == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    PJ_string_view_t out{};
+    if (!host_.vtable->tab_config(host_.ctx, toAbiString(id), &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(out));
+  }
+
+  /// Draw one curve. An empty `dataset_source` requires the topic/field to be
+  /// unique across loaded datasets; an ambiguous one is refused by the host with
+  /// the qualified candidates rather than guessed.
+  [[nodiscard]] Status addCurve(
+      std::string_view id, std::string_view topic, std::string_view field, std::string_view dataset_source = {}) const {
+    if (!valid() || host_.vtable->add_curve == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->add_curve(
+            host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(field), toAbiString(dataset_source), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Take one curve back out, resolved by the same rule as addCurve. A curve
+  /// that is not there is an error.
+  [[nodiscard]] Status removeCurve(
+      std::string_view id, std::string_view topic, std::string_view field, std::string_view dataset_source = {}) const {
+    if (!valid() || host_.vtable->remove_curve == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->remove_curve(
+            host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(field), toAbiString(dataset_source), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Remove every curve from a tab, keeping the tab itself.
+  [[nodiscard]] Status clear(std::string_view id) const {
+    if (!valid() || host_.vtable->clear_tab == nullptr) {
+      return unexpected("plot tab host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->clear_tab(host_.ctx, toAbiString(id), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+ private:
+  PJ_plot_tab_host_t host_{};
 };
 
 // ---------------------------------------------------------------------------

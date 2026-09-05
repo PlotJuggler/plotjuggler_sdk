@@ -249,6 +249,15 @@ typedef struct {
  * Every populator (see sdk::fillError) MUST clear both new slots when
  * writing to avoid stale pointers in reused error structs.
  */
+/* Shared host-service error-code convention. Codes are domain-specific in
+ * general, but every PJ host service distinguishes at least these two classes,
+ * and aggregators (e.g. a kind router probing multiple backends) rely on the
+ * distinction: REJECTED means "this request is not mine / not valid" (safe to
+ * try another backend), INTERNAL means a real failure on a request the backend
+ * owns (must be surfaced, never masked by a fallback). */
+#define PJ_ERROR_CODE_REJECTED 1
+#define PJ_ERROR_CODE_INTERNAL 2
+
 typedef struct {
   int32_t code;                          /* 0 = success; otherwise domain-specific */
   char domain[PJ_ERROR_DOMAIN_MAX];      /* null-terminated; truncated if too long */
@@ -913,7 +922,8 @@ typedef struct {
  *   - language    : script backend, "luau" today; the host rejects anything else.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
  *                   "pose/orientation/x") the script reads; the host resolves them
- *                   and exact-joins co-timestamped inputs.
+ *                   and exact-joins co-timestamped inputs. A name MAY carry the
+ *                   dataset qualifier, see DATASET-QUALIFIED NAMES below.
  *   - outputs     : target topic key(s). MAY be empty for an ephemeral preview
  *                   (flags & PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host
  *                   names the sink(s) and returns the resolved names in out_topics.
@@ -930,6 +940,26 @@ typedef struct {
  *                   absent = active dataset.
  *   - flags       : bitset; PJ_DATA_PROCESSOR_FLAG_EPHEMERAL marks a preview (never
  *                   persisted, dropped on remove). Reserved bits must be 0.
+ *
+ * DATASET-QUALIFIED NAMES — a series' full identity is (dataset, topic, field); a
+ * bare "topic/field" name is an abbreviation that stops being unique the moment
+ * two loaded datasets share topic names. An input MAY therefore carry the
+ * qualifier "dataset_source:topic/field" — the same form hosts print as a series
+ * identity (shared parser/composer: sdk/dataset_qualified_name.hpp). The qualifier
+ * is matched against the LOADED source names (longest match wins), never split
+ * blindly at ':'. This is a catalog-dependent lookup syntax: an unmatched prefix
+ * leaves the ENTIRE string as a bare name; the host must never guess by stripping
+ * it. Colons are legal in both source and bare names, so composition round-trips
+ * only when the intended source remains the longest loaded matching prefix.
+ * The host MUST enforce:
+ *   - an unknown whole name is an error;
+ *   - a bare name that exists in SEVERAL loaded datasets is refused, reporting the
+ *     qualified candidates — NEVER resolved by load order;
+ *   - all qualified inputs of one processor agree on a single dataset.
+ * Marker output keys (per-series, see markerSeriesKey) accept the qualifier the
+ * same way; transform outputs name NEW topics and are never qualified. Addressing
+ * two datasets that share one source name is outside this contract (ambiguous ->
+ * error); that needs a typed dataset id, which would be a tail-appended addition.
  *
  * FORWARD-COMPAT — the native door is WASM, not a C++ kernel. Because the script
  * slot is a binary-safe blob the host owns and runs (today Luau; tomorrow a
@@ -1045,6 +1075,214 @@ typedef struct {
   void* ctx;
   const PJ_settings_store_vtable_t* vtable;
 } PJ_settings_store_t;
+
+/**
+ * Playback host service ("pj.playback.v1", protocol_version 1).
+ *
+ * Optional programmatic control of the host's playback cursor (the vertical
+ * time tracker the playback slider drives). All slots are [main-thread].
+ *
+ * TIME UNIT: every time in this service is DISPLAY-AXIS SECONDS — the numbers
+ * the plot X axes and the playback slider show — NOT absolute nanoseconds.
+ * Display time is derived from absolute time via per-dataset, user-editable
+ * offsets, so any converted value is valid for the CURRENT frame only:
+ * re-query after the user edits a source offset or the time reference.
+ *
+ * ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ */
+
+/* ABI-FROZEN: layout permanent; changes = ABI break (add a get_state_v2 slot instead). */
+typedef struct {
+  bool is_playing;
+  double current_time_s; /* display-axis seconds */
+  double range_min_s;    /* playback range in display-axis seconds */
+  double range_max_s;
+  double playback_rate; /* speed multiplier; 1.0 = real time */
+} PJ_playback_state_t;
+
+typedef struct PJ_playback_host_vtable_t {
+  uint32_t protocol_version; /* = 1 */
+  uint32_t struct_size;      /* = sizeof(PJ_playback_host_vtable_t) */
+
+  /* [main-thread] Start advancing the playback cursor. Idempotent. */
+  bool (*play)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Stop advancing the playback cursor. Idempotent. */
+  bool (*pause)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Move the cursor to `time_s` (display-axis seconds); the host
+   * clamps into [range_min_s, range_max_s]. Play/pause state is unchanged.
+   * Non-finite time is an error. */
+  bool (*seek)(void* ctx, double time_s, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Set the playback-speed multiplier (> 0; the host may clamp).
+   * Non-finite or non-positive rate is an error. */
+  bool (*set_playback_rate)(void* ctx, double rate, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Snapshot the current playback state. During live streaming
+   * the range (and a cursor glued to its tip) advances on every ingest tick. */
+  bool (*get_state)(void* ctx, PJ_playback_state_t* out_state, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Convert an ABSOLUTE nanosecond timestamp (the unit the data
+   * read/write surfaces speak) into display-axis seconds, using the display
+   * offset of the dataset that owns `topic`. An empty topic uses the host's
+   * representative dataset. Current-frame semantics (see the service
+   * doc-comment). A nonempty topic must identify exactly one loaded dataset;
+   * unknown or ambiguous topics are errors. Use to_display_time_for_source to
+   * select a dataset explicitly when topic names repeat. */
+  bool (*to_display_time)(
+      void* ctx, PJ_string_view_t topic, int64_t absolute_ns, double* out_display_s, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Convert absolute nanoseconds using the display offset of
+   * `source`, a data-source handle obtained from this host's catalog. Invalid
+   * (id == 0) or unloaded handles are errors; no representative-dataset fallback.
+   * The result has the same current-frame semantics as to_display_time.
+   * Optional tail slot: test struct_size and the function pointer before use. */
+  bool (*to_display_time_for_source)(
+      void* ctx, PJ_data_source_handle_t source, int64_t absolute_ns, double* out_display_s,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_playback_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_playback_host_vtable_t* vtable;
+} PJ_playback_host_t;
+
+/**
+ * Viewport host service ("pj.viewport.v1", protocol_version 1).
+ *
+ * Optional zoom control, SCOPED to the tabs the calling plugin owns (see
+ * "pj.plot_tabs.v1"). A host that grants a plugin its own tabs must confine
+ * these slots to them: the user's plots are not a plugin's to reframe. A
+ * plugin owning no tab therefore has nothing to zoom, which is an error, not a
+ * silent no-op.
+ *
+ * That makes this service dependent on the other in practice, even though the
+ * registry treats the two as independently optional: a host offering this one
+ * WITHOUT "pj.plot_tabs.v1" leaves every plugin with nothing it may zoom, so
+ * these two are registered together or not at all.
+ *
+ * Note the boundary is the VIEW, not the transport: "pj.playback.v1" stays
+ * global by nature, since one time cursor is shared by every plot.
+ *
+ * All slots are [main-thread]. Times are display-axis seconds (same convention
+ * as "pj.playback.v1"). ABI-APPENDABLE: new slots may be added at the tail;
+ * struct_size gates read.
+ */
+typedef struct PJ_viewport_host_vtable_t {
+  uint32_t protocol_version; /* = 1 */
+  uint32_t struct_size;      /* = sizeof(PJ_viewport_host_vtable_t) */
+
+  /* [main-thread] Set the visible X window of every time-series plot the
+   * calling plugin owns to [t0_s, t1_s] (display-axis seconds). Each plot keeps
+   * its own Y range; XY plots and empty plots are untouched. Requires finite
+   * t0_s < t1_s. Owning no such plot is an error, and the host is expected to
+   * say which kind — no tab at all, or a tab with nothing to zoom — since the
+   * caller's remedy differs. */
+  bool (*zoom_to_time_range)(void* ctx, double t0_s, double t1_s, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Reset every plot the calling plugin owns to fit its data.
+   * Like zoom_to_time_range, owning nothing is an error. */
+  bool (*zoom_reset)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_viewport_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_viewport_host_vtable_t* vtable;
+} PJ_viewport_host_t;
+
+/**
+ * Plot-tab host service ("pj.plot_tabs.v1", protocol_version 1).
+ *
+ * Lets a plugin compose plotting tabs OF ITS OWN: create one, place and remove
+ * curves in it, read back what it holds, close it. Every slot is scoped to the
+ * calling binding — a tab this plugin did not create is rejected exactly as an
+ * unknown id is, so the service never discloses, mutates or even confirms the
+ * existence of the user's tabs. That scoping is the host's job, not the
+ * plugin's: it is enforced where ownership is known, and ownership is derived
+ * from `ctx`, never passed in.
+ *
+ * Ids are independent of visible titles: titles may repeat or be renamed
+ * without changing an id. Tab indices are presentation order, not identity.
+ * Ids are chosen by the plugin and namespaced per plugin by the host (the
+ * "pj.data_processors.v1" discipline), so an id is unique within this binding
+ * and cannot collide with another plugin's. The resemblance stops there, and
+ * the difference matters: a data processor's id survives a session reload
+ * because the host replays it from a persisted recipe, whereas a tab is a VIEW
+ * and this service promises nothing of the sort. Treat an id as live only for
+ * as long as `list_tab_ids` still returns it, and re-read rather than assume
+ * after anything that could have rebuilt the workspace.
+ *
+ * A tab created here is the host's to present: it carries whatever permanent
+ * mark the host uses for model-authored views, and the plugin cannot suppress
+ * it. Whether such a tab is saved with the workspace is likewise the host's
+ * policy, not this service's contract.
+ *
+ * All slots are [main-thread]. ABI-APPENDABLE: new slots may be added at the
+ * tail; struct_size gates read.
+ */
+typedef struct PJ_plot_tab_host_vtable_t {
+  uint32_t protocol_version; /* = 1 */
+  uint32_t struct_size;      /* = sizeof(PJ_plot_tab_host_vtable_t) */
+
+  /* [main-thread] Create (or replace, upsert by id) a tab owned by this plugin,
+   * holding one empty plot. An empty `title` lets the host name it. All string
+   * arguments are borrowed for the duration of the call. */
+  bool (*create_tab)(void* ctx, PJ_string_view_t id, PJ_string_view_t title, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Close one of this plugin's tabs. Unknown id is an error.
+   * Closing a tab discards the VIEW only: any derived series or markers drawn
+   * in it are data and outlive it. */
+  bool (*close_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Enumerate the ids of THIS plugin's live tabs.
+   * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
+   * buffer of that size. On success the first min(capacity, *out_count) entries
+   * of out_ids are filled and point into host storage valid only until the next
+   * call on this vtable. Owning no tab is success with *out_count == 0. */
+  bool (*list_tab_ids)(
+      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Read back what a tab actually holds, as JSON
+   * {"title":"...","curves":[{"topic":"...","field":"...","dataset":"..."}]}.
+   * This is how a caller reports what was drawn instead of what it asked for:
+   * a curve the host could not resolve is simply absent. "dataset" is always
+   * the RESOLVED source name, even where the caller left it empty, so the
+   * report says which run a curve actually came from. The host emits valid
+   * JSON: any character needing escaping in a topic or field is escaped here.
+   * *out_config_json is borrowed, valid only until the next call on this
+   * vtable. Unknown id is an error. */
+  bool (*tab_config)(void* ctx, PJ_string_view_t id, PJ_string_view_t* out_config_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+
+  /* [main-thread] Draw one curve in a tab of this plugin's. The series is named
+   * by its parts, not a joined path, because field paths legitimately contain
+   * '/' and dataset names contain ':' — splitting a joined form is guesswork the
+   * host should not have to do. An empty `dataset_source` means the topic/field
+   * must be unique across loaded datasets; the host refuses an ambiguous one
+   * with the qualified candidates rather than picking. Adding a curve already
+   * present is not an error. */
+  bool (*add_curve)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Take one curve back out. `dataset_source` resolves by the
+   * same rule as in add_curve — empty means "the topic/field must be unique" —
+   * so a curve can be removed with whatever form was used to add it, or with
+   * the resolved name tab_config reports. A curve that is not there is an
+   * error, so a mistaken path is visible rather than silently accepted. */
+  bool (*remove_curve)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t field, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Remove every curve from a tab, keeping the tab itself. */
+  bool (*clear_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_plot_tab_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_plot_tab_host_vtable_t* vtable;
+} PJ_plot_tab_host_t;
 
 #ifdef __cplusplus
 }

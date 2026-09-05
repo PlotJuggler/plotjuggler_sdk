@@ -187,6 +187,45 @@ struct DataProcessorsHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Optional playback control for any plugin family: play/pause/seek/rate and
+/// a state snapshot over the host's playback cursor, plus absolute-ns ->
+/// display-seconds conversion. All times are display-axis seconds (the numbers
+/// the plot X axes and the playback slider show); see the C ABI doc-comment on
+/// PJ_playback_host_vtable_t for the current-frame caveat.
+struct PlaybackHostService {
+  static constexpr const char* kName = "pj.playback.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_playback_host_t;
+  using Vtable = PJ_playback_host_vtable_t;
+  using View = PlaybackHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
+/// Optional viewport control: zoom the calling plugin's own time-series plots to
+/// a display-seconds X window, or reset its own plots to fit their data. Hosts
+/// without plots (headless) simply do not register it.
+struct ViewportHostService {
+  static constexpr const char* kName = "pj.viewport.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_viewport_host_t;
+  using Vtable = PJ_viewport_host_vtable_t;
+  using View = ViewportHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
+/// "pj.plot_tabs.v1" — compose plotting tabs of the plugin's own: create, place
+/// and remove curves, read back what they hold, close. Scoped by the host to
+/// this plugin's tabs, which is also what bounds "pj.viewport.v1". Hosts with
+/// no plot workspace (headless) simply do not register it.
+struct PlotTabHostService {
+  static constexpr const char* kName = "pj.plot_tabs.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_plot_tab_host_t;
+  using Vtable = PJ_plot_tab_host_vtable_t;
+  using View = PlotTabHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Optional QSettings-like key/value persistence exposed to any plugin family.
 /// Host-backed (QSettings in the GUI app, JSON in a headless host); keys are
 /// namespaced per plugin by the host.

@@ -184,7 +184,8 @@ The host guarantees the following call ordering:
 
 ## Host Services Available to Plugins
 
-Two host services are provided before the plugin becomes interactive:
+The data and runtime hosts are bound before the plugin becomes interactive.
+Additional optional services are acquired through `services().get<Service>()`.
 
 ### Toolbox host — data plane
 
@@ -213,6 +214,76 @@ Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 |---|---|
 | `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
 | `notifyDataChanged()` | Tell the host that data was modified; refresh UI. Idempotent and cheap; coalesce per logical operation, not per record. |
+
+### Playback, viewport, and owned tabs (SDK 0.28.0)
+
+Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
+
+| Service trait | Methods and scope |
+|---|---|
+| `PJ::sdk::PlaybackHostService` | `play`, `pause`, `seek`, `setPlaybackRate`, `state`: the global playback cursor. `toDisplayTime` and `toDisplayTimeForSource` convert absolute nanoseconds to display-axis seconds. |
+| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. |
+| `PJ::sdk::ViewportHostService` | `zoomToTimeRange`, `zoomReset`: all eligible plots in the calling plugin's tabs. |
+
+All calls run on the main thread. Services are optional; check acquisition and
+each operation's result. A host offering viewport control also offers owned tabs.
+Zoom preserves each plot's Y range, skips empty/XY plots, and fails if nothing is
+eligible. Playback and viewport coordinates use **display-axis seconds**;
+read/write timestamps use **absolute int64 nanoseconds**.
+
+Choose the source from a fresh `toolboxHost().catalogSnapshot()`: each
+`dataSources()` entry has a `handle`, and each `topics()` entry has its owning
+`source` handle. Retain that identity with the selected series instead of looking
+it up again by a potentially duplicated source or topic name. For example, in a
+toolbox callback:
+
+```cpp
+#include <pj_base/sdk/service_traits.hpp>
+
+PJ::Status MyToolbox::seekSample(PJ::sdk::DataSourceHandle source, int64_t absolute_ns) {
+  auto playback = services().require<PJ::sdk::PlaybackHostService>();
+  if (!playback) {
+    return PJ::unexpected(playback.error());
+  }
+  auto seconds = playback->toDisplayTimeForSource(source, absolute_ns);
+  if (!seconds) {
+    return PJ::unexpected(seconds.error());
+  }
+  return playback->seek(*seconds);
+}
+```
+
+`toDisplayTimeForSource` rejects invalid/unloaded handles. Its optional C tail
+slot, `to_display_time_for_source`, is guarded by `struct_size` and nullability;
+the C++ wrapper returns an unsupported error on older hosts. Do not silently
+fall back to another dataset. The existing `toDisplayTime(topic, absolute_ns)`
+requires a nonempty topic to identify exactly one loaded dataset; an empty topic
+explicitly selects the host's representative dataset. Converted values must be
+recomputed after user edits to source offsets or the time reference.
+
+Tab `id` and visible `title` are separate: `create("run-a", "Temperature")` and
+`create("run-b", "Temperature")` create two independently addressable tabs.
+Renaming or changing tab order does not change their IDs. Recreating an ID
+replaces its contents. IDs are scoped to the plugin binding and live only while
+`list()` returns them; re-read after workspace changes. `configOf(id)` reports
+the resolved curves and title. An `addCurve`/`removeCurve` call takes topic,
+field, and optional dataset source separately; an omitted dataset must resolve
+uniquely. The host prevents access to other plugins' and user-created tabs.
+
+### Dataset-qualified processor inputs
+
+`pj.data_processors.v1` accepts `dataset_source:topic/field` inputs via the shared
+`pj_base/sdk/dataset_qualified_name.hpp` helper. This is a catalog-dependent
+lookup syntax: the longest loaded source prefix wins, and an unmatched prefix
+leaves the entire string as a bare lookup, without stripping it. Unknown whole
+names and ambiguous dataset matches fail. A processor's qualified inputs must
+agree on one dataset. Marker per-series output keys follow the same rule;
+transform output names create new topics and are unqualified.
+
+Colons can occur in both parts: `(a, b:/t/f)` and `(a:b, /t/f)` compose identically,
+and with both sources loaded the parser chooses `a:b`. Composition round-trips
+only when the intended source is the longest matching prefix. Do not treat this
+string as a persistent dataset identity. Hosts still validate the split result.
 
 ### Reading a series via Arrow
 
