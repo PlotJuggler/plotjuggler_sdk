@@ -29,6 +29,9 @@ extern "C" {
 /** Protocol version. Host and plugin must agree on the same major version. */
 #define PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION 4
 
+/** The public toolbox runtime host declares discard_parser_ingest (0.30.0). */
+#define PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST 1
+
 /**
  * Minimum vtable size for v4.0 compatibility, pinned at v4.0 release.
  *
@@ -98,6 +101,16 @@ typedef struct PJ_toolbox_runtime_host_vtable_t {
    * destroy it. Idempotent: releasing an unknown id succeeds. The fat
    * pointer from create_parser_ingest must not be used afterwards. */
   bool (*release_parser_ingest)(void* ctx, uint32_t data_source_id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /** [thread-safe] Abort the provisional ingest bound to `data_source_id` and
+   * destroy its context WITHOUT committing: staged source-record attachments
+   * are dropped and any capture is never published — the rollback twin of
+   * release_parser_ingest. The caller must first quiesce every user of the
+   * ingest fat pointer; dataset rollback itself belongs to the owning ingest
+   * transaction. Callers must serialize release/discard for a given dataset
+   * id so a stale owner cannot tear down its replacement. Idempotent for an
+   * unknown id. Gate with PJ_HAS_TAIL_SLOT. Tail slot. */
+  bool (*discard_parser_ingest)(void* ctx, uint32_t data_source_id, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_runtime_host_vtable_t;
 
 typedef struct {

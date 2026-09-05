@@ -3,6 +3,49 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.30.0]
+
+### Feature: explicit completion contract for cacheable finite ingests (MINOR)
+
+`PJ_data_source_runtime_host_vtable_t` gains one tail slot,
+`complete_ingest(ctx, PJ_ingest_completion_t*, out_error)`, with the C++
+wrapper `DataSourceRuntimeHostView::completeIngest` (also forwarded on
+`DatasetIngestHostView`). A finite source reports its terminal outcome —
+FAILED / CANCELLED / COMPLETED — where COMPLETED attests that the ENTIRE
+declared request finished: every requested topic over its full range. The
+completion carries the full requested-topic set from the request snapshot
+(never assembled from successful pulls), giving the host structural coverage
+checks against parser bindings and captured messages without parsing
+provider-specific descriptor JSON.
+
+Semantics: call on the stream thread after all producers quiesce; the call
+seals the context for capture (later pushes, attachments, or conflicting
+terminals veto caching; identical repeats are idempotent); `true` means
+"terminal accepted", never "artifact published" — publication additionally
+requires release, transaction commit, recorder drain/close and coverage
+checks. Cancellation still goes through the host's thread-safe stop path
+first. Contexts that never call the slot ingest exactly as before and are
+simply never cacheable; cacheability is negotiated from slot presence, not a
+manifest flag.
+
+`pj_base/sdk/ingest_completion.hpp` ships the shared fail-closed validator
+(`copyIngestCompletion`): undersized structs, unknown outcomes, nonzero
+flags, and malformed/duplicate topic lists all refuse as capture evidence
+while never affecting ingest.
+
+### Feature: discard_parser_ingest formalized on the toolbox runtime host (MINOR)
+
+The rollback twin of `release_parser_ingest` — abort a provisional ingest
+without committing (staged source records dropped, capture never published) —
+moves from a private plugin-side compatibility extension into the public
+`PJ_toolbox_runtime_host_vtable_t` tail, with
+`ToolboxRuntimeHostView::discardParserIngest` and the
+`PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST` feature macro so plugins can drop
+their local struct-size probes.
+
+No protocol version bumps, no minimum vtable size changes: additive tail
+slots only, gated by `PJ_HAS_TAIL_SLOT`.
+
 ## [0.29.0]
 
 ### Breaking (C++ source): BuiltinObject records its type tag explicitly

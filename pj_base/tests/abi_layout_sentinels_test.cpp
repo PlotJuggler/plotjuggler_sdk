@@ -265,7 +265,9 @@ static_assert(
     offsetof(PJ_data_source_runtime_host_vtable_t, attach_source_record) == 104,
     "attach_source_record tail slot pinned");
 static_assert(
-    sizeof(PJ_data_source_runtime_host_vtable_t) == 112, "Runtime host vtable size (update deliberately on append)");
+    offsetof(PJ_data_source_runtime_host_vtable_t, complete_ingest) == 112, "complete_ingest tail slot pinned");
+static_assert(
+    sizeof(PJ_data_source_runtime_host_vtable_t) == 120, "Runtime host vtable size (update deliberately on append)");
 
 // --- Write-host vtables (ABI-APPENDABLE within v4) --------------------------
 static_assert(offsetof(PJ_source_write_host_vtable_t, abi_version) == 0, "source write host prefix pinned");
@@ -321,7 +323,10 @@ static_assert(
     offsetof(PJ_toolbox_runtime_host_vtable_t, release_parser_ingest) == 32,
     "toolbox runtime parser-ingest release slot pinned");
 static_assert(
-    sizeof(PJ_toolbox_runtime_host_vtable_t) == 40, "Toolbox runtime host size (update deliberately on append)");
+    offsetof(PJ_toolbox_runtime_host_vtable_t, discard_parser_ingest) == 40,
+    "toolbox runtime parser-ingest discard slot pinned");
+static_assert(
+    sizeof(PJ_toolbox_runtime_host_vtable_t) == 48, "Toolbox runtime host size (update deliberately on append)");
 
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 5, "v5 ABI version");
