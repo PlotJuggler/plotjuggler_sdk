@@ -18,7 +18,8 @@
 
 #include <chrono>
 
-#include "pj_base/types.hpp"  // PJ::Timestamp, PJ::Range
+#include "pj_base/time_math.hpp"  // Checked arithmetic shared with C++17 parser modules.
+#include "pj_base/types.hpp"      // PJ::Timestamp, PJ::Range
 
 namespace PJ {
 

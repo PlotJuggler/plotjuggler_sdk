@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.24.0]
+## [0.29.0]
 
 ### Feature: sandboxed wasm parser modules and authoring preset (MINOR)
 
@@ -40,6 +40,170 @@ The wasm executor is an in-tree component gated on `PJ_WASMER_ROOT`; installed
 packages stay wasmer-free and ship the authoring preset and tool only.
 `NativeParserModule::load(path, sink)` is unchanged from 0.22: admission
 accounting happens only through the new budget overload.
+## [0.28.0]
+
+### Feature: source-record attachment for the host source cache (MINOR)
+
+`PJ_data_source_runtime_host_vtable_t` gains one tail slot,
+`attach_source_record(ctx, descriptor_json, out_error)`, with the C++ wrapper
+`DataSourceRuntimeHostView::attachSourceRecord`, also exposed on
+`DatasetIngestHostView`. At download start, a provider declares the canonical
+descriptor of the reproducible request its source answers. The host copies
+and stores the bytes verbatim, keys its cache on its own digest of those
+bytes, and scopes the record by the provider id from the binding, enabling
+the host-driven transparent source cache: captured downloads replayed from
+disk on the next restore of the same request, with no provider involvement on
+a hit.
+
+Contract: call on the stream thread; the last attachment before the first
+`push_message` on this ingest context wins. Byte-identical repeats before
+ingest are idempotent; any attachment after ingest begins is an error.
+The host may stage the record until its ingest transaction commits, so an
+in-place refill or replacing reload does not discard an early attachment.
+The host bounds and parses the descriptor and rejects unknown fields.
+Failure is a contract failure, never a trust verdict, and never affects
+ingest. Matching is byte-exact, so providers must serialize the same request
+identically. The descriptor is request identity, never parser policy, and
+must never carry authentication material. A host that predates the slot reads as
+"no caching" through `PJ_HAS_TAIL_SLOT`; the wrapper reports the absence
+explicitly so new plugins can detect it. Reachable from streaming sources and
+from toolbox parser-ingest contexts alike (both hold the runtime-host fat
+pointer). Runtime-host vtable size grows 104 → 112, `attach_source_record`
+at offset 104. ABI-appendable growth only; `abi/baseline.abi` untouched.
+
+### Fix: accept the full signed nanosecond range when combining seconds and nanos
+
+`combineSecondsAndNanos` now accepts negative timestamps whose whole-second product
+would fall below `INT64_MIN` but whose positive nanosecond fraction brings the final
+value into range. Negative inputs are rebased toward zero before multiplication, so
+the conversion stays checked and C++17-compatible at both signed boundaries. Invalid
+nanosecond fractions and final overflow remain rejected. No API or ABI change.
+
+## [0.27.1]
+
+### Fix: hosts validate a spliced `GridMap` right after attaching its bytes (PATCH)
+
+`deserializeGridMap` accepts a header-only wire (the functional-v2 splice form) and leaves the
+data-length check to `validateGridMap()`. Both host splice-attachment paths (the functional
+parser handle and the parser-module runtime) now run that check as soon as the bytes are attached,
+so a spliced GridMap whose bytes cannot cover its declared cells is rejected as a contract
+violation instead of reaching consumers. Host-side only; no header layout, ABI or wire change.
+## [0.27.0]
+
+### Feature: shared timestamp arithmetic and axis policy (MINOR)
+
+`pj_base/time_math.hpp` adds C++17-clean, checked time arithmetic usable by parser modules,
+the host, and plugins: `nanosecondsPer`, `scaleToNanoseconds`, `toSignedTicks`,
+`secondsToNanoseconds`, `combineSecondsAndNanos`, `syntheticInstant`, and
+`fitSyntheticInterval`. The absolute-time spine re-exports this arithmetic through
+`pj_base/time.hpp`.
+
+Layered on that spine, `pj_plugins/sdk/timestamp_policy.hpp` is meant to replace the five
+divergent per-plugin timestamp-axis detectors inventoried in
+[#186](https://github.com/PlotJuggler/plotjuggler_sdk/issues/186) with one header-only
+detection and configuration contract: native timestamp storage first, then canonical names
+restricted to eligible scalar storage, never expanded list elements. `PJ::sdk::timestampEligibility`
+judges storage against the configured `timestamp_unit`: 64-bit integers, native timestamps and
+`double` are always eligible, 32-bit integers only when the unit is seconds, and 8/16-bit integers
+and `float32` are explicit-only. Explicitly selected explicit-only storage carries a shared warning, while canonical axis configuration keys and `PJ::TimeUnit` stop unit inference from
+being private plugin policy. `PJ::sdk::timestampNamePriority` exposes the allocation-free name pass
+beside `PJ::sdk::detectTimestampColumn`. No ABI change; `abi/baseline.abi` untouched.
+
+## [0.26.0]
+
+### Feature: `GridMap` canonical builtin object (MINOR)
+
+`sdk::GridMap` (`pj_base/builtin/grid_map.hpp`, `BuiltinObjectType::kGridMap` = 20,
+`PJ_BUILTIN_OBJECT_TYPE_GRID_MAP`) is a 2D grid whose cells carry named channels — the
+layered, generic-valued sibling of `OccupancyGrid` for elevation maps and multi-layer
+costmaps (`grid_map_msgs/GridMap`, `foxglove.Grid`). Row-major fixed-size cell records
+described by the shared `PointField` channel model, the packed layout `foxglove.Grid` uses,
+so producers with that layout hand `data` over zero-copy; a NaN in a float channel means
+"no data". `PJ.GridMap` wire format + `grid_map_codec.hpp` (`serializeGridMap`,
+`deserializeGridMap`, and `validateGridMap` for the full layout check once spliced bytes are
+attached), an entry in the type-erased dispatcher, in the frozen splice table (`data` =
+field 10) and in both host splice-attachment paths, a `GridMapBuilder` (`gridMap()`) in the
+parser-module `ObjectWriter`, and `sdk::Vector2` in the geometry vocabulary (already present
+as `PJ.Vector2` on the wire). The `PointField` wire helpers shared by the PointCloud,
+VoxelGrid and GridMap codecs now live in one private header. Additive: no existing struct,
+slot, or wire format changes.
+
+## [0.25.0]
+
+### Feature: plugin-authoring CMake helpers ship with the SDK (MINOR)
+
+`cmake/PjPlugin.cmake` (installed with the `plugin_sdk` component, auto-included by
+`find_package(plotjuggler_sdk COMPONENTS plugin_sdk)`, the Conan build modules and the
+in-tree build) replaces `cmake/PjPluginManifest.cmake` and absorbs the helpers every
+official plugin carried in its own `cmake/` directory:
+
+- `pj_configure_plugin(<target> FAMILIES <f>... [MANIFEST_FILE] [MANIFEST_HEADER]
+  [MANIFEST_VAR] [ABI_MAJOR] [EXTRA_EXPORTS] [NO_EXPORT_HARDENING])` — the one call that
+  makes a `SHARED` target a correct plugin: manifest validation, symbol isolation + rpath,
+  the `.pjmanifest.json` sidecar, an optional `constexpr` header generated from
+  `manifest.json` (single source for the `PJ_*_PLUGIN` literal), and on Linux a
+  version-script export allowlist with a post-build gate against `STB_GNU_UNIQUE` leaks
+  and missing entry points.
+- `pj_embed_file(<target> FILE HEADER VAR_NAME)` — generic configure-time file →
+  `constexpr char[]` header (Qt Designer `.ui`, manifests, …); rewritten only when the
+  content changes, and emitted as character literals so non-ASCII bytes compile under
+  `-Werror` (the copied helper's integer initializers did not).
+- `pj_harden_plugin_exports(<target> [FAMILIES] [REQUIRED_EXPORTS] [EXTRA_EXPORTS])` —
+  the allowlist + gate on its own, for DSOs with non-standard entry points.
+- `pj_emit_plugin_manifest` is **deprecated** (one CMake deprecation notice per configure)
+  and forwards to `pj_configure_plugin(... NO_EXPORT_HARDENING)` with identical behavior.
+
+Migration from the copied helpers: `pj_embed_ui` → `pj_embed_file` (`UI_FILE` → `FILE`);
+`pj_embed_manifest` + `pj_emit_plugin_manifest` + `pj_harden_plugin_exports` → one
+`pj_configure_plugin(... FAMILIES <f>... MANIFEST_HEADER <h> MANIFEST_VAR <v>)`. The
+allowlist no longer names the never-shipped `pj_plugin_descriptor_*`; `REQUIRED_EXPORTS`
+are now kept exported automatically (no need to repeat them in `EXTRA_EXPORTS`).
+
+Plugins that adopt these helpers pin `plotjuggler_sdk/[>=0.25.0 <1.0.0]`. No ABI change;
+`abi/baseline.abi` is untouched.
+
+### Fix: cache cleanup revalidates scanned files before removal
+
+Descriptor-import cache cleanup now rechecks an artifact's size and LRU stamp under its
+exclusive identity lock before eviction, and rechecks an orphan partial's age before removal.
+Files replaced, refreshed, or removed after the single cleanup scan are skipped without error.
+
+## [0.24.0]
+
+### Feature: plugin-authoring helpers + descriptor-import provider support (MINOR)
+
+Helpers that every official plugin repository had to carry (and copy between
+repositories) now ship with the SDK:
+
+- Header-only, in `plugin_sdk` (`pj_plugins/sdk/`): `parser_array_policy.hpp`
+  (the cross-parser max-array-size + clamp/skip contract with its canonical
+  and legacy JSON keys), `streaming_source.hpp` (`DrainQueue`,
+  `LatestValueSlot`, `stringSetFromViews`, `parserConfigOverride`,
+  `DelegatedIngestCache` — the receive-thread → `onPoll()` handoff and the
+  delegated-ingest binding cache), `streaming_dialog.hpp` (parser-encoding
+  selector + visible-selection merge) and `endpoint.hpp` (strict port parse,
+  endpoint composition with IPv6 bracketing).
+- New compiled component `plotjuggler_sdk::descriptor_import_support`
+  (`pj_base/sdk/descriptor_import/`, namespace `PJ::sdk::descriptor_import`):
+  the callee side of `pj.descriptor_import.v1`. `OriginPolicy` /
+  `parseOrigin` / origin allowlists (fail-closed: schemes must be named);
+  the allowlisted, canonically serialized source descriptor
+  (`SourceDescriptorPolicy` with an `IdentityScheme` — the one owner of the
+  identity prefix + digest width, shared with the cache's `CacheSpec`);
+  the request-addressed `RequestArtifactCache` (validator-injected, atomic
+  publish, cross-process read leases, orphan + LRU cleanup; errors as
+  `Expected<T, CacheError>` with a retryable flag); and `ProviderJob` (gated
+  worker thread, on_dataset zero-or-one, on_terminal exactly-once,
+  cancel/join/destroy vtable) with `SettlementLatch`. The struct_size
+  growth-contract helpers (`readDescriptorImportStartRequest`,
+  `writeDescriptorQueryResult`, `PJ::sdk::fieldCovered`) are header-only in
+  `pj_base/sdk/descriptor_import.hpp` / `plugin_data_api.hpp`, beside their
+  consumer-side twins. `pj_base/sdk/text_utils.hpp` (lowerAscii, parsePort)
+  backs both this component and the streaming helpers.
+
+There is no C-ABI or protocol change: `PJ_ABI_VERSION`, every family
+protocol version, vtable layouts and `abi/baseline.abi` are unchanged. MINOR because the installed C++ API grows
+additively; plugins that do not use the additions keep their current pin.
 
 ## [0.23.1]
 

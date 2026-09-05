@@ -41,7 +41,7 @@ things that silently break a plugin.
   **maintainer** task. Stop and follow `pj_plugins/docs/ARCHITECTURE.md` §0a and
   the "Release Versioning" contract in the root `CLAUDE.md`. Different rules apply.
 
-## Step 0 — How do you get the SDK?
+## Step 1 — How do you get the SDK?
 
 A plugin author obtains `plotjuggler_sdk` one of three ways. **All three end at the
 same link line** — `target_link_libraries(my_plugin PRIVATE
@@ -58,13 +58,13 @@ plotjuggler_sdk::plugin_sdk)` — only the acquisition step differs:
   the package is in your environment.
 - **git submodule / vendored source** — `add_subdirectory(plotjuggler_sdk)`; the
   same `plotjuggler_sdk::plugin_sdk` alias exists in-tree, and
-  `pj_emit_plugin_manifest` becomes available too, so the CMake below is identical.
+  `pj_configure_plugin` / `pj_embed_file` are available too, so the CMake below is identical.
   (Editing the SDK repo itself is this world: the raw umbrella target is
   `pj_plugin_sdk`; bare `pj_base` lacks the MessageParser and dialog SDK headers,
   so prefer the umbrella. The `pj_plugins/docs/*-guide.md` snippets show
   per-piece in-tree targets.)
 
-## Step 1 — Pick the family
+## Step 2 — Pick the family
 
 | Your goal | Family | Read |
 |---|---|---|
@@ -83,10 +83,10 @@ If your data is object-like (image, point cloud, occupancy grid, transforms,
 markers…) rather than scalar time series, also read `references/builtin-objects.md`
 **before** writing — it changes what you emit and how.
 
-## Step 2 — The fast path per family
+## Step 3 — The fast path per family
 
 Subclass the base, override the minimum, register with the macro. The macro's
-second argument is the **manifest JSON literal** (see Step 3).
+second argument is the **manifest JSON literal** (see Step 5).
 
 | Family | Subclass | `#include` | Override (minimum) | Register |
 |---|---|---|---|---|
@@ -110,9 +110,43 @@ The quickest correct start is to copy a working example from this repo and edit 
 family reference embeds an API skeleton for when the repo isn't at hand (domain
 placeholders like `openSocket()` are yours to fill in).
 
-## Step 3 — Build it
+## Step 4 — The SDK already has it: do not write these
 
-One CMakeLists.txt serves every acquisition channel from Step 0:
+Before writing any helper, look it up here. Every row is a problem plugin authors
+kept re-solving until the SDK absorbed the solution; several own a **wire or config
+contract**, so a private reimplementation is not merely redundant — it is
+incompatible with the host and with every other plugin. All headers are in
+`plotjuggler_sdk::plugin_sdk`; symbols live in `PJ::sdk` unless noted.
+
+| You need to… | Use | Header |
+|---|---|---|
+| Hand data from your receive thread to `onPoll()` (batch) | `DrainQueue<T>` — `push()` on the I/O thread, `drain()` in `onPoll()` | `pj_plugins/sdk/streaming_source.hpp` |
+| Same, but only the *latest* value matters (status, snapshot) | `LatestValueSlot<T>` — `set()` / `take()` | `pj_plugins/sdk/streaming_source.hpp` |
+| Push raw payloads to a MessageParser (delegated ingest), per topic | `DelegatedIngestCache::push(host, key, request, ts, bytes)` — caches bindings, anchors payload ownership, binding-unavailable is *not* an error | `pj_plugins/sdk/streaming_source.hpp` |
+| Read the `"_parser_config"` the host injects into your config JSON | `parserConfigOverride(config_json)` | `pj_plugins/sdk/streaming_source.hpp` |
+| Turn the topic-subscription ABI's string views into a `std::set` | `stringSetFromViews(views, count)` | `pj_plugins/sdk/streaming_source.hpp` |
+| Parser option "max array size" + clamp/skip (**config-key contract**) | `ArrayLimit`, `arrayLimitFromJson(cfg)`, `arrayLimitToJson(cfg, limit)`, `kMaxArraySizeKey`/`kArrayPolicyKey` | `pj_plugins/sdk/parser_array_policy.hpp` |
+| Parser-encoding combo in a streaming dialog | `writeEncodingSelector(wd, "encoding_combo", available, selected)`, `encodingAt(index, available)`, `parseEncodingsJson(json)` | `pj_plugins/sdk/streaming_dialog.hpp`, `pj_plugins/sdk/encoding_utils.hpp` |
+| Merge a topic selection the host reports only for *visible* rows | `mergeVisibleSelection(previous, reported, is_visible, accept)`, `passesSelectionFilter(topic, selection, projection)` | `pj_plugins/sdk/streaming_dialog.hpp` |
+| Build `scheme://host:port/path` from dialog fields (IPv6-safe) | `composeEndpoint(scheme, host, port, path)`, `composeHostPort(host, port)`, `authorityHost(host)` | `pj_plugins/sdk/endpoint.hpp` |
+| Validate a port string; lowercase an ASCII token | `parsePort(text) → optional<uint16_t>`, `lowerAscii(s)` | `pj_base/sdk/text_utils.hpp` |
+| Read an env var / find the plugin's own directory / per-user data dir (MSVC-clean) | `PJ::platform::getEnv`, `getSharedLibDir(fn_addr)`, `userDataDir()` | `pj_base/sdk/platform.hpp` |
+| Parse or compare versions (manifest, `min_sdk_required`) | `PJ::SemVer::parse` / `isValid` / `<=>`; `PJ::sdkVersion()` | `pj_base/sdk/semver.hpp`, `pj_base/sdk/version.hpp` |
+| Parse `event_json` yourself (only if you override raw `onWidgetEvent`) | `PJ::WidgetEvent` — `text()`, `currentIndex()`, `checked()`, `filePickerResult()`, … (`DialogPluginTyped` already does this for you) | `pj_plugins/sdk/widget_event.hpp` |
+| File-picker / tree-widget payloads (**wire-string contract**) | `FilePickerOptions`, `FilePickerResult`, `TreeItem`, `TreeCell` + their `*WireValue()` spellings | `pj_plugins/sdk/file_picker_types.hpp`, `pj_plugins/sdk/tree_types.hpp` |
+| Attach media/renderer hints or object metadata to an ObjectStore topic | `MediaMetadataBuilder`, `ObjectTopicMetadataBuilder` | `pj_base/sdk/media_metadata.hpp`, `pj_base/sdk/object_topic_metadata.hpp` |
+| Hold object bytes read from the toolbox object host | `ObjectBytes` (move-only RAII) | `pj_base/sdk/object_bytes.hpp` |
+| Arrow schema/array/stream out-params | `ArrowSchemaHolder`, `ArrowArrayHolder`, `ArrowStreamHolder` (Step 6 rule 6) | `pj_base/sdk/arrow.hpp` |
+| Provide `pj.descriptor_import.v1` (a source that fetches descriptors/datasets from an origin) | `readDescriptorImportStartRequest` + the compiled component `plotjuggler_sdk::descriptor_import_support` (`OriginPolicy`, `RequestArtifactCache`, `ProviderJob`) — link it only if you provide the extension | `pj_base/sdk/descriptor_import.hpp`, `pj_base/sdk/descriptor_import/` |
+| Embed a `.ui`/manifest/any file as a `constexpr` header; make the DSO a plugin | `pj_embed_file()`, `pj_configure_plugin()` (Step 5) | shipped CMake, no include |
+
+If your problem is in this table, the helper is the implementation. If it is *almost*
+in the table, extend the SDK helper (a maintainer change) rather than forking it into
+the plugin — that is how every row above got here.
+
+## Step 5 — Build it
+
+One CMakeLists.txt serves every acquisition channel from Step 1:
 
 ```cmake
 cmake_minimum_required(VERSION 3.22)
@@ -127,36 +161,37 @@ find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
 add_library(my_plugin SHARED my_plugin.cpp)
 target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)  # same in all worlds
 
-pj_emit_plugin_manifest(my_plugin
-  FAMILY        data_source     # data_source | message_parser | toolbox | dialog
-  MANIFEST_FILE ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+pj_configure_plugin(my_plugin
+  FAMILIES        data_source                 # data_source | message_parser | toolbox | dialog
+                                              # (list several: `data_source dialog` for an embedded dialog)
+  MANIFEST_FILE   ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
+  MANIFEST_HEADER generated/my_manifest.hpp   # -> #include "my_manifest.hpp"
+  MANIFEST_VAR    kMyManifest                 # -> PJ_DATA_SOURCE_PLUGIN(MyPlugin, kMyManifest)
 )
+# Dialog UI kept as a real Qt Designer file:
+# pj_embed_file(my_plugin FILE ui/my_dialog.ui HEADER generated/my_dialog_ui.hpp VAR_NAME kMyDialogUi)
 ```
 
 The single `plotjuggler_sdk::plugin_sdk` component is the whole author surface —
-base + parser SDK + dialog SDK. You do **not** link a separate dialog target
-downstream (`pj_dialog_sdk` is an in-tree name).
+base + parser SDK + dialog SDK + these CMake helpers. You do **not** link a separate
+dialog target downstream (`pj_dialog_sdk` is an in-tree name).
 
-**Manifest — two things named "manifest", only one is authoritative:**
+**`pj_configure_plugin` is not optional in practice.** It (1) validates
+`manifest.json` (`id`, `name`, `version` required), (2) applies the symbol-isolation
+settings that stop your plugin's symbols from clashing with the host's (hidden
+visibility everywhere; `-Wl,-Bsymbolic-functions` on Linux/ELF), (3) writes a
+human-readable `<target>.pjmanifest.json` sidecar for tooling (runtime discovery
+does *not* read it — the JSON embedded in the library via `PJ_*_PLUGIN` is the
+source of truth), (4) with `MANIFEST_HEADER` generates the `constexpr` header you
+pass to `PJ_*_PLUGIN(Class, kMyManifest)` so `manifest.json` is that single source,
+and (5) on Linux links a version-script allowlist that exports **only** the ABI
+entry points and fails the build post-link if a `STB_GNU_UNIQUE` symbol leaks or an
+entry point is missing. Family extras in the manifest: MessageParser **must**
+include `"encoding": ["json", …]` (the host routes payloads by these names,
+case-sensitive); DataSource may add `"file_extensions": [".csv"]`.
+`pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 
-1. **The JSON literal you pass to `PJ_*_PLUGIN(Class, "…")`** is embedded in the
-   library and is the **source of truth** the host reads at discovery/load.
-   Required keys: `id`, `name`, `version`. Family extras: MessageParser **must**
-   include `"encoding": ["json", …]` (the host routes payloads by these names, case-
-   sensitive); DataSource may add `"file_extensions": [".csv"]`.
-2. **`manifest.json` + `pj_emit_plugin_manifest(...)`** is **optional but
-   recommended**. It writes a human-readable `<target>.pjmanifest.json` sidecar
-   (for tooling/packaging — runtime discovery does *not* read it) **and**, more
-   importantly, applies the symbol-isolation settings that stop your plugin's
-   symbols from clashing with the host's (hidden visibility everywhere;
-   `-Wl,-Bsymbolic-functions` on Linux/ELF — macOS's two-level namespace and
-   Windows' export model give the equivalent natively). Keep its `id/name/version` in sync with the macro literal — best by
-   making `manifest.json` the single source: generate a constexpr header from it at
-   build time and pass that to the macro (the official plugins do this with a small
-   CMake embed helper; see `pj-official-plugins/cmake/EmbedManifest.cmake` for a
-   ready-made one), instead of maintaining two hand-written copies.
-
-## Step 4 — The rules that silently break a plugin
+## Step 6 — The rules that silently break a plugin
 
 These cut across all families. The family references add family-specific traps
 (dialog `buttonBox` naming, parser topic-scoping, toolbox `notifyDataChanged`

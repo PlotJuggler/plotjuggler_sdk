@@ -164,9 +164,43 @@ Two patterns the official plugins converge on for embedded dialogs:
   owner-installed callback instead.
 
 For anything beyond a trivial UI, keep the `.ui` as a real Qt Designer file and
-embed it at build time (`pj_embed_ui` — see `pj_plugins/docs/dialog-plugin-guide.md`)
+embed it at build time (`pj_embed_file` — see `pj_plugins/docs/dialog-plugin-guide.md`)
 rather than growing an inline XML string; the file stays editable in Designer and
 the plugin still links no Qt.
+
+## Helpers you do not rewrite (connection dialogs)
+
+Every streaming source's dialog has the same three sub-problems; the SDK ships the
+answers (all `PJ::sdk`, header in parentheses). See SKILL.md Step 4 for the full table.
+
+- **Parser-encoding combo** (`pj_plugins/sdk/streaming_dialog.hpp`,
+  `pj_plugins/sdk/encoding_utils.hpp`). The host tells the owner which encodings
+  have a parser installed, as a JSON array — `parseEncodingsJson(json)` → vector.
+  In `widget_data()`:
+  `const bool have_parser = writeEncodingSelector(wd, "encoding_combo", available_, encoding_);`
+  (fills the combo, selects the current one, disables it with a "(no parsers
+  available)" entry when empty — fold `have_parser` into `setOkEnabled`). In
+  `onIndexChanged("encoding_combo", i)`: `encoding_ = encodingAt(i, available_);`.
+- **Endpoint fields → one URL** (`pj_plugins/sdk/endpoint.hpp`,
+  `pj_base/sdk/text_utils.hpp`). `parsePort(text)` is the strict validator for a
+  port line-edit (`std::optional<uint16_t>`); `composeEndpoint("ws", host, port,
+  "/path")` / `composeHostPort(host, port)` bracket IPv6 literals correctly. Don't
+  concatenate strings by hand.
+- **Topic selection lists** (`pj_plugins/sdk/streaming_dialog.hpp`). The host only
+  reports selections for *visible* rows (a filter box hides the rest), so
+  `onSelectionChanged` must merge: `selected_ = mergeVisibleSelection(selected_,
+  reported, is_visible, accept_reported);` and the owner filters with
+  `passesSelectionFilter(topic, selected_, projection)`.
+
+If you subclass `DialogPluginBase` directly and override raw
+`onWidgetEvent(name, event_json)`, parse `event_json` with `PJ::WidgetEvent`
+(`pj_plugins/sdk/widget_event.hpp`: `text()`, `currentIndex()`, `checked()`,
+`valueInt()`, `selectedItems()`, `filePickerResult()`, …) — never with ad-hoc JSON
+lookups. `DialogPluginTyped` already does this dispatch for you. File-picker and
+tree-widget payloads have canonical wire spellings owned by
+`pj_plugins/sdk/file_picker_types.hpp` / `tree_types.hpp` (`FilePickerOptions`,
+`FilePickerResult`, `TreeItem`, `*WireValue()`); a hand-typed `"open_file"` that
+drifts is silently ignored by the host.
 
 ## Static builds
 

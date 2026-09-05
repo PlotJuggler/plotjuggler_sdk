@@ -85,6 +85,6 @@ discretion.
 
 Each future SDK release needs a follow-up CCI PR: add the new version to
 `config.yml`, add its `url` + `sha256` to `conandata.yml`. Weigh this against the
-Cloudsmith Conan remote (`conan.cloudsmith.io/plotjuggler/plotjuggler`) you
-already operate, which needs no external review but requires consumers to add
-the remote.
+JFrog Conan remote (`plotjuggler.jfrog.io/artifactory/api/conan/plotjuggler-conan`)
+you already operate, which needs no external review but requires consumers to
+add the remote.

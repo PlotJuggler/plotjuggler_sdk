@@ -5,24 +5,22 @@
 /** @file time.hpp @brief Checked ROS and protobuf timestamp normalization. */
 
 #include <cstdint>
-#include <limits>
 
 #include "pj_base/parser_module/core.hpp"
+#include "pj_base/time_math.hpp"
 
 namespace pj {
 namespace detail {
 
 inline Expected<int64_t> combineSecondsAndNanos(int64_t seconds, int32_t nanos) {
-  constexpr int64_t kNanosPerSecond = INT64_C(1000000000);
-  if (nanos < 0 || nanos >= kNanosPerSecond) {
+  const auto combined = PJ::combineSecondsAndNanos(seconds, nanos);
+  if (nanos < 0 || nanos >= INT64_C(1000000000)) {
     return Status::error("timestamp nanoseconds are outside [0, 1000000000)");
   }
-  const int64_t positive_room = (std::numeric_limits<int64_t>::max() - nanos) / kNanosPerSecond;
-  const int64_t negative_room = std::numeric_limits<int64_t>::min() / kNanosPerSecond;
-  if (seconds > positive_room || seconds < negative_room) {
+  if (!combined) {
     return Status::error("timestamp is outside the int64 nanosecond range");
   }
-  return seconds * kNanosPerSecond + nanos;
+  return *combined;
 }
 
 }  // namespace detail

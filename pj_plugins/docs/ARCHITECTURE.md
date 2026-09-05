@@ -270,7 +270,10 @@ previously-circulated pre-v4 design included):
   candidates are reported as diagnostics while discovery continues.
 - **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
   only (DEEPBIND was a documented ASAN/allocator-interposition trap).
-  Plugin-local symbol isolation is left to `-fvisibility=hidden`.
+  Plugin-local symbol isolation is the plugin build's job: `pj_configure_plugin`
+  (`cmake/PjPlugin.cmake`, shipped with `plugin_sdk`) applies hidden visibility,
+  `-Wl,-Bsymbolic-functions`, and a version-script export allowlist gated
+  post-build against `STB_GNU_UNIQUE` leaks and missing entry points.
 - **Declined loader alternatives.** Admission does not use
   `RTLD_NODELETE` as its lifetime contract, `RTLD_DEEPBIND`, `dlmopen`, or a
   manifest-format change. Shared handle ownership controls lifetime, while
@@ -878,3 +881,21 @@ whole-source pause. Two independent additions, both `struct_size`/
 
 See `docs/data-source-guide.md` → "Per-topic pause (demand-driven
 subscription)" for the plugin-author walkthrough.
+
+## Source-cache attachment
+
+SDK 0.28 appends `attach_source_record(ctx, descriptor_json, out_error)` to
+the runtime-host vtable at offset 104, growing its size 104 → 112. Providers
+call it on the stream thread at download start. The host copies and stores
+the descriptor bytes verbatim, keys its cache on its own digest, and scopes
+the record by the provider id from the binding. Matching is byte-exact;
+the host bounds and parses the descriptor and rejects unknown fields.
+
+The last attachment before the ingest context's first `push_message` wins;
+byte-identical repeats before ingest are idempotent. Any attachment after
+ingest begins is an error. The host may stage the record until its ingest
+transaction commits so a refill or reload does not discard it. Failure never
+affects ingest. The descriptor identifies the request, carries no credentials,
+and leaves parser policy to the layout. `DataSourceRuntimeHostView` and
+`DatasetIngestHostView` expose `attachSourceRecord`; hosts predating the slot
+are detected with `PJ_HAS_TAIL_SLOT` and reported as an error (no caching).

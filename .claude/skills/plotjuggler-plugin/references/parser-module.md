@@ -111,7 +111,7 @@ embedded bytes; catalog ingestion validates the complete JSON transactionally.
 ## Build
 
 ```cmake
-find_package(plotjuggler_sdk 0.24 REQUIRED COMPONENTS parser_module)
+find_package(plotjuggler_sdk 0.29 REQUIRED COMPONENTS parser_module)
 
 pj_add_parser_module(raw_mono_image_parser
   SOURCE raw_mono_image_parser.cpp
@@ -121,7 +121,7 @@ pj_add_parser_module(raw_mono_image_parser
 ```
 
 The helper embeds the manifest, hides every non-ABI symbol, and exports the
-complete native `pj_module_*` set. `TARGETS wasm` (SDK 0.24+) requires
+complete native `pj_module_*` set. `TARGETS wasm` (SDK 0.29+) requires
 `PJ_WASI_SDK_ROOT` pointing at wasi-sdk 27: it builds a C++17 WASI reactor
 with exceptions disabled, omits the native manifest address/length exports,
 embeds the manifest in the `pj_parser_module_manifest` custom section via the

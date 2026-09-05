@@ -30,6 +30,7 @@
 #include "pj_base/builtin/compressed_point_cloud.hpp"
 #include "pj_base/builtin/depth_image.hpp"
 #include "pj_base/builtin/frame_transforms.hpp"
+#include "pj_base/builtin/grid_map.hpp"
 #include "pj_base/builtin/image.hpp"
 #include "pj_base/builtin/image_annotations.hpp"
 #include "pj_base/builtin/log.hpp"
@@ -67,6 +68,7 @@ enum class BuiltinObjectType : uint16_t {
   kPosesInFrame = 17,         ///< sdk::PosesInFrame — array of poses in one reference frame.
   kVoxelGrid = 18,            ///< sdk::VoxelGrid — dense 3D voxel grid (occupancy/cost/ESDF/semantic).
   kPlotMarkers = 19,          ///< sdk::PlotMarkers — findings on a time-series plot (regions, events, bands, labels).
+  kGridMap = 20,              ///< sdk::GridMap — 2D grid of per-cell channels (elevation maps, layered costmaps).
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -115,6 +117,8 @@ struct SchemaClassification {
       return "kVoxelGrid";
     case BuiltinObjectType::kPlotMarkers:
       return "kPlotMarkers";
+    case BuiltinObjectType::kGridMap:
+      return "kGridMap";
   }
   return "kNone";
 }
@@ -175,6 +179,9 @@ struct SchemaClassification {
   }
   if (s == "kPlotMarkers") {
     return BuiltinObjectType::kPlotMarkers;
+  }
+  if (s == "kGridMap") {
+    return BuiltinObjectType::kGridMap;
   }
   return std::nullopt;
 }
@@ -239,6 +246,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(PlotMarkers)) {
     return BuiltinObjectType::kPlotMarkers;
+  }
+  if (t == typeid(GridMap)) {
+    return BuiltinObjectType::kGridMap;
   }
   return BuiltinObjectType::kNone;
 }

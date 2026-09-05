@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "geometry_codec.hpp"
+#include "point_field_codec.hpp"
 #include "protobuf_wire.hpp"
 
 namespace PJ {
@@ -17,111 +18,13 @@ namespace {
 
 using builtin_wire::parseFields;
 using builtin_wire::Reader;
+using builtin_wire::readPointFieldIntoVector;
 using builtin_wire::Tag;
 using builtin_wire::WireType;
+using builtin_wire::writePointField;
 using builtin_wire::Writer;
 using sdk::PointCloud;
 using sdk::PointField;
-
-// ---------- PointField enum mapping ----------
-//   proto:   UNKNOWN=0, INT8=1, UINT8=2, INT16=3, UINT16=4, INT32=5, UINT32=6, FLOAT32=7, FLOAT64=8
-//   SDK:     kUnknown=0, kInt8=1, kUint8=2, kInt16=3, kUint16=4, kInt32=5, kUint32=6, kFloat32=7, kFloat64=8
-//
-// Numerically identical — direct cast suffices.
-
-uint32_t datatypeToWire(PointField::Datatype dt) {
-  return static_cast<uint32_t>(dt);
-}
-
-PointField::Datatype datatypeFromWire(uint64_t value) {
-  switch (value) {
-    case 1:
-      return PointField::Datatype::kInt8;
-    case 2:
-      return PointField::Datatype::kUint8;
-    case 3:
-      return PointField::Datatype::kInt16;
-    case 4:
-      return PointField::Datatype::kUint16;
-    case 5:
-      return PointField::Datatype::kInt32;
-    case 6:
-      return PointField::Datatype::kUint32;
-    case 7:
-      return PointField::Datatype::kFloat32;
-    case 8:
-      return PointField::Datatype::kFloat64;
-    case 0:
-    default:
-      return PointField::Datatype::kUnknown;
-  }
-}
-
-// ---------- PointField ----------
-
-void writePointField(Writer& writer, const PointField& field) {
-  writer.string(1, field.name);
-  writer.varint(2, field.offset);
-  writer.varint(3, datatypeToWire(field.datatype));
-  writer.varint(4, field.count);
-}
-
-bool decodePointField(Reader& reader, PointField& out) {
-  return parseFields(reader, [&](Tag tag, Reader& r) {
-    switch (tag.field) {
-      case 1:
-        return tag.type == WireType::kLengthDelimited && r.readString(out.name);
-      case 2: {
-        if (tag.type != WireType::kVarint) {
-          return false;
-        }
-        uint64_t v = 0;
-        if (!r.readVarint(v)) {
-          return false;
-        }
-        out.offset = static_cast<uint32_t>(v);
-        return true;
-      }
-      case 3: {
-        if (tag.type != WireType::kVarint) {
-          return false;
-        }
-        uint64_t v = 0;
-        if (!r.readVarint(v)) {
-          return false;
-        }
-        out.datatype = datatypeFromWire(v);
-        return true;
-      }
-      case 4: {
-        if (tag.type != WireType::kVarint) {
-          return false;
-        }
-        uint64_t v = 0;
-        if (!r.readVarint(v)) {
-          return false;
-        }
-        out.count = static_cast<uint32_t>(v);
-        return true;
-      }
-      default:
-        return false;
-    }
-  });
-}
-
-bool readPointFieldIntoVector(Reader& reader, std::vector<PointField>& out) {
-  Reader nested;
-  if (!reader.readMessage(nested)) {
-    return false;
-  }
-  PointField field;
-  if (!decodePointField(nested, field)) {
-    return false;
-  }
-  out.push_back(std::move(field));
-  return true;
-}
 
 // ---------- PointCloud payload bytes ----------
 

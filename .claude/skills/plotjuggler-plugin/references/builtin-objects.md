@@ -30,7 +30,7 @@ object store ABI in `V4_STORE.md`.
    custom payload as a builtin. `BuiltinObjectType::kNone` means
    "scalar/unknown classification", not "storage forbidden".
 
-The full list (17 concrete types) and their exact fields are in
+The full list (18 concrete types) and their exact fields are in
 `docs/builtin_type.md` and one header each under
 `pj_base/include/pj_base/builtin/` (the `builtin_object.hpp` enum is the
 authoritative roster — trust it over prose that may lag behind newer additions).
@@ -80,7 +80,7 @@ into the returned object so large payloads stay zero-copy. See
 ## Two storage families → two byte strategies
 
 - **Byte-backed** (Image, DepthImage, PointCloud, CompressedPointCloud,
-  OccupancyGrid(+Update), VoxelGrid, Mesh3D, VideoFrame): potentially megabytes.
+  OccupancyGrid(+Update), VoxelGrid, GridMap, Mesh3D, VideoFrame): potentially megabytes.
   Keep the payload a zero-copy `Span<const uint8_t>` anchored by a `BufferAnchor`
   (typically a `shared_ptr<vector<uint8_t>>`); only allocate new bytes if a
   conversion is unavoidable.

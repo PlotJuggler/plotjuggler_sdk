@@ -19,6 +19,7 @@
 #include <optional>
 #include <pj_base/builtin/builtin_object.hpp>
 #include <pj_base/builtin/builtin_object_codec.hpp>
+#include <pj_base/builtin/grid_map_codec.hpp>
 #include <pj_base/expected.hpp>
 #include <pj_base/sdk/data_source_host_views.hpp>
 #include <pj_base/span.hpp>
@@ -494,12 +495,23 @@ class MessageParserHandle {
         case sdk::BuiltinObjectType::kVoxelGrid:
           attached = attach.template operator()<sdk::VoxelGrid>();
           break;
+        case sdk::BuiltinObjectType::kGridMap:
+          attached = attach.template operator()<sdk::GridMap>();
+          break;
         default:
           break;
       }
       if (!attached) {
         fillContractViolation(out_error, "functional parser splice object type is not materializable");
         return false;
+      }
+      // GridMap decodes header-only for splices; the data-length check waits
+      // until the bytes exist, which is now.
+      if (type == sdk::BuiltinObjectType::kGridMap) {
+        if (auto valid = validateGridMap(*std::any_cast<sdk::GridMap>(&*object)); !valid) {
+          fillContractViolation(out_error, "spliced GridMap layout is invalid: " + valid.error());
+          return false;
+        }
       }
       state->record = sdk::ObjectRecord{
           .ts = has_timestamp ? std::optional<Timestamp>(timestamp_ns) : std::nullopt,

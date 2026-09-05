@@ -13,8 +13,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Make project cmake/ helpers discoverable to sub-trees and plugins.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPluginManifest
-include(PjPluginManifest)
+include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPlugin
+include(PjPlugin)
 include(PjParserModule)
 
 # ---------------------------------------------------------------------------
@@ -55,8 +55,8 @@ else()
   # -Werror only when explicitly requested (default ON, see option above) and
   # never on wasm32: there size_t is 32-bit, so many uint64_t->size_t
   # conversions trip -Wshorten-64-to-32 / -Wsign-conversion that never fire on
-  # 64-bit desktop (see SUSTAINABILITY.md T0-3). TODO: make the ABI/size types
-  # 32-bit-clean, then wasm can opt back into -Werror.
+  # 64-bit desktop. TODO: make the ABI/size types 32-bit-clean, then wasm can
+  # opt back into -Werror.
   if(PJ_WARNINGS_AS_ERRORS AND NOT EMSCRIPTEN)
     list(APPEND PJ_WARNING_FLAGS -Werror)
   endif()
@@ -159,7 +159,8 @@ if(PJ_INSTALL_SDK)
   install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
-    cmake/PjPluginManifest.cmake
+    cmake/PjPlugin.cmake
+    cmake/PjCheckElfPluginExports.cmake
     cmake/PjParserModule.cmake
     cmake/parser_module_wasi_no_io_stubs.cpp
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}

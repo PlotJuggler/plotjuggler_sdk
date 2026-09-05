@@ -114,6 +114,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .list_available_encodings = rhListEncodings,
       .push_message = rhPushMessage,
       .notify_available_topics = nullptr,
+      .attach_source_record = nullptr,
   };
   static const PJ_data_source_runtime_host_vtable_t no_enc_vt = {
       .protocol_version = 1,
@@ -130,6 +131,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .list_available_encodings = nullptr,
       .push_message = rhPushMessage,
       .notify_available_topics = nullptr,
+      .attach_source_record = nullptr,
   };
   return PJ_data_source_runtime_host_t{
       .ctx = reinterpret_cast<void*>(0x2),

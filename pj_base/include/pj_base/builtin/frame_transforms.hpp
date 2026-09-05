@@ -18,6 +18,13 @@
 namespace PJ {
 namespace sdk {
 
+/// Vector in 2D space (a direction or an extent, e.g. a grid's cell size).
+struct Vector2 {
+  double x = 0.0;
+  double y = 0.0;
+  bool operator==(const Vector2&) const = default;
+};
+
 /// Translation vector in 3D space.
 struct Vector3 {
   double x = 0.0;

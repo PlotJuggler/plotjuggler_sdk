@@ -12,6 +12,7 @@
 #include <variant>
 
 #include "native_parser_module_fixture.hpp"
+#include "pj_base/builtin/grid_map_codec.hpp"
 #include "pj_base/builtin/point_cloud.hpp"
 #include "pj_base/builtin_object_abi.h"
 #include "pj_base/span.hpp"
@@ -179,6 +180,34 @@ TEST(ParserModuleRuntime, AcceptsEligibleSpliceAndRejectsInvalidReferences) {
   ASSERT_TRUE(ineligible_result.has_value()) << ineligible_result.error();
   EXPECT_EQ(ineligible_result->fault, ParserModuleFaultKind::kContractViolation);
   EXPECT_NE(ineligible_result->message.find("not eligible"), std::string::npos);
+}
+
+TEST(ParserModuleRuntime, AttachesGridMapSpliceToTheDecodedHeader) {
+  auto module = loadFixture();
+  auto bound = createBound(module, kSpliceGridMap, parser_module::Route::kObject, PJ_BUILTIN_OBJECT_TYPE_GRID_MAP);
+  auto result = bound.parse(input());
+  ASSERT_TRUE(result.has_value()) << result.error();
+  ASSERT_EQ(result->fault, ParserModuleFaultKind::kNone) << result->message;
+  const auto* object = std::get_if<ParserModuleObjectOutput>(&*result->output);
+  ASSERT_NE(object, nullptr);
+  ASSERT_TRUE(object->splice.has_value());
+  EXPECT_EQ(object->splice->field_number, 10U);
+  const auto* grid = std::any_cast<sdk::GridMap>(&object->object);
+  ASSERT_NE(grid, nullptr);
+  EXPECT_EQ(grid->column_count, 2U);
+  ASSERT_EQ(grid->data.size(), 2U);
+  EXPECT_EQ(grid->data[0], 20U);
+  EXPECT_EQ(grid->data[1], 30U);
+  EXPECT_TRUE(validateGridMap(*grid).has_value());
+}
+
+TEST(ParserModuleRuntime, RejectsGridMapSpliceWhoseBytesDoNotCoverTheCells) {
+  auto module = loadFixture();
+  auto bound = createBound(module, kSpliceGridMapShort, parser_module::Route::kObject, PJ_BUILTIN_OBJECT_TYPE_GRID_MAP);
+  auto result = bound.parse(input());
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_EQ(result->fault, ParserModuleFaultKind::kContractViolation);
+  EXPECT_NE(result->message.find("GridMap"), std::string::npos) << result->message;
 }
 
 TEST(ParserModuleRuntime, StrikeTrackerQuarantinesReplaysAndThenDisables) {

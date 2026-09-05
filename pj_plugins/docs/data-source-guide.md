@@ -71,7 +71,12 @@ prevent runtime failures and confusing host behaviour.
   but the host receives a generic error and the plugin loses the chance to
   report a useful reason.
 - Call host methods from a background thread you spawned. Buffer in plugin
-  memory and flush from `onPoll()`.
+  memory and flush from `onPoll()` — `PJ::sdk::DrainQueue` / `LatestValueSlot`
+  (`pj_plugins/sdk/streaming_source.hpp`) are the swap-drain containers for
+  that handoff; `DelegatedIngestCache` in the same header wraps
+  `ensureParserBinding` + `pushMessage` for delegated-ingest sources, and
+  `pj_plugins/sdk/endpoint.hpp` / `streaming_dialog.hpp` cover endpoint text
+  and the connection-panel encoding selector.
 - Call `runtimeHost().progressFinish()` from a `FileSourceBase` subclass —
   the base class calls it for you after `importData()` returns.
 - Re-release an `ArrowArrayStream` after `appendArrowStream()` returns
@@ -473,6 +478,7 @@ Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
 | `ensureParserBinding(request)` | Bind a parser for delegated ingest (see below). |
 | `pushMessage(handle, timestamp, fetch_message_data)` | Push a message through a parser binding via a deferred fetcher callable; the host invokes it per the active ObjectIngestPolicy (eager/lazy). |
 | `notifyAvailableTopics(topics)` | Advertise the full set of topics you *can* stream but have not subscribed, so the host lists and a-priori classifies them with no data flowing. See *Per-topic pause* below. |
+| `attachSourceRecord(descriptor_json)` | On the stream thread, declare the request descriptor for the host's source cache. The host stores the bytes verbatim and derives its cache key. Last attach before this context's first `pushMessage` wins; byte-identical repeats before ingest are idempotent. Errors after ingest begins or on hosts that predate the slot never affect ingest. See [Source-cache attachment](ARCHITECTURE.md#source-cache-attachment). |
 
 ## Optional Features
 

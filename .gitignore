@@ -17,3 +17,6 @@ pj_media/testdata/
 # leak into the recipe tree that gets copied into the conan-center-index fork.
 /packaging/conan-center-index/recipes/plotjuggler_sdk/all/test_package/build/
 /packaging/conan-center-index/recipes/plotjuggler_sdk/all/test_package/CMakeUserPresets.json
+
+# git worktrees live here by policy (see the global CLAUDE.md)
+.worktrees/

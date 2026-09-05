@@ -352,7 +352,11 @@ PJ::Status loadConfig(std::string_view json) override {
 
 Common configuration patterns:
 - **Array clamping**: `{"max_array_size": 100}` — limits how many array
-  elements are expanded into individual series.
+  elements are expanded into individual series. Read and write it through
+  `PJ::sdk::arrayLimitFromJson()` / `arrayLimitToJson()`
+  (`pj_plugins/sdk/parser_array_policy.hpp`): the canonical keys
+  (`max_array_size`, `array_policy` = `clamp` | `skip`) plus the legacy
+  per-parser booleans, so every parser interprets a shared config the same way.
 - **Embedded timestamps**: `{"use_embedded_timestamp": true}` — the parser
   extracts timestamp from the payload (e.g. ROS `Header.stamp`) instead of
   using the host-provided `timestamp_ns`.

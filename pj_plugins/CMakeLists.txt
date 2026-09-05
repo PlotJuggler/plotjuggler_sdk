@@ -550,6 +550,53 @@ elseif(UNIX)
 endif()
 
 # ---------------------------------------------------------------------------
+# CMake plugin-helper fixtures (cmake/PjPlugin.cmake), consumed by
+# plugin_cmake_helpers_test and the script-mode gate tests.
+# ---------------------------------------------------------------------------
+
+set(_pj_cmake_fixture_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake_helpers_fixture")
+
+add_library(cmake_helpers_fixture_plugin SHARED tests/cmake_helpers_fixture_plugin.cpp)
+target_compile_features(cmake_helpers_fixture_plugin PRIVATE cxx_std_20)
+target_compile_options(cmake_helpers_fixture_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(cmake_helpers_fixture_plugin PRIVATE pj_plugin_sdk)
+pj_configure_plugin(cmake_helpers_fixture_plugin
+  FAMILIES        data_source dialog
+  MANIFEST_FILE   "${_pj_cmake_fixture_dir}/manifest.json"
+  MANIFEST_HEADER cmake_helpers_fixture_generated/cmake_helpers_fixture_manifest.hpp
+  MANIFEST_VAR    kFixtureManifest
+)
+pj_embed_file(cmake_helpers_fixture_plugin
+  FILE     "${_pj_cmake_fixture_dir}/dialog.ui"
+  HEADER   cmake_helpers_fixture_generated/cmake_helpers_fixture_dialog_ui.hpp
+  VAR_NAME kFixtureDialogUi
+)
+
+# The same source through the deprecated alias: no export allowlist, so the
+# probe symbol stays exported and (GCC) the STB_GNU_UNIQUE static leaks —
+# what the gate's negative tests need. Its deprecation notice is expected.
+add_library(cmake_helpers_legacy_plugin SHARED tests/cmake_helpers_fixture_plugin.cpp)
+target_compile_features(cmake_helpers_legacy_plugin PRIVATE cxx_std_20)
+target_compile_options(cmake_helpers_legacy_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(cmake_helpers_legacy_plugin PRIVATE pj_plugin_sdk)
+set(CMAKE_WARN_DEPRECATED OFF)
+pj_emit_plugin_manifest(cmake_helpers_legacy_plugin
+  FAMILY        data_source
+  MANIFEST_FILE "${_pj_cmake_fixture_dir}/manifest.json"
+)
+unset(CMAKE_WARN_DEPRECATED)
+pj_embed_file(cmake_helpers_legacy_plugin
+  FILE     "${_pj_cmake_fixture_dir}/manifest.json"
+  HEADER   cmake_helpers_legacy_generated/cmake_helpers_fixture_manifest.hpp
+  VAR_NAME kFixtureManifest
+)
+pj_embed_file(cmake_helpers_legacy_plugin
+  FILE     "${_pj_cmake_fixture_dir}/dialog.ui"
+  HEADER   cmake_helpers_legacy_generated/cmake_helpers_fixture_dialog_ui.hpp
+  VAR_NAME kFixtureDialogUi
+)
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -612,6 +659,16 @@ target_link_libraries(message_parser_runtime_test PRIVATE
 )
 add_test(NAME message_parser_runtime_test COMMAND message_parser_runtime_test)
 
+# Unit test: the header-only plugin-authoring helpers (parser array policy,
+# streaming handoff containers + delegated ingest, endpoint text, streaming
+# dialog helpers).
+add_executable(plugin_sdk_helpers_test tests/plugin_sdk_helpers_test.cpp)
+target_compile_options(plugin_sdk_helpers_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(plugin_sdk_helpers_test PRIVATE
+  pj_plugin_sdk nlohmann_json::nlohmann_json GTest::gtest_main
+)
+add_test(NAME plugin_sdk_helpers_test COMMAND plugin_sdk_helpers_test)
+
 # Unit test: additions-only pure-functional parser C extension.
 add_executable(message_parser_functional_extension_test tests/message_parser_functional_extension_test.cpp)
 target_compile_options(message_parser_functional_extension_test PRIVATE ${PJ_WARNING_FLAGS})
@@ -660,6 +717,53 @@ target_link_libraries(parser_route_resolver_test PRIVATE
   pj_parser_claim_catalog GTest::gtest_main
 )
 add_test(NAME parser_route_resolver_test COMMAND parser_route_resolver_test)
+
+# CMake plugin helpers: load the helper-configured fixture through the host
+# loaders and compare what the helpers embedded / emitted / localized.
+add_executable(plugin_cmake_helpers_test tests/plugin_cmake_helpers_test.cpp)
+add_dependencies(plugin_cmake_helpers_test cmake_helpers_fixture_plugin cmake_helpers_legacy_plugin)
+target_compile_definitions(plugin_cmake_helpers_test PRIVATE
+  PJ_CMAKE_HELPERS_FIXTURE_PLUGIN_PATH="$<TARGET_FILE:cmake_helpers_fixture_plugin>"
+  PJ_CMAKE_HELPERS_LEGACY_PLUGIN_PATH="$<TARGET_FILE:cmake_helpers_legacy_plugin>"
+  PJ_CMAKE_HELPERS_FIXTURE_MANIFEST_PATH="${_pj_cmake_fixture_dir}/manifest.json"
+  PJ_CMAKE_HELPERS_FIXTURE_UI_PATH="${_pj_cmake_fixture_dir}/dialog.ui"
+)
+target_compile_options(plugin_cmake_helpers_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(plugin_cmake_helpers_test PRIVATE
+  pj_data_source_host pj_dialog_library pj_dialog_host pj_base
+  nlohmann_json::nlohmann_json GTest::gtest_main ${CMAKE_DL_LIBS}
+)
+add_test(NAME plugin_cmake_helpers_test COMMAND plugin_cmake_helpers_test)
+
+# The ELF gate in script mode: accepts the hardened fixture, rejects a missing
+# entry point, and (GCC) rejects the un-hardened build's STB_GNU_UNIQUE leak.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(_pj_gate "${plotjuggler_sdk_SOURCE_DIR}/cmake/PjCheckElfPluginExports.cmake")
+  add_test(NAME cmake_helpers_gate_accepts_fixture
+    COMMAND ${CMAKE_COMMAND}
+      -DPLUGIN_SO=$<TARGET_FILE:cmake_helpers_fixture_plugin>
+      -DREQUIRED_EXPORTS=pj_plugin_abi_version,PJ_get_data_source_vtable,PJ_get_dialog_vtable
+      -DNM_TOOL=${CMAKE_NM}
+      -P "${_pj_gate}")
+  add_test(NAME cmake_helpers_gate_rejects_missing_export
+    COMMAND ${CMAKE_COMMAND}
+      -DPLUGIN_SO=$<TARGET_FILE:cmake_helpers_fixture_plugin>
+      -DREQUIRED_EXPORTS=PJ_get_toolbox_vtable
+      -DNM_TOOL=${CMAKE_NM}
+      -P "${_pj_gate}")
+  set_tests_properties(cmake_helpers_gate_rejects_missing_export PROPERTIES
+    PASS_REGULAR_EXPRESSION "required export \"PJ_get_toolbox_vtable\" is missing")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_test(NAME cmake_helpers_gate_rejects_unique_symbol
+      COMMAND ${CMAKE_COMMAND}
+        -DPLUGIN_SO=$<TARGET_FILE:cmake_helpers_legacy_plugin>
+        -DREQUIRED_EXPORTS=pj_plugin_abi_version
+        -DNM_TOOL=${CMAKE_NM}
+        -P "${_pj_gate}")
+    set_tests_properties(cmake_helpers_gate_rejects_unique_symbol PROPERTIES
+      PASS_REGULAR_EXPRESSION "STB_GNU_UNIQUE")
+  endif()
+endif()
 
 # Integration tests: native functional parser-module loading and execution.
 add_executable(native_parser_module_test tests/native_parser_module_test.cpp)

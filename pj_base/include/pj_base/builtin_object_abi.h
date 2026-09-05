@@ -57,6 +57,7 @@ typedef enum PJ_builtin_object_type_t {
   PJ_BUILTIN_OBJECT_TYPE_POSES_IN_FRAME = 17,
   PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID = 18,
   PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS = 19,
+  PJ_BUILTIN_OBJECT_TYPE_GRID_MAP = 20,
   /* Reserve future types; appended at the tail. Numeric values are stable
    * across releases — never renumber. Each new value here must match the
    * matching kFoo entry in BuiltinObjectType (builtin_object.hpp). */
@@ -87,7 +88,7 @@ typedef struct PJ_builtin_object_splice_field_v1_t {
   uint32_t field_number;
 } PJ_builtin_object_splice_field_v1_t;
 
-#define PJ_BUILTIN_OBJECT_SPLICE_FIELDS_V1_COUNT UINT32_C(9)
+#define PJ_BUILTIN_OBJECT_SPLICE_FIELDS_V1_COUNT UINT32_C(10)
 
 /** Return the frozen splice-eligible table and optionally its entry count. */
 static inline const PJ_builtin_object_splice_field_v1_t* pj_builtin_object_splice_fields_v1(uint32_t* out_count) {
@@ -101,6 +102,7 @@ static inline const PJ_builtin_object_splice_field_v1_t* pj_builtin_object_splic
       {PJ_BUILTIN_OBJECT_TYPE_VIDEO_FRAME, 0, 3},
       {PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID_UPDATE, 0, 7},
       {PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID, 0, 12},
+      {PJ_BUILTIN_OBJECT_TYPE_GRID_MAP, 0, 10},
   };
   if (out_count != NULL) {
     *out_count = PJ_BUILTIN_OBJECT_SPLICE_FIELDS_V1_COUNT;
