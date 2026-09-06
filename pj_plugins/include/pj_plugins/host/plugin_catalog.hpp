@@ -55,6 +55,11 @@ struct PluginDescriptor {
   /// Optional SDK contract floor; "" means undeclared. This is a hard host-side
   /// load gate, distinct from both the application release and the compile SDK.
   std::string min_sdk_required;
+  /// Optional SDK version this plugin was COMPILED against ("" in manifests
+  /// that predate the field). Informational provenance for host diagnostics
+  /// only — never an admission criterion: min_sdk_required stays the only
+  /// compatibility gate.
+  std::string built_with_sdk;
 };
 
 /// Diagnostic for a candidate DSO that could not produce a valid descriptor.

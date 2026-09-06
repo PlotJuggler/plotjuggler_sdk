@@ -140,5 +140,19 @@ if nm -C "$STAGING_DIR/lib/libpj_base.a" | grep -E " [TWuVvW] " | grep -q "fmt::
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# 7. Verify the feature-floors table is installed and parses
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "--- Step 7: Verify feature_floors.json is installed and parses ---"
+
+FLOORS="$STAGING_DIR/share/plotjuggler_sdk/feature_floors.json"
+if [[ ! -f "$FLOORS" ]]; then
+  echo "ERROR: $FLOORS not installed"
+  exit 1
+fi
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['schema_version'] == 1 and d['surfaces'], 'malformed feature_floors.json'" "$FLOORS"
+
 echo ""
 echo "=== plotjuggler_sdk install test PASSED ==="

@@ -73,6 +73,20 @@ Propose a release only according to plugin impact:
 
 Tail-append optional slots and gate them by `struct_size`; keep minimum vtable
 sizes frozen. `abidiff` must show additions only for a MINOR.
+
+The SDK version is **build identity only** — it names what a plugin compiled
+against, never what host it runs on. A release that only adds client-side
+helpers (static-library code compiled into the plugin) does NOT change runtime
+host compatibility and never mints a `pj_base/feature_floors.json` entry; only
+host-contract extensions (host-vtable tail slots, versioned service ids, wire
+contracts) do, and those MUST be classified there in the same PR (CI-enforced
+by `tools/feature_floors/check_feature_floors.py`). The version stays one
+monotonic identity; `feature_floors.json` carries the per-release compatibility
+semantics; `PJ_ABI_VERSION` remains the orthogonal hard-break counter.
+Changelog convention: every release section carries one `Host contract:` line —
+either `unchanged (no floor impact)` or `extended: <identifiers> (floor X.Y.Z)`;
+the floor checker requires the `extended` form whenever a surface newer than
+the last released version exists.
 `pj_base/abi/baseline.abi` is refreshed only for an intentional MAJOR break.
 See [ABI evolution rules](pj_plugins/docs/ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5).
 

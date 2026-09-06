@@ -280,6 +280,21 @@ TEST_F(PluginCatalogTest, MinSdkRequiredDefaultsToEmptyWhenAbsent) {
   EXPECT_TRUE(descriptor->min_sdk_required.empty());
 }
 
+TEST_F(PluginCatalogTest, BuiltWithSdkRoundTripsAndDefaultsEmpty) {
+  // Informational compile-SDK provenance: round-trips when present, and a
+  // manifest that predates the field still decodes (back-compat).
+  auto with_field = decodeManifest(
+      "static:sdk-test", PluginFamily::kDataSource,
+      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","built_with_sdk":"0.33.0"})");
+  ASSERT_TRUE(with_field.has_value()) << with_field.error();
+  EXPECT_EQ(with_field->built_with_sdk, "0.33.0");
+
+  auto without_field = decodeManifest(
+      "static:sdk-test", PluginFamily::kDataSource, R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0"})");
+  ASSERT_TRUE(without_field.has_value()) << without_field.error();
+  EXPECT_TRUE(without_field->built_with_sdk.empty());
+}
+
 TEST_F(PluginCatalogTest, MinSdkRequiredAcceptsEmptyString) {
   auto descriptor = decodeManifest(
       "static:sdk-test", PluginFamily::kDataSource,
