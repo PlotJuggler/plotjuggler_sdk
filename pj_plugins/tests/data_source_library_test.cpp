@@ -116,6 +116,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .notify_available_topics = nullptr,
       .attach_source_record = nullptr,
       .complete_ingest = nullptr,
+      .set_dataset_metadata = nullptr,
   };
   static const PJ_data_source_runtime_host_vtable_t no_enc_vt = {
       .protocol_version = 1,
@@ -134,6 +135,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(bool with_encodings) {
       .notify_available_topics = nullptr,
       .attach_source_record = nullptr,
       .complete_ingest = nullptr,
+      .set_dataset_metadata = nullptr,
   };
   return PJ_data_source_runtime_host_t{
       .ctx = reinterpret_cast<void*>(0x2),

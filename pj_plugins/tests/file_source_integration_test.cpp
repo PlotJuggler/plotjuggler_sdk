@@ -157,6 +157,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state) {
       .notify_available_topics = nullptr,
       .attach_source_record = nullptr,
       .complete_ingest = nullptr,
+      .set_dataset_metadata = nullptr,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }

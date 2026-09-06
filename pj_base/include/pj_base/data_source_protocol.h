@@ -457,6 +457,31 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * PJ_HAS_TAIL_SLOT. Tail slot.
    */
   bool (*complete_ingest)(void* ctx, const PJ_ingest_completion_t* completion, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /**
+   * [stream-thread] Attach a descriptive metadata document to the dataset this
+   * ingest context produces: one UTF-8 JSON OBJECT of facts about the loaded
+   * artifact (e.g. embedded manifests, recording timestamps, file summary
+   * figures) for the host to display generically. This is presentation-side
+   * provenance, deliberately disjoint from attach_source_record: a source
+   * record is the reproducible REQUEST identity that drives caching and
+   * restore; this document is observations ABOUT the artifact and never
+   * affects restore routing, cache keys, or trust.
+   *
+   * The host copies the bytes during the call. Each successful call replaces
+   * the whole document for this ingest; "{}" clears it. Callable at any point
+   * while the ingest context is live — before, between, or after pushes; the
+   * host publishes the last accepted document when the dataset's data commits
+   * and discards it if the ingest is discarded.
+   *
+   * The host bounds the document (byte length, nesting depth, node count are
+   * host policy) and rejects anything malformed, non-object, or over bounds:
+   * false + error, with NO effect on sample ingestion, completion, or cache
+   * eligibility — a refused document only means no metadata. Hosts that
+   * predate this slot never see metadata; gate with PJ_HAS_TAIL_SLOT. Tail
+   * slot.
+   */
+  bool (*set_dataset_metadata)(void* ctx, PJ_string_view_t metadata_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

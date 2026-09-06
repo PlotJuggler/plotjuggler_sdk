@@ -470,6 +470,7 @@ Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
 | `pushMessage(handle, timestamp, fetch_message_data)` | Push a message through a parser binding via a deferred fetcher callable; the host invokes it per the active ObjectIngestPolicy (eager/lazy). |
 | `notifyAvailableTopics(topics)` | Advertise the full set of topics you *can* stream but have not subscribed, so the host lists and a-priori classifies them with no data flowing. See *Per-topic pause* below. |
 | `attachSourceRecord(descriptor_json)` | On the stream thread, declare the request descriptor for the host's source cache. The host stores the bytes verbatim and derives its cache key. Last attach before this context's first `pushMessage` wins; byte-identical repeats before ingest are idempotent. Errors after ingest begins or on hosts that predate the slot never affect ingest. See [Source-cache attachment](ARCHITECTURE.md#source-cache-attachment). |
+| `setDatasetMetadata(metadata_json)` | Attach one descriptive JSON object about the loaded artifact (embedded manifests, recording timestamps, file facts) for the host to display generically. Observations, never request identity: it does not affect caching, restore, or trust. Each successful call replaces the whole document; `"{}"` clears it. Old hosts (no slot) return an error and the load proceeds without metadata. |
 
 ## Optional Features
 
