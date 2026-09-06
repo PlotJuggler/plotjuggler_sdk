@@ -1,37 +1,16 @@
 {
-  "doc": "Host-contract surfaces and the SDK release that introduced each; the authority a plugin floor checker validates min_sdk_required against. Identifiers are the C++ wrapper/macro tokens a source scanner matches; 'declaration' names the underlying ABI entity (scanners should match both the identifier and the declaration's member name). Surfaces present at or before minimum_supported_floor live in 'baseline'; floors below minimum_supported_floor are rejected until older history is classified. negotiated=true means the SDK wrapper degrades cleanly on hosts that predate the surface (tail-slot struct_size gating), making the surface eligible for a plugin's graceful-degradation exception; negotiated=false always forces the floor. Client-side static-library helpers are deliberately absent - they compile into the plugin and never constrain the host floor.",
   "schema_version": 1,
   "minimum_supported_floor": "0.28.0",
-  "surfaces": {
-    "completeIngest": {
-      "since": "0.30.0",
-      "negotiated": true,
-      "declaration": "PJ_data_source_runtime_host_vtable_t::complete_ingest"
+  "since": {
+    "0.30.0": {
+      "PJ_INGEST_COMPLETION_FLAGS_V1_MASK": "",
+      "PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS": "",
+      "PJ_INGEST_COMPLETION_FLAG_NONE": "",
+      "completeIngest": "PJ_data_source_runtime_host_vtable_t::complete_ingest",
+      "discardParserIngest": "PJ_toolbox_runtime_host_vtable_t::discard_parser_ingest"
     },
-    "discardParserIngest": {
-      "since": "0.30.0",
-      "negotiated": true,
-      "declaration": "PJ_toolbox_runtime_host_vtable_t::discard_parser_ingest"
-    },
-    "setDatasetMetadata": {
-      "since": "0.32.0",
-      "negotiated": true,
-      "declaration": "PJ_data_source_runtime_host_vtable_t::set_dataset_metadata"
-    },
-    "PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS": {
-      "since": "0.30.0",
-      "negotiated": true,
-      "declaration": "PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS"
-    },
-    "PJ_INGEST_COMPLETION_FLAG_NONE": {
-      "since": "0.30.0",
-      "negotiated": true,
-      "declaration": "PJ_INGEST_COMPLETION_FLAG_NONE"
-    },
-    "PJ_INGEST_COMPLETION_FLAGS_V1_MASK": {
-      "since": "0.30.0",
-      "negotiated": true,
-      "declaration": "PJ_INGEST_COMPLETION_FLAGS_V1_MASK"
+    "0.32.0": {
+      "setDatasetMetadata": "PJ_data_source_runtime_host_vtable_t::set_dataset_metadata"
     }
   },
   "baseline": [

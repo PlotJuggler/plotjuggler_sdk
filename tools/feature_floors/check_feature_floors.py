@@ -36,8 +36,8 @@ def main() -> int:
         for surface in added:
             errors.append(
                 f"NEW host surface not classified: {surface}\n"
-                f"  -> add it to pj_base/feature_floors.json (a 'surfaces' entry with its "
-                f"introducing release, or 'baseline' if it predates the minimum supported floor)\n"
+                f"  -> add it to pj_base/feature_floors.json (under 'since'/<introducing release>, "
+                f"or 'baseline' if it predates the minimum supported floor)\n"
                 f"  -> then refresh the snapshot: tools/feature_floors/extract_host_surfaces.py --write"
             )
         for surface in removed:
@@ -50,30 +50,44 @@ def main() -> int:
     if not VERSION_RE.match(floor_min):
         errors.append(f"minimum_supported_floor malformed: {floor_min!r}")
 
-    surfaces = table.get("surfaces", {})
+    since_groups = table.get("since", {})
     baseline = table.get("baseline", [])
     declarations = set()
     unreleased: list[str] = []
-    for identifier, entry in surfaces.items():
-        since = entry.get("since", "")
-        declaration = entry.get("declaration", "")
-        if not identifier:
-            errors.append("empty surface identifier")
+    surface_count = 0
+    for since, group in since_groups.items():
         if not VERSION_RE.match(since):
-            errors.append(f"{identifier}: malformed since {since!r}")
-        else:
-            if VERSION_RE.match(floor_min) and version_tuple(since) < version_tuple(floor_min):
-                errors.append(f"{identifier}: since {since} below minimum_supported_floor {floor_min}")
+            errors.append(f"malformed since group {since!r}")
+            continue
+        if VERSION_RE.match(floor_min) and version_tuple(since) <= version_tuple(floor_min):
+            errors.append(f"since group {since} at or below minimum_supported_floor {floor_min} — move to baseline")
+        if not isinstance(group, dict) or not group:
+            errors.append(f"since group {since} must be a non-empty object")
+            continue
+        for identifier, value in group.items():
+            surface_count += 1
+            if not identifier:
+                errors.append(f"empty surface identifier in since group {since}")
+            # Compact forms: "<declaration>" (negotiated), "" (declaration IS the
+            # identifier), or {"declaration": ..., "negotiated": false}.
+            if isinstance(value, str):
+                declaration = value or identifier
+            elif isinstance(value, dict):
+                unknown = set(value) - {"declaration", "negotiated"}
+                if unknown:
+                    errors.append(f"{identifier}: unknown keys {sorted(unknown)}")
+                declaration = value.get("declaration") or identifier
+                if not isinstance(value.get("negotiated", True), bool):
+                    errors.append(f"{identifier}: negotiated must be a boolean")
+            else:
+                errors.append(f"{identifier}: entry must be a declaration string or an object")
+                continue
+            declarations.add(declaration)
             # since may exceed VERSION during development: a surface added for
             # the next, not-yet-released version. That requires the changelog's
             # unreleased section to declare the host-contract extension.
             if version_tuple(since) > version_tuple(sdk_version):
                 unreleased.append(identifier)
-        if not isinstance(entry.get("negotiated"), bool):
-            errors.append(f"{identifier}: negotiated must be a boolean")
-        if not declaration:
-            errors.append(f"{identifier}: empty declaration")
-        declarations.add(declaration)
 
     if unreleased:
         changelog = (repo / "CHANGELOG.md").read_text()
@@ -98,7 +112,7 @@ def main() -> int:
     if errors:
         print("feature-floors check FAILED:\n" + "\n".join(errors))
         return 1
-    print(f"feature-floors check OK: {len(snapshot)} surfaces, {len(surfaces)} above-floor entries")
+    print(f"feature-floors check OK: {len(snapshot)} surfaces, {surface_count} above-floor entries")
     return 0
 
 
