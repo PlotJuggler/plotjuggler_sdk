@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.32.0] — unreleased
+## [0.32.0]
 
 - Add the `set_dataset_metadata` tail slot to the data-source runtime host
   vtable (`DataSourceRuntimeHostView::setDatasetMetadata`, forwarded by
