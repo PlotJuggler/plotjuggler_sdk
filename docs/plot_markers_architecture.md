@@ -11,10 +11,11 @@
 
 ## 1. Layering & data flow
 
-A marker set is a **builtin object** (`PlotMarkers` = a list of `PlotMarker`), one per
-`(dataset, marker-topic)`, stored in the host **ObjectStore**. The **producer owns its
-set and republishes the whole blob** on any change (last-writer-publish); the store is
-never mutated marker-by-marker, so no per-id delete / id-in-payload / RMW race is needed.
+`PlotMarkers` is a **builtin object** containing a list of `PlotMarker`.
+The host **ObjectStore** holds one set per `(dataset, marker-topic)`.
+The **producer owns the set and republishes the whole blob** on each change
+(last-writer-publish). The store never mutates individual markers, avoiding
+per-id deletes, payload IDs and read-modify-write races.
 
 ```
  Producer (toolbox plugin / future Lua / in-process host)
@@ -41,68 +42,14 @@ never mutated marker-by-marker, so no per-id delete / id-in-payload / RMW race i
 
 ## 2. The `PlotMarker` / `PlotMarkers` type
 
-A marker is a **homogeneous, id-less record**; a topic holds a **list** of them. This
-is the structural departure from `ImageAnnotations` (which groups heterogeneous
-primitives `points[]`/`circles[]`/`texts[]`): markers are one uniform record type
-distinguished by a `kind`.
+A marker is a **homogeneous, id-less record**. A topic holds a **list** of them,
+distinguished by `kind`. `ImageAnnotations` instead groups heterogeneous
+primitives in `points[]`, `circles[]` and `texts[]`.
 
-```cpp
-namespace PJ {
-namespace sdk {
-
-enum class MarkerKind : uint8_t {
-  kRegion,     ///< time span [t_start, t_end] — shaded vertical band
-  kEvent,      ///< single time t_start (+ optional value) — tick / point
-  kValueBand,  ///< value span [value_low, value_high] — horizontal band (series-only)
-  kLabel,      ///< text callout anchored at t_start
-};
-
-enum class MarkerStatus   : uint8_t { kNone, kPass, kFail };
-enum class MarkerSeverity : uint8_t { kInfo, kWarning, kError, kCritical };
-
-/// Producer-specific key/value extension hatch — keeps the schema stable as
-/// producers attach extra fields (threshold, peak, from/to, …) without a schema bump.
-struct MarkerProperty {
-  std::string key;
-  std::string value;
-  bool operator==(const MarkerProperty&) const = default;
-};
-
-/// One marker. Carries NO id (the store owns identity), NO source (no builtin
-/// records its creator), NO scope (the topic it lives under says that).
-struct PlotMarker {
-  MarkerKind kind = MarkerKind::kRegion;
-
-  // --- anchor (interpret by kind; irrelevant fields ignored) ---
-  Timestamp t_start    = 0;     ///< Region start · Event/Label time · (ValueBand: ignored)
-  Timestamp t_end      = 0;     ///< Region end · (others: ignored)
-  double    value_low  = 0.0;   ///< ValueBand low · Event point value · (others: ignored)
-  double    value_high = 0.0;   ///< ValueBand high · (others: ignored)
-  bool      has_value  = false; ///< Event: value_low is a meaningful point value.
-
-  // --- semantics / presentation (shared by every kind) ---
-  MarkerStatus   status   = MarkerStatus::kNone;
-  MarkerSeverity severity = MarkerSeverity::kInfo;
-  std::string    category;
-  std::string    label;
-  std::string    description;
-  ColorRGBA      color = {0, 0, 0, 0};   ///< a=0 → derive from severity.
-  std::vector<MarkerProperty> metadata;
-
-  bool operator==(const PlotMarker&) const = default;
-};
-
-/// The canonical object a marker query/render reads: the set of markers for one
-/// topic (one series, or the dataset-global topic).
-struct PlotMarkers {
-  std::vector<PlotMarker> markers;
-  bool operator==(const PlotMarkers&) const = default;
-  [[nodiscard]] bool empty() const noexcept { return markers.empty(); }
-};
-
-}  // namespace sdk
-}  // namespace PJ
-```
+Use the existing types in
+[`pj_base/builtin/plot_markers.hpp`](../pj_base/include/pj_base/builtin/plot_markers.hpp)
+and [their codec](plot_markers_format.md). Timestamp anchors are integer
+nanoseconds; the header defines which fields each kind uses.
 
 Design notes:
 - **Flat anchor + `kind`** (not a `oneof`, not per-kind vectors). Simplest for the
@@ -111,13 +58,12 @@ Design notes:
   fields.
 - **`has_value`** because a bare `double` cannot express "absent" for the optional
   `Event` value.
-- **`ColorRGBA`** currently lives in `image_annotations.hpp`; reuse here requires
-  promoting it to a shared vocabulary header so `PlotMarkers` does not include
-  image-annotation code.
-- New canonical type → append `kPlotMarkers` to `BuiltinObjectType` /
-  `PJ_builtin_object_type_t` (append-only; **MINOR** SDK bump; refresh
-  `abi/baseline.abi`) + a `plot_markers_codec` mirroring the `image_annotations_codec`
-  *pattern*.
+- **`ColorRGBA`** is already shared by including `image_annotations.hpp`; do not
+  create another color type.
+- `BuiltinObjectType::kPlotMarkers`, `PJ_builtin_object_type_t`'s matching tag
+  and `plot_markers_codec` already ship. Future compatible type additions are
+  append-only MINOR changes. Refresh `pj_base/abi/baseline.abi` only for an
+  intentional MAJOR break; see [release versioning](../CLAUDE.md#release-versioning).
 
 ## 3. Why ObjectStore + republish (not a dedicated store, not DataEngine)
 

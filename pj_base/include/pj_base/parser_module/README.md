@@ -1,9 +1,11 @@
 # Functional parser-module authoring kit
 
-This directory is a standalone, header-only C++17 API. Headers in this subtree
-may include only other headers from this subtree and C/C++ standard-library
-headers. They must remain suitable for a WASI reactor build: no filesystem,
-threads, iostreams, host SDK linkage, or exceptions crossing public/ABI calls.
+This directory provides a standalone, header-only C++17 API. Headers may include
+others in this subtree, C/C++ standard-library headers and the shared C++17
+checked arithmetic in `pj_base/time_math.hpp`. `time.hpp` uses that arithmetic.
+
+Headers must remain suitable for a WASI reactor build: no filesystem, threads,
+iostreams, host SDK linkage or exceptions crossing public/ABI calls.
 
 All data received from a host or message is borrowed through `ByteView` /
 `PayloadView`. Fallible operations return the local `pj::Status` or
@@ -45,10 +47,11 @@ PJ_FUNCTIONAL_PARSER(RawImageParser)
 Override `parseScalars(PayloadView, Timestamp, ScalarWriter&)` for scalar
 claims. `ObjectWriter` provides `image`, `pointCloud`, `depthImage`,
 `occupancyGrid`, `compressedPointCloud`, `mesh3D`, `videoFrame`,
-`occupancyGridUpdate`, and `voxelGrid` builders.
+`occupancyGridUpdate`, `voxelGrid`, and `gridMap` builders.
 
 Native modules are built with `pj_add_parser_module(... TARGETS native)`. The
-target links no SDK library; it receives this subtree only as an include path.
+target links no SDK library; its include paths expose this kit and the shared
+checked time arithmetic.
 `TARGETS wasm` is not available in SDK 0.22. The wasi-sdk gate compiles and
 statically audits a reactor fixture, but it does not provide wasm authoring or
 execution.

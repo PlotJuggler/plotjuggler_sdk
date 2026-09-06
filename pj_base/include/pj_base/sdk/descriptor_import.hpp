@@ -614,8 +614,8 @@ class SourcePromotionHostView {
 // Provider half: the raw-struct plumbing a "pj.descriptor_import.v1" PROVIDER
 // needs under the struct_size growth contract. Header-only — a provider that
 // only wants ABI-correct struct handling links nothing; the threaded job
-// runner and the artifact cache live in the descriptor_import_support
-// component (pj_base/sdk/descriptor_import/).
+// runner and the artifact cache live in the source
+// component (pj_base/sdk/source/).
 // ---------------------------------------------------------------------------
 
 /// Copy a start request out of the caller-sized C struct, reading only the

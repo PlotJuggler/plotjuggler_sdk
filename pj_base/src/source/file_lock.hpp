@@ -19,7 +19,7 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace detail {
 
 class FileLock {
@@ -58,6 +58,6 @@ class FileLock {
 };
 
 }  // namespace detail
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

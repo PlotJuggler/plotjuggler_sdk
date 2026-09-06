@@ -29,17 +29,18 @@ compile-time error.
 
 Any widget may carry a string **dynamic property** `pj_enable_when` or
 `pj_visible_when` with the value `"<comboObjectName>:<index>[,<index>...]"`.
-The host keeps the widget enabled (or visible) only while the named
-`QComboBox` (looked up in the same widget tree) sits on one of those indices,
-applying the initial state at load and tracking index changes live —
-including inside modal sub-dialogs, whose nested event loop blocks the plugin
-from pushing `setEnabled`/`setVisible` updates itself. Several clauses may be
-joined with `;`; the widget is enabled/visible only while ALL of them hold
-(`"backendCombo:0;modelCombo:1"`: the custom-model field of backend 0, shown
-only when its model combo says "Custom"). Rules re-assert after every
-widget-data apply, so a rule always wins over a plugin-pushed
-`enabled`/`visible` on the same widget. Malformed values or unknown combo
-names are ignored (the widget stays as authored).
+The host finds the named `QComboBox` in the same widget tree. It keeps the widget
+enabled (or visible) only while the combo has one of those indices.
+
+The host applies the initial state at load and tracks index changes live.
+This also works inside modal sub-dialogs, whose nested event loop blocks the
+plugin from pushing `setEnabled`/`setVisible` updates.
+
+Join clauses with `;` to require ALL of them. For example,
+`"backendCombo:0;modelCombo:1"` shows backend 0's custom-model field only when its
+model combo says "Custom". Rules re-assert after every widget-data apply.
+They always override plugin-pushed `enabled`/`visible` on the same widget.
+Malformed values or unknown combo names are ignored; the widget stays as authored.
 
 Use `pj_visible_when` for sections that belong to one choice: a hidden widget
 leaves its layout, so tagging both the label and the editor of a
@@ -60,13 +61,15 @@ every mode but only applies in some.
 
 A `QListWidget` may carry a string dynamic property `pj_context_actions` with
 the value `"<id>=<Label>[;<id2>=<Label 2>...]"`. The host builds a right-click
-context menu from the clauses, in declaration order, and popups only over a
-row (an empty area shows nothing). Choosing an entry dispatches
-`onItemContextAction(widget_name, index, action_id)` with the delivered-order
-row index — the same translation `onItemDoubleClicked` and
-`onItemDeleteRequested` already do, so a sorted or re-ordered list still
-reports the row the plugin expects. A malformed clause (no `=`, empty id or
-label) is skipped; the rest of the menu still builds.
+menu in declaration order. It opens only over a row, not an empty area.
+
+Choosing an entry dispatches `onItemContextAction(widget_name, index, action_id)`
+with the delivered-order row index. This uses the same translation as
+`onItemDoubleClicked` and `onItemDeleteRequested`. Sorted or reordered lists
+still report the row the plugin expects.
+
+The host skips malformed clauses (no `=`, empty id or label) and builds the
+rest of the menu.
 
 The action set itself is host-rendered UI, not part of this C ABI — only the
 fact that an action fired crosses the wire. `pj_context_actions` and
@@ -515,7 +518,11 @@ full index list — clearing the field makes *no* change), `setRowColor` tints a
 Sorting has its own section below.
 
 For `DateRangePicker`, the `from_iso` / `to_iso` strings are ISO-8601 datetimes
-and are empty when that side of the range is unbounded.
+and are empty when that side of the range is unbounded. Before implementing
+date parsing, formatting, query filtering or rate displays, consult
+[Existing SDK utilities](../../docs/sdk-utilities.md). `PJ::parseIso8601Utc`
+interprets a missing timezone as UTC; adapt local wall-clock editor values
+explicitly instead of changing their meaning.
 
 For `QStackedWidget`, prefer `setStackedPage(name, page_object_name)`: the
 `page_object_name` is the direct child page widget's Qt `objectName`, so it stays
@@ -563,14 +570,16 @@ flat array to one `parent_id` gives that group's order. Qt sorting may temporari
 change visible order, but turning sorting off restores the plugin-declared order.
 Ragged `cells` arrays are valid; missing trailing columns display empty.
 
-`TreeCell::text` is presentation. Its optional `sort_value` is a `NumericValue`
-and provides the typed ordering truth just like `TableItem`; `tooltip` annotates
-the cell. `icon` is a host semantic name, not a filesystem path or a serialized
-QIcon. The initial names are `folder`, `topic`, `schema`, `info`, `warning`, and
-`error`; an empty or unknown name produces no icon. `TreeItem::enabled` and
-`selectable` are independent. `check_state` applies only to column 0 in v1 and
-uses `None`, `Unchecked`, `PartiallyChecked`, or `Checked` (wire spellings:
-`none`, `unchecked`, `partially_checked`, `checked`).
+`TreeCell::text` controls presentation. Optional `sort_value` is a `NumericValue`
+that supplies typed ordering, as in `TableItem`. `tooltip` annotates the cell.
+
+`icon` is a host semantic name, not a filesystem path or serialized QIcon.
+Initial names are `folder`, `topic`, `schema`, `info`, `warning` and `error`.
+Empty or unknown names produce no icon.
+
+`TreeItem::enabled` and `selectable` are independent. In v1, `check_state`
+applies only to column 0. Values are `None`, `Unchecked`, `PartiallyChecked`
+and `Checked` (wire spellings: `none`, `unchecked`, `partially_checked`, `checked`).
 
 ### Independent state channels and filtering
 
@@ -704,7 +713,9 @@ Notes on the constructors above:
 sort on nanoseconds:
 
 ```cpp
-PJ::TableItem(entry.max_ts_ns, formatDate(entry.max_ts_ns))  // shows "2026-07-17 10:23"
+#include <pj_base/time_format.hpp>
+PJ::TableItem(entry.max_ts_ns, PJ::formatDateTimeUtc(entry.max_ts_ns))
+// Displays "17/07/2026 10:23:00 UTC" for that instant; sorts on nanoseconds.
 ```
 
 This is why one mechanism covers every column in practice — the key does not have
@@ -740,14 +751,14 @@ own sorting is enabled**. A table you sort yourself would otherwise show no
 indicator at all — the rows reorder and the header never says why. It is purely
 cosmetic: it never reorders anything. Re-send it whenever the sort state changes.
 
-> **Trap: never combine `sortingEnabled=true` with `onHeaderClicked`.** A table
-> that sets `sortingEnabled` in its `.ui` XML gets Qt's built-in sorting (that
-> property is raw Qt reaching the widget through `QUiLoader`, not an SDK feature).
-> Add `onHeaderClicked` on top and both sides act on the same click: Qt re-sorts
-> the *view* by rendered text while your handler re-orders the *model*, and your
-> order is the one that gets clobbered. Pick one mechanism per table. If you want
-> Qt's sorting to be correct, don't intercept the header — supply `TableItem`
-> values and let it sort on those.
+> **Trap: never combine `sortingEnabled=true` with `onHeaderClicked`.**
+> `sortingEnabled` in `.ui` XML enables Qt's built-in sorting through `QUiLoader`.
+> It is a Qt property, not an SDK feature.
+>
+> With `onHeaderClicked` too, both sides handle the same click. Qt sorts the
+> *view* by rendered text while your handler reorders the *model*, overriding
+> your order. Pick one mechanism per table. For correct Qt sorting, supply
+> `TableItem` values and let Qt sort them without intercepting the header.
 
 ## Optional Features
 
@@ -857,14 +868,16 @@ bool onFilePickerResult(
 `default_suffix`, `filters`, `initially_selected_filter_id`, and
 `confirm_overwrite` (default `true`).
 
-Each `FilePickerFilter` contains `id`, `label`, and `patterns`. Keep `id` stable
-and machine-oriented because a native picker may localize or normalize the
-displayed filter text; the host maps that native selection back to the ID.
-Filter IDs must be non-empty and unique, every filter needs at least one
-non-empty pattern, and a non-empty initial ID must name a filter. The fluent
-writer follows the tree/stacked policy and serializes input without throwing or
-repairing it. The host view validates the entire structured object atomically;
-one invalid filter rejects the whole structured request with a diagnostic.
+Each `FilePickerFilter` contains `id`, `label` and `patterns`. Keep `id` stable
+and machine-oriented. A native picker may localize or normalize display text;
+the host maps that selection back to the ID.
+
+Filter IDs must be non-empty and unique. Every filter needs at least one
+non-empty pattern. A non-empty initial ID must name a filter.
+
+As with tree/stacked, the fluent writer serializes input without throwing or
+repairing it. The host view validates the structured object atomically.
+One invalid filter rejects the whole structured request with a diagnostic.
 
 Legacy host degradation is explicit:
 
@@ -1074,16 +1087,18 @@ after opening the sub-dialog.
 
 ### Large tables — send only what changed
 
-Every field in the widget-data JSON is **optional**: a field the payload omits
-applies no change. The naive pattern of rebuilding the full table in every
-`widget_data()` call works, but it re-serializes and re-parses everything on
-every refresh — order of magnitude, measured on a desktop Linux build at the
-time of writing: a 10,000×6 table is ~1 MB of JSON and costs ~25 ms per full
-refresh even when nothing changed, growing roughly linearly with row count
-(~10× at 100k rows — visible jank). The host defends itself (per-key diffing
-skips unchanged widgets, and byte-identical payloads are dropped after a cheap
-string compare), but the plugin-side serialization can only be avoided by the
-plugin.
+Every widget-data JSON field is **optional**. Omitted fields apply no change.
+Rebuilding the full table in every `widget_data()` call works, but serializes
+and parses everything on every refresh.
+
+Approximate measurements from a desktop Linux build at the time of writing:
+a 10,000×6 table produces ~1 MB of JSON and costs ~25 ms per full refresh,
+even if nothing changed. Cost grows roughly linearly with row count
+(~10× at 100k rows, causing visible jank).
+
+The host skips unchanged widgets through per-key diffing. A cheap string
+comparison drops byte-identical payloads. Only the plugin can avoid its own
+serialization cost.
 
 The efficient ladder, in order:
 

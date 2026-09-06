@@ -1,7 +1,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include "descriptor_import/file_lock.hpp"
+#include "source/file_lock.hpp"
 
 #include <system_error>
 #include <utility>
@@ -25,7 +25,7 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace detail {
 
 namespace {
@@ -180,6 +180,6 @@ void FileLock::release() {
 }
 
 }  // namespace detail
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

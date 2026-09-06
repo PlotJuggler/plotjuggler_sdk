@@ -44,6 +44,11 @@ echo "--- Step 2: Install to staging ---"
 
 cmake --install "$BUILD_DIR"
 
+# Package-only consumers need the same discovery/contract docs as source users.
+for doc in sdk-utilities.md provider-guide.md; do
+  cmp "$SCRIPT_DIR/docs/$doc" "$STAGING_DIR/share/plotjuggler_sdk/docs/$doc"
+done
+
 echo ""
 echo "Installed CMake package files:"
 find "$STAGING_DIR" -path '*/cmake/plotjuggler_sdk*' | sort
@@ -71,8 +76,7 @@ cmake --build "$CONSUMER_BUILD_DIR" -j "$(nproc)"
 
 echo ""
 echo "--- Step 4: Smoke-test find_package COMPONENTS ---"
-
-for comp in base plugin_sdk plugin_host; do
+for comp in base parser_module plugin_sdk plugin_host source descriptor_import_support; do
   COMP_DIR="$(mktemp -d)"
   cat > "$COMP_DIR/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.22)

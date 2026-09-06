@@ -16,6 +16,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPlugin
 include(PjPlugin)
 include(PjParserModule)
+include(PjSdkTestFixtures)
 
 # ---------------------------------------------------------------------------
 # Options
@@ -130,6 +131,7 @@ endif()
 #   base         — vocabulary types (always available)
 #   parser_module — standalone header-only functional module authoring kit
 #   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
+#   source       — compiled provider helpers (descriptor_import_support is an alias)
 #   plugin_host  — host-side loaders (data_source, message_parser, toolbox,
 #                  dialog, catalogs)
 # ---------------------------------------------------------------------------
@@ -138,6 +140,17 @@ if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
   set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_sdk)
+
+  install(FILES docs/sdk-utilities.md docs/provider-guide.md
+    DESTINATION share/plotjuggler_sdk/docs
+  )
+
+  # Fixture sources come from the authoritative PJ_SDK_TEST_FIXTURES list
+  # (cmake/PjSdkTestFixtures.cmake, included above).
+  foreach(_fixture IN LISTS PJ_SDK_TEST_FIXTURES)
+    string(REGEX REPLACE "^[^=]+=" "" _fixture_relpath "${_fixture}")
+    install(FILES pj_plugins/${_fixture_relpath} DESTINATION share/plotjuggler_sdk/test_fixtures)
+  endforeach()
 
   install(EXPORT plotjuggler_sdkTargets
     NAMESPACE plotjuggler_sdk::
@@ -162,6 +175,7 @@ if(PJ_INSTALL_SDK)
     cmake/PjPlugin.cmake
     cmake/PjCheckElfPluginExports.cmake
     cmake/PjParserModule.cmake
+    cmake/PjSdkTestFixtures.cmake
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )
 endif()

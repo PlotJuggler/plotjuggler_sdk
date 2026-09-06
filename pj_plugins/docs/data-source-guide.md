@@ -34,8 +34,8 @@ Pick the first row that matches your input shape:
 | Live transport (MQTT/ZMQ/UDP) where payload encoding varies | `PJ::StreamSourceBase` | `kCapabilityDelegatedIngest` | `onStart()`, `onPoll()`, `onStop()` + bind a parser |
 | None of the above (full manual lifecycle) | `PJ::DataSourcePluginBase` | declare your own | `start()`, `stop()`, `currentState()`, … |
 
-Most plugins want one of the first three. Reach for `DataSourcePluginBase`
-directly only when the supplied state machines genuinely don't fit.
+Use one of the first three for most plugins. Use `DataSourcePluginBase` directly
+only when the supplied state machines do not fit.
 
 ## Quick Start
 
@@ -71,10 +71,10 @@ prevent runtime failures and confusing host behaviour.
   but the host receives a generic error and the plugin loses the chance to
   report a useful reason.
 - Call host methods from a background thread you spawned. Buffer in plugin
-  memory and flush from `onPoll()` — `PJ::sdk::DrainQueue` / `LatestValueSlot`
-  (`pj_plugins/sdk/streaming_source.hpp`) are the swap-drain containers for
-  that handoff; `DelegatedIngestCache` in the same header wraps
-  `ensureParserBinding` + `pushMessage` for delegated-ingest sources, and
+  memory and flush from `onPoll()`. `PJ::sdk::DrainQueue` / `LatestValueSlot`
+  in `pj_plugins/sdk/streaming_source.hpp` provide swap-drain containers for
+  this handoff. `DelegatedIngestCache` in the same header wraps
+  `ensureParserBinding` + `pushMessage` for delegated-ingest sources.
   `pj_plugins/sdk/endpoint.hpp` / `streaming_dialog.hpp` cover endpoint text
   and the connection-panel encoding selector.
 - Call `runtimeHost().progressFinish()` from a `FileSourceBase` subclass —
@@ -103,8 +103,8 @@ class MyCsvLoader : public PJ::FileSourceBase {
 
 ### 2. Implement the work method
 
-When `importData()` (or `onStart()`/`onPoll()` for streams) is called, both
-host bindings are already available via `writeHost()` and `runtimeHost()`.
+`writeHost()` and `runtimeHost()` are bound before `importData()` runs,
+or before `onStart()`/`onPoll()` for streams.
 Return `okStatus()` on success, or `unexpected("reason")` on failure.
 
 ```cpp
@@ -162,10 +162,9 @@ or snapshot, writes all records, then self-terminates. A **continuous streamer**
 connects to a live source, does incremental work in `onPoll()`, and runs until
 the host calls `stop()`.
 
-The SDK provides two derived base classes that manage the lifecycle state
-machine for you: `FileSourceBase` and `StreamSourceBase`. Both live in
-`<pj_base/sdk/data_source_patterns.hpp>`. For full manual control, subclass
-`DataSourcePluginBase` directly (see `pj_plugins/examples/mock_data_source.cpp`).
+`FileSourceBase` and `StreamSourceBase` manage the lifecycle state machine.
+Both live in `<pj_base/sdk/data_source_patterns.hpp>`. For full manual control,
+subclass `DataSourcePluginBase` directly (see `pj_plugins/examples/mock_data_source.cpp`).
 
 ### File importer — CSV file loader
 
@@ -281,22 +280,22 @@ Key traits of `FileSourceBase`:
 Subclass `StreamSourceBase` and implement `onStart()`, `onPoll()`, and
 `onStop()`. The base class manages the state machine.
 
-This example uses **delegated ingest** — the canonical pattern for transport
-sources where the payload encoding varies. The source pushes raw bytes to the
-host, which routes them through the appropriate `MessageParser` plugin. The
-source never decodes payloads itself.
+Use **delegated ingest** for transport sources with varying payload encodings,
+as shown here. The source pushes raw bytes to the host. The host routes them
+through the appropriate `MessageParser`. The source never decodes payloads.
 
-Because `onPoll()` is called from the host's thread at the host's chosen rate,
-a source that calls `recv()` directly inside `onPoll()` risks losing data when
-the host polls too slowly. The correct pattern: spawn your own receive thread,
-buffer incoming data, and use `onPoll()` to flush the buffer into the host.
+The host calls `onPoll()` on its thread at its chosen rate. Calling `recv()`
+there risks losing data if polling is too slow. Spawn a receive thread and
+buffer data with `PJ::sdk::DrainQueue`. Flush it into the host from `onPoll()`.
+See [Existing SDK utilities](../../docs/sdk-utilities.md) for streaming handoff
+and per-topic delegated-ingest helpers.
 
 ```cpp
 #include <pj_base/sdk/data_source_patterns.hpp>
+#include <pj_plugins/sdk/streaming_source.hpp>
 
 #include <atomic>
 #include <chrono>
-#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -346,14 +345,9 @@ class UdpReceiver : public PJ::StreamSourceBase {
   PJ::Status onPoll() override {
     // Flush buffered data into the host. Called periodically from the
     // host's thread — this is the only place we may call host methods.
-    // Swap the buffer out under the lock so the recv thread isn't blocked.
-    std::vector<BufferedMsg> batch;
-    {
-      std::lock_guard lock(mu_);
-      batch.swap(buffer_);
-    }
-
-    for (const auto& msg : batch) {
+    auto batch = buffer_.drain();
+    while (!batch.empty()) {
+      const auto& msg = batch.front();
       // pushMessage takes a deferred fetcher; the host invokes it according to
       // the active ObjectIngestPolicy (eager for plain curves).
       auto status = runtimeHost().pushMessage(
@@ -362,6 +356,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
       if (!status) {
         return PJ::unexpected(status.error());
       }
+      batch.pop();
     }
     return PJ::okStatus();
   }
@@ -389,8 +384,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
       PJ::Timestamp ts =
           std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
 
-      std::lock_guard lock(mu_);
-      buffer_.push_back({ts, std::move(datagram)});
+      buffer_.push({ts, std::move(datagram)});
     }
   }
 
@@ -407,8 +401,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
 
   std::atomic<bool> running_{false};
   std::thread recv_thread_;
-  std::mutex mu_;
-  std::vector<BufferedMsg> buffer_;  // guarded by mu_
+  PJ::sdk::DrainQueue<BufferedMsg> buffer_;
 };
 
 PJ_DATA_SOURCE_PLUGIN(UdpReceiver,
@@ -422,13 +415,11 @@ payload semantics (field extraction, schema binding). Changing the parser
 encoding — from JSON to Protobuf, for example — requires no source code
 changes, only a different config value.
 
-**Threading and `onPoll()` semantics.** `onPoll()` is the host→plugin
-callback for flushing accumulated data. The host calls it periodically from
-its own thread. For sources with asynchronous I/O (sockets, hardware), the
-plugin must manage its own receive thread and use `onPoll()` as the sync
-point where buffered data is handed off. Host methods (`pushMessage`,
-`appendRecord`, etc.) must only be called from `onPoll()` / the host's
-thread, never from the background thread.
+**Threading and `onPoll()` semantics.** The host calls `onPoll()` periodically
+on its thread to flush buffered data. Asynchronous I/O sources (sockets,
+hardware) must manage their own receive thread and hand off buffered data in
+`onPoll()`. Host methods (`pushMessage`, `appendRecord`, etc.) must only be called
+from `onPoll()` / the host's thread, never from the background thread.
 
 Key traits of `StreamSourceBase`:
 - `capabilities()` automatically includes `kCapabilityContinuousStream`; you
@@ -505,11 +496,11 @@ PJ::Status resume() override {
 
 ### Per-topic pause (demand-driven subscription)
 
-For a multi-topic transport (a ROS/foxglove bridge, DDS, etc.) the pause above
-is *whole-source*. A source that can subscribe/unsubscribe individual topics on
-its live connection should instead let the host drive subscription per topic:
-advertise everything cheaply, but only pull data for topics the host is actually
-displaying. Declare it and the host will subscribe on demand:
+The pause above affects the *whole source*, including multi-topic transports
+such as ROS/foxglove bridges or DDS. Sources that can subscribe/unsubscribe
+individual topics should let the host drive those subscriptions.
+Advertise all topics cheaply and pull data only for those the host displays.
+Declare this capability so the host subscribes on demand:
 
 ```cpp
 uint64_t extraCapabilities() const override {
@@ -530,15 +521,14 @@ for (const auto& ch : advertised_channels_) topics.push_back(toAvailableTopic(ch
 runtimeHost().notifyAvailableTopics(topics);
 ```
 
-`notifyAvailableTopics` returns an **error on an old host** that lacks the tail
-slot — treat that as "advertisement unsupported" and fall back to your legacy
-(subscribe-a-preselected-set-on-start) behavior, so a new plugin never strands
-on an old host.
+`notifyAvailableTopics` returns an **error on an old host** without the tail
+slot. Treat this as "advertisement unsupported". Fall back to subscribing a
+preselected set at startup, so new plugins still work on old hosts.
 
-**2. Subscribe on demand (host → plugin).** Expose the
-`"pj.topic_subscription.v1"` extension. The host hands you the **full** desired
-active-topic set (declarative); you diff it against your current subscriptions
-and subscribe/unsubscribe on your connection. An empty set pauses everything.
+**2. Subscribe on demand (host → plugin).** Expose
+`"pj.topic_subscription.v1"`. The host supplies the **full** desired active-topic
+set. Diff it against your current subscriptions, then subscribe/unsubscribe
+on your connection. An empty set pauses everything.
 
 ```cpp
 const void* pluginExtension(std::string_view id) override {
@@ -613,12 +603,11 @@ auto status = runtimeHost().pushMessage(
 The host manages parser instances, caches bindings, and handles schema
 evolution automatically.
 
-**Integrated parser dialog:** If your source dialog includes a `pj_parser_slot`
-placeholder widget, the host detects it and renders the selected parser's
-configuration dialog inline. The source and parser dialogs share one window but
-persist config independently — `ConfigEnvelope.source_config` for the source,
-`ConfigEnvelope.parser_binding` for the parser. See
-`pj_plugins/docs/message-parser-guide.md` § "Dialog integration" for details.
+**Integrated parser dialog:** Add a `pj_parser_slot` placeholder to render the
+selected parser's configuration dialog inline. The host detects the placeholder.
+Both dialogs share a window but persist config independently:
+`ConfigEnvelope.source_config` for the source and `ConfigEnvelope.parser_binding`
+for the parser. See `pj_plugins/docs/message-parser-guide.md` § "Dialog integration".
 
 ## State Machine
 
@@ -708,15 +697,13 @@ writeHost().appendBoundRecord(*topic, timestamp, fields);
 
 ### Bulk Arrow writes
 
-For sources that already hold data in Arrow columnar format (e.g. Parquet
-file readers, Arrow Flight streams, MCAP-to-Arrow shims), use
-`appendArrowStream()` to hand the host an `ArrowArrayStream*` (Arrow C
-Data Interface). The host pulls batches via the stream's `get_next()`
-callback and takes ownership on success — no row-at-a-time overhead.
+For Arrow columnar data (e.g. Parquet readers, Arrow Flight streams or
+MCAP-to-Arrow shims), pass an `ArrowArrayStream*` to `appendArrowStream()`
+through the Arrow C Data Interface. The host pulls batches with `get_next()`
+and takes ownership on success. This avoids row-at-a-time overhead.
 
-The recommended overload takes an `ArrowStreamHolder` by rvalue
-reference and disarms the holder on success, so the ownership-transfer
-contract is unforgettable:
+Prefer the `ArrowStreamHolder` rvalue-reference overload. It disarms the holder
+on successful ownership transfer:
 
 ```cpp
 #include <pj_base/sdk/arrow.hpp>
@@ -736,15 +723,13 @@ if (!status) {
 values are nanoseconds since Unix epoch. Pass an empty view to have the
 host synthesise a monotonic timestamp per row.
 
-If your data is already in an Arrow **IPC** byte buffer (file or
-Flight wire format), wrap it with nanoarrow's
-`ArrowIpcArrayStreamReaderInit` to obtain an `ArrowArrayStream*` and
-feed that through `appendArrowStream()` — v4 no longer exposes a
-separate IPC-bytes write slot.
+For an Arrow **IPC** byte buffer (file or Flight wire format), use nanoarrow's
+`ArrowIpcArrayStreamReaderInit` to obtain an `ArrowArrayStream*`.
+Pass it to `appendArrowStream()`. v4 no longer exposes a separate IPC-bytes
+write slot.
 
-A raw-pointer overload (`appendArrowStream(topic, ArrowArrayStream*,
-...)`) is kept as an ABI escape hatch, but the rvalue-ref form above
-is the documented default.
+The raw-pointer overload (`appendArrowStream(topic, ArrowArrayStream*, ...)`)
+remains an ABI escape hatch. The rvalue-reference form is the documented default.
 
 ## Threading Model
 

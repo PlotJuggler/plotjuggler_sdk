@@ -3,7 +3,7 @@ project(sdk_consumer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk descriptor_import_support)
+find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk source descriptor_import_support)
 
 # A plugin is: add_library(SHARED) + link plugin_sdk + pj_configure_plugin().
 # The helper (shipped with plugin_sdk) applies symbol isolation, the export
@@ -37,3 +37,13 @@ pj_embed_file(dialog_controls_example
 # compiled target and touches one symbol per public header.
 add_executable(descriptor_import_probe descriptor_import_probe.cpp)
 target_link_libraries(descriptor_import_probe PRIVATE plotjuggler_sdk::descriptor_import_support)
+
+# New component and packaged fixture consumption, alongside the deprecated probe.
+foreach(fixture mock_data_source mock_file_source mock_toolbox missing_id_data_source)
+  pj_add_sdk_test_fixture(${fixture} fixture_target)
+  # Repeated calls must return the same target without redefining it.
+  pj_add_sdk_test_fixture(${fixture} repeated_target)
+  if(NOT fixture_target STREQUAL repeated_target)
+    message(FATAL_ERROR "Fixture target changed on repeated call")
+  endif()
+endforeach()

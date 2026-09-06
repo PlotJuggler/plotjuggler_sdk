@@ -1,16 +1,15 @@
 # Plot Markers Format
 
-PlotJuggler uses a canonical `PJ.PlotMarkers` wire format when plot-marker
-findings need to be stored, transported, or replayed as bytes. A `PlotMarkers`
-value is the set of markers for one topic (one series, or a dataset-global
-topic); the codec serializes it to the protobuf-wire payload described by the
-schema.
+Use the canonical `PJ.PlotMarkers` wire format to store, transport or replay
+plot-marker findings as bytes. `PlotMarkers` holds the markers for one series
+or dataset-global topic. The codec serializes this set to the schema's
+protobuf-wire payload.
 
-A marker is a *time-centric* finding on a plot, the analog of the *image-centric*
-[`ImageAnnotations`](image_annotations_format.md). It is **not** structured like
-`ImageAnnotations`: a marker is a homogeneous record distinguished by `kind`, and
-`PlotMarkers` is a flat list of them. For the broader builtin type catalog, see
-[builtin_type.md](builtin_type.md).
+A marker describes a finding in plot time, analogous to
+[`ImageAnnotations`](image_annotations_format.md) in image space.
+Their structures differ. Markers are homogeneous records distinguished by
+`kind`; `PlotMarkers` is a flat list of them.
+See [builtin_type.md](builtin_type.md) for the broader catalog.
 
 ## Contract
 
@@ -71,8 +70,9 @@ Enum fields are written as their raw numeric value and always emitted. The reade
 maps unknown `kind` to `kRegion`, unknown `status` to `kNone`, and unknown
 `severity` to `kInfo`, so forward-compatible payloads still decode.
 
-A `PlotMarkers` value with no markers serializes to an empty byte buffer. Decoding
-a null or empty buffer is treated as invalid input by the current reader.
+A `PlotMarkers` value with no markers serializes to an empty byte buffer. A
+zero-size buffer decodes to an empty set, including when its pointer is null.
+A null pointer with nonzero size is invalid.
 
 The reader decodes the mapped fields and skips unknown fields (including unknown
 nested fields), so compatible schema additions are tolerated. Malformed protobuf

@@ -6,13 +6,13 @@
 // processed in one pass over 512-bit blocks with the standard 9..73-byte
 // length padding tail.
 
-#include "descriptor_import/sha256.hpp"
+#include "source/sha256.hpp"
 
 #include <cstddef>
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace detail {
 
 namespace {
@@ -124,6 +124,6 @@ std::array<std::uint8_t, 32> sha256(std::string_view data) {
 }
 
 }  // namespace detail
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

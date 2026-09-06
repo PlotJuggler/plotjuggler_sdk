@@ -3,6 +3,46 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.31.0]
+
+### Source-provider C++ support
+
+- Rename the compiled `descriptor_import_support` component to `source`
+  (`pj_source`, `plotjuggler_sdk::source`, `PJ::sdk::source`,
+  `pj_base/sdk/source/`). The old CMake/Conan component and include paths
+  forward for one release. Existing C ABI protocols and layouts are unchanged.
+- Add strict environment ceilings/min-nonzero merge, decimal-nanosecond parsing,
+  lowercase schemeless-origin validation, host-compatible presentation settings,
+  whole-request ingest outcome computation, and host Stop polling.
+  Synchronization and dataset-survival decisions remain with the provider.
+  The metadata query language and rolling transfer-rate display helper live in
+  pj-official-plugins `common/query/` and `common/transfer_rate/`, respectively.
+- Publish source-record envelope v1 validation and conformance cases, including
+  deep credential-key rejection and explicit rejection of flat mcap_cloud v1.
+  Existing PJ4 refusal categories are preserved; optional `label` now must be a
+  string (the private host implementation omitted that check). Provider versions
+  remain unsigned JSON values without narrowing. Pre-envelope formats require a
+  versioned restore adapter, not silent canonical-byte re-wrapping.
+- Move UTC/duration formatting and ISO parsing into pj_base. Fractional-second
+  addition uses checked nanosecond arithmetic at both int64 boundaries. Add
+  portable checked slider-window mapping, retaining the final frame at the
+  exclusive upper endpoint and refusing unrepresentable ranges.
+
+### Testing support
+
+- Add `pj_plugins/testing/delegated_ingest_fixture.hpp`: recording host pair,
+  double payload-fetch/anchor-lifetime checks, validated completions, failure
+  injection, truncated vtables and cancellation during blocked ingest.
+- Install the four mock/invalid plugin fixture sources under
+  `share/plotjuggler_sdk/test_fixtures/`. The exported
+  `pj_add_sdk_test_fixture(name out_target)` helper builds them against
+  `plugin_sdk`; internal example targets keep their existing behavior.
+- Add [Existing SDK utilities](docs/sdk-utilities.md) and
+  [the provider guide](docs/provider-guide.md) for reuse discovery and provider
+  contracts. Export both with Conan and install them under
+  `share/plotjuggler_sdk/docs/` for package-only consumers.
+  Stable table-row identity and `pj_cloud` connection code remain deferred.
+
 ## [0.30.0]
 
 ### Feature: explicit completion contract for cacheable finite ingests (MINOR)
@@ -29,9 +69,9 @@ simply never cacheable; cacheability is negotiated from slot presence, not a
 manifest flag.
 
 `pj_base/sdk/ingest_completion.hpp` ships the shared fail-closed validator
-(`copyIngestCompletion`): undersized structs, unknown outcomes, nonzero
-flags, and malformed/duplicate topic lists all refuse as capture evidence
-while never affecting ingest.
+(`copyIngestCompletion`): undersized structs, unknown outcomes or flag bits,
+empty-topic attestation on a non-COMPLETED outcome, and malformed/duplicate
+topic lists all refuse as capture evidence while never affecting ingest.
 
 ### Feature: discard_parser_ingest formalized on the toolbox runtime host (MINOR)
 

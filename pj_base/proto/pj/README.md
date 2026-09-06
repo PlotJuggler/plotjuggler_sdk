@@ -1,11 +1,10 @@
 # `pj/` protobuf schemas
 
-Canonical wire-format contracts for PlotJuggler's builtin object types — the shim
-between source-specific message families (ROS, Protobuf, JSON, ...) and the data
-shapes that PlotJuggler can classify, store, and render consistently. Each schema
-defines the authoritative on-disk / on-wire layout for a corresponding SDK struct
-under `pj_base/include/pj_base/builtin/`. See `docs/builtin_type.md` for design
-rationale.
+These canonical wire contracts map source-specific messages (ROS, Protobuf,
+JSON, ...) to builtin types that PlotJuggler can classify, store and render
+consistently. Each schema defines the authoritative disk/wire layout for its
+SDK struct under `pj_base/include/pj_base/builtin/`.
+See `docs/builtin_type.md` for the design rationale.
 
 ## Schemas
 
@@ -77,3 +76,10 @@ rationale.
   - `TextAnnotation`
 - **`ImageAnnotations.proto`** — bundle the annotations above for one image, with a shared timestamp and image reference.
   - `ImageAnnotations`
+
+### Plot annotations
+
+- **`PlotMarkers.proto`** — a whole marker set for one series or dataset-global
+  topic: time regions, events, value bands and labels. Reuses `Color` and
+  `KeyValuePair`; see [the wire contract](../../../docs/plot_markers_format.md).
+  - `PlotMarker`, `PlotMarkers`

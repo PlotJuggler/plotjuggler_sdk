@@ -185,7 +185,11 @@ TEST_F(ProviderJobTest, WatchdogFiresOnceWhenTheBodyOverruns) {
   std::atomic<int> expired{0};
   const auto body = [&](JobControl& control) {
     control.armWatchdog(20ms, [&expired] { expired.fetch_add(1); });
-    std::this_thread::sleep_for(120ms);
+    // The body overruns the watchdog by a wide margin: on a CPU-starved CI
+    // runner (macOS especially) the watchdog thread's start-up can be
+    // delayed well past the deadline, so give it hundreds of milliseconds
+    // of headroom rather than 120ms. Fire-once semantics are unaffected.
+    std::this_thread::sleep_for(400ms);
     return ImportOutcome{PJ_DESCRIPTOR_IMPORT_FAILED, "ceiling"};
   };
   ASSERT_TRUE(ProviderJob::start(body, &callbacks_, &rec_, &job_, nullptr));

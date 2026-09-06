@@ -12,11 +12,11 @@
 
 #include <functional>
 
-#include "pj_base/sdk/descriptor_import/provider_job.hpp"
+#include "pj_base/sdk/source/provider_job.hpp"
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace testing {
 
 /// Same contract as ProviderJob::start(); `before_gate_release` runs inside
@@ -26,6 +26,6 @@ namespace testing {
     PJ_joinable_job_t* out_job, PJ_error_t* out_error, std::function<void()> before_gate_release);
 
 }  // namespace testing
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

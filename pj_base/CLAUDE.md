@@ -1,25 +1,48 @@
 # pj_base — SDK vocabulary, builtin object schemas, and the C plugin ABI
 
-pj_base is the **Level 0** foundation and the **SDK boundary** for plugin authors. It owns: the zero-dependency vocabulary types (`Timestamp`, `DatasetId`, `Range`, `Expected<T>`, `Span`, `TypeTree`); the 18 canonical *builtin object* schemas (`sdk::Image`, `PointCloud`, `DepthImage`, `OccupancyGrid`, `VoxelGrid`, `FrameTransforms`, …) and all 18 wire codecs; and the **C ABI** primitives every plugin family speaks (`plugin_data_api.h` + the service registry) plus the C-ABI protocol headers for **three** families — `data_source_protocol.h`, `message_parser_protocol.h`, `toolbox_protocol.h` — and additive extension headers such as `parser_functional_protocol.h`. The **Dialog** protocol header is the exception: it lives in `pj_plugins/dialog_protocol/`, not here. It also ships the C++ SDK base classes for DataSource and Toolbox; the MessageParser and Dialog base classes live in `pj_plugins`. Builds as a STATIC lib with **zero public deps** — `fast_float` is a `BUILD_INTERFACE` private impl detail of `parseNumber`. Must NOT depend on `pj_datastore`, `pj_plugins`, Qt, or any Conan runtime lib. This is a read-only submodule subtree: change it only when explicitly working in `plotjuggler_sdk`.
+Before adding a helper, use [Existing SDK utilities](../docs/sdk-utilities.md).
+Provider work also follows [the provider contract](../docs/provider-guide.md).
+
+`pj_base` owns vocabulary, builtin schemas/codecs, DataSource/MessageParser/Toolbox
+C protocols and the DataSource/Toolbox C++ bases. The Dialog protocol and
+MessageParser/Dialog bases live in `pj_plugins`.
+
+`pj_source` headers live here under `sdk/source/`. Link
+`plotjuggler_sdk::source` to use them.
+
+`pj_base` has zero public library dependencies. fast_float and fmt are private
+build details. It must not depend on Qt, `pj_datastore` or `pj_plugins`.
 
 ## Layout
 - `include/pj_base/` — vocabulary primitives: `types.hpp`, `time.hpp` (absolute time spine: `Timepoint`/`Duration` + `fromRaw`/`toRaw`), `type_tree.hpp`, `dataset.hpp`, `expected.hpp`, `span.hpp`, `number_parse.hpp`, `assert.hpp`, `diagnostic_sink.hpp`, `buffer_anchor.hpp`.
-- `include/pj_base/builtin/` — 18 builtin object struct headers (`*.hpp`; stable numeric tags with values 2 and 12 permanently reserved) + all 18 wire codecs (`*_codec.hpp`) + the `BuiltinObject` tagged type-erased holder and the type-erased codec dispatcher.
+- `include/pj_base/builtin/` — 18 builtin struct headers (`*.hpp`) and all 18
+  wire codecs (`*_codec.hpp`). Numeric tags are stable; values 2 and 12 are
+  permanently reserved. Also contains the tagged, type-erased `BuiltinObject`
+  holder and type-erased codec dispatcher.
 - `include/pj_base/sdk/` — C++ SDK over the ABI: DataSource + Toolbox `*_plugin_base.hpp`, `service_registry.hpp`/`service_traits.hpp`, host views, Arrow RAII holders, `testing/`.
 - `include/pj_base/*_protocol.h`, `plugin_data_api.h`, `builtin_object_abi.h`, `plugin_abi_export.hpp` — the stable C-ABI surface for DataSource/MessageParser/Toolbox (the Dialog protocol header lives in `pj_plugins/dialog_protocol/`).
 - `proto/pj/` — canonical `.proto` wire contracts for the builtin types (see its README).
+- `include/pj_base/sdk/source/` — `pj_source` provider helpers; see `../docs/provider-guide.md`.
+- `include/pj_base/time_format.hpp`, `slider_window.hpp` — UTC/duration formatting, checked ISO parsing and slider ranges.
 - `src/`, `tests/` — codec/parse impls and gtests.
 - `abi/baseline.abi` — golden libabigail dump; the ABI-stability regression baseline.
 
 ## Gotchas
-- ABI numbering is **frozen**: `BuiltinObjectType` (builtin_object.hpp) and `PJ_builtin_object_type_t` (builtin_object_abi.h) share stable numeric values — never renumber; types 2 and 12 are permanently reserved. Append-only.
-- Every vtable slot is `PJ_NOEXCEPT`; a throw across the ABI boundary calls `std::terminate`. See the header block in `plugin_data_api.h`.
-- `BuiltinObject` stores its `BuiltinObjectType` tag explicitly next to the opaque value (deliberately not `std::variant`, for forward-compat; RTTI-free by design) — recover via `obj.get<T>()` / `sdk::typeOf`. See `builtin/builtin_object.hpp`.
-- Versioning follows the authoritative submodule CLAUDE.md → Release Versioning: a **tail-appended slot / new capability** (backward-compatible ABI *addition*, `abidiff` shows additions-only) is a **MINOR** and does **not** touch `abi/baseline.abi`; a **struct-layout reorder or signature change** (an ABI *break*) is a **MAJOR** — that is what refreshes `abi/baseline.abi` and bumps `PJ_*_PROTOCOL_VERSION`/`PJ_ABI_VERSION`.
+- ABI numbering is **frozen**. `BuiltinObjectType` (builtin_object.hpp) and
+  `PJ_builtin_object_type_t` (builtin_object_abi.h) share stable numeric values.
+  Never renumber. Types 2 and 12 are permanently reserved. Append only.
+- Every vtable slot is `PJ_NOEXCEPT`. A throw across the ABI boundary calls
+  `std::terminate`. See the header block in `plugin_data_api.h`.
+- `BuiltinObject` stores its `BuiltinObjectType` tag next to the opaque value.
+  It deliberately avoids `std::variant` for forward compatibility and uses no
+  RTTI. Recover via `obj.get<T>()` / `sdk::typeOf`. See `builtin/builtin_object.hpp`.
+- Follow [Release Versioning](../CLAUDE.md#release-versioning) for API/ABI changes; a MINOR does not refresh `abi/baseline.abi`.
 
 ## Read deeper
 | For | Read |
 |---|---|
+| Existing numeric/time/source helpers and testing support | [SDK utilities](../docs/sdk-utilities.md) |
+| Building a source provider | [Provider contract](../docs/provider-guide.md) |
 | Builtin type design, serialization families, type-erasure rules | `../docs/builtin_type.md` |
 | ImageAnnotations canonical wire format | `../docs/image_annotations_format.md` |
 | C++ style / error-handling (`Expected`, `PJ_ASSERT`) | `../docs/cpp_design_recommendations.md` |

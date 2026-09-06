@@ -16,6 +16,7 @@ entry point.
 | `pj.source_object_write.v1` | `PJ_object_write_host_t` | `SourceObjectWriteHostView` | DataSource plugins that create object topics |
 | `pj.parser_object_write.v1` | `PJ_parser_object_write_host_t` | `ParserObjectWriteHostView` | MessageParser plugins bound to an object topic |
 | `pj.toolbox_object_read.v1` | `PJ_object_read_host_t` | `ToolboxObjectReadHostView` | Toolbox plugins that read object topics |
+| `pj.toolbox.v1` | `PJ_toolbox_host_t` | `ToolboxHostView` | Toolbox plugins that create or annotate object topics |
 
 The service traits live in `pj_base/include/pj_base/sdk/service_traits.hpp`.
 The raw ABI structs live in `pj_base/include/pj_base/plugin_data_api.h`.
@@ -58,12 +59,32 @@ payload through `pj.parser_object_write.v1` from the same `parse()` call.
 
 The host-side implementation is `DatastoreParserObjectWriteHost`.
 
+## Toolbox Object Writes
+
+Use `ToolboxHostView` from `pj.toolbox.v1` to publish objects from a toolbox:
+
+- `registerObjectTopic(source, name, metadata_json)` registers under a source
+  created by the toolbox.
+- `registerObjectTopicOnDataset(dataset, name, metadata_json)` registers under
+  an existing `DatasetId`; repeated registration returns the existing handle.
+- Both registration methods accept `BuiltinObjectType` with optional
+  `ObjectTopicMetadataBuilder` metadata to set the canonical renderer key.
+- `pushOwnedObject(topic, timestamp, bytes)` copies the payload into the store.
+- `setObjectTopicRetention(topic, max_entries)` bounds retained snapshots;
+  use `1` when republishing a whole marker set.
+
+These optional tail slots return an error on older hosts. Reuse them for
+[plot markers](docs/plot_markers_architecture.md); no marker-specific store or
+per-marker mutation API is needed.
+
 ## Toolbox Object Reads
 
 Toolbox plugins resolve `pj.toolbox_object_read.v1` when they need read access
 to ObjectStore topics. The read host supports:
 
-- topic lookup by name
+- `lookupTopic(name)` for name-only lookup
+- `lookupTopicOnDataset(dataset, name)` to disambiguate names shared by loaded
+  datasets; returns `nullopt` on a miss or when the host lacks this tail slot
 - topic enumeration
 - metadata lookup
 - entry count and time range queries
@@ -90,12 +111,12 @@ to the resolved byte buffer.
 
 ## Core Boundary
 
-ObjectStore is byte-oriented and domain-agnostic. It does not decode payloads,
-choose renderers, maintain UI state, or define topic-specific presentation
-policy. Metadata is stored as opaque JSON so callers can layer their own
-interpretation above the core store. At the SDK/application boundary,
-`builtin_object_type` is the one canonical renderer-discovery key; values are
-the exact names emitted by `PJ::sdk::name()`.
+ObjectStore stores bytes without interpreting their domain. It does not decode
+payloads, choose renderers, maintain UI state or define topic-specific
+presentation policy. It stores metadata as opaque JSON for callers to interpret.
+
+At the SDK/application boundary, `builtin_object_type` is the one canonical
+renderer-discovery key. Its values are the exact names from `PJ::sdk::name()`.
 
 ## Tests
 

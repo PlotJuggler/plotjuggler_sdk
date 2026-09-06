@@ -1,31 +1,31 @@
 # pj_plugins — plugin ABI, SDK base classes, and host-side loaders
 
-The runtime-extension layer of `plotjuggler_sdk`: the stable C ABI, the C++ SDK
-plugin authors subclass, and the host-side loaders/RAII handles that `dlopen`
-plugin DSOs. Owns **four plugin families** — DataSource, MessageParser, Toolbox,
-Dialog. The authoring umbrella spans `pj_base` plus the parser/dialog headers in
-this module through `plotjuggler_sdk::plugin_sdk`; host libraries link `pj_base`
-and are consumed by the app. It does **not** own the data-plane bridge
-(that is `pj_datastore`'s `DatastoreSourceWriteHost` / `…ParserWriteHost` /
-`…ToolboxHost`, which now lives in the PlotJuggler application repo, not in this
-SDK) and links **no Qt** — dialogs are toolkit-neutral (the GUI host supplies the
-renderer). The submodule's read-path is `plotjuggler_sdk/CLAUDE.md` → this file
-→ `docs/` → headers → code (the PJ4 per-module-CLAUDE contract does not govern
-submodule-internal modules; `pj_base` carries none).
+Before adding a helper, use [Existing SDK utilities](../docs/sdk-utilities.md).
+Provider work also follows [the provider contract](../docs/provider-guide.md).
+
+`pj_plugins` owns host loaders, discovery, parser routing and the MessageParser
+and Dialog authoring APIs. The `plotjuggler_sdk::plugin_sdk` umbrella combines
+those headers with `pj_base`. Compiled providers also link `source`.
+
+Host libraries depend on `pj_base`, never Qt. Datastore bridges and duplicate
+plugin-resolution policy belong to the application. Follow the root reading
+order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relevant.
 
 ## Layout
-- `include/pj_plugins/host/` — host loaders + RAII handles for DataSource /
-  MessageParser / Toolbox, the embedded-manifest `plugin_catalog` scanner
-  (`scanPluginDsos` / `inspectPluginDso`), parser claim admission + per-route
-  resolution (`ParserClaimCatalog`, `ParserRouteResolver`), native functional
-  parser-module loading/execution (`NativeParserModule`,
-  `NativeParserModuleInstance`, `ParserModuleStrikeTracker`),
-  `ServiceRegistryBuilder`, `ConfigEnvelope`. The DSO duplicate-resolution
-  catalog that composes loaded plugin families into a set is **host policy** and
-  lives in the app (`pj_runtime`, `PluginRuntimeCatalog`), not here.
+- `include/pj_plugins/host/` — DataSource/MessageParser/Toolbox loaders and RAII
+  handles. `plugin_catalog` scans embedded manifests (`scanPluginDsos` /
+  `inspectPluginDso`). `ParserClaimCatalog` and `ParserRouteResolver` handle
+  parser claim admission and per-route resolution. Native parser-module
+  loading/execution uses `NativeParserModule`, `NativeParserModuleInstance`
+  and `ParserModuleStrikeTracker`. Also contains `ServiceRegistryBuilder`
+  and `ConfigEnvelope`.
+  The DSO catalog that resolves duplicates and composes loaded plugin families
+  is **host policy**. It lives in the app (`pj_runtime`, `PluginRuntimeCatalog`).
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:
-  `MessageParserPluginBase`, `ObjectIngestPolicyResolver`, parser trampolines.
-- `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host for tests).
+  `MessageParserPluginBase`, ingest/timestamp/array policies, streaming source
+  and dialog helpers, endpoint composition, and parser trampolines.
+- `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host) and `DelegatedIngestFixture`
+  (toolbox/data-source hosts recording attachment, payload ownership, completion, Stop and discard).
 - `dialog_protocol/` — **nested module** (own CMake): the Dialog C ABI, C++
   dialog SDK, and host dialog loader/handle. See `dialog_protocol/CLAUDE.md`.
 - `src/` — loader/catalog `.cpp`; `src/detail/` vtable validation + dlopen.
@@ -39,24 +39,26 @@ submodule-internal modules; `pj_base` carries none).
   `PJ_HAS_TAIL_SLOT` — never grow `*_MIN_VTABLE_SIZE`. See `docs/ARCHITECTURE.md` §0a.
 - **The SDK is split across two modules.** `DataSourcePluginBase` /
   `ToolboxPluginBase` / `data_source_patterns.hpp` live in **`pj_base/sdk/`**;
-  only `MessageParserPluginBase` + `object_ingest_policy.hpp` live here under
+  parser/dialog authoring and shared plugin policies live under
   `pj_plugins/sdk/`. Functional parser-module authoring headers and the native
   CMake helper live under `pj_base`; claim resolution and native module
   loading/runtime live here.
 - **Handles keep the DSO mapped.** Every handle holds a `shared_ptr<void>`
-  library token (exposed via `libraryOwner()`), so destroying/hot-reloading the
-  loader cannot `dlclose` a live plugin — and a lazy ObjectStore payload anchor,
-  whose `release` fn is plugin code, can capture that token to stay safe past the
-  handle's own lifetime. Dialog handles add a non-owning `borrowed()` form for
-  source/toolbox embedded dialogs — those must not outlive the owning handle.
+  library token, exposed via `libraryOwner()`. Destroying or hot-reloading the
+  loader therefore cannot `dlclose` a live plugin. A lazy ObjectStore payload
+  anchor can capture the token to stay safe after the handle dies; its `release`
+  function is plugin code. Dialog handles provide non-owning `borrowed()` handles
+  for source/toolbox embedded dialogs. These must not outlive the owning handle.
 - **Native parser modules never unload in v1.** `NativeParserModule` resolves
   the complete per-handle export set and retains every opened DSO for the
   process session, including rejected artifacts. Instance wrappers still call
-  `pj_module_destroy`; only the code mapping has session lifetime.
+  `pj_module_destroy`. Only the code mapping has session lifetime.
 
 ## Read deeper
 | For | Read |
 |---|---|
+| Existing helpers and provider/testing APIs | [SDK utilities](../docs/sdk-utilities.md) |
+| Source-provider lifecycle and delegated-ingest tests | [Provider contract](../docs/provider-guide.md) |
 | Family roles, capabilities, permission matrix, config contract | `docs/REQUIREMENTS.md` |
 | ABI rules, three-level design, loaders, RAII, data-host bridge | `docs/ARCHITECTURE.md` |
 | Writing each family | `docs/data-source-guide.md`, `docs/message-parser-guide.md`, `docs/toolbox-guide.md`, `docs/dialog-plugin-guide.md` |

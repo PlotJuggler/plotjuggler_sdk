@@ -124,6 +124,18 @@ TEST(SourceDescriptor, EnforcesStringContainerAndDepthBounds) {
   EXPECT_NE(too_deep.error().find("deeper"), std::string::npos) << too_deep.error();
 }
 
+TEST(SourceDescriptor, DeniedKeysRejectAtAnyDepth) {
+  auto policy = mosaicoPolicy();
+  // Default-empty denied_keys checks nothing.
+  EXPECT_TRUE(parseSourceDescriptor(R"({"topics":[{"password":"x"}]})", policy));
+  policy.denied_keys = {"password"};
+  const auto denied = parseSourceDescriptor(R"({"topics":[{"nested":{"password":"x"}}]})", policy);
+  ASSERT_FALSE(denied);
+  EXPECT_EQ(denied.error(), std::string(PJ::sdk::descriptor_import::kDeniedKeyViolationPrefix) + "password");
+  // Exact, case-sensitive key match only; values are never inspected.
+  EXPECT_TRUE(parseSourceDescriptor(R"({"topics":[{"Password":"x","value":"password"}]})", policy));
+}
+
 TEST(IdentitySchemeTest, DigestValidatesShapeExactly) {
   const IdentityScheme scheme{"mosaico:v1:sha256/128:", 32};
   const std::string hex(32, 'a');

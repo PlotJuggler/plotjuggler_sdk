@@ -11,6 +11,36 @@
 #include <utility>
 #include <variant>
 
+TEST(WidgetDataViewTest, TimeSpansPreserveSignedNanosecondLimits) {
+  constexpr auto minimum = std::numeric_limits<std::int64_t>::min();
+  constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
+  PJ::WidgetData data;
+  data.setRangeSliderTimeSpan("range", minimum, maximum);
+  data.setMarkerTimelineTimeSpan("timeline", minimum, maximum);
+  const PJ::WidgetDataView view(data.toJson());
+  const auto expected = std::make_pair(minimum, maximum);
+  EXPECT_EQ(view.rangeSliderTimeSpan("range"), expected);
+  EXPECT_EQ(view.markerTimelineTimeSpan("timeline"), expected);
+}
+
+TEST(WidgetDataViewTest, TimeSpansRejectMalformedOrOverflowingEndpoints) {
+  for (const auto* invalid : {"123junk", " 123", "+123", "", "9223372036854775808", "-9223372036854775809"}) {
+    SCOPED_TRACE(invalid);
+    for (const bool lower : {true, false}) {
+      SCOPED_TRACE(lower);
+      const nlohmann::json data = {
+          {"w",
+           {{"range_time_min_ns", lower ? invalid : "0"},
+            {"range_time_max_ns", lower ? "0" : invalid},
+            {"marker_timeline_time_min_ns", lower ? invalid : "0"},
+            {"marker_timeline_time_max_ns", lower ? "0" : invalid}}}};
+      const PJ::WidgetDataView view(data.dump());
+      EXPECT_FALSE(view.rangeSliderTimeSpan("w"));
+      EXPECT_FALSE(view.markerTimelineTimeSpan("w"));
+    }
+  }
+}
+
 // --- QLineEdit ---
 
 TEST(WidgetDataViewTest, Text) {
