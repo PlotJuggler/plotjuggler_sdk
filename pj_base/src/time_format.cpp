@@ -3,18 +3,16 @@
 
 #include "pj_base/time_format.hpp"
 
+#include <fmt/format.h>
+
 #include <cctype>
-#include <iomanip>
-#include <sstream>
+#include <chrono>
 
 #include "pj_base/time_math.hpp"
 
 namespace PJ {
 
 namespace {
-constexpr int64_t kNsPerSecond = 1'000'000'000LL;
-constexpr int64_t kSecondsPerDay = 24 * 60 * 60;
-
 struct UtcTime {
   int year = 1970;
   int month = 1;
@@ -24,64 +22,29 @@ struct UtcTime {
   int second = 0;
 };
 
-int64_t floorDiv(int64_t value, int64_t divisor) {
-  const auto quotient = value / divisor;
-  const auto remainder = value % divisor;
-  return remainder < 0 ? quotient - 1 : quotient;
-}
-
-UtcTime utcFromUnixSeconds(int64_t secs) {
-  const int64_t days = floorDiv(secs, kSecondsPerDay);
-  const int64_t seconds_of_day = secs - days * kSecondsPerDay;
-
-  // Howard Hinnant's civil-from-days algorithm, with civil_days as days since 1970-01-01.
-  const int64_t civil_days = days + 719468;
-  const int64_t era = (civil_days >= 0 ? civil_days : civil_days - 146096) / 146097;
-  const int64_t doe = civil_days - era * 146097;
-  const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-  const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-  const int64_t mp = (5 * doy + 2) / 153;
-
-  UtcTime utc;
-  utc.day = static_cast<int>(doy - (153 * mp + 2) / 5 + 1);
-  utc.month = static_cast<int>(mp + (mp < 10 ? 3 : -9));
-  utc.year = static_cast<int>(yoe + era * 400 + (utc.month <= 2));
-  utc.hour = static_cast<int>(seconds_of_day / 3600);
-  utc.minute = static_cast<int>((seconds_of_day % 3600) / 60);
-  utc.second = static_cast<int>(seconds_of_day % 60);
-  return utc;
-}
-
 UtcTime utcFromNanoseconds(int64_t ts_ns) {
-  return utcFromUnixSeconds(floorDiv(ts_ns, kNsPerSecond));
-}
-
-int64_t daysFromCivil(int year, unsigned month, unsigned day) {
-  // Howard Hinnant's days-from-civil algorithm, returning days since 1970-01-01.
-  year -= month <= 2;
-  const int era = (year >= 0 ? year : year - 399) / 400;
-  const unsigned yoe = static_cast<unsigned>(year - era * 400);
-  const unsigned doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
-  const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  return static_cast<int64_t>(era) * 146097 + static_cast<int64_t>(doe) - 719468;
+  using namespace std::chrono;
+  const auto whole = floor<seconds>(sys_time<nanoseconds>{nanoseconds{ts_ns}});
+  const auto midnight = floor<days>(whole);
+  const year_month_day date{midnight};
+  // Subtract in seconds: midnight can be outside the int64 nanosecond range.
+  const hh_mm_ss time{whole - midnight};
+  return {
+      static_cast<int>(date.year()),
+      static_cast<int>(static_cast<unsigned>(date.month())),
+      static_cast<int>(static_cast<unsigned>(date.day())),
+      static_cast<int>(time.hours().count()),
+      static_cast<int>(time.minutes().count()),
+      static_cast<int>(time.seconds().count())};
 }
 
 std::string formatDate(const UtcTime& utc, char separator, bool day_first) {
-  std::ostringstream os;
-  os << std::setfill('0');
-  if (day_first) {
-    os << std::setw(2) << utc.day << separator << std::setw(2) << utc.month << separator << std::setw(4) << utc.year;
-  } else {
-    os << std::setw(4) << utc.year << separator << std::setw(2) << utc.month << separator << std::setw(2) << utc.day;
-  }
-  return os.str();
+  return day_first ? fmt::format("{:02}{}{:02}{}{:04}", utc.day, separator, utc.month, separator, utc.year)
+                   : fmt::format("{:04}{}{:02}{}{:02}", utc.year, separator, utc.month, separator, utc.day);
 }
 
 std::string formatTime(const UtcTime& utc) {
-  std::ostringstream os;
-  os << std::setfill('0') << std::setw(2) << utc.hour << ":" << std::setw(2) << utc.minute << ":" << std::setw(2)
-     << utc.second;
-  return os.str();
+  return fmt::format("{:02}:{:02}:{:02}", utc.hour, utc.minute, utc.second);
 }
 
 bool isDigit(char character) {
@@ -107,14 +70,7 @@ bool parseFixedDigits(std::string_view text, std::size_t offset, std::size_t cou
 
 std::string formatTimestamp(int64_t ts_ns, bool long_format) {
   const auto utc = utcFromNanoseconds(ts_ns);
-
-  std::ostringstream os;
-  if (long_format) {
-    os << std::setfill('0') << std::setw(2) << utc.day << "/" << std::setw(2) << utc.month << " ";
-  }
-  os << std::setfill('0') << std::setw(2) << utc.hour << ":" << std::setw(2) << utc.minute << ":" << std::setw(2)
-     << utc.second;
-  return os.str();
+  return long_format ? fmt::format("{:02}/{:02} {}", utc.day, utc.month, formatTime(utc)) : formatTime(utc);
 }
 
 std::string formatDuration(int64_t duration_ns) {
@@ -180,8 +136,10 @@ std::optional<int64_t> parseIso8601Utc(std::string_view text) {
       !parseFixedDigits(text, 14, 2, minute) || !parseFixedDigits(text, 17, 2, second)) {
     return std::nullopt;
   }
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
-      second < 0 || second > 59) {
+  const std::chrono::year_month_day date{
+      std::chrono::year{year}, std::chrono::month{static_cast<unsigned>(month)},
+      std::chrono::day{static_cast<unsigned>(day)}};
+  if (!date.ok() || hour > 23 || minute > 59 || second > 59) {
     return std::nullopt;
   }
 
@@ -221,10 +179,10 @@ std::optional<int64_t> parseIso8601Utc(std::string_view text) {
       return std::nullopt;
     }
     pos += 2;
-    if (pos < text.size() && text[pos] == ':') {
-      ++pos;
-    }
-    if (pos < text.size() && isDigit(text[pos])) {
+    if (pos < text.size()) {
+      if (text[pos] == ':') {
+        ++pos;
+      }
       if (!parseFixedDigits(text, pos, 2, offset_minutes)) {
         return std::nullopt;
       }
@@ -239,14 +197,10 @@ std::optional<int64_t> parseIso8601Utc(std::string_view text) {
     return std::nullopt;
   }
 
-  const int64_t days = daysFromCivil(year, static_cast<unsigned>(month), static_cast<unsigned>(day));
-  const UtcTime normalized = utcFromUnixSeconds(days * kSecondsPerDay);
-  if (normalized.year != year || normalized.month != month || normalized.day != day) {
-    return std::nullopt;
-  }
-
   // Subtract the zone offset to land on UTC ("12:00+05:00" == "07:00Z").
-  const int64_t seconds = days * kSecondsPerDay + hour * 3600 + minute * 60 + second - offset_seconds;
+  const int64_t midnight_seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::sys_days{date}.time_since_epoch()).count();
+  const int64_t seconds = midnight_seconds + hour * 3600 + minute * 60 + second - offset_seconds;
   return combineSecondsAndNanos(seconds, fractional_ns);
 }
 

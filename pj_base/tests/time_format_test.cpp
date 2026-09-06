@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <locale>
 
 namespace PJ {
 
@@ -97,11 +98,56 @@ TEST(TimeFormat, FormatsDateOnly) {
   EXPECT_EQ(formatDateOnlyIso(ts), "2026-03-11");
 }
 
+TEST(TimeFormat, FormatsNegativeFractionBeforeEpoch) {
+  EXPECT_EQ(formatTimestamp(-1, false), "23:59:59");
+  EXPECT_EQ(formatTimestamp(-1, true), "31/12 23:59:59");
+  EXPECT_EQ(formatIso8601Utc(-1), "1969-12-31T23:59:59");
+  EXPECT_EQ(formatDateTimeUtc(-1), "31/12/1969 23:59:59 UTC");
+  EXPECT_EQ(formatDateDDMMYYYY(-1), "31/12/1969");
+  EXPECT_EQ(formatDateOnlyIso(-1), "1969-12-31");
+}
+
+TEST(TimeFormat, FormatsMinimumTimestamp) {
+  constexpr int64_t ts = std::numeric_limits<int64_t>::min();
+  EXPECT_EQ(formatTimestamp(ts, false), "00:12:43");
+  EXPECT_EQ(formatTimestamp(ts, true), "21/09 00:12:43");
+  EXPECT_EQ(formatIso8601Utc(ts), "1677-09-21T00:12:43");
+  EXPECT_EQ(formatDateTimeUtc(ts), "21/09/1677 00:12:43 UTC");
+  EXPECT_EQ(formatDateDDMMYYYY(ts), "21/09/1677");
+  EXPECT_EQ(formatDateOnlyIso(ts), "1677-09-21");
+}
+
+TEST(TimeFormat, FormatsIndependentlyOfGlobalLocale) {
+  struct GroupedPunctuation : std::numpunct<char> {
+    char do_thousands_sep() const override {
+      return ',';
+    }
+    std::string do_grouping() const override {
+      return "\3";
+    }
+  };
+  struct RestoreLocale {
+    std::locale previous;
+    ~RestoreLocale() {
+      std::locale::global(previous);
+    }
+  } restore;
+  std::locale::global(std::locale(std::locale::classic(), new GroupedPunctuation));
+
+  constexpr int64_t ts = 1773249125000000000LL;
+  EXPECT_EQ(formatTimestamp(ts, false), "17:12:05");
+  EXPECT_EQ(formatTimestamp(ts, true), "11/03 17:12:05");
+  EXPECT_EQ(formatIso8601Utc(ts), "2026-03-11T17:12:05");
+  EXPECT_EQ(formatDateTimeUtc(ts), "11/03/2026 17:12:05 UTC");
+  EXPECT_EQ(formatDateDDMMYYYY(ts), "11/03/2026");
+  EXPECT_EQ(formatDateOnlyIso(ts), "2026-03-11");
+  EXPECT_EQ(formatDuration(1000LL * 86400 * 1'000'000'000), "1000d 0h 0m");
+}
+
 TEST(TimeFormat, ParsesIso8601UtcRoundTrip) {
   constexpr int64_t timestamps[] = {
-      -1'000'000'000LL,
-      0,
-      946684800000000000LL,
+      -1'000'000'000LL,      0, 946684800000000000LL,
+      951782400000000000LL,  // 2000-02-29: leap year despite being a century.
       1773249125000000000LL,
   };
   for (const int64_t ts : timestamps) {
@@ -127,6 +173,7 @@ TEST(TimeFormat, ParsesIso8601UtcWithNumericOffset) {
   EXPECT_EQ(parseIso8601Utc("2016-04-20T12:00:00-05:00"), parseIso8601Utc("2016-04-20T17:00:00Z"));
   // Offset without a colon, and fractional seconds + offset together.
   EXPECT_EQ(parseIso8601Utc("2016-04-20T12:00:00+0500"), parseIso8601Utc("2016-04-20T07:00:00Z"));
+  EXPECT_EQ(parseIso8601Utc("2016-04-20T12:00:00+05"), parseIso8601Utc("2016-04-20T07:00:00Z"));
   EXPECT_EQ(parseIso8601Utc("1970-01-01T00:00:00.123+00:00"), 123000000);
 }
 
@@ -134,8 +181,12 @@ TEST(TimeFormat, RejectsMalformedIso8601Utc) {
   EXPECT_EQ(parseIso8601Utc(""), std::nullopt);
   EXPECT_EQ(parseIso8601Utc("2026-03-11 17:12:05"), std::nullopt);
   EXPECT_EQ(parseIso8601Utc("2026-02-30T17:12:05"), std::nullopt);
+  EXPECT_EQ(parseIso8601Utc("1900-02-29T17:12:05"), std::nullopt);
   EXPECT_EQ(parseIso8601Utc("2026-03-11T25:12:05"), std::nullopt);
   EXPECT_EQ(parseIso8601Utc("2026-03-11T17:12:05."), std::nullopt);
+  EXPECT_EQ(parseIso8601Utc("2026-03-11T17:12:05+05:"), std::nullopt);
+  EXPECT_EQ(parseIso8601Utc("2026-03-11T17:12:05+05:0"), std::nullopt);
+  EXPECT_EQ(parseIso8601Utc("2026-03-11T17:12:05+05:00junk"), std::nullopt);
 }
 
 }  // namespace PJ

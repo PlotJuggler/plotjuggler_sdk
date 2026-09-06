@@ -939,11 +939,12 @@ class WidgetDataView {
     if (!mn.has_value() || !mx.has_value()) {
       return std::nullopt;
     }
-    try {
-      return std::make_pair(static_cast<std::int64_t>(std::stoll(*mn)), static_cast<std::int64_t>(std::stoll(*mx)));
-    } catch (...) {
+    const auto min_ns = PJ::parseNumber<std::int64_t>(*mn);
+    const auto max_ns = PJ::parseNumber<std::int64_t>(*mx);
+    if (!min_ns || !max_ns) {
       return std::nullopt;
     }
+    return std::make_pair(*min_ns, *max_ns);
   }
 
   /// Boundary segments for a RangeSlider: (start, end, label) in slider units.
@@ -1017,11 +1018,12 @@ class WidgetDataView {
     if (!mn.has_value() || !mx.has_value()) {
       return std::nullopt;
     }
-    try {
-      return std::make_pair(static_cast<std::int64_t>(std::stoll(*mn)), static_cast<std::int64_t>(std::stoll(*mx)));
-    } catch (...) {
+    const auto min_ns = PJ::parseNumber<std::int64_t>(*mn);
+    const auto max_ns = PJ::parseNumber<std::int64_t>(*mx);
+    if (!min_ns || !max_ns) {
       return std::nullopt;
     }
+    return std::make_pair(*min_ns, *max_ns);
   }
 
   // --- Field validity indicator (generic) ---

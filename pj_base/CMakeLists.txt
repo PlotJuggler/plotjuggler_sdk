@@ -51,11 +51,11 @@ target_compile_features(pj_base PUBLIC cxx_std_20)
 target_compile_options(pj_base PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
 )
-# fast_float is an implementation detail of PJ::parseNumber. BUILD_INTERFACE
-# scoping keeps it off the installed plotjuggler_sdkTargets file so
-# downstream consumers never inherit a fast_float include path or link req.
+# Header-only implementation dependencies stay off installed targets so
+# downstream consumers inherit neither their include paths nor link requirements.
 target_link_libraries(pj_base PRIVATE
   $<BUILD_INTERFACE:FastFloat::fast_float>
+  $<BUILD_INTERFACE:pj_internal_fmt>
 )
 set_target_properties(pj_base PROPERTIES
   POSITION_INDEPENDENT_CODE ON
