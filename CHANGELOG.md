@@ -15,8 +15,8 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
   lowercase schemeless-origin validation, host-compatible presentation settings,
   whole-request ingest outcome computation, and host Stop polling.
   Synchronization and dataset-survival decisions remain with the provider.
-  (The rolling transfer-rate display helper deliberately lives in
-  pj-official-plugins `common/` with the dialog code that shows it.)
+  The metadata query language and rolling transfer-rate display helper live in
+  pj-official-plugins `common/query/` and `common/transfer_rate/`, respectively.
 - Publish source-record envelope v1 validation and conformance cases, including
   deep credential-key rejection and explicit rejection of flat mcap_cloud v1.
   Existing PJ4 refusal categories are preserved; optional `label` now must be a
@@ -37,8 +37,10 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
   `share/plotjuggler_sdk/test_fixtures/`. The exported
   `pj_add_sdk_test_fixture(name out_target)` helper builds them against
   `plugin_sdk`; internal example targets keep their existing behavior.
-- Add `docs/provider-guide.md` covering descriptor identity/versioning,
-  acceptance, attachment/completion, Stop, presentation, ceilings and tests.
+- Add [Existing SDK utilities](docs/sdk-utilities.md) and
+  [the provider guide](docs/provider-guide.md) for reuse discovery and provider
+  contracts. Export both with Conan and install them under
+  `share/plotjuggler_sdk/docs/` for package-only consumers.
   Stable table-row identity and `pj_cloud` connection code remain deferred.
 
 ## [0.30.0]
@@ -67,9 +69,9 @@ simply never cacheable; cacheability is negotiated from slot presence, not a
 manifest flag.
 
 `pj_base/sdk/ingest_completion.hpp` ships the shared fail-closed validator
-(`copyIngestCompletion`): undersized structs, unknown outcomes, nonzero
-flags, and malformed/duplicate topic lists all refuse as capture evidence
-while never affecting ingest.
+(`copyIngestCompletion`): undersized structs, unknown outcomes or flag bits,
+empty-topic attestation on a non-COMPLETED outcome, and malformed/duplicate
+topic lists all refuse as capture evidence while never affecting ingest.
 
 ### Feature: discard_parser_ingest formalized on the toolbox runtime host (MINOR)
 

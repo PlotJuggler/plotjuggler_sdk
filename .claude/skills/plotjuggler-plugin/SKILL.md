@@ -14,12 +14,11 @@ description: >-
 
 # Writing a PlotJuggler plugin
 
-PlotJuggler is extended by four **plugin families**, each a small C++20 class you
-subclass and export from a shared library (`.so`/`.dll`/`.dylib`). The SDK
-(`plotjuggler_sdk`) gives you a base class per family; a one-line macro emits all
-the C-ABI plumbing (entry point, version symbol, exception trampolines, symbol
-folding) so **you never touch the raw ABI**. Your job is to override a handful of
-virtual methods and ship the library.
+PlotJuggler has four **plugin families**. Subclass a family's small C++20 base
+class and export it from a shared library (`.so`/`.dll`/`.dylib`).
+`plotjuggler_sdk` supplies each base class. A one-line macro emits the entry
+point, version symbol, exception trampolines and symbol folding.
+**You never touch the raw ABI.** Override a few virtual methods and ship the library.
 
 There is also a lighter extension shape: a **functional parser module** is one
 C++17 source compiled as a native shared library, with no plugin-family
@@ -37,7 +36,7 @@ things that silently break a plugin.
   versioning, tail slots, `struct_size`, weak linkage, exception safety. You do
   **not** need to read the ABI-stability rules.
 - **Changing the SDK's own ABI/protocol** (adding vtable slots, editing a struct,
-  bumping a `PJ_*_PROTOCOL_VERSION`, touching `abi/baseline.abi`) → this is a
+  bumping a `PJ_*_PROTOCOL_VERSION`, touching `pj_base/abi/baseline.abi`) → this is a
   **maintainer** task. Stop and follow `pj_plugins/docs/ARCHITECTURE.md` §0a and
   the "Release Versioning" contract in the root `CLAUDE.md`. Different rules apply.
 
@@ -112,37 +111,11 @@ placeholders like `openSocket()` are yours to fill in).
 
 ## Step 4 — The SDK already has it: do not write these
 
-Before writing any helper, look it up here. Every row is a problem plugin authors
-kept re-solving until the SDK absorbed the solution; several own a **wire or config
-contract**, so a private reimplementation is not merely redundant — it is
-incompatible with the host and with every other plugin. All headers are in
-`plotjuggler_sdk::plugin_sdk`; symbols live in `PJ::sdk` unless noted.
-
-| You need to… | Use | Header |
-|---|---|---|
-| Hand data from your receive thread to `onPoll()` (batch) | `DrainQueue<T>` — `push()` on the I/O thread, `drain()` in `onPoll()` | `pj_plugins/sdk/streaming_source.hpp` |
-| Same, but only the *latest* value matters (status, snapshot) | `LatestValueSlot<T>` — `set()` / `take()` | `pj_plugins/sdk/streaming_source.hpp` |
-| Push raw payloads to a MessageParser (delegated ingest), per topic | `DelegatedIngestCache::push(host, key, request, ts, bytes)` — caches bindings, anchors payload ownership, binding-unavailable is *not* an error | `pj_plugins/sdk/streaming_source.hpp` |
-| Read the `"_parser_config"` the host injects into your config JSON | `parserConfigOverride(config_json)` | `pj_plugins/sdk/streaming_source.hpp` |
-| Turn the topic-subscription ABI's string views into a `std::set` | `stringSetFromViews(views, count)` | `pj_plugins/sdk/streaming_source.hpp` |
-| Parser option "max array size" + clamp/skip (**config-key contract**) | `ArrayLimit`, `arrayLimitFromJson(cfg)`, `arrayLimitToJson(cfg, limit)`, `kMaxArraySizeKey`/`kArrayPolicyKey` | `pj_plugins/sdk/parser_array_policy.hpp` |
-| Parser-encoding combo in a streaming dialog | `writeEncodingSelector(wd, "encoding_combo", available, selected)`, `encodingAt(index, available)`, `parseEncodingsJson(json)` | `pj_plugins/sdk/streaming_dialog.hpp`, `pj_plugins/sdk/encoding_utils.hpp` |
-| Merge a topic selection the host reports only for *visible* rows | `mergeVisibleSelection(previous, reported, is_visible, accept)`, `passesSelectionFilter(topic, selection, projection)` | `pj_plugins/sdk/streaming_dialog.hpp` |
-| Build `scheme://host:port/path` from dialog fields (IPv6-safe) | `composeEndpoint(scheme, host, port, path)`, `composeHostPort(host, port)`, `authorityHost(host)` | `pj_plugins/sdk/endpoint.hpp` |
-| Validate a port string; lowercase an ASCII token | `parsePort(text) → optional<uint16_t>`, `lowerAscii(s)` | `pj_base/sdk/text_utils.hpp` |
-| Read an env var / find the plugin's own directory / per-user data dir (MSVC-clean) | `PJ::platform::getEnv`, `getSharedLibDir(fn_addr)`, `userDataDir()` | `pj_base/sdk/platform.hpp` |
-| Parse or compare versions (manifest, `min_sdk_required`) | `PJ::SemVer::parse` / `isValid` / `<=>`; `PJ::sdkVersion()` | `pj_base/sdk/semver.hpp`, `pj_base/sdk/version.hpp` |
-| Parse `event_json` yourself (only if you override raw `onWidgetEvent`) | `PJ::WidgetEvent` — `text()`, `currentIndex()`, `checked()`, `filePickerResult()`, … (`DialogPluginTyped` already does this for you) | `pj_plugins/sdk/widget_event.hpp` |
-| File-picker / tree-widget payloads (**wire-string contract**) | `FilePickerOptions`, `FilePickerResult`, `TreeItem`, `TreeCell` + their `*WireValue()` spellings | `pj_plugins/sdk/file_picker_types.hpp`, `pj_plugins/sdk/tree_types.hpp` |
-| Attach media/renderer hints or object metadata to an ObjectStore topic | `MediaMetadataBuilder`, `ObjectTopicMetadataBuilder` | `pj_base/sdk/media_metadata.hpp`, `pj_base/sdk/object_topic_metadata.hpp` |
-| Hold object bytes read from the toolbox object host | `ObjectBytes` (move-only RAII) | `pj_base/sdk/object_bytes.hpp` |
-| Arrow schema/array/stream out-params | `ArrowSchemaHolder`, `ArrowArrayHolder`, `ArrowStreamHolder` (Step 6 rule 6) | `pj_base/sdk/arrow.hpp` |
-| Provide `pj.descriptor_import.v1` (a source that fetches descriptors/datasets from an origin) | `readDescriptorImportStartRequest` + the compiled component `plotjuggler_sdk::descriptor_import_support` (`OriginPolicy`, `RequestArtifactCache`, `ProviderJob`) — link it only if you provide the extension | `pj_base/sdk/descriptor_import.hpp`, `pj_base/sdk/descriptor_import/` |
-| Embed a `.ui`/manifest/any file as a `constexpr` header; make the DSO a plugin | `pj_embed_file()`, `pj_configure_plugin()` (Step 5) | shipped CMake, no include |
-
-If your problem is in this table, the helper is the implementation. If it is *almost*
-in the table, extend the SDK helper (a maintainer change) rather than forking it into
-the plugin — that is how every row above got here.
+Before writing a helper, consult [Existing SDK utilities](../../../docs/sdk-utilities.md)
+and read its header. The table covers source-provider, numeric/time, streaming,
+dialog and testing support, including helpers owned by pj-official-plugins.
+Providers also follow [the provider contract](../../../docs/provider-guide.md)
+and link `plotjuggler_sdk::source` alongside `plugin_sdk`.
 
 ## Step 5 — Build it
 
@@ -172,23 +145,27 @@ pj_configure_plugin(my_plugin
 # pj_embed_file(my_plugin FILE ui/my_dialog.ui HEADER generated/my_dialog_ui.hpp VAR_NAME kMyDialogUi)
 ```
 
-The single `plotjuggler_sdk::plugin_sdk` component is the whole author surface —
-base + parser SDK + dialog SDK + these CMake helpers. You do **not** link a separate
+The `plotjuggler_sdk::plugin_sdk` component supplies the common author surface —
+base + parser SDK + dialog SDK + these CMake helpers. Compiled provider support
+requires `plotjuggler_sdk::source` as well. You do **not** link a separate
 dialog target downstream (`pj_dialog_sdk` is an in-tree name).
 
-**`pj_configure_plugin` is not optional in practice.** It (1) validates
-`manifest.json` (`id`, `name`, `version` required), (2) applies the symbol-isolation
-settings that stop your plugin's symbols from clashing with the host's (hidden
-visibility everywhere; `-Wl,-Bsymbolic-functions` on Linux/ELF), (3) writes a
-human-readable `<target>.pjmanifest.json` sidecar for tooling (runtime discovery
-does *not* read it — the JSON embedded in the library via `PJ_*_PLUGIN` is the
-source of truth), (4) with `MANIFEST_HEADER` generates the `constexpr` header you
-pass to `PJ_*_PLUGIN(Class, kMyManifest)` so `manifest.json` is that single source,
-and (5) on Linux links a version-script allowlist that exports **only** the ABI
-entry points and fails the build post-link if a `STB_GNU_UNIQUE` symbol leaks or an
-entry point is missing. Family extras in the manifest: MessageParser **must**
-include `"encoding": ["json", …]` (the host routes payloads by these names,
-case-sensitive); DataSource may add `"file_extensions": [".csv"]`.
+**`pj_configure_plugin` is required in practice.** It:
+
+1. Validates `manifest.json`; `id`, `name` and `version` are required.
+2. Isolates plugin symbols from the host with hidden visibility everywhere
+   and `-Wl,-Bsymbolic-functions` on Linux/ELF.
+3. Writes a human-readable `<target>.pjmanifest.json` sidecar for tooling.
+   Runtime discovery reads the JSON embedded by `PJ_*_PLUGIN`, not this sidecar.
+4. With `MANIFEST_HEADER`, generates the `constexpr` header passed to
+   `PJ_*_PLUGIN(Class, kMyManifest)`. `manifest.json` remains the single source.
+5. On Linux, links a version-script allowlist exporting **only** ABI entry points.
+   The post-link check fails the build if an entry point is missing or a
+   `STB_GNU_UNIQUE` symbol leaks.
+
+MessageParser manifests **must** include `"encoding": ["json", …]`.
+The host routes payloads by these case-sensitive names.
+DataSource may add `"file_extensions": [".csv"]`.
 `pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 
 ## Step 6 — The rules that silently break a plugin
@@ -219,13 +196,13 @@ coalescing, etc.) — read them.
    genuinely no time axis — e.g. a CSV with no time column — may fall back to a
    documented synthetic index-as-time mode.)
 4. **`saveConfig()`/`loadConfig()` must be a complete, deterministic round-trip**
-   with no ambient state (no `QSettings`, no cwd assumptions). Persist every
-   field. Concretely: a DataSource must run `loadConfig(saved) → start()`
-   headless with no dialog; a parser must decode from its config alone; dialogs
-   and toolboxes restore from the layout *before data arrives* — so tolerate
-   configs from older plugin versions (migrate or default missing keys), don't
-   *fail* `loadConfig()` just because referenced data isn't loaded yet, and
-   re-resolve in `onDataChanged()`.
+   with no ambient state (no `QSettings`, no cwd assumptions). Persist every field.
+   A DataSource must run `loadConfig(saved) → start()` headless, with no dialog.
+   A parser must decode from its config alone.
+   Dialogs and toolboxes restore from the layout *before data arrives*.
+   Tolerate older configs by migrating or defaulting missing keys.
+   Do not *fail* `loadConfig()` merely because referenced data is not loaded yet.
+   Re-resolve in `onDataChanged()`.
 5. **String lifetimes across the ABI.** SDK overrides return `std::string` — the
    base class buffers it for the ABI, one buffer per slot, invalidated at the
    next call of the *same* method on the same instance. So never hold the host's
@@ -247,13 +224,12 @@ coalescing, etc.) — read them.
 - Builds clean and produces a shared library.
 - `PJ_*_PLUGIN` macro present exactly once per family; manifest literal has the
   required keys (+ `encoding` for a parser).
-- Load it in PlotJuggler, or better: a unit test that `dlopen`s the **real built
-  `.so`** through the host loaders (`DataSourceLibrary::load(path)`,
-  `MessageParserLibrary::load(path)`, … — inject the path as a compile
-  definition), binds the SDK test helpers
-  (`pj_base/sdk/testing/parser_write_recorder.hpp`,
-  `pj_plugins/testing/toolbox_test_store.hpp`) as host services, and asserts on
-  what was written. This exercises the exact ABI surface the host uses.
+- Load it in PlotJuggler, or preferably test the **real built `.so`** through
+  the host loaders (`DataSourceLibrary::load(path)`,
+  `MessageParserLibrary::load(path)`, …). Inject the path as a compile definition.
+  Bind SDK test helpers as host services: `pj_base/sdk/testing/parser_write_recorder.hpp`
+  and `pj_plugins/testing/toolbox_test_store.hpp`. Assert on the writes.
+  This exercises the host's exact ABI surface via `dlopen`.
 - Round-trip `saveConfig()` → `loadConfig()` → run with no dialog.
 
 ## Deep-dive routing

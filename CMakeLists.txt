@@ -131,6 +131,7 @@ endif()
 #   base         — vocabulary types (always available)
 #   parser_module — standalone header-only functional module authoring kit
 #   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
+#   source       — compiled provider helpers (descriptor_import_support is an alias)
 #   plugin_host  — host-side loaders (data_source, message_parser, toolbox,
 #                  dialog, catalogs)
 # ---------------------------------------------------------------------------
@@ -139,6 +140,10 @@ if(PJ_INSTALL_SDK)
   include(CMakePackageConfigHelpers)
 
   set(PJ_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/plotjuggler_sdk)
+
+  install(FILES docs/sdk-utilities.md docs/provider-guide.md
+    DESTINATION share/plotjuggler_sdk/docs
+  )
 
   # Fixture sources come from the authoritative PJ_SDK_TEST_FIXTURES list
   # (cmake/PjSdkTestFixtures.cmake, included above).

@@ -17,6 +17,7 @@ A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
 The `plugin_sdk` component also ships `PjPlugin.cmake`, so authors can call
 `pj_configure_plugin()` / `pj_embed_file()` without copying helpers into their tree.
 `PjSdkTestFixtures.cmake` compiles the installed share/ fixture sources.
+The utilities and provider guides ship under share/plotjuggler_sdk/docs/.
 
 The columnar storage engine (formerly the `datastore` component) is no longer
 part of this SDK package — it now lives in the PlotJuggler application repo,
@@ -65,6 +66,7 @@ class PlotjugglerSdkConan(ConanFile):
         "LICENSE",
         "LICENSE-APACHE",
         "cmake/*",
+        "docs/*.md",
         "pj_base/*",
         "pj_plugins/*",
         "examples/*",

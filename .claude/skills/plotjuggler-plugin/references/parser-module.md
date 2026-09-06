@@ -146,7 +146,7 @@ bounds-check every per-message traversal.
 
 ## ObjectWriter builders and splices
 
-The nine builders with frozen splice-eligible bulk fields are:
+The ten builders with frozen splice-eligible bulk fields are:
 
 - `image()`
 - `pointCloud()`
@@ -157,15 +157,16 @@ The nine builders with frozen splice-eligible bulk fields are:
 - `videoFrame()`
 - `occupancyGridUpdate()`
 - `voxelGrid()`
+- `gridMap()`
 
-Every builder has `setData(PayloadView)`, which copies the bytes into the full
-canonical wire object. Every builder also has
-`setDataFromInput(InputSpanRef)`, which omits that one bulk field from the wire
-and records one splice into the exact parse payload. Obtain a safe reference
-from `CdrReader::spanRef(...)` when possible. Splice offsets are relative to the
-payload start, not the CDR encapsulation or a nested field; the writer rejects
-out-of-range, repeated, or mixed copy/splice selection before it can emit an
-invalid descriptor.
+Every builder offers `setData(PayloadView)` to copy bytes into the full canonical
+wire object. `setDataFromInput(InputSpanRef)` omits that bulk field from the wire
+and records one splice into the exact parse payload.
+
+Obtain a safe reference from `CdrReader::spanRef(...)` when possible.
+Splice offsets are relative to the payload start, not the CDR encapsulation
+or a nested field. The writer rejects out-of-range, repeated or mixed copy/splice
+selection before it can emit an invalid descriptor.
 
 ## Traps
 

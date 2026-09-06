@@ -284,13 +284,12 @@ See [Section 9](#9-error-handling) for the full policy and examples.
 
 The project uses `int64_t` nanoseconds for timestamps. Use `std::chrono` types for durations when type safety is desired.
 
+For checked timestamp conversion and UTC/duration formatting, use the
+[existing utilities](sdk-utilities.md) before adding local arithmetic or parsers.
+
 ### String → Number Parsing
 
 Use `PJ::parseNumber<T>(std::string_view)` from `pj_base/number_parse.hpp` for all string-to-number conversion. Returns `std::optional<T>` — `nullopt` unless the entire input is a valid, in-range value (empty, trailing characters, and overflow all yield `nullopt`).
-
-| Pattern | Use |
-|---|---|
-| Whole-string parse, fallible | `PJ::parseNumber<T>(text)` |
 
 **Do not** call `std::strtod`, `std::strtof`, `std::strtol`, `std::stoi`, `std::stod`, `std::atoi`, `std::atof`, or `QString::toDouble`/`toInt` directly in plotjuggler_sdk code. The standard `std::strto*` family respects `LC_NUMERIC` (a `de_DE` user silently parses `"1.5"` as 1); `parseNumber` is locale-independent (backed by `fast_float` as a private dependency, hidden from the public ABI).
 

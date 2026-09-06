@@ -44,6 +44,11 @@ echo "--- Step 2: Install to staging ---"
 
 cmake --install "$BUILD_DIR"
 
+# Package-only consumers need the same discovery/contract docs as source users.
+for doc in sdk-utilities.md provider-guide.md; do
+  cmp "$SCRIPT_DIR/docs/$doc" "$STAGING_DIR/share/plotjuggler_sdk/docs/$doc"
+done
+
 echo ""
 echo "Installed CMake package files:"
 find "$STAGING_DIR" -path '*/cmake/plotjuggler_sdk*' | sort

@@ -88,7 +88,7 @@ libabigail) against a checked-in baseline at
 | Target | Purpose |
 |---|---|
 | `abi_check` | Diff the current build's `mock_data_source_plugin` DSO against `baseline.abi`. Fatal on incompatible changes (libabigail bit 8); warning on backward-compatible additions (bit 4). |
-| `abi_update_baseline` | Regenerate `baseline.abi` via `abidw`. Run deliberately when landing a reviewed ABI change (tail-slot promotion, MIN_VTABLE_SIZE repin, v-bump). |
+| `abi_update_baseline` | Regenerate `pj_base/abi/baseline.abi` via `abidw` only for an intentional MAJOR break; retain it for compatible tail-slot additions. |
 
 Adding `PJ_BUILD_TESTS=ON` also registers `abi_check_test` with CTest
 so `./test.sh` picks it up. The plumbing lives in
@@ -112,8 +112,11 @@ Stable family-neutral example: `"pj.descriptor_import.v1"`
 same header) acquired through `bind()`'s service registry and bound per
 plugin instance. C++ wrappers (`DescriptorImportProviderView`, `JoinableJob`,
 `SourcePromotionHostView`) live in `pj_base/sdk/descriptor_import.hpp`.
-See `docs/toolbox-guide.md` → "Descriptor import and source promotion" for
-the plugin-author walkthrough.
+Start with [existing utilities](../../docs/sdk-utilities.md), then follow
+[the provider contract](../../docs/provider-guide.md) for `pj_source` helpers,
+Stop/completion ordering and delegated-ingest fixtures. The
+[toolbox walkthrough](toolbox-guide.md#descriptor-import-and-source-promotion-0200)
+covers the extension wiring.
 
 Stable MessageParser-specific examples are `"pj.parser_functional.v1"` and
 `"pj.parser_functional.v2"` (`PJ_parser_functional_v1_t` and
@@ -355,7 +358,7 @@ pj_base/
       cdr_field_locator.hpp       ← ROS 2 .msg field-path compiler/cache
       proto_reader.hpp            ← bounded protobuf wire reader
       proto_field_locator.hpp     ← FileDescriptorSet field-path compiler
-      object_writer.hpp           ← nine splice-eligible canonical object builders
+      object_writer.hpp           ← ten splice-eligible canonical object builders (including gridMap)
     toolbox_protocol.h            ← C ABI
     plugin_data_api.h             ← shared data-plane ABI (write hosts)
     descriptor_import_protocol.h  ← C ABI: pj.descriptor_import.v1 extension +
@@ -462,12 +465,12 @@ at load time. Mismatches produce a clear error.
 
 ## 4. SDK Base Classes
 
-| Family | Base class | Key virtuals | Export macro |
+| Family | Base class | Implementation hooks | Export macro |
 |---|---|---|---|
 | DataSource | `DataSourcePluginBase` | `capabilities()`, `start()`, `stop()`, `currentState()` | `PJ_DATA_SOURCE_PLUGIN(Class, manifest)` |
 | DataSource (file) | `FileSourceBase` | `importData()`, `extraCapabilities()` | same macro |
 | DataSource (stream) | `StreamSourceBase` | `onStart()`, `onPoll()`, `onStop()`, `extraCapabilities()` | same macro |
-| MessageParser | `MessageParserPluginBase` | `parse()` | `PJ_MESSAGE_PARSER_PLUGIN(Class, manifest)` |
+| MessageParser | `MessageParserPluginBase` | Register `SchemaHandler`s; `parse()` is the legacy scalar path | `PJ_MESSAGE_PARSER_PLUGIN(Class, manifest)` |
 | Toolbox | `ToolboxPluginBase` | `capabilities()` | `PJ_TOOLBOX_PLUGIN(Class, manifest)` |
 | Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class, manifest)` (or legacy `PJ_DIALOG_PLUGIN(Class)`; works standalone or co-resident with another family) |
 
@@ -480,7 +483,8 @@ All SDK base classes:
 **Trampoline pattern:** Each base class has a private set of `static`
 trampoline functions (e.g. `trampoline_start`) that cast the `void* ctx` to
 the concrete class, call the virtual, and wrap the result for C ABI return.
-These live in `sdk/detail/*_trampolines.hpp`.
+MessageParser and Dialog implementations live in `sdk/detail/*_trampolines.hpp`;
+DataSource and Toolbox implementations live in `pj_base/src/*_trampolines.cpp`.
 
 ## 5. Host Loaders
 
@@ -878,25 +882,33 @@ are detected with `PJ_HAS_TAIL_SLOT` and reported as an error (no caching).
 SDK 0.30 appends `complete_ingest(ctx, completion, out_error)` to the
 runtime-host vtable at offset 112 (size 112 → 120). A finite source reports
 its terminal outcome — `FAILED` / `CANCELLED` / `COMPLETED` — on the stream
-thread once every producer and `push_message` has quiesced. `COMPLETED`
-attests the ENTIRE declared request: the completion carries the full
+thread once every producer and `push_message` has quiesced.
+
+`COMPLETED` attests the ENTIRE declared request: the completion carries the full
 requested-topic set from the request snapshot (never assembled from the pulls
 that happened to succeed), so the host can cross-check coverage against
-parser bindings and captured messages without parsing provider JSON. The call
-seals the context for capture: later pushes, attachments, or a conflicting
+parser bindings and captured messages without parsing provider JSON.
+
+The call seals the context for capture: later pushes, attachments, or a conflicting
 terminal veto caching (identical repeats are idempotent). A `true` return
 means "terminal accepted", never "artifact published" — publication also
 requires release, the owning transaction's commit, recorder drain/close and
-the host's coverage checks. Cancellation goes through the host's thread-safe
-stop path first; completion is what the stream thread reports afterwards.
+the host's coverage checks.
+
+Cancellation goes through the host's thread-safe stop path first; completion is
+what the stream thread reports afterwards.
+
 Contexts that never call the slot ingest exactly as before and are simply
 never cacheable — cacheability is negotiated from slot presence, not a
-manifest flag. `pj_base/sdk/ingest_completion.hpp` provides the shared
-fail-closed validator (`copyIngestCompletion`) hosts use to copy the borrowed
-completion. The initial capture policy additionally excludes requests with
-zero-message topics from caching: absence of a recorded message cannot yet be
-distinguished from a skipped topic, so such downloads succeed normally but
-are not cacheable until an explicit empty-topic declaration exists.
+manifest flag.
+
+`pj_base/sdk/ingest_completion.hpp` provides the shared fail-closed validator (`copyIngestCompletion`) hosts use to copy the borrowed
+completion.
+
+`PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS`, valid only with COMPLETED, attests that requested zero-message topics were successfully fetched
+and empty. It does not override host failures or authorize an empty requested
+set or an entirely empty capture. Reuse `IngestOutcomeLedger` and the
+[provider guide](../../docs/provider-guide.md) to compute the terminal.
 
 The same release also formalizes `discard_parser_ingest` (toolbox runtime
 host, offset 40, size 40 → 48): the rollback twin of `release_parser_ingest`

@@ -17,19 +17,19 @@
 >   field present in the host at the moment of acquisition.
 
 > **Toolbox is the most powerful family.** It alone can read existing data,
-> create new data sources, and write derived outputs. Treat that power with
-> care — see [Plugin Contract](#plugin-contract) below for the rules and
-> conventions the host expects you to follow.
+> create data sources and write derived outputs. Follow the rules and
+> conventions in [Plugin Contract](#plugin-contract).
 
 ## What is a Toolbox?
 
-A Toolbox plugin is a shared library (`.so` / `.dylib` / `.dll`) that provides
-**stateful interactive tools** with full read+write access to host data. Unlike
-DataSource (write-only, streaming lifecycle) and MessageParser (headless,
-request/response), Toolbox plugins are long-lived, UI-driven, and may create
-new data sources or transform existing data into new outputs.
-Plugins link only against `pj_base` (no Qt, no host internals) and communicate
-through a stable C ABI.
+A Toolbox plugin is a shared library (`.so` / `.dylib` / `.dll`) with full
+read+write access to host data. It provides **stateful interactive tools**.
+Toolbox plugins are long-lived and UI-driven. They may create data sources or
+transform existing data into new outputs. DataSource is write-only with a
+streaming lifecycle; MessageParser is headless with request/response calls.
+
+Link only `pj_base`, without Qt or host internals. Plugins communicate through
+a stable C ABI.
 
 Typical Toolbox use cases: FFT analysis, quaternion rotation, Lua scripting
 editor, custom data transforms.
@@ -61,8 +61,8 @@ the contract is broader than the other families.
 - Return `PJ::okStatus()` / `PJ::unexpected("reason")` from every fallible
   method.
 - Call `runtimeHost().notifyDataChanged()` after any successful write that the
-  user should see in the UI. Coalesce per logical operation, not per record —
-  one call per "I just produced a new series" is the right granularity.
+  user should see in the UI. Coalesce per logical operation, not per record.
+  For example, call once after producing a new series.
 - Wrap all `read_series_arrow` returns in `PJ::sdk::ArrowSchemaHolder` /
   `ArrowArrayHolder` so the release callbacks fire on scope exit.
 - Persist tool state in `saveConfig()` so a layout reload restores the same
@@ -113,9 +113,8 @@ class MyToolbox : public PJ::ToolboxPluginBase {
 
 ### 2. Implement data operations
 
-When the user interacts with your tool's dialog, use the toolbox host to
-read and write data. Both host bindings are available via `toolboxHost()`
-and `runtimeHost()`.
+Use `toolboxHost()` to read and write data when the user interacts with your
+dialog. Access the runtime host through `runtimeHost()`.
 
 ```cpp
 void MyToolbox::applyTransform() {
@@ -162,8 +161,8 @@ No other dependencies are needed.
 
 ## Lifecycle
 
-Toolbox plugins have no state machine — they are either alive or destroyed.
-Activation and deactivation are dialog visibility concerns handled by the host.
+Toolbox plugins are either alive or destroyed; they have no state machine.
+The host handles activation and deactivation through dialog visibility.
 
 ```
 create -> bind(registry) -> load_config
@@ -225,17 +224,19 @@ Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
 | `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. |
 | `PJ::sdk::ViewportHostService` | `zoomToTimeRange`, `zoomReset`: all eligible plots in the calling plugin's tabs. |
 
-All calls run on the main thread. Services are optional; check acquisition and
-each operation's result. A host offering viewport control also offers owned tabs.
-Zoom preserves each plot's Y range, skips empty/XY plots, and fails if nothing is
-eligible. Playback and viewport coordinates use **display-axis seconds**;
-read/write timestamps use **absolute int64 nanoseconds**.
+All calls run on the main thread. Services are optional. Check acquisition
+and each operation's result. A host offering viewport control also offers
+owned tabs.
 
-Choose the source from a fresh `toolboxHost().catalogSnapshot()`: each
-`dataSources()` entry has a `handle`, and each `topics()` entry has its owning
-`source` handle. Retain that identity with the selected series instead of looking
-it up again by a potentially duplicated source or topic name. For example, in a
-toolbox callback:
+Zoom preserves each plot's Y range and skips empty/XY plots. It fails if no plot
+is eligible. Playback and viewport coordinates use **display-axis seconds**.
+Read/write timestamps use **absolute int64 nanoseconds**.
+
+Choose the source from a fresh `toolboxHost().catalogSnapshot()`.
+Each `dataSources()` entry has a `handle`. Each `topics()` entry has its owning
+`source` handle. Retain that identity with the selected series. Do not look it
+up again by source or topic name; names may be duplicated.
+For example, in a toolbox callback:
 
 ```cpp
 #include <pj_base/sdk/service_traits.hpp>
@@ -261,14 +262,18 @@ requires a nonempty topic to identify exactly one loaded dataset; an empty topic
 explicitly selects the host's representative dataset. Converted values must be
 recomputed after user edits to source offsets or the time reference.
 
-Tab `id` and visible `title` are separate: `create("run-a", "Temperature")` and
+Tab `id` and visible `title` are separate. `create("run-a", "Temperature")` and
 `create("run-b", "Temperature")` create two independently addressable tabs.
-Renaming or changing tab order does not change their IDs. Recreating an ID
-replaces its contents. IDs are scoped to the plugin binding and live only while
-`list()` returns them; re-read after workspace changes. `configOf(id)` reports
-the resolved curves and title. An `addCurve`/`removeCurve` call takes topic,
-field, and optional dataset source separately; an omitted dataset must resolve
-uniquely. The host prevents access to other plugins' and user-created tabs.
+Renaming or reordering tabs preserves their IDs. Recreating an ID replaces its
+contents.
+
+IDs are scoped to the plugin binding and live only while `list()` returns them.
+Re-read after workspace changes. `configOf(id)` reports the resolved curves
+and title.
+
+`addCurve`/`removeCurve` takes topic, field and optional dataset source separately.
+An omitted dataset must resolve uniquely. The host prevents access to other
+plugins' and user-created tabs.
 
 ### Dataset-qualified processor inputs
 
@@ -329,10 +334,9 @@ auto status = toolboxHost().appendArrowStream(
 
 ### Writing object payloads (images, point clouds, annotations)
 
-`readSeriesArrow` / `appendArrowStream` cover *scalar* columns. To emit
-**canonical media** — an image a toolbox renders, a point cloud, an annotation
-overlay — use the object-write surface, which routes to the host `ObjectStore`
-rather than the columnar engine:
+`readSeriesArrow` / `appendArrowStream` cover *scalar* columns.
+Use object writes for **canonical media**, such as images, point clouds and
+annotation overlays. They route to the host `ObjectStore`, not the columnar engine:
 
 1. `registerObjectTopic(source, name, type[, extra_metadata])` declares a topic
    under a data source you created. The typed overload writes the canonical
@@ -341,10 +345,9 @@ rather than the columnar engine:
    `metadata_json` overload remains available for custom or untyped topics.
 2. `pushOwnedObject(topic, ts, payload)` pushes serialized bytes (e.g. a
    `PJ.Image` produced via `serializeImage()` from `pj_base/builtin/image_codec.hpp`).
-   The push is **eager**: the host copies the bytes immediately, so your buffer
-   may be reused or freed the moment the call returns. There is no lazy/fetch
-   variant on the toolbox surface — a toolbox already holds the bytes by the
-   time it writes them.
+   The push is **eager**: the host copies the bytes immediately.
+   You may reuse or free the buffer when the call returns. Toolbox has no
+   lazy/fetch variant because it already holds the bytes when writing them.
 
 ```cpp
 PJ::sdk::ObjectTopicMetadataBuilder metadata;
@@ -365,11 +368,11 @@ if (!status) {
 }
 ```
 
-> **Older-host compatibility:** these two methods are tail slots appended to the
-> toolbox host vtable. Against a host built before they existed, both return
-> `unexpected("…older host")` instead of crashing — the SDK gates each call on
-> the host's `struct_size`. Check the returned `Expected`/`Status` and degrade
-> gracefully if you must support pre-object-write hosts.
+> **Older-host compatibility:** these methods are appended tail slots on the
+> toolbox host vtable. The SDK gates each call on the host's `struct_size`.
+> Both return `unexpected("…older host")` on hosts that predate the slots.
+> Check the returned `Expected`/`Status`. Degrade gracefully if you must support
+> pre-object-write hosts.
 
 ## Configuration Persistence
 
@@ -471,11 +474,10 @@ TEST(MyToolboxTest, Basic) {
 }
 ```
 
-The store captures `appendRecord` writes and counts `createDataSource`
-+ `notifyDataChanged` invocations. `flatRecords()` gives a flat
-(timestamp, name, value) view; `writtenRecords()` preserves the nested
-row-of-fields shape. See
-`pj_plugins/testing/toolbox_test_store.hpp` for the full API.
+The store captures `appendRecord` writes and counts `createDataSource` and
+`notifyDataChanged` calls. `flatRecords()` gives a flat (timestamp, name, value)
+view. `writtenRecords()` preserves nested rows of fields.
+See `pj_plugins/testing/toolbox_test_store.hpp` for the full API.
 
 ## Examples
 
@@ -506,57 +508,34 @@ descriptor — a cloud session, a database query — advertises
   last). Progress, publish ticks and cooperative stop do NOT ride the job:
   they ride the dataset-scoped ingest lifecycle below.
 
-During the import the provider drives the standard ingest lifecycle through
-`ToolboxRuntimeHostView::createDatasetIngest(dataset_id)` — the canonical
-dataset-scoped surface for BOTH delegated parsing (`ensureParserBinding` /
-`pushMessage`) and direct writes (Arrow or scalar appends through
-`ToolboxHostView`, using the view only for progress/stop; the host refresh
-still travels through `notifyDataChanged()`). When the artifact
-file is complete, the provider asks the host to promote it to a stock
-file-backed source through the optional per-instance
-`pj.source_promotion.v1` service
-(`PJ::sdk::SourcePromotionHostService::promoteToFileSource()`): the request
-names the dataset, the artifact path, the provider's `source_identity`, the
-descriptor, and the loader (`loader_plugin_id` + `loader_config_json`) that
-can re-ingest the artifact with eager-path-identical semantics. Promotion is
-asynchronous — an accepted `promoteToFileSource()` only means queued; success
-arrives via the result callback. A provider that cannot yet produce such an
-artifact reports `SUCCEEDED_EAGER_ONLY` instead.
+During import, drive the standard ingest lifecycle through
+`ToolboxRuntimeHostView::createDatasetIngest(dataset_id)`. This is the canonical
+dataset-scoped surface for delegated parsing and direct writes.
+Use `ensureParserBinding` / `pushMessage` for delegated parsing.
+For direct writes, append Arrow or scalars through `ToolboxHostView` and use
+the ingest view only for progress/stop. Refresh the host through
+`notifyDataChanged()`.
+
+When the artifact file is complete, request promotion to a stock file-backed
+source through `PJ::SourcePromotionHostView::promoteToFileSource()`.
+This uses the optional per-instance `pj.source_promotion.v1` service.
+The request names the dataset, artifact path, provider's `source_identity`,
+descriptor and loader (`loader_plugin_id` + `loader_config_json`).
+That loader can re-ingest the artifact with eager-path-identical semantics.
+
+Promotion is asynchronous. Acceptance by `promoteToFileSource()` means only
+queued; success arrives via the result callback. A provider that cannot yet
+produce such an artifact reports `SUCCEEDED_EAGER_ONLY` instead.
 
 C++ consumers: `PJ::DescriptorImportProviderView`, `PJ::JoinableJob`,
 `PJ::SourcePromotionHostView` in `pj_base/sdk/descriptor_import.hpp`.
 
-**Provider-side support.** The mechanics every provider must get right ship
-as the `pj_source` component (link `plotjuggler_sdk::source`; headers under
-`pj_base/sdk/source/`, namespace `PJ::sdk::source`) — see
-`docs/provider-guide.md` for the full provider contract. The pre-0.31
-`descriptor_import_support` target and `pj_base/sdk/descriptor_import/`
-headers forward here for one release:
-
-- `origin.hpp` — `OriginPolicy` + `parseOrigin()`: strict, fail-closed
-  (scheme, host, port) parsing for trust and credential-release decisions,
-  plus `parseOriginList()` / `originAllowed()` for an environment allowlist.
-- `source_descriptor.hpp` — `SourceDescriptorPolicy` (identity vs presentation
-  field allowlists, size bounds, an `IdentityScheme` = prefix + digest width)
-  with `parseSourceDescriptor()`, `canonicalSourceDescriptorJson()` and
-  `sourceDescriptorIdentity()`. Typed validation of the fields stays in the
-  plugin; pin the canonical bytes with a vectors test.
-- `request_cache.hpp` — `RequestArtifactCache` over a `CacheSpec{root,
-  artifact_suffix, IdentityScheme}`: `beginWrite()` → write the partial →
-  `commit()` (validate, fsync, atomic rename, lease handoff), `lookup()`
-  (lease-then-validate, with a miss reason), `cleanup()` (orphans + LRU under
-  a `CleanupPolicy`, reporting a `CleanupResult`). Errors are
-  `Expected<T, CacheError>`; `CacheError::retryable` marks lock contention.
-  Artifact validation is an injected callback that must re-hash the embedded
-  provenance.
-- `provider_job.hpp` — `ProviderJob::start()` runs your import body on a
-  gated worker and owns the whole `PJ_joinable_job_t` contract; the body gets
-  a `JobControl` (`isCancelled`, `onCancel` hook, `notifyDataset`,
-  `armWatchdog`); `SettlementLatch` waits for an asynchronous promotion
-  result cancel-aware. The struct_size growth contract
-  (`readDescriptorImportStartRequest()` / `writeDescriptorQueryResult()`) is
-  header-only in `pj_base/sdk/descriptor_import.hpp`, beside its
-  consumer-side twins.
+**Provider-side support.** Link `plotjuggler_sdk::source` alongside `plugin_sdk`.
+Start with [Existing SDK utilities](../../docs/sdk-utilities.md), then follow
+[the provider contract](../../docs/provider-guide.md). It covers the existing
+job/cache machinery, descriptor validation, completion, Stop and test fixtures.
+The pre-0.31 `descriptor_import_support` component and include directory forward
+to `source` for one release; new code uses `pj_base/sdk/source/`.
 
 ## Common Mistakes
 

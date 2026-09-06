@@ -5,8 +5,9 @@
  *        implemented once.
  *
  * ProviderJob::start() runs a provider-supplied body on a worker thread and
- * owns the whole PJ_joinable_job_t contract around it: no callback before
- * start() returns (a start gate — make it the tail call of start_import),
+ * owns the whole PJ_joinable_job_t contract around it: callbacks wait until
+ * out_job is populated; the gate opens as start()'s final action (make it
+ * the tail return of start_import; see the precise guarantee below),
  * on_dataset zero-or-one, on_terminal exactly-once and last, cancel()
  * idempotent and non-blocking, join() idempotent and safe under concurrent
  * callers, destroy() = cancel + join + free, a self-join from a job callback

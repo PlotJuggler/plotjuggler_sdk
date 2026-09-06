@@ -7,7 +7,7 @@ description: "Generate and review C++20 code in a simplicity-first style. Use wh
 
 ## Workflow
 
-1. Read `cpp_design_recommendations.md` (project root) before producing code or recommendations.
+1. Read `docs/cpp_design_recommendations.md` (project root) before producing code or recommendations.
    This is the authoritative design guide with rationale, examples, and library usage.
 2. Apply the rules as hard constraints (`MUST`/`MUST NOT`) and preferences (`SHOULD`).
 3. If existing project conventions conflict with a `SHOULD`, follow project conventions and note the tradeoff.
@@ -16,7 +16,7 @@ description: "Generate and review C++20 code in a simplicity-first style. Use wh
 
 ## Key References (project root)
 
-- `cpp_design_recommendations.md` -- Design guide (rules, examples, rationale, parameter passing, container selection)
+- `docs/cpp_design_recommendations.md` -- Design guide (rules, examples, rationale, parameter passing, container selection)
 - `.clang-tidy` -- Reference clang-tidy config (bugprone-*, modernize-*, etc.)
 
 ## Output Requirements
@@ -27,7 +27,7 @@ description: "Generate and review C++20 code in a simplicity-first style. Use wh
 - **Error handling:**
   - Use `PJ::Expected<T>` (recoverable error with value), `PJ::Status`
     (recoverable error, no return value), `PJ::Span<T>` (non-owning view).
-  - Success: `PJ::ok_status()`. Error: `PJ::unexpected(msg)`. Check: `.has_value()`.
+  - Success: `PJ::okStatus()`. Error: `PJ::unexpected(msg)`. Check: `.has_value()`.
 - Use `tsl::robin_map` for hash containers in `.cpp` files, `std::unordered_map` in headers.
   Use `fmt::format` for string formatting.
 - Include minimal code examples only when they clarify contracts or misuse prevention.

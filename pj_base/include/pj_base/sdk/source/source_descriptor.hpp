@@ -43,7 +43,7 @@ namespace sdk {
 namespace source {
 
 /// Digits-only decimal nanoseconds, at most 20 characters, checked against
-/// INT64_MAX. No sign, whitespace or exponent. Zero is an ordinary value;
+/// INT64_MAX; overflow returns nullopt. No sign, whitespace or exponent. Zero is an ordinary value;
 /// provider-specific unset/unbounded semantics belong in caller adapters.
 [[nodiscard]] std::optional<std::int64_t> parseDecimalNs(std::string_view text);
 

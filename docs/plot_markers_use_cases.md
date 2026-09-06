@@ -1,10 +1,10 @@
 # Plot Markers — Use Cases & Examples
 
-> **Status: design draft.** This document defines *what* the Plot Markers feature is
-> for and *how it is used*, through concrete examples. The architecture (types,
-> store, API surface, rendering) lives in
-> [plot_markers_architecture.md](plot_markers_architecture.md). Field and API names
-> here are illustrative until the type is frozen.
+> The SDK ships `PJ::sdk::PlotMarkers`, its codec and the generic object-write/read
+> services. See [the wire contract](plot_markers_format.md) and
+> [architecture](plot_markers_architecture.md) before implementing a producer.
+> Rendering, panels and report UI are host features; examples below describe
+> their intended use, not additional SDK services.
 >
 > Plot Markers borrow the *concept* of [`ImageAnnotations`](image_annotations_format.md)
 > — a canonical SDK builtin object with a wire codec — but **not its structure**.
@@ -15,24 +15,22 @@
 
 Plugins — and a future **AI agent** — need a way to put **graphical markers** on
 plots (a shaded time region, a point at an event, a value band) and to **ask which
-markers exist** on a given series. Today there is no such API: annotations exist
-only for *images*, tied to an image frame, not to plot time.
+markers exist** on a given series. Use the existing `PlotMarkers` type and codec
+through [ObjectStore services](../V4_STORE.md).
 
-The decisive framing: **a marker is a structured *finding*, not just a drawing.** It
-carries semantic content — a pass/fail status, a severity, a category — alongside its
-anchor in time. That content is what the JSON report and the query API operate on,
-whether or not the marker is ever drawn.
+**A marker is a structured finding.** It carries a pass/fail status, severity
+and category alongside its time anchor. Reports and consumer-side filtering
+use this content even if the marker is never drawn.
 
 A marker has three consumers of one data model:
 - the **plot renderer** (a Qwt overlay on the time-series plot),
 - a **markers panel** (list, filter, jump-to-time),
 - a **JSON report** (pass/fail + anomalies + timestamps + severity).
 
-Producers create *and delete* markers, and any producer (or the host) can *query*
-them — the API is **symmetric and bidirectional**. Today the producer is an analysis
-**toolbox** plugin; a future **AI agent** and an **ingestion parser** (markers that
-already exist in a recording) are natural additional producers sharing the exact same
-type.
+Producers edit an in-memory set and republish the whole `PlotMarkers` value;
+there is no per-marker add/delete API. Toolbox plugins and the host can read
+sets through the generic object pipeline. Future agents and ingestion parsers
+can use the same type.
 
 ## 2. Vocabulary
 
@@ -60,10 +58,9 @@ Every kind carries the same **semantic fields**:
 | `metadata` | Key/value bag for producer-specific extras (e.g. `peak=1.83`, or the threshold that produced the finding). |
 | anchor | The timestamps and/or value range appropriate to `kind`. |
 
-Three things a marker **does not** carry, and why (see the architecture doc for the
-full reasoning):
-- **no `id`** in the authored marker — identity is owned by the *store* and handed
-  back on `add` (consistent with every other builtin, none of which carry an id);
+Markers omit these fields (see the architecture doc for the full reasoning):
+- **no `id`** — the producer owns and republishes a whole set; the store does not
+  return per-marker identities;
 - **no `source`** — no builtin records its creator; provenance is the location, and
   optional provenance goes in `metadata`;
 - **no `scope`** — *where* a marker is addressed says it (see §3).
@@ -73,30 +70,33 @@ full reasoning):
 
 ## 3. Addressing model
 
-A marker lives under `(dataset, father-name)` — **exactly like a timeseries**. You
-don't tag a marker with "where it belongs"; you *put it* where it belongs:
+A marker lives under `(dataset, father-name)`, **like a timeseries**.
+Its address determines where it belongs:
 
 - **Series marker** → addressed to that series' topic (e.g. `cmd_vel/x`). It renders
   on every plot showing `cmd_vel/x`.
 - **Global marker** → addressed to a dataset-level "global" topic. It renders on
   every plot of that dataset whose visible time window overlaps the marker.
 
-So "is this marker global or scoped?" is answered by *which father-name you addressed
-it to*, not by a field in the payload.
+The father-name determines whether the marker is global or scoped.
+No payload field sets its scope.
 
 ## 4. Use cases
 
 - **UC-1 — Region from a threshold.** *"Highlight where velocity exceeds 1 rad/s."*
   A toolbox plugin scans `joint_2/vel`, coalesces each above-threshold run into one
   `Region` (`severity=warning`, `category="overspeed"`, `metadata.peak=1.83`), and
-  `add`s it to the `joint_2/vel` topic. The plot shows translucent shaded spans.
+  publishes the set under `markerObjectTopicName("joint_2/vel")`.
+  The plot shows translucent shaded spans.
 
 - **UC-2 — Event markers from state transitions.** *"Mark every `OK → ERROR`
-  transition."* The plugin `add`s an `Event` at each transition time
-  (`status=fail`, `severity=error`) to the `/status` series. The plot shows ticks.
+  transition."* The plugin builds an `Event` at each transition time
+  (`status=fail`, `severity=error`) and publishes the set for the `/status`
+  series. The plot shows ticks.
 
-- **UC-3 — ValueBand operating range.** A plugin `add`s a `ValueBand` for the nominal
-  range of `motor/temp` (series-bound); samples leaving the band become obvious.
+- **UC-3 — ValueBand operating range.** A plugin includes a `ValueBand` for the
+  nominal range of `motor/temp` in its published set (series-bound); samples
+  leaving the band become obvious.
 
 - **UC-4 — Agent republishes a marker set.** An agent (or script) builds the set for a
   topic — e.g. a `Region{1.0s..2.0s, severity=error, label="discontinuity"}` on
@@ -106,7 +106,7 @@ it to*, not by a field in the payload.
   in-place "modify."
 
 - **UC-5 — Read by series.** A report tool asks *"give me the markers on `cmd_vel/x` in
-  the Waymo dataset"* → it reads that series' marker object topic (`latestAt`) and
+  the Waymo dataset"* → it reads that series' marker object topic (`ToolboxObjectReadHostView::readLatestAt`) and
   deserializes the `PlotMarkers` set directly (no scanning). Filtering by time range /
   `severity ≥ warning` is done on the deserialized set.
 
@@ -121,17 +121,16 @@ it to*, not by a field in the payload.
 
 ## 5. Illustrative JSON (a query result / report)
 
-The wire form is the codec-serialized marker list; this JSON is the *report view* of
-the same data. Note there is no `source`/`scope` field, and no per-marker `id` — a
-producer owns and republishes its whole set, so identity (if ever needed for acks /
-cross-run correlation) is a host concern layered on top, not part of the marker.
+The wire form is the codec-serialized marker list. This JSON is a *report view*
+of the same data. It has no `source`, `scope` or per-marker `id`.
+The producer owns and republishes the whole set. Identity for acknowledgments
+or cross-run correlation, if needed, belongs in the host rather than the marker.
 
 ```json
 {
   "report": { "overall_status": "fail", "dataset": "Waymo" },
   "markers": [
     {
-      "id": 1,
       "kind": "region",
       "series": "cmd_vel/x",
       "t_start": 1.00,
@@ -143,7 +142,6 @@ cross-run correlation) is a host concern layered on top, not part of the marker.
       "metadata": { "jump": 3.4 }
     },
     {
-      "id": 2,
       "kind": "event",
       "series": "/status",
       "t": 19.05,
@@ -157,5 +155,6 @@ cross-run correlation) is a host concern layered on top, not part of the marker.
 }
 ```
 
-`series` here reflects the *topic the marker was addressed to*; `"__global__"` (or
-similar) marks a dataset-global marker.
+`series` here reflects the *topic the marker was addressed to*;
+`kGlobalMarkerTopic` (`"__global__"`) marks a dataset-global marker. The report
+uses seconds for readability; SDK marker timestamps are integer nanoseconds.

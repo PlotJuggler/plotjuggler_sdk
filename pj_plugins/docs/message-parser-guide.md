@@ -21,10 +21,10 @@
 
 If your input is a complete file/container or source-owned stream
 (Parquet file, MCAP bag, database export), prefer a **DataSource** that calls
-`writeHost().appendArrowStream(...)`. Use a MessageParser when the host has
-already selected a topic/encoding and is handing you payloads to decode. If
-one `parse()` call naturally yields a batch, the parser write host can accept
-that batch via `writeHost().appendArrowStream(...)`.
+`writeHost().appendArrowStream(...)`. Use a MessageParser when the host
+has selected a topic/encoding and supplies payloads to decode. If one `parse()`
+call naturally yields a batch, the parser write host can accept it through
+`writeHost().appendArrowStream(...)`.
 
 If a supported encoding already exists and you only need one or a few exact
 custom message types rendered as canonical objects or scalars, use a native
@@ -68,10 +68,10 @@ Dynamic builds may use either form.
 
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
 
-`parse()` remains supported for scalar push ingestion, but it does not by
-itself advertise functional parsing. A rebuild of a legacy parser therefore
-stays on the host's compatibility path until it registers a `SchemaHandler`;
-there is no false capability claim and no flag to maintain manually.
+`parse()` supports scalar push ingestion. It alone does not advertise
+functional parsing. Rebuilt legacy parsers stay on the host's compatibility
+path until they register a `SchemaHandler`. Capabilities reflect registration;
+there is no manual flag to maintain.
 
 ## Plugin Contract
 
@@ -102,12 +102,18 @@ trampolines; others prevent runtime parse failures.
 
 ## Step by Step
 
+For a new parser, use the [SchemaHandler example](../../.claude/skills/plotjuggler-plugin/references/message-parser.md#the-current-model-register-schemahandlers-dont-override-parse).
+The legacy push example below decodes one numeric text payload; it does not
+implement JSON parsing. Use [existing utilities](../../docs/sdk-utilities.md)
+for shared parsing and timestamp operations.
+
 ### 1. Declare your class
 
 ```cpp
 #include <pj_plugins/sdk/message_parser_plugin_base.hpp>
+#include <pj_base/number_parse.hpp>
 
-class MyJsonParser : public PJ::MessageParserPluginBase {
+class MyNumberParser : public PJ::MessageParserPluginBase {
  public:
   PJ::Status parse(PJ::Timestamp timestamp_ns,
                     PJ::Span<const uint8_t> payload) override;
@@ -122,19 +128,19 @@ parser write service from the host's service registry. Use `writeHost()`
 Return `okStatus()` on success, or `unexpected("reason")` on failure.
 
 ```cpp
-PJ::Status MyJsonParser::parse(PJ::Timestamp timestamp_ns,
+PJ::Status MyNumberParser::parse(PJ::Timestamp timestamp_ns,
                                 PJ::Span<const uint8_t> payload) {
   if (!writeHostBound()) {
     return PJ::unexpected("write host not bound");
   }
 
-  // Decode payload bytes into field values.
-  // Use whatever parsing library your plugin links.
-  std::string text(reinterpret_cast<const char*>(payload.data()),
-                   payload.size());
-  double value = std::strtod(text.c_str(), nullptr);
-
-  const PJ::sdk::NamedFieldValue fields[] = {{.name = "value", .value = value}};
+  const std::string_view text(
+      reinterpret_cast<const char*>(payload.data()), payload.size());
+  const auto value = PJ::parseNumber<double>(text);
+  if (!value) {
+    return PJ::unexpected("invalid numeric payload");
+  }
+  const PJ::sdk::NamedFieldValue fields[] = {{.name = "value", .value = *value}};
   return writeHost().appendRecord(
       timestamp_ns, PJ::Span<const PJ::sdk::NamedFieldValue>(fields, 1));
 }
@@ -151,8 +157,8 @@ At file scope, after the class definition. The second argument is a JSON
 manifest string literal (see Manifest Schema below):
 
 ```cpp
-PJ_MESSAGE_PARSER_PLUGIN(MyJsonParser,
-    R"({"id":"json-parser","name":"JSON Parser","version":"1.0.0","encoding":["json"]})")
+PJ_MESSAGE_PARSER_PLUGIN(MyNumberParser,
+    R"({"id":"number-parser","name":"Number Parser","version":"1.0.0","encoding":["text-number"]})")
 ```
 
 This generates the `extern "C"` entry point that the host resolves via dlsym.
@@ -166,10 +172,9 @@ add_library(my_parser_plugin SHARED my_parser.cpp)
 target_link_libraries(my_parser_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
 ```
 
-No other dependencies are needed for headless parsers. If your parser includes
-a configuration dialog, the same installed umbrella target includes the dialog
-SDK. (`pj_base` and `pj_dialog_sdk` are in-tree implementation targets, not the
-downstream authoring interface.)
+Headless parsers need no other dependencies. The same installed umbrella target
+includes the SDK for parser configuration dialogs. `pj_base` and `pj_dialog_sdk`
+are in-tree implementation targets, not the downstream authoring interface.
 
 ## Lifecycle
 
@@ -204,20 +209,18 @@ topic.
 | `appendBoundRecord(timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowStream(stream, ts_col)` | Optional batch path. Hand an `ArrowArrayStream*` to the host for the parser's bound topic. Success transfers ownership to the host; failure leaves ownership with the plugin. |
 
-Most parsers should use `appendRecord()` or `appendBoundRecord()` because one
-`parse()` call normally decodes one logical message. Use `appendArrowStream()`
-when a single payload naturally contains many rows for the parser's already
-bound topic. This keeps parser-shaped batch encodings in the parser family
-without forcing per-row loops.
+Most parsers should use `appendRecord()` or `appendBoundRecord()`; one `parse()`
+call normally decodes one logical message. Use `appendArrowStream()` when one
+payload naturally contains many rows for the bound topic. Batch encodings can
+then stay in the parser family without per-row loops.
 
 ## Recoverable Runtime Diagnostics
 
-Use the optional `parserRuntimeHost()` view to report a condition that is
-recoverable for the current message or summarizes equivalent problems across
-several messages. The view is always safe to call: when an older or minimal
-host does not provide `"pj.parser_runtime.v1"`, reporting is a no-op.
-`parserRuntimeHostBound()` tells you whether a host sink is present when that
-distinction affects plugin behavior.
+Use `parserRuntimeHost()` for recoverable conditions in the current message
+or equivalent problems across messages. This optional view is always safe to
+call. Reporting is a no-op if an older or minimal host lacks
+`"pj.parser_runtime.v1"`. Use `parserRuntimeHostBound()` when sink presence
+affects plugin behavior.
 
 ```cpp
 parserRuntimeHost().reportDiagnostic(
@@ -329,11 +332,10 @@ PJ::Status bindSchema(std::string_view type_name,
 }
 ```
 
-The `type_name` is the encoding-specific message type (e.g.
-`"sensor_msgs/msg/Imu"` for `ros2msg`, `"my.package.ImuSample"` for
-Protobuf). The
-`schema` bytes are encoding-specific (e.g. ROS `.msg` definition text,
-Protobuf `FileDescriptorSet` binary).
+`type_name` identifies the encoding-specific message type, such as
+`"sensor_msgs/msg/Imu"` for `ros2msg` or `"my.package.ImuSample"` for Protobuf.
+`schema` contains encoding-specific bytes, such as ROS `.msg` definition text
+or a Protobuf `FileDescriptorSet` binary.
 
 ### Configuration persistence
 
@@ -363,10 +365,9 @@ Common configuration patterns:
 
 ### Embedded timestamp extraction
 
-The `parse()` method receives a host-provided `timestamp_ns`. If the message
-payload contains its own timestamp (e.g. a ROS Header or protobuf timestamp
-field), the parser is free to ignore the host timestamp and write records with
-the extracted timestamp instead:
+`parse()` receives the host's `timestamp_ns`. If the payload contains a timestamp
+(e.g. a ROS Header or protobuf timestamp field), the parser may write records
+with that timestamp instead:
 
 ```cpp
 PJ::Status parse(PJ::Timestamp timestamp_ns,
@@ -394,17 +395,17 @@ The host resolves the dialog via `MessageParserLibrary::resolveDialogVtable()`.
 
 #### Ownership model — independent owned instance
 
-Unlike a DataSource dialog (which is a member of the source, accessed via a
-borrowed handle through `getDialog()`), a **parser dialog is an independent
-owned instance**. The host creates it via `dialog_vt->create()`, runs it
-through its dialog runtime, and feeds the resulting config JSON to parser
-instances via `load_config()`. The dialog and parser classes share a JSON
-config schema but are otherwise decoupled.
+A **parser dialog is an independent owned instance**. A DataSource dialog is a
+source member accessed through a borrowed `getDialog()` handle.
 
-This works because parser instances are created per-topic by the host during
-`ensureParserBinding()`, while the dialog should be presented once per parser
-*library*. There is no parser-owned borrowed-dialog slot on the parser vtable,
-and none is needed.
+The host creates the parser dialog with `dialog_vt->create()` and runs it through
+its dialog runtime. It passes the resulting config JSON to parser instances
+through `load_config()`. The classes share a JSON config schema but are otherwise
+decoupled.
+
+The host creates parser instances per topic during `ensureParserBinding()`.
+The dialog should appear once per parser *library*. The parser vtable therefore
+needs no parser-owned borrowed-dialog slot and provides none.
 
 ```
      Parser .so
@@ -429,12 +430,14 @@ JSON.
 
 #### Lifecycle scenarios
 
-**Inline (embedded in a DataSource dialog):** A source dialog declares a
-`pj_parser_slot` placeholder widget. The host detects it, resolves the parser
-library for the selected encoding, creates an owned parser dialog instance, and
-renders it into the slot. The source and parser dialogs share one window but
-persist config independently — `ConfigEnvelope.source_config` for the source,
-`ConfigEnvelope.parser_binding` for the parser.
+**Inline (embedded in a DataSource dialog):** Declare a `pj_parser_slot`
+placeholder in the source dialog. The host detects it and resolves the parser
+library for the selected encoding. It creates an owned parser dialog and renders
+it in the slot.
+
+Both dialogs share a window but persist config independently:
+`ConfigEnvelope.source_config` for the source and `ConfigEnvelope.parser_binding`
+for the parser.
 
 **Standalone:** The host shows the parser dialog as a modal from a settings
 panel or parser-selection UI. This is host-application logic, not protocol.
@@ -460,9 +463,9 @@ A Protobuf parser dialog would typically manage:
 - Root message-type selection (combo box populated after parsing `.proto` files)
 - Config JSON: `{"proto_files": [...], "include_paths": [...], "message_type": "..."}`
 
-The parser's `loadConfig()` receives this JSON, compiles the descriptor pool,
-and uses the selected message type for decoding in `parse()`. The dialog and
-parser never reference each other — they only share the JSON schema contract.
+The parser's `loadConfig()` receives this JSON and compiles the descriptor pool.
+`parse()` decodes with the selected message type. The dialog and parser share
+only the JSON schema contract; they never reference each other.
 
 ## Manifest Schema
 
@@ -602,10 +605,9 @@ TEST(MyParserTest, Basic) {
 }
 ```
 
-Each `RecordedField` exposes the primitive type plus `.numeric` (for all
-integer/float types, plus `1.0/0.0` for bools), `.bool_value`, and
-`.string_value`, so tests can assert uniformly without writing type
-dispatch code.
+Each `RecordedField` exposes its primitive type, `.numeric`, `.bool_value`
+and `.string_value`. `.numeric` covers all integer/float types and maps bools
+to `1.0/0.0`. Tests can assert uniformly without type dispatch code.
 
 ## Examples
 
@@ -672,22 +674,24 @@ when at least one handler exists. Their trampolines:
 3. destroys every plugin-side C++ result before returning.
 
 `MessageParserHandle::parseScalarsFunctional()` copies or consumes scalar views
-only during the callback. `parseObjectFunctional()` negotiates v2 first,
-reconstructs a valid splice when present, validates that the emitted type equals
-the binding's expected object type, and decodes synchronously into a host-owned
-`ObjectRecord`; that value remains safe after both the parser instance and
-shared library are gone. Provider/sink exceptions, unknown or mismatched object
-tags, malformed tables or splices, and zero/multiple sink calls fail closed.
+only during the callback.
 
-For large objects, pass the `sdk::PayloadView` overload rather than a bare
-`Span` when an ownership anchor already exists. The C extension transfers one
-`PJ_payload_t` anchor reference into the plugin and releases it exactly once,
-allowing handlers to propagate the input buffer without an initial copy. The
-DSO boundary still performs one canonical serialization and one host decode;
-that explicit cost is the price of not exporting plugin allocators,
-destructors, RTTI, STL layout, or type-erasure internals. Measure this
-path for image/point-cloud workloads instead of bypassing it with direct C++
-calls.
+`parseObjectFunctional()` negotiates v2 first and reconstructs a valid splice
+when present. It checks that the emitted type matches the binding's expected
+object type, then decodes synchronously into a host-owned `ObjectRecord`.
+That value remains safe after the parser instance and shared library are gone.
+Provider/sink exceptions, unknown or mismatched object tags, malformed tables
+or splices, and zero/multiple sink calls fail closed.
+
+For large objects with an existing ownership anchor, pass `sdk::PayloadView`
+instead of a bare `Span`. The C extension transfers one `PJ_payload_t` anchor
+reference into the plugin and releases it exactly once. Handlers can then
+propagate the input buffer without an initial copy.
+
+The DSO boundary still performs one canonical serialization and one host decode.
+This avoids exporting plugin allocators, destructors, RTTI, STL layout or
+type-erasure internals. Measure this path for image/point-cloud workloads.
+Do not bypass it with direct C++ calls.
 
 Parsers built before SDK 0.21 expose no functional extension, and handler-based
 0.21 parsers may expose v1 without v2. New host code uses v2-first/v1-fallback

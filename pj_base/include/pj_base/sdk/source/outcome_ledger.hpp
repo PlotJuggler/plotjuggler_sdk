@@ -21,6 +21,8 @@ struct IngestCompletion {
 
 /// Pure ledger over the ENTIRE declared request, including topics never visited.
 /// Caller owns synchronization and declares the resolved topic set before ingest.
+/// Record kOk only after a topic's full range succeeds; kEmptyOk means that full
+/// range was fetched successfully and contained no messages.
 /// Attach canonical bytes once after context creation and before pushing; report
 /// completion before closing the ingest bracket. A provider terminal must not
 /// claim success if the batch's provisional dataset was discarded (e.g. all-empty
@@ -36,6 +38,9 @@ class IngestOutcomeLedger {
 
   /// cancelled must include a LIVE host isStopRequested() read at decision time,
   /// not just a poller's cached observation. Cancellation overrides every outcome.
+  /// Otherwise any failed/pending topic yields FAILED; all successful topics yield
+  /// COMPLETED, with ATTESTS_EMPTY_TOPICS iff at least one is kEmptyOk. An empty
+  /// declared set computes COMPLETED without flags; host cacheability is separate.
   [[nodiscard]] IngestCompletion computeCompletion(bool cancelled) const;
 
  private:

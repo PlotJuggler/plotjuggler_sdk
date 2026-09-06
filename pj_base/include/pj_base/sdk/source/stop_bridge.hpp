@@ -25,6 +25,7 @@ namespace PJ::sdk::source {
 /// the push/progress mutex while requesting Stop can deadlock the whole batch.
 class StopPoller {
  public:
+  /// Throws std::invalid_argument for either empty callback or a nonpositive period.
   StopPoller(
       std::function<bool()> is_stop_requested, std::function<void()> cancel,
       std::chrono::milliseconds period = std::chrono::milliseconds{50});
