@@ -74,6 +74,7 @@ documentation check before commit.
 | `docs/dialog-sdk-reference.md` | Quick reference for `WidgetData` setters + `DialogPluginTyped` event handlers |
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
 | `docs/toolbox-porting-gap-analysis.md` | Historical PJ3→PJ4 toolbox SDK gap analysis (most gaps now closed; read as context, not current reference) |
+| `docs/BACKLOG.md` | Deliberate deferrals with an agreed landing slot (e.g. the 0.31 cloud-provider promotion batch) — read before planning any SDK version bump |
 | `V4_STORE.md` | ObjectStore plugin ABI: services, ownership rules, lazy fetch |
 
 **Plugin system** (`pj_plugins/docs/`): `REQUIREMENTS.md` (families, capability system, config
