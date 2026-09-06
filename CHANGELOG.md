@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.33.0] — unreleased
+## [0.33.0]
 
 Host contract: unchanged (no floor impact) — this release adds the floor
 table itself and the `suggested_sdk_version` manifest field, no new host surfaces.
