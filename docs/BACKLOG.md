@@ -5,7 +5,35 @@ and batched: items here ride the next natural version bump rather than
 triggering one. Each entry names its consumers so the release that ships it
 can also collect the deletions.
 
-## 0.31 riders — the cloud-provider promotion batch
+## 0.31 — the pj_source batch (scope RATIFIED 2026-09-05)
+
+Maintainer decisions: items 1-11 below are IN (the query library WITHOUT its
+Lua evaluator — the language/editing core moves, the Lua hook stays behind a
+plugin-implemented interface for now); stable table-row identity is
+DEFERRED (needs dialog-protocol + host work). Component naming: the
+existing `descriptor_import_support` grows and RENAMES to **pj_source**
+(`PJ::sdk::source`), keeping a deprecated `descriptor_import_support` alias
+target for one release; `time_format` goes to pj_base proper; the ingest
+fixture to pj_plugins/testing; the query core is its own small optional
+component. `pj_cloud` stays RESERVED for the day actual connection code
+(Hello/capability, reconnect skeletons) is promoted — not in this batch.
+"provider" was rejected as a name; a docs/provider-guide.md walkthrough of
+the whole contract ships with the batch for discoverability.
+
+12. **Package the example/mock plugin fixtures** — PJ4's test build
+    currently FetchContents the pinned SDK release tarball a SECOND time
+    just to compile `pj_plugins/examples/mock_{data_source,file_source,
+    toolbox}.cpp` + `tests/missing_id_data_source_plugin.cpp` from source
+    (the static-library Conan package deliberately ships no example .cpp;
+    the testing HEADERS are already installed — verified against the built
+    0.30.0 package). Ship the fixture sources in the package (e.g.
+    installed under `share/plotjuggler_sdk/test_fixtures/` with a small
+    `pj_add_sdk_test_fixture()` CMake helper, or a dedicated component) so
+    PJ4 deletes its second FetchContent in the pin-bump PR. Audit 2026-09-05
+    confirmed NO SDK code is copied into PJ4's git tree — this build-time
+    side-channel is the only acquire-outside-Conan path.
+
+## 0.31 riders — the cloud-provider promotion batch (analysis record)
 
 Agreed 2026-09-05 from the toolbox_mosaico / toolbox_mcap_cloud sharing
 analysis (the mcap-cloud plugin, in the pj-mcap-server repo, is pinned to SDK
