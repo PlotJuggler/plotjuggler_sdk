@@ -168,6 +168,41 @@ The host routes payloads by these case-sensitive names.
 DataSource may add `"file_extensions": [".csv"]`.
 `pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 
+### `min_sdk_required` — the host floor, not the build pin
+
+`min_sdk_required` declares the oldest **host** SDK contract your plugin
+functions on. It is independent of the SDK you build against: `pj_base` /
+`pj_source` are static libraries compiled into your plugin, so adopting a new
+helper (`parseIso8601Utc`, `sliderToWindow`, a codec) **never** raises the
+floor. Only **host-contract** surfaces do — runtime-host tail slots, named
+services, wire contracts — and the authority for which release introduced each
+is `feature_floors.json`, shipped in the package at
+`share/plotjuggler_sdk/feature_floors.json`.
+
+When you adopt a surface newer than your floor, pick one:
+
+- **Raise `min_sdk_required`** to that surface's release — when the feature is
+  essential to what your plugin is for.
+- **Degrade gracefully** — when the wrapper's error return is acceptable
+  (negotiated tail slots return a `Status` on older hosts; ignore it and carry
+  on). Then declare it in the manifest and prove it with a test that runs
+  against a host lacking the slot (the testing fixtures support `struct_size`
+  truncation):
+
+```json
+"sdk_floor_exceptions": {
+  "setDatasetMetadata": {
+    "reason": "optional: metadata display absent on hosts older than 0.32; load unaffected",
+    "test": "MySuite.ImportSucceedsWithoutMetadataSlot"
+  }
+}
+```
+
+The official-plugins repo CI enforces exactly this rule (floor ≥ every matched
+surface's release, or a validated exception); third-party plugins should follow
+the same discipline. `built_with_sdk` is stamped into the sidecar
+automatically — informational provenance, never a compatibility gate.
+
 ## Step 6 — The rules that silently break a plugin
 
 These cut across all families. The family references add family-specific traps
