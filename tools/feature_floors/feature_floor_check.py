@@ -22,10 +22,13 @@ below the table's ``minimum_supported_floor`` fail; over-declared floors are
 the caller's business (this module reports the effective maximum so drivers
 can warn).
 
-Scanning is comment- and raw-string-aware token matching with identifier
-boundaries; the host-surface universe is a few dozen identifiers, so token
-precision is sufficient. A Clang-based extractor is the documented upgrade
-path if a real ambiguity ever appears.
+Scanning is token matching with identifier boundaries over comment- and
+string-literal-stripped sources; the host-surface universe is a few dozen
+identifiers, so token precision is sufficient. Known limitation: an identifier
+assembled by token-pasting macros (``a ## b``) is invisible — a Clang-based
+extractor is the documented upgrade path if a real ambiguity ever appears.
+Scope boundary: only RUNTIME host-contract surfaces are visible; compile-time
+SDK library APIs never constrain (or justify lowering) a floor.
 
 Standard library only. No repository-layout assumptions: callers hand in the
 table path, source directories, and test directories.
@@ -80,6 +83,10 @@ class Surface:
     since: tuple[int, int, int]
     negotiated: bool
     declaration: str
+    # Every spelling that counts as usage: the C++ wrapper identifier plus,
+    # for vtable surfaces, the raw ABI member token (host.vtable->member is a
+    # supported call spelling and must not evade the floor).
+    tokens: tuple[str, ...]
     matcher: re.Pattern[str]
 
     @property
@@ -108,15 +115,26 @@ def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, ob
     return result
 
 
-def surface_matcher(identifier: str) -> re.Pattern[str]:
-    if not identifier:
-        raise CheckError("surface identifiers must not be empty")
-    pattern = re.escape(identifier)
-    if identifier[0].isalnum() or identifier[0] == "_":
+def _token_pattern(token: str) -> str:
+    pattern = re.escape(token)
+    if token[0].isalnum() or token[0] == "_":
         pattern = r"(?<![A-Za-z0-9_])" + pattern
-    if identifier[-1].isalnum() or identifier[-1] == "_":
+    if token[-1].isalnum() or token[-1] == "_":
         pattern += r"(?![A-Za-z0-9_])"
-    return re.compile(pattern)
+    return pattern
+
+
+def surface_matcher(tokens: tuple[str, ...]) -> re.Pattern[str]:
+    if not tokens or not all(tokens):
+        raise CheckError("surface identifiers must not be empty")
+    return re.compile("|".join(_token_pattern(token) for token in tokens))
+
+
+def _surface_tokens(identifier: str, declaration: str) -> tuple[str, ...]:
+    member = declaration.rsplit("::", 1)[1] if "::" in declaration else ""
+    if member and member != identifier:
+        return (identifier, member)
+    return (identifier,)
 
 
 def load_surface_table(path: Path) -> SurfaceTable:
@@ -193,8 +211,9 @@ def load_surface_table(path: Path) -> SurfaceTable:
                 raise CheckError(
                     f"surface {identifier!r} in {path} must map to a declaration string or an object"
                 )
+            tokens = _surface_tokens(identifier, declaration)
             surfaces[identifier] = Surface(
-                identifier, since, negotiated, declaration, surface_matcher(identifier)
+                identifier, since, negotiated, declaration, tokens, surface_matcher(tokens)
             )
 
     # Baseline surfaces predate (or equal) the minimum supported floor, so they
@@ -213,7 +232,7 @@ def load_surface_table(path: Path) -> SurfaceTable:
                 "or duplicate baseline entry)"
             )
         surfaces[identifier] = Surface(
-            identifier, minimum, True, identifier, surface_matcher(identifier)
+            identifier, minimum, True, identifier, (identifier,), surface_matcher((identifier,))
         )
     return SurfaceTable(surfaces, frozenset(baseline_raw), minimum, path)
 
@@ -226,7 +245,11 @@ def _blank_except_newlines(text: str) -> str:
 
 
 def strip_cpp_comments(text: str) -> str:
-    """Remove C/C++ comments while preserving offsets and string literals."""
+    """Blank C/C++ comments AND string/char-literal contents, preserving offsets.
+
+    Literal contents must not count as identifier usage (a help string naming a
+    surface is not a call), so they are blanked exactly like comments.
+    """
     output: list[str] = []
     index = 0
     quote: str | None = None
@@ -234,13 +257,17 @@ def strip_cpp_comments(text: str) -> str:
     while index < len(text):
         if quote is not None:
             char = text[index]
-            output.append(char)
             if escaped:
                 escaped = False
+                output.append(" " if char != "\n" else "\n")
             elif char == "\\":
                 escaped = True
+                output.append(" ")
             elif char == quote:
                 quote = None
+                output.append(char)
+            else:
+                output.append(" " if char != "\n" else "\n")
             index += 1
             continue
 
@@ -249,7 +276,7 @@ def strip_cpp_comments(text: str) -> str:
             closing = ")" + raw_match.group(1) + '"'
             end = text.find(closing, raw_match.end())
             end = len(text) if end < 0 else end + len(closing)
-            output.append(text[index:end])
+            output.append(_blank_except_newlines(text[index:end]))
             index = end
             continue
         if text.startswith("//", index):
@@ -307,9 +334,9 @@ def scan_source_file(path: Path, table: SurfaceTable) -> list[tuple[str, int]]:
     searchable_source = strip_cpp_comments(spliced_source)
     matches: list[tuple[str, int]] = []
     for surface in table.surfaces.values():
-        # Fast native substring scan first: absence of the literal identifier
+        # Fast native substring scan first: absence of every matchable token
         # proves the boundary-aware regex cannot match (measured ~55x).
-        if surface.identifier not in searchable_source:
+        if not any(token in searchable_source for token in surface.tokens):
             continue
         for match in surface.matcher.finditer(searchable_source):
             matches.append(
@@ -395,7 +422,8 @@ def test_exists(test_dirs: Iterable[Path], test_name: str) -> bool:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
-            if pattern.search(strip_cpp_comments(text)):
+            spliced, _ = _splice_cpp_lines(text)
+            if pattern.search(strip_cpp_comments(spliced)):
                 return True
     return False
 

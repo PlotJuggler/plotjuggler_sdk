@@ -183,7 +183,10 @@ When you adopt a surface newer than your floor, pick one:
 
 - **Raise `min_sdk_required`** to that surface's release — mandatory for a
   non-negotiated (hard protocol) surface, and right whenever the feature is
-  essential to what your plugin is for.
+  essential to what your plugin is for. The reverse is NOT symmetric: the
+  checker sees only runtime host surfaces, so a floor above anything it
+  matched may still be correct (compile-time SDK APIs are outside the check)
+  — never lower a floor just because the checker matched nothing.
 - **Declare the degraded range** — when the surface is runtime-negotiated and
   the wrapper's error return is acceptable (ignore it and carry on). Two
   manifest fields, required together and forbidden when nothing exceeds the
@@ -192,15 +195,18 @@ When you adopt a surface newer than your floor, pick one:
 ```json
 "min_sdk_required": "0.28.0",
 "suggested_sdk_version": "0.32.0",
-"floor_test": "McapDatasetMetadata.ImportSucceedsAgainstFloorLevelHost"
+"floor_test": "McapDatasetMetadata.MetadataPublishDegradesCleanlyOnFloorLevelHost"
 ```
 
 `suggested_sdk_version` is the full-feature floor (exactly the max introducing
 release over every host surface you use — the checker validates it), so hosts
 can tell users which PlotJuggler unlocks your whole feature set. `floor_test`
-names one gtest, existing in your `tests/`, proving the plugin functions
+names one gtest, existing in your `tests/`, proving the DEGRADED PATH works
 against a floor-level host — drive it with a `struct_size`-truncated host
-vtable (the testing fixtures support this). Neither field is ever a gate:
+vtable and poison the slots past the truncation so a missing guard fails the
+test. Helper-level granularity is acceptable when the full entry point needs a
+live host; the test comment must then state the routing fact (which entry
+point routes through the helper). Neither field is ever a gate:
 `min_sdk_required` remains the only admission criterion, and
 `min_plotjuggler_version` is deprecated.
 
