@@ -113,6 +113,13 @@ find_package(FastFloat REQUIRED)
 
 if(PJ_BUILD_TESTS)
   enable_testing()
+  # Host-surface classification gate: a new tail slot / service id / wire flag
+  # must be classified in pj_base/feature_floors.json in the same change.
+  find_package(Python3 QUIET COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME feature_floors_check
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/feature_floors/check_feature_floors.py)
+  endif()
 endif()
 
 add_subdirectory(pj_base)
@@ -144,6 +151,12 @@ if(PJ_INSTALL_SDK)
   install(FILES docs/sdk-utilities.md docs/provider-guide.md
     DESTINATION share/plotjuggler_sdk/docs
   )
+
+  # Host-surface floor table + the reusable checker that consumes it: the
+  # machine-readable authority (and tool) a plugin validates min_sdk_required
+  # against (see tools/feature_floors/).
+  install(FILES pj_base/feature_floors.json tools/feature_floors/feature_floor_check.py
+    DESTINATION share/plotjuggler_sdk)
 
   # Fixture sources come from the authoritative PJ_SDK_TEST_FIXTURES list
   # (cmake/PjSdkTestFixtures.cmake, included above).

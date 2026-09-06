@@ -3,6 +3,25 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.33.0] — unreleased
+
+Host contract: unchanged (no floor impact) — this release adds the floor
+table itself and the `suggested_sdk_version` manifest field, no new host surfaces.
+
+- Ship `share/plotjuggler_sdk/feature_floors.json`: the host-contract surface
+  table (surface → introducing release, runtime-negotiated or not) that a
+  plugin floor checker validates `min_sdk_required` against. A new host
+  surface (tail slot, versioned service id, wire flag) must be classified in
+  the table in the same change — `tools/feature_floors/check_feature_floors.py`
+  runs in CI and fails on any unclassified surface.
+- New optional manifest fields `suggested_sdk_version` (decoded into
+  `PluginDescriptor::suggested_sdk_version`) and `floor_test`: a plugin whose
+  used surfaces exceed its functioning floor declares the full-feature floor
+  (validated by the floor checker to equal max introducing release over its
+  matched surfaces) plus the gtest proving it functions against a floor-level
+  host. `min_sdk_required` remains the only admission gate;
+  `min_plotjuggler_version` is deprecated (host-side removal lands in PJ4).
+
 ## [0.32.0]
 
 - Add the `set_dataset_metadata` tail slot to the data-source runtime host

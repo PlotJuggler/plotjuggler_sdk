@@ -257,6 +257,10 @@ Expected<PluginDescriptor> decodeManifest(
   if (!min_plotjuggler_version) {
     return unexpected(min_plotjuggler_version.error());
   }
+  auto suggested_sdk_version = optional_string("suggested_sdk_version");
+  if (!suggested_sdk_version) {
+    return unexpected(suggested_sdk_version.error());
+  }
   auto min_sdk_required = optional_string("min_sdk_required");
   if (!min_sdk_required) {
     return unexpected(min_sdk_required.error());
@@ -283,6 +287,7 @@ Expected<PluginDescriptor> decodeManifest(
   d.category = *category;
   d.min_plotjuggler_version = *min_plotjuggler_version;
   d.min_sdk_required = *min_sdk_required;
+  d.suggested_sdk_version = *suggested_sdk_version;
   d.file_extensions = *file_extensions;
   d.capabilities = *capabilities;
 

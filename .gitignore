@@ -20,3 +20,4 @@ pj_media/testdata/
 
 # git worktrees live here by policy (see the global CLAUDE.md)
 .worktrees/
+__pycache__/

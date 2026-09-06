@@ -168,6 +168,56 @@ The host routes payloads by these case-sensitive names.
 DataSource may add `"file_extensions": [".csv"]`.
 `pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 
+### `min_sdk_required` — the host floor, not the build pin
+
+`min_sdk_required` declares the oldest **host** SDK contract your plugin
+functions on. It is independent of the SDK you build against: `pj_base` /
+`pj_source` are static libraries compiled into your plugin, so adopting a new
+helper (`parseIso8601Utc`, `sliderToWindow`, a codec) **never** raises the
+floor. Only **host-contract** surfaces do — runtime-host tail slots, named
+services, wire contracts — and the authority for which release introduced each
+is `feature_floors.json`, shipped in the package at
+`share/plotjuggler_sdk/feature_floors.json`.
+
+When you adopt a surface newer than your floor, pick one:
+
+- **Raise `min_sdk_required`** to that surface's release — mandatory for a
+  non-negotiated (hard protocol) surface, and right whenever the feature is
+  essential to what your plugin is for. The reverse is NOT symmetric: the
+  checker sees only runtime host surfaces, so a floor above anything it
+  matched may still be correct (compile-time SDK APIs are outside the check)
+  — never lower a floor just because the checker matched nothing.
+- **Declare the degraded range** — when the surface is runtime-negotiated and
+  the wrapper's error return is acceptable (ignore it and carry on). Two
+  manifest fields, required together and forbidden when nothing exceeds the
+  floor:
+
+```json
+"min_sdk_required": "0.28.0",
+"suggested_sdk_version": "0.32.0",
+"floor_test": "McapDatasetMetadata.MetadataPublishDegradesCleanlyOnFloorLevelHost"
+```
+
+`suggested_sdk_version` is the full-feature floor (exactly the max introducing
+release over every host surface you use — the checker validates it), so hosts
+can tell users which PlotJuggler unlocks your whole feature set. `floor_test`
+names one gtest, existing in your `tests/`, proving the DEGRADED PATH works
+against a floor-level host — drive it with a `struct_size`-truncated host
+vtable and poison the slots past the truncation so a missing guard fails the
+test. Helper-level granularity is acceptable when the full entry point needs a
+live host; the test comment must then state the routing fact (which entry
+point routes through the helper). Neither field is ever a gate:
+`min_sdk_required` remains the only admission criterion, and
+`min_plotjuggler_version` is deprecated.
+
+Check your own plugin with the tool the SDK package ships next to the table:
+
+```bash
+python3 <sdk>/share/plotjuggler_sdk/feature_floor_check.py \
+  --table <sdk>/share/plotjuggler_sdk/feature_floors.json \
+  --manifest my_plugin/manifest.json --sources my_plugin
+```
+
 ## Step 6 — The rules that silently break a plugin
 
 These cut across all families. The family references add family-specific traps
