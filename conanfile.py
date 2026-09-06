@@ -68,8 +68,10 @@ class PlotjugglerSdkConan(ConanFile):
         "cmake/*",
         "docs/*.md",
         "pj_base/*",
+        "tools/feature_floors/*",
         "pj_plugins/*",
         "examples/*",
+        "!*/__pycache__/*",
     )
 
     def set_version(self):
