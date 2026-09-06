@@ -1,10 +1,13 @@
 """Conan 2 recipe for plotjuggler_sdk.
 
-Exposes three CMake components under the `plotjuggler_sdk::` namespace:
+Exposes CMake components under the `plotjuggler_sdk::` namespace:
 
   base         — pj_base, vocabulary types (always available)
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
+  parser_module — standalone functional parser-module authoring headers
+  source       — compiled source-provider support
+  descriptor_import_support — compatibility alias for source
 
 A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
 
@@ -13,6 +16,7 @@ A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
 
 The `plugin_sdk` component also ships `PjPlugin.cmake`, so authors can call
 `pj_configure_plugin()` / `pj_embed_file()` without copying helpers into their tree.
+`PjSdkTestFixtures.cmake` compiles the installed share/ fixture sources.
 
 The columnar storage engine (formerly the `datastore` component) is no longer
 part of this SDK package — it now lives in the PlotJuggler application repo,
@@ -136,8 +140,7 @@ class PlotjugglerSdkConan(ConanFile):
 
     def package_info(self):
         self.cpp_info.set_property("cmake_file_name", "plotjuggler_sdk")
-        # No top-level umbrella target: the three components have
-        # mutually-exclusive audiences. Consumers must request a component.
+        # Consumers request the components they use; there is no umbrella target.
 
         # Conan 2's CMakeDeps only aggregates cmake_build_modules declared at
         # the package level (self.cpp_info), not at component level — declaring
@@ -149,6 +152,7 @@ class PlotjugglerSdkConan(ConanFile):
         self.cpp_info.set_property("cmake_build_modules", [
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPlugin.cmake"),
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjParserModule.cmake"),
+            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjSdkTestFixtures.cmake"),
         ])
 
         # --- base ---
@@ -171,19 +175,24 @@ class PlotjugglerSdkConan(ConanFile):
         kit.libs = []  # INTERFACE only: authored modules link no SDK library
         kit.includedirs = ["include"]
 
-        # --- descriptor_import_support (callee side of pj.descriptor_import.v1) ---
+        # --- source (descriptor-import provider support) ---
+        source = self.cpp_info.components["source"]
+        source.set_property("cmake_target_name", "plotjuggler_sdk::source")
+        source.libs = ["pj_source"]
+        source.includedirs = ["include"]
+        source.requires = ["base", "nlohmann_json::nlohmann_json"]
+
         support = self.cpp_info.components["descriptor_import_support"]
         support.set_property("cmake_target_name", "plotjuggler_sdk::descriptor_import_support")
-        support.libs = ["pj_descriptor_import_support"]
-        support.includedirs = ["include"]
-        support.requires = ["base", "nlohmann_json::nlohmann_json"]
+        support.libs = []
+        support.requires = ["source"]
+
+
         # --- plugin_host (umbrella linking every host-side loader) ---
         if self.options.with_host:
             host = self.cpp_info.components["plugin_host"]
             host.set_property("cmake_target_name", "plotjuggler_sdk::plugin_host")
-            # Static archives: dependents before their dependencies. The
-            # parser-module host and claim catalog joined the umbrella in 0.22
-            # (they were missing from this list until 0.23.1).
+            # Static archives: dependents before their dependencies.
             host.libs = [
                 "pj_data_source_host",
                 "pj_message_parser_host",

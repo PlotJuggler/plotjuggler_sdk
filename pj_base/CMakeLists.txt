@@ -30,6 +30,7 @@ add_library(pj_base STATIC
   src/builtin/voxel_grid_codec.cpp
   src/builtin/grid_map_codec.cpp
   src/number_parse.cpp
+  src/time_format.cpp
   src/parser_module_abi.cpp
   src/parser_module_manifest.cpp
   src/semver.cpp
@@ -82,41 +83,51 @@ set_target_properties(pj_parser_module PROPERTIES EXPORT_NAME parser_module)
 add_library(plotjuggler_sdk::parser_module ALIAS pj_parser_module)
 
 # ---------------------------------------------------------------------------
-# descriptor_import_support — the callee side of pj.descriptor_import.v1 for
+# pj_source — the callee side of pj.descriptor_import.v1 for
 # provider plugins: origin policy, canonical descriptors, the request-
 # addressed artifact cache, and the provider job runner. Compiled (file
 # locks, fsync, threads) and therefore its own component: plugins that do not
 # provide descriptor import never link it.
 # ---------------------------------------------------------------------------
 find_package(nlohmann_json REQUIRED)
-add_library(pj_descriptor_import_support STATIC
-  src/descriptor_import/source_descriptor.cpp
-  src/descriptor_import/file_lock.cpp
-  src/descriptor_import/fs_durability.cpp
-  src/descriptor_import/origin.cpp
-  src/descriptor_import/provider_job.cpp
-  src/descriptor_import/request_cache.cpp
-  src/descriptor_import/sha256.cpp
+add_library(pj_source STATIC
+  src/source/limits.cpp
+  src/source/outcome_ledger.cpp
+  src/source/presentation.cpp
+  src/source/record_envelope.cpp
+  src/source/stop_bridge.cpp
+  src/source/source_descriptor.cpp
+  src/source/file_lock.cpp
+  src/source/fs_durability.cpp
+  src/source/origin.cpp
+  src/source/provider_job.cpp
+  src/source/request_cache.cpp
+  src/source/sha256.cpp
 )
-target_include_directories(pj_descriptor_import_support
+target_include_directories(pj_source
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_compile_features(pj_descriptor_import_support PUBLIC cxx_std_20)
-target_compile_options(pj_descriptor_import_support PRIVATE
+target_compile_features(pj_source PUBLIC cxx_std_20)
+target_compile_options(pj_source PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
 )
-target_link_libraries(pj_descriptor_import_support PUBLIC
+target_link_libraries(pj_source PUBLIC
   pj_base
   nlohmann_json::nlohmann_json
 )
-set_target_properties(pj_descriptor_import_support PROPERTIES
+set_target_properties(pj_source PROPERTIES
   POSITION_INDEPENDENT_CODE ON
-  EXPORT_NAME descriptor_import_support
+  EXPORT_NAME source
 )
+add_library(plotjuggler_sdk::source ALIAS pj_source)
+# Deprecated compatibility target, retained for one release.
+add_library(pj_descriptor_import_support INTERFACE)
+target_link_libraries(pj_descriptor_import_support INTERFACE pj_source)
+set_target_properties(pj_descriptor_import_support PROPERTIES EXPORT_NAME descriptor_import_support)
 add_library(plotjuggler_sdk::descriptor_import_support ALIAS pj_descriptor_import_support)
 
 # ---------------------------------------------------------------------------
@@ -124,7 +135,7 @@ add_library(plotjuggler_sdk::descriptor_import_support ALIAS pj_descriptor_impor
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_base pj_parser_module pj_descriptor_import_support EXPORT plotjuggler_sdkTargets
+  install(TARGETS pj_base pj_parser_module pj_source pj_descriptor_import_support EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
@@ -194,6 +205,8 @@ if(PJ_BUILD_TESTS)
     tests/video_frame_codec_test.cpp
     tests/scene_entities_codec_test.cpp
     tests/time_spine_test.cpp
+    tests/time_format_test.cpp
+    tests/slider_window_test.cpp
     tests/poses_in_frame_codec_test.cpp
     tests/voxel_grid_codec_test.cpp
     tests/grid_map_codec_test.cpp
@@ -207,17 +220,20 @@ if(PJ_BUILD_TESTS)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
 
-  set(PJ_DESCRIPTOR_IMPORT_TESTS
+  set(PJ_SOURCE_TESTS
+    tests/source_helpers_test.cpp
+    tests/source_presentation_test.cpp
+    tests/source_record_envelope_test.cpp
     tests/descriptor_import_origin_test.cpp
     tests/descriptor_import_source_descriptor_test.cpp
     tests/descriptor_import_request_cache_test.cpp
     tests/descriptor_import_provider_job_test.cpp
   )
-  foreach(test_src ${PJ_DESCRIPTOR_IMPORT_TESTS})
+  foreach(test_src ${PJ_SOURCE_TESTS})
     get_filename_component(test_name ${test_src} NAME_WE)
     add_executable(${test_name} ${test_src})
     target_compile_options(${test_name} PRIVATE ${PJ_WARNING_FLAGS})
-    target_link_libraries(${test_name} PRIVATE pj_descriptor_import_support GTest::gtest_main)
+    target_link_libraries(${test_name} PRIVATE pj_source GTest::gtest_main)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
 

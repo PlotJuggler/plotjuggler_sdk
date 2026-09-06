@@ -12,12 +12,12 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace detail {
 
 [[nodiscard]] std::array<std::uint8_t, 32> sha256(std::string_view data);
 
 }  // namespace detail
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

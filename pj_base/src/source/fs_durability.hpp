@@ -11,7 +11,7 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace detail {
 
 /// Apply 0600 (owner read/write) to `file`. Best-effort: failures are
@@ -31,6 +31,6 @@ void ensureDir0700(const std::filesystem::path& dir);
 void syncDir(const std::filesystem::path& dir);
 
 }  // namespace detail
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

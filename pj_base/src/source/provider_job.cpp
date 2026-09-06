@@ -1,7 +1,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include "pj_base/sdk/descriptor_import/provider_job.hpp"
+#include "pj_base/sdk/source/provider_job.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -14,7 +14,7 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 
 namespace detail {
 
@@ -405,6 +405,6 @@ std::string SettlementLatch::detail() const {
   return detail_;
 }
 
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

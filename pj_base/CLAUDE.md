@@ -8,6 +8,8 @@ pj_base is the **Level 0** foundation and the **SDK boundary** for plugin author
 - `include/pj_base/sdk/` — C++ SDK over the ABI: DataSource + Toolbox `*_plugin_base.hpp`, `service_registry.hpp`/`service_traits.hpp`, host views, Arrow RAII holders, `testing/`.
 - `include/pj_base/*_protocol.h`, `plugin_data_api.h`, `builtin_object_abi.h`, `plugin_abi_export.hpp` — the stable C-ABI surface for DataSource/MessageParser/Toolbox (the Dialog protocol header lives in `pj_plugins/dialog_protocol/`).
 - `proto/pj/` — canonical `.proto` wire contracts for the builtin types (see its README).
+- `include/pj_base/sdk/source/` — `pj_source` provider helpers; see `../docs/provider-guide.md`.
+- `include/pj_base/time_format.hpp`, `slider_window.hpp` — UTC/duration formatting, checked ISO parsing and slider ranges.
 - `src/`, `tests/` — codec/parse impls and gtests.
 - `abi/baseline.abi` — golden libabigail dump; the ABI-stability regression baseline.
 

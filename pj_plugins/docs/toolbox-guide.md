@@ -526,10 +526,12 @@ artifact reports `SUCCEEDED_EAGER_ONLY` instead.
 C++ consumers: `PJ::DescriptorImportProviderView`, `PJ::JoinableJob`,
 `PJ::SourcePromotionHostView` in `pj_base/sdk/descriptor_import.hpp`.
 
-**Provider-side support (0.24.0).** The mechanics every provider must get
-right ship as the `descriptor_import_support` component (link
-`plotjuggler_sdk::descriptor_import_support`; headers under
-`pj_base/sdk/descriptor_import/`, namespace `PJ::sdk::descriptor_import`):
+**Provider-side support.** The mechanics every provider must get right ship
+as the `pj_source` component (link `plotjuggler_sdk::source`; headers under
+`pj_base/sdk/source/`, namespace `PJ::sdk::source`) — see
+`docs/provider-guide.md` for the full provider contract. The pre-0.31
+`descriptor_import_support` target and `pj_base/sdk/descriptor_import/`
+headers forward here for one release:
 
 - `origin.hpp` — `OriginPolicy` + `parseOrigin()`: strict, fail-closed
   (scheme, host, port) parsing for trust and credential-release decisions,

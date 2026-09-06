@@ -23,13 +23,14 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
   standalone C++17 functional parser-module authoring kit (`pj_base/parser_module/`), the host-side
   wasm parser-module manifest custom-section codec, and the test-only static WASI ABI auditor. The
   0.22 authoring helper builds native parser modules only; wasm loading/execution is not present.
-  The absolute-time spine now also carries checked arithmetic shared across those layers.
-- **descriptor_import_support** — a separate compiled component
-  (`plotjuggler_sdk::descriptor_import_support`, headers under
-  `pj_base/sdk/descriptor_import/`): the callee side of the descriptor-import
-  extension for provider plugins — origin policy, canonical descriptors +
-  identities, the request-addressed artifact cache, the provider job runner.
-  Only plugins that provide `pj.descriptor_import.v1` link it.
+  The absolute-time spine also carries checked arithmetic, UTC/duration formatting
+  and checked slider-window mapping shared across those layers.
+- **pj_source** — compiled provider support (`plotjuggler_sdk::source`,
+  namespace `PJ::sdk::source`, headers under `pj_base/sdk/source/`): origin and
+  descriptor policy, source-record envelope, artifact cache, jobs, ceilings,
+  presentation, outcome ledger, Stop bridge and rolling transfer rate. The old
+  `descriptor_import_support` target/component and include paths forward for
+  one release. See `docs/provider-guide.md` for the full provider contract.
 - **pj_plugins** — host-side loaders + RAII handles + plugin **discovery** (directory scan +
   embedded-manifest inspection) for four plugin families (DataSource, MessageParser, Dialog, Toolbox),
   parser claim admission/resolution and native functional parser-module execution,
@@ -42,13 +43,14 @@ not in the PJ4 superproject. This file is the root navigation node for the whole
 - **cmake/** — the plugin-authoring CMake helpers shipped with `plugin_sdk`
   (`PjPlugin.cmake`: `pj_configure_plugin`, `pj_embed_file`, `pj_harden_plugin_exports`;
   `PjCheckElfPluginExports.cmake`: its post-build ELF gate) and `PjParserModule.cmake`
-  (`pj_add_parser_module`). These are public API: renaming or changing their arguments follows
+  (`pj_add_parser_module`) plus `PjSdkTestFixtures.cmake`
+  (`pj_add_sdk_test_fixture`, installed mock plugin sources under `share/plotjuggler_sdk/test_fixtures/`). These are public API: renaming or changing their arguments follows
   the same versioning contract as headers.
 
 ### Dependency graph
 
 - `pj_plugins` → `pj_base` (+ nlohmann/json)
-- `pj_descriptor_import_support` → `pj_base` (+ nlohmann/json)
+- `pj_source` → `pj_base` (+ nlohmann/json)
 
 ## Read path
 
@@ -74,6 +76,7 @@ documentation check before commit.
 | `docs/dialog-sdk-reference.md` | Quick reference for `WidgetData` setters + `DialogPluginTyped` event handlers |
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
 | `docs/toolbox-porting-gap-analysis.md` | Historical PJ3→PJ4 toolbox SDK gap analysis (most gaps now closed; read as context, not current reference) |
+| `docs/provider-guide.md` | Full source-provider contract, pj_source header map, delegated-ingest and packaged test fixtures |
 | `docs/BACKLOG.md` | Deliberate deferrals with an agreed landing slot (e.g. the 0.31 cloud-provider promotion batch) — read before planning any SDK version bump |
 | `V4_STORE.md` | ObjectStore plugin ABI: services, ownership rules, lazy fetch |
 

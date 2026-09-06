@@ -116,7 +116,13 @@ of a second hand-rolled copy of provider choreography.
    Stop/discard evidence; truncated vtables; cancellation during blocked
    ingest). A third provider otherwise rebuilds the ABI plumbing.
 
-9. **(Optional, dialog support) metadata-query library** — the six `query/`
+9. **metadata-query library — RELOCATED OUT of the SDK (maintainer decision
+    2026-09-06)**: lives in pj-official-plugins `common/` instead, so the
+    language can evolve per release (a more ambitious query language is
+    contemplated) without an SDK compatibility event; mcap_cloud copies it
+    temporarily. The cleaned single-lexer version from this branch's simplify
+    round is the seed. (Original assessment below kept for the record.)
+    **(Original: optional, dialog support) metadata-query library** — the six `query/`
    headers are byte-identical across the plugins (1,505 lines: tokenizer,
    AST, shorthand expansion, completion, cursor-aware editing, Lua eval) +
    the combined name/date/query filter. The single largest proven

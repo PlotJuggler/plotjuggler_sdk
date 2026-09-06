@@ -1,7 +1,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include "descriptor_import/fs_durability.hpp"
+#include "source/fs_durability.hpp"
 
 #include <cerrno>
 #include <system_error>
@@ -22,7 +22,7 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace detail {
 
 namespace fs = std::filesystem;
@@ -87,6 +87,6 @@ void syncDir(const fs::path& dir) {
 }
 
 }  // namespace detail
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

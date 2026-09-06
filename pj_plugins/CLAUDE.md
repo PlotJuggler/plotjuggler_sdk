@@ -25,7 +25,8 @@ submodule-internal modules; `pj_base` carries none).
   lives in the app (`pj_runtime`, `PluginRuntimeCatalog`), not here.
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:
   `MessageParserPluginBase`, `ObjectIngestPolicyResolver`, parser trampolines.
-- `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host for tests).
+- `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host) and `DelegatedIngestFixture`
+  (toolbox/data-source hosts recording attachment, payload ownership, completion, Stop and discard).
 - `dialog_protocol/` — **nested module** (own CMake): the Dialog C ABI, C++
   dialog SDK, and host dialog loader/handle. See `dialog_protocol/CLAUDE.md`.
 - `src/` — loader/catalog `.cpp`; `src/detail/` vtable validation + dlopen.

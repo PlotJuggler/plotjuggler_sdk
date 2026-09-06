@@ -9,11 +9,11 @@
 
 #include <functional>
 
-#include "pj_base/sdk/descriptor_import/request_cache.hpp"
+#include "pj_base/sdk/source/request_cache.hpp"
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 namespace testing {
 
 /// Same contract as RequestArtifactCache::cleanup(); the probe runs after the
@@ -23,6 +23,6 @@ namespace testing {
     RequestArtifactCache& cache, const CleanupPolicy& policy, std::function<void()> between_scan_and_evict);
 
 }  // namespace testing
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

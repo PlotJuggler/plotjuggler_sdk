@@ -1,16 +1,16 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include "pj_base/sdk/descriptor_import/request_cache.hpp"
+#include "pj_base/sdk/source/request_cache.hpp"
 
 #include <algorithm>
 #include <fstream>
 #include <system_error>
 #include <vector>
 
-#include "descriptor_import/file_lock.hpp"
-#include "descriptor_import/fs_durability.hpp"
 #include "pj_base/sdk/testing/request_cache_probe.hpp"
+#include "source/file_lock.hpp"
+#include "source/fs_durability.hpp"
 
 #if defined(_WIN32)
 // windows.h min/max macros break std::max / numeric_limits<>::max.
@@ -27,7 +27,7 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 
 namespace fs = std::filesystem;
 
@@ -651,6 +651,6 @@ CleanupResult cleanupWithProbe(
 
 }  // namespace testing
 
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

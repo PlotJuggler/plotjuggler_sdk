@@ -1,15 +1,25 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include "pj_base/sdk/descriptor_import/source_descriptor.hpp"
+#include "pj_base/sdk/source/source_descriptor.hpp"
 
 #include <algorithm>
 
-#include "descriptor_import/sha256.hpp"
+#include "pj_base/number_parse.hpp"
+#include "source/sha256.hpp"
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
+
+std::optional<std::int64_t> parseDecimalNs(std::string_view text) {
+  // Digits-only + length pre-check rejects signs, whitespace and exponents;
+  // parseNumber then rejects overflow past INT64_MAX.
+  if (text.empty() || text.size() > 20 || text.find_first_not_of("0123456789") != std::string_view::npos) {
+    return std::nullopt;
+  }
+  return PJ::parseNumber<std::int64_t>(text);
+}
 
 namespace {
 
@@ -64,6 +74,9 @@ std::optional<std::string> boundsViolation(
     for (const auto& item : value.items()) {
       if (item.key().size() > policy.max_string_bytes) {
         return "an object key exceeds the " + std::to_string(policy.max_string_bytes) + "-byte limit";
+      }
+      if (std::find(policy.denied_keys.begin(), policy.denied_keys.end(), item.key()) != policy.denied_keys.end()) {
+        return std::string(kDeniedKeyViolationPrefix) + item.key();
       }
       if (auto violation = boundsViolation(item.value(), policy, depth + 1)) {
         return violation;
@@ -164,6 +177,6 @@ std::string sha256Hex(std::string_view data, std::size_t hex_chars) {
   return out;
 }
 
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ

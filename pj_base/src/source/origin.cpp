@@ -1,7 +1,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-#include "pj_base/sdk/descriptor_import/origin.hpp"
+#include "pj_base/sdk/source/origin.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -10,7 +10,7 @@
 
 namespace PJ {
 namespace sdk {
-namespace descriptor_import {
+namespace source {
 
 namespace {
 
@@ -18,7 +18,7 @@ namespace {
 // digits, dot, hyphen, underscore. Anything else — a colon left over from the
 // last-colon split (an unbracketed IPv6 literal), brackets, userinfo residue,
 // spaces, percent-escapes — is a malformed authority and fails closed.
-bool validHostBytes(const std::string& host) {
+bool validHostBytes(std::string_view host) {
   if (host.empty()) {
     return false;
   }
@@ -28,6 +28,21 @@ bool validHostBytes(const std::string& host) {
 }
 
 }  // namespace
+
+Expected<void> validateSchemelessOrigin(std::string_view origin) {
+  const auto colon = origin.find(':');
+  if (colon == std::string_view::npos || colon == 0) {
+    return unexpected(std::string("origin must be host:port"));
+  }
+  if (!validHostBytes(origin.substr(0, colon))) {
+    return unexpected(std::string("origin host must be lowercase [a-z0-9._-]"));
+  }
+  const auto port = origin.substr(colon + 1);
+  if (port.empty() || port.size() > 5 || port.front() == '0' || !parsePort(port)) {
+    return unexpected(std::string("origin port must be a 1..65535 decimal with no leading zero"));
+  }
+  return {};
+}
 
 std::optional<Origin> parseOrigin(std::string_view uri, const OriginPolicy& policy) {
   const std::size_t scheme_end = uri.find("://");
@@ -105,6 +120,6 @@ bool originAllowed(std::string_view uri, const std::vector<Origin>& allowlist, c
   return origin.has_value() && std::find(allowlist.begin(), allowlist.end(), *origin) != allowlist.end();
 }
 
-}  // namespace descriptor_import
+}  // namespace source
 }  // namespace sdk
 }  // namespace PJ
