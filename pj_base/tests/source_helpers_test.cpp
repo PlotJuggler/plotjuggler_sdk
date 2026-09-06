@@ -16,7 +16,6 @@
 #include "pj_base/sdk/source/outcome_ledger.hpp"
 #include "pj_base/sdk/source/source_descriptor.hpp"
 #include "pj_base/sdk/source/stop_bridge.hpp"
-#include "pj_base/sdk/source/transfer_rate.hpp"
 
 namespace PJ::sdk::source {
 namespace {
@@ -168,25 +167,6 @@ TEST(SourceStopPoller, DestructionJoinsBeforeContextReleaseAndWakesLongWait) {
   EXPECT_THROW(StopPoller({}, [] {}), std::invalid_argument);
   EXPECT_THROW(StopPoller([] { return false; }, {}), std::invalid_argument);
   EXPECT_THROW(StopPoller([] { return false; }, [] {}, 0ms), std::invalid_argument);
-}
-
-TEST(SourceTransferRate, MonotonicWindowCounterResetAndIdle) {
-  RollingTransferRate rate;
-  const RollingTransferRate::Clock::time_point start{};
-  EXPECT_EQ(rate.bytesPerSecond(), 0.0);
-  rate.add(100, start);
-  rate.add(200, start);  // same timestamp is coalesced
-  EXPECT_EQ(rate.bytesPerSecond(), 0.0);
-  rate.add(400, start + 2s);
-  EXPECT_DOUBLE_EQ(rate.bytesPerSecond(), 100.0);
-  rate.add(900, start + 7s);
-  EXPECT_DOUBLE_EQ(rate.bytesPerSecond(), 100.0);
-  rate.add(900, start + 13s);
-  EXPECT_EQ(rate.bytesPerSecond(), 0.0);
-  rate.add(0, start + 14s);
-  EXPECT_EQ(rate.bytesPerSecond(), 0.0);
-  rate.add(100, start + 13s);
-  EXPECT_EQ(rate.bytesPerSecond(), 0.0);
 }
 }  // namespace
 }  // namespace PJ::sdk::source

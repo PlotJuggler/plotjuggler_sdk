@@ -157,9 +157,8 @@ multiplication can otherwise defeat the ceiling.
 `PJ::sliderToWindow` returns a checked half-open range, extending the upper
 endpoint one tick past the final frame. Degenerate ranges, invalid slider
 positions and unrepresentable `max-min`/`max+1` return nullopt. Caller adapters
-own “zero means unset/unbounded”. `RollingTransferRate` uses steady_clock and a
-five-second cumulative-byte window; use one per stream and sum rates. Add an
-unchanged count to update an idle rate; counter reset restarts the window.
+own “zero means unset/unbounded”. (The rolling transfer-rate display helper is
+not SDK surface — it lives in pj-official-plugins `common/transfer_rate`.)
 
 The metadata query language (tokenizer, AST, completion, cursor editing,
 combined filter) deliberately lives OUTSIDE the SDK — in pj-official-plugins'
@@ -210,7 +209,6 @@ Paths below are relative to `pj_base/include/pj_base/sdk/source/`:
 | [stop_bridge.hpp](../pj_base/include/pj_base/sdk/source/stop_bridge.hpp) | Host Stop polling and reverse cancellation contract |
 | [provider_job.hpp](../pj_base/include/pj_base/sdk/source/provider_job.hpp) | Job, cancel hook, elapsed watchdog, settlement latch |
 | [request_cache.hpp](../pj_base/include/pj_base/sdk/source/request_cache.hpp) | Request-addressed artifacts, leases, publication and cleanup |
-| [transfer_rate.hpp](../pj_base/include/pj_base/sdk/source/transfer_rate.hpp) | Monotonic rolling transfer rate |
 
 Related: [time_format.hpp](../pj_base/include/pj_base/time_format.hpp),
 [slider_window.hpp](../pj_base/include/pj_base/slider_window.hpp),

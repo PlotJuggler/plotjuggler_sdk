@@ -13,9 +13,10 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
   forward for one release. Existing C ABI protocols and layouts are unchanged.
 - Add strict environment ceilings/min-nonzero merge, decimal-nanosecond parsing,
   lowercase schemeless-origin validation, host-compatible presentation settings,
-  whole-request ingest outcome computation, host Stop polling, and a steady-clock
-  rolling transfer-rate accumulator. Synchronization and dataset-survival
-  decisions remain with the provider.
+  whole-request ingest outcome computation, and host Stop polling.
+  Synchronization and dataset-survival decisions remain with the provider.
+  (The rolling transfer-rate display helper deliberately lives in
+  pj-official-plugins `common/` with the dialog code that shows it.)
 - Publish source-record envelope v1 validation and conformance cases, including
   deep credential-key rejection and explicit rejection of flat mcap_cloud v1.
   Existing PJ4 refusal categories are preserved; optional `label` now must be a
