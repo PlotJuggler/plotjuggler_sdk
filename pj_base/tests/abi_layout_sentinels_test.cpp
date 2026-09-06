@@ -274,7 +274,10 @@ static_assert(sizeof(PJ_ingest_completion_t) == 32, "completion struct size (upd
 static_assert(
     offsetof(PJ_data_source_runtime_host_vtable_t, complete_ingest) == 112, "complete_ingest tail slot pinned");
 static_assert(
-    sizeof(PJ_data_source_runtime_host_vtable_t) == 120, "Runtime host vtable size (update deliberately on append)");
+    offsetof(PJ_data_source_runtime_host_vtable_t, set_dataset_metadata) == 120,
+    "set_dataset_metadata tail slot pinned");
+static_assert(
+    sizeof(PJ_data_source_runtime_host_vtable_t) == 128, "Runtime host vtable size (update deliberately on append)");
 
 // --- Write-host vtables (ABI-APPENDABLE within v4) --------------------------
 static_assert(offsetof(PJ_source_write_host_vtable_t, abi_version) == 0, "source write host prefix pinned");

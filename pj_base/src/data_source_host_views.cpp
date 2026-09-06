@@ -94,6 +94,20 @@ Status DataSourceRuntimeHostView::attachSourceRecord(std::string_view descriptor
   return okStatus();
 }
 
+Status DataSourceRuntimeHostView::setDatasetMetadata(std::string_view metadata_json) const {
+  if (!valid()) {
+    return unexpected(std::string("runtime host is not bound"));
+  }
+  if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, set_dataset_metadata)) {
+    return unexpected(std::string("runtime host does not expose set_dataset_metadata"));
+  }
+  PJ_error_t err{};
+  if (!host_.vtable->set_dataset_metadata(host_.ctx, sdk::toAbiString(metadata_json), &err)) {
+    return unexpected(errorToString(err));
+  }
+  return okStatus();
+}
+
 Status DataSourceRuntimeHostView::completeIngest(
     sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
     PJ_ingest_completion_flags_t flags) const {

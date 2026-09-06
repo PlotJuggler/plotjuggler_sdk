@@ -3,6 +3,16 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.32.0] — unreleased
+
+- Add the `set_dataset_metadata` tail slot to the data-source runtime host
+  vtable (`DataSourceRuntimeHostView::setDatasetMetadata`, forwarded by
+  `DatasetIngestHostView`): a loader attaches one descriptive JSON object about
+  the loaded artifact for the host to display generically. Deliberately
+  disjoint from `attach_source_record` — observations about the artifact,
+  never request identity; a refused document has no effect on ingestion,
+  caching, or completion. Old hosts negotiate via `struct_size` as usual.
+
 ## [0.31.1]
 
 - Drop fmt from `pj_base`'s `time_format.cpp` (`snprintf` zero-padding, byte-identical

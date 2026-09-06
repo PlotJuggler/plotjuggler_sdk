@@ -224,6 +224,15 @@ class DataSourceRuntimeHostView {
       sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
       PJ_ingest_completion_flags_t flags = PJ_INGEST_COMPLETION_FLAG_NONE) const;
 
+  /// Attach a descriptive metadata document (one UTF-8 JSON object) to the
+  /// dataset this ingest produces, for the host to display generically
+  /// (set_dataset_metadata tail slot). Observations ABOUT the loaded artifact
+  /// — never request identity: caching and restore stay attachSourceRecord's
+  /// business, and a refused document has no effect on ingestion. Each
+  /// successful call replaces the whole document; "{}" clears it. Old hosts
+  /// (no slot) return an error; the plugin proceeds without metadata.
+  [[nodiscard]] Status setDatasetMetadata(std::string_view metadata_json) const;
+
   /// Push a message via a deferred FetchMessageData callable. The DataSource
   /// hands the host a callable that produces the payload bytes when invoked.
   /// The host applies the active ObjectIngestPolicy (resolved via the
@@ -465,6 +474,12 @@ class DatasetIngestHostView {
       sdk::IngestOutcome outcome, Span<const std::string_view> requested_topics,
       PJ_ingest_completion_flags_t flags = PJ_INGEST_COMPLETION_FLAG_NONE) const {
     return host_.completeIngest(outcome, requested_topics, flags);
+  }
+
+  /// Attach a descriptive metadata document to this ingest's dataset. See
+  /// DataSourceRuntimeHostView::setDatasetMetadata for the full contract.
+  [[nodiscard]] Status setDatasetMetadata(std::string_view metadata_json) const {
+    return host_.setDatasetMetadata(metadata_json);
   }
 
   /// Rider forward of the runtime host's thread-safe stop request: a provider
