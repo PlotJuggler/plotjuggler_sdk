@@ -53,9 +53,11 @@ target_compile_options(pj_base PRIVATE
 )
 # Header-only implementation dependencies stay off installed targets so
 # downstream consumers inherit neither their include paths nor link requirements.
+# Header-only fmt is deliberately NOT linked here: even header-only, its
+# implementation symbols land in the installed static archive and collide
+# with a consumer's own fmt under MSVC (see test_sdk_install.sh guard).
 target_link_libraries(pj_base PRIVATE
   $<BUILD_INTERFACE:FastFloat::fast_float>
-  $<BUILD_INTERFACE:pj_internal_fmt>
 )
 set_target_properties(pj_base PROPERTIES
   POSITION_INDEPENDENT_CODE ON

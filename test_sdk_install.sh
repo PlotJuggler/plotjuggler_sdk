@@ -123,5 +123,22 @@ if [[ $LEAKED -ne 0 ]]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# 6. Verify pj_base ships no fmt implementation symbols
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "--- Step 6: Verify libpj_base.a defines no fmt symbols ---"
+
+# fmt is a private, header-only implementation detail. If its implementation
+# symbols land in the installed archive (weak on ELF, so Linux links fine),
+# the MSVC build of the same code collides (LNK2005) with any consumer that
+# links its own fmt — this check makes the Windows failure visible on Linux.
+if nm -C "$STAGING_DIR/lib/libpj_base.a" | grep -E " [TWuVvW] " | grep -q "fmt::"; then
+  echo "ERROR: installed libpj_base.a defines fmt symbols (collides with a consumer's fmt on MSVC):"
+  nm -C "$STAGING_DIR/lib/libpj_base.a" | grep -E " [TWuVvW] " | grep "fmt::" | head -10
+  exit 1
+fi
+
 echo ""
 echo "=== plotjuggler_sdk install test PASSED ==="

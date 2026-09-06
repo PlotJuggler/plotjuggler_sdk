@@ -3,10 +3,9 @@
 
 #include "pj_base/time_format.hpp"
 
-#include <fmt/format.h>
-
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 
 #include "pj_base/time_math.hpp"
 
@@ -38,13 +37,23 @@ UtcTime utcFromNanoseconds(int64_t ts_ns) {
       static_cast<int>(time.seconds().count())};
 }
 
+// Plain snprintf, deliberately: linking fmt here would embed fmt
+// implementation symbols in the installed pj_base archive, which collide
+// (LNK2005) with any consumer that links its own fmt on MSVC.
 std::string formatDate(const UtcTime& utc, char separator, bool day_first) {
-  return day_first ? fmt::format("{:02}{}{:02}{}{:04}", utc.day, separator, utc.month, separator, utc.year)
-                   : fmt::format("{:04}{}{:02}{}{:02}", utc.year, separator, utc.month, separator, utc.day);
+  char buffer[32];
+  if (day_first) {
+    std::snprintf(buffer, sizeof buffer, "%02d%c%02d%c%04d", utc.day, separator, utc.month, separator, utc.year);
+  } else {
+    std::snprintf(buffer, sizeof buffer, "%04d%c%02d%c%02d", utc.year, separator, utc.month, separator, utc.day);
+  }
+  return buffer;
 }
 
 std::string formatTime(const UtcTime& utc) {
-  return fmt::format("{:02}:{:02}:{:02}", utc.hour, utc.minute, utc.second);
+  char buffer[16];
+  std::snprintf(buffer, sizeof buffer, "%02d:%02d:%02d", utc.hour, utc.minute, utc.second);
+  return buffer;
 }
 
 bool isDigit(char character) {
@@ -70,7 +79,12 @@ bool parseFixedDigits(std::string_view text, std::size_t offset, std::size_t cou
 
 std::string formatTimestamp(int64_t ts_ns, bool long_format) {
   const auto utc = utcFromNanoseconds(ts_ns);
-  return long_format ? fmt::format("{:02}/{:02} {}", utc.day, utc.month, formatTime(utc)) : formatTime(utc);
+  if (!long_format) {
+    return formatTime(utc);
+  }
+  char day_month[16];
+  std::snprintf(day_month, sizeof day_month, "%02d/%02d ", utc.day, utc.month);
+  return day_month + formatTime(utc);
 }
 
 std::string formatDuration(int64_t duration_ns) {
