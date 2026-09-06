@@ -181,27 +181,36 @@ is `feature_floors.json`, shipped in the package at
 
 When you adopt a surface newer than your floor, pick one:
 
-- **Raise `min_sdk_required`** to that surface's release — when the feature is
+- **Raise `min_sdk_required`** to that surface's release — mandatory for a
+  non-negotiated (hard protocol) surface, and right whenever the feature is
   essential to what your plugin is for.
-- **Degrade gracefully** — when the wrapper's error return is acceptable
-  (negotiated tail slots return a `Status` on older hosts; ignore it and carry
-  on). Then declare it in the manifest and prove it with a test that runs
-  against a host lacking the slot (the testing fixtures support `struct_size`
-  truncation):
+- **Declare the degraded range** — when the surface is runtime-negotiated and
+  the wrapper's error return is acceptable (ignore it and carry on). Two
+  manifest fields, required together and forbidden when nothing exceeds the
+  floor:
 
 ```json
-"sdk_floor_exceptions": {
-  "setDatasetMetadata": {
-    "reason": "optional: metadata display absent on hosts older than 0.32; load unaffected",
-    "test": "MySuite.ImportSucceedsWithoutMetadataSlot"
-  }
-}
+"min_sdk_required": "0.28.0",
+"suggested_sdk_version": "0.32.0",
+"floor_test": "McapDatasetMetadata.ImportSucceedsAgainstFloorLevelHost"
 ```
 
-The official-plugins repo CI enforces exactly this rule (floor ≥ every matched
-surface's release, or a validated exception); third-party plugins should follow
-the same discipline. `built_with_sdk` is stamped into the sidecar
-automatically — informational provenance, never a compatibility gate.
+`suggested_sdk_version` is the full-feature floor (exactly the max introducing
+release over every host surface you use — the checker validates it), so hosts
+can tell users which PlotJuggler unlocks your whole feature set. `floor_test`
+names one gtest, existing in your `tests/`, proving the plugin functions
+against a floor-level host — drive it with a `struct_size`-truncated host
+vtable (the testing fixtures support this). Neither field is ever a gate:
+`min_sdk_required` remains the only admission criterion, and
+`min_plotjuggler_version` is deprecated.
+
+Check your own plugin with the tool the SDK package ships next to the table:
+
+```bash
+python3 <sdk>/share/plotjuggler_sdk/feature_floor_check.py \
+  --table <sdk>/share/plotjuggler_sdk/feature_floors.json \
+  --manifest my_plugin/manifest.json --sources my_plugin
+```
 
 ## Step 6 — The rules that silently break a plugin
 

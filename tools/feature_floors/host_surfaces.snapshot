@@ -7,6 +7,8 @@ PJ_INGEST_COMPLETION_FLAG_NONE
 PJ_MODULE_PARSE_INPUT_FLAG_HAS_TIMESTAMP
 PJ_PARSER_ROUTE_FLAG_OBJECT_V1
 PJ_PARSER_ROUTE_FLAG_SCALAR_V1
+PJ_colormap_registry_vtable_t::register_map
+PJ_colormap_registry_vtable_t::unregister_map
 PJ_data_processors_host_vtable_t::create_data_processor
 PJ_data_processors_host_vtable_t::data_processor_config
 PJ_data_processors_host_vtable_t::list_data_processor_ids
@@ -36,12 +38,10 @@ PJ_object_read_host_vtable_t::read_latest_at
 PJ_object_read_host_vtable_t::release_bytes
 PJ_object_read_host_vtable_t::time_range
 PJ_object_read_host_vtable_t::topic_metadata
-PJ_object_write_host_vtable_t::fetch_ctx_destroy
 PJ_object_write_host_vtable_t::push_lazy
 PJ_object_write_host_vtable_t::push_owned
 PJ_object_write_host_vtable_t::register_topic
 PJ_object_write_host_vtable_t::set_retention_budget
-PJ_parser_object_write_host_vtable_t::fetch_ctx_destroy
 PJ_parser_object_write_host_vtable_t::push_lazy
 PJ_parser_object_write_host_vtable_t::push_owned
 PJ_parser_runtime_host_vtable_t::report_diagnostic
@@ -64,6 +64,12 @@ PJ_plot_tab_host_vtable_t::list_tab_ids
 PJ_plot_tab_host_vtable_t::remove_curve
 PJ_plot_tab_host_vtable_t::tab_config
 PJ_service_registry_vtable_t::get_service
+PJ_settings_store_vtable_t::contains
+PJ_settings_store_vtable_t::get_string
+PJ_settings_store_vtable_t::get_string_list
+PJ_settings_store_vtable_t::remove_key
+PJ_settings_store_vtable_t::set_string
+PJ_settings_store_vtable_t::set_string_list
 PJ_source_promotion_host_vtable_t::promote_to_file_source
 PJ_source_write_host_vtable_t::append_arrow_stream
 PJ_source_write_host_vtable_t::append_bound_record
@@ -91,11 +97,7 @@ PJ_viewport_host_vtable_t::zoom_reset
 PJ_viewport_host_vtable_t::zoom_to_time_range
 pj.colormap.v1
 pj.data_processors.v1
-pj.descriptor_import.v1
-pj.parser_functional.v1
-pj.parser_functional.v2
 pj.parser_object_write.v1
-pj.parser_route_claims.v1
 pj.parser_runtime.v1
 pj.parser_write.v1
 pj.playback.v1
@@ -108,5 +110,4 @@ pj.source_write.v1
 pj.toolbox_object_read.v1
 pj.toolbox_runtime.v1
 pj.toolbox_write.v1
-pj.topic_subscription.v1
 pj.viewport.v1

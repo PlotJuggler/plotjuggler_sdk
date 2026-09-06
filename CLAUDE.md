@@ -83,6 +83,11 @@ contracts) do, and those MUST be classified there in the same PR (CI-enforced
 by `tools/feature_floors/check_feature_floors.py`). The version stays one
 monotonic identity; `feature_floors.json` carries the per-release compatibility
 semantics; `PJ_ABI_VERSION` remains the orthogonal hard-break counter.
+The plugin compatibility contract is `min_sdk_required` (the functioning
+floor, the only admission gate) plus the informational
+`suggested_sdk_version` (full-feature floor) and `abi_major` for hard
+breaks; `min_plotjuggler_version` is deprecated — the decoder keeps reading
+it for back-compat, and the host-side gate removal happens in PJ4.
 Changelog convention: every release section carries one `Host contract:` line —
 either `unchanged (no floor impact)` or `extended: <identifiers> (floor X.Y.Z)`;
 the floor checker requires the `extended` form whenever a surface newer than

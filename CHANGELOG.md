@@ -6,7 +6,7 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 ## [0.33.0] — unreleased
 
 Host contract: unchanged (no floor impact) — this release adds the floor
-table itself and the `built_with_sdk` manifest stamp, no new host surfaces.
+table itself and the `suggested_sdk_version` manifest field, no new host surfaces.
 
 - Ship `share/plotjuggler_sdk/feature_floors.json`: the host-contract surface
   table (surface → introducing release, runtime-negotiated or not) that a
@@ -14,11 +14,13 @@ table itself and the `built_with_sdk` manifest stamp, no new host surfaces.
   surface (tail slot, versioned service id, wire flag) must be classified in
   the table in the same change — `tools/feature_floors/check_feature_floors.py`
   runs in CI and fails on any unclassified surface.
-- Stamp `built_with_sdk` (the compile-SDK version) into every plugin's
-  `.pjmanifest.json` sidecar and expose it as an optional
-  `PluginDescriptor::built_with_sdk`. Informational provenance for host
-  diagnostics only — never an admission criterion; older manifests without
-  the field decode unchanged.
+- New optional manifest fields `suggested_sdk_version` (decoded into
+  `PluginDescriptor::suggested_sdk_version`) and `floor_test`: a plugin whose
+  used surfaces exceed its functioning floor declares the full-feature floor
+  (validated by the floor checker to equal max introducing release over its
+  matched surfaces) plus the gtest proving it functions against a floor-level
+  host. `min_sdk_required` remains the only admission gate;
+  `min_plotjuggler_version` is deprecated (host-side removal lands in PJ4).
 
 ## [0.32.0]
 

@@ -141,18 +141,31 @@ if nm -C "$STAGING_DIR/lib/libpj_base.a" | grep -E " [TWuVvW] " | grep -q "fmt::
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Verify the feature-floors table is installed and parses
+# 7. Verify the feature-floors table + checker are installed and work
 # ---------------------------------------------------------------------------
 
 echo ""
-echo "--- Step 7: Verify feature_floors.json is installed and parses ---"
+echo "--- Step 7: Verify feature_floors.json and feature_floor_check.py install ---"
 
 FLOORS="$STAGING_DIR/share/plotjuggler_sdk/feature_floors.json"
-if [[ ! -f "$FLOORS" ]]; then
-  echo "ERROR: $FLOORS not installed"
-  exit 1
-fi
-python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['schema_version'] == 1 and d['surfaces'], 'malformed feature_floors.json'" "$FLOORS"
+FLOOR_CHECK="$STAGING_DIR/share/plotjuggler_sdk/feature_floor_check.py"
+for f in "$FLOORS" "$FLOOR_CHECK"; do
+  if [[ ! -f "$f" ]]; then
+    echo "ERROR: $f not installed"
+    exit 1
+  fi
+done
+# The installed checker is the one parser of the installed table: loading the
+# table through it validates both, in the exact combination users receive.
+python3 -c "
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location('feature_floor_check', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules['feature_floor_check'] = module
+spec.loader.exec_module(module)
+table = module.load_surface_table(pathlib.Path(sys.argv[2]))
+assert table.surfaces, 'empty feature_floors.json'
+" "$FLOOR_CHECK" "$FLOORS"
 
 echo ""
 echo "=== plotjuggler_sdk install test PASSED ==="

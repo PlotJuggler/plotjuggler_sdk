@@ -342,15 +342,6 @@ function(pj_configure_plugin TARGET)
   set(_sidecar_json "${_src_json}")
   string(JSON _sidecar_json SET "${_sidecar_json}" "abi_major" "${ARG_ABI_MAJOR}")
   string(JSON _sidecar_json SET "${_sidecar_json}" "family"    "\"${_primary_family}\"")
-  # Compile-SDK provenance for host diagnostics; informational only, never an
-  # admission gate. plotjuggler_sdk_VERSION exists when the plugin builds
-  # against the installed package; PJ_SDK_VERSION covers the in-tree build.
-  if(DEFINED plotjuggler_sdk_VERSION)
-    set(_pj_built_with_sdk "${plotjuggler_sdk_VERSION}")
-  else()
-    set(_pj_built_with_sdk "${PJ_SDK_VERSION}")
-  endif()
-  string(JSON _sidecar_json SET "${_sidecar_json}" "built_with_sdk" "\"${_pj_built_with_sdk}\"")
   set(_sidecar_path "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}.pjmanifest.json")
   file(CONFIGURE OUTPUT "${_sidecar_path}" CONTENT "${_sidecar_json}\n" @ONLY)
   add_custom_command(
