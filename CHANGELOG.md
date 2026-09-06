@@ -3,6 +3,13 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.31.1]
+
+- Drop fmt from `pj_base`'s `time_format.cpp` (`snprintf` zero-padding, byte-identical
+  output). Header-only fmt emitted implementation symbols into the installed
+  `libpj_base.a`, breaking MSVC consumers that link their own fmt (LNK2005).
+  `test_sdk_install.sh` now fails if the installed archive defines any `fmt::` symbol.
+
 ## [0.31.0]
 
 ### Source-provider C++ support
