@@ -980,8 +980,10 @@ typedef struct {
 /* Persisted in the layout file like any other processor, but the host's undo/redo
  * history never restores, recreates or removes it -- history has no authority over
  * it. Orthogonal to EPHEMERAL: an EPHEMERAL processor is never persisted at all, so
- * this bit is irrelevant on it. Hosts that do not know this bit reject it as a
- * reserved bit, per the usual reserved-bit rule. */
+ * this bit is irrelevant on it. A conforming host rejects unknown flag bits.
+ * To confirm protection even on a host that silently ignores unknown bits,
+ * read data_processor_config after creation: only history_exempt=true confirms
+ * the property. A missing/false property or failed read does not confirm it. */
 #define PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (1u << 1)
 
 typedef struct PJ_data_processors_host_vtable_t {
@@ -1019,7 +1021,10 @@ typedef struct PJ_data_processors_host_vtable_t {
   /* [main-thread] Read a node's full recipe as JSON
    * {"kind":"...","language":"...","inputs":[...],"outputs":[...],"params":{...}} for
    * re-edit (e.g. after a session reload). *out_recipe_json is borrowed, valid only
-   * until the next call on this vtable. An unknown id is an error. */
+   * until the next call on this vtable. An unknown id is an error.
+   * Hosts supporting PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT include the boolean
+   * "history_exempt" for transforms and markers, reflecting the node's actual
+   * property. Callers must not infer support from a successful create alone. */
   bool (*data_processor_config)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 

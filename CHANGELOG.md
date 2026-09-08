@@ -12,11 +12,12 @@ Host contract: extended: PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (floor 0.34.0).
   processor, but the host's undo/redo history never restores, recreates or
   removes it — history has no authority over it. Orthogonal to
   `PJ_DATA_PROCESSOR_FLAG_EPHEMERAL` (never persisted at all, so this bit is
-  irrelevant on it). Purely additive: an older host that does not know this
-  bit rejects the create under the existing reserved-bits rule. A flag bit is
-  not runtime-negotiated (no `struct_size` reveals it), so a plugin that must
-  also run on older hosts treats that rejection as "unsupported" and falls
-  back deliberately — e.g. re-creating without the bit and saying so.
+  irrelevant on it). Supporting hosts return the boolean `history_exempt`
+  through `data_processor_config` for transforms and markers. Only a returned
+  `true` confirms protection: older hosts may silently ignore unknown bits.
+  Conforming hosts reject unknown flags under the reserved-bits rule, allowing
+  a deliberate retry without the bit. A missing/false config property or a
+  failed config read also requires disclosing that protection is unavailable.
 
 ## [0.33.0]
 
