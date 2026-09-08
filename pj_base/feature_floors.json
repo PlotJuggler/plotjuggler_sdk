@@ -11,6 +11,9 @@
     },
     "0.32.0": {
       "setDatasetMetadata": "PJ_data_source_runtime_host_vtable_t::set_dataset_metadata"
+    },
+    "0.34.0": {
+      "PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT": ""
     }
   },
   "baseline": [

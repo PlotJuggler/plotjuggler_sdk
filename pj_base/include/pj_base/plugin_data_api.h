@@ -939,7 +939,10 @@ typedef struct {
  *                   {"scope":"all"} makes a global node publish across EVERY dataset;
  *                   absent = active dataset.
  *   - flags       : bitset; PJ_DATA_PROCESSOR_FLAG_EPHEMERAL marks a preview (never
- *                   persisted, dropped on remove). Reserved bits must be 0.
+ *                   persisted, dropped on remove). PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT
+ *                   marks a node the host's undo/redo history has no authority over
+ *                   (still persisted like any other node; history never restores,
+ *                   recreates or removes it). Reserved bits must be 0.
  *
  * DATASET-QUALIFIED NAMES — a series' full identity is (dataset, topic, field); a
  * bare "topic/field" name is an abbreviation that stops being unique the moment
@@ -974,6 +977,12 @@ typedef struct {
 
 /* create_data_processor flags. */
 #define PJ_DATA_PROCESSOR_FLAG_EPHEMERAL (1u << 0) /* preview: never persisted, dropped on remove_data_processor */
+/* Persisted in the layout file like any other processor, but the host's undo/redo
+ * history never restores, recreates or removes it -- history has no authority over
+ * it. Orthogonal to EPHEMERAL: an EPHEMERAL processor is never persisted at all, so
+ * this bit is irrelevant on it. Hosts that do not know this bit reject it as a
+ * reserved bit, per the usual reserved-bit rule. */
+#define PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (1u << 1)
 
 typedef struct PJ_data_processors_host_vtable_t {
   uint32_t protocol_version;  // = 1

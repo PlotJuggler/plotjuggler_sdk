@@ -1517,7 +1517,9 @@ class DataProcessorsHostView {
 
   /// Create or replace (upsert by id) a data processor of `kind` ("transform" or
   /// "markers"). `outputs` may be empty for an ephemeral preview (flags &
-  /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s).
+  /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s);
+  /// flags & PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT instead marks a persisted node the
+  /// host's undo/redo history has no authority over.
   /// Returns the resolved physical output topic name(s) (owned copies) so the caller
   /// can read results back through the kind's read surface. `params_json` is forwarded
   /// verbatim to the script. Input names MAY carry the dataset qualifier
