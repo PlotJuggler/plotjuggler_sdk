@@ -3,6 +3,22 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.34.0]
+
+Host contract: extended: PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (floor 0.34.0).
+
+- Add `PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT` to `create_data_processor`'s
+  `flags` bitset: the node is persisted in the layout file like any other
+  processor, but the host's undo/redo history never restores, recreates or
+  removes it — history has no authority over it. Orthogonal to
+  `PJ_DATA_PROCESSOR_FLAG_EPHEMERAL` (never persisted at all, so this bit is
+  irrelevant on it). Supporting hosts return the boolean `history_exempt`
+  through `data_processor_config` for transforms and markers. Only a returned
+  `true` confirms protection: older hosts may silently ignore unknown bits.
+  Conforming hosts reject unknown flags under the reserved-bits rule, allowing
+  a deliberate retry without the bit. A missing/false config property or a
+  failed config read also requires disclosing that protection is unavailable.
+
 ## [0.33.0]
 
 Host contract: unchanged (no floor impact) — this release adds the floor
