@@ -196,23 +196,26 @@ void JobControl::armWatchdog(std::chrono::milliseconds timeout, std::function<vo
     return;
   }
   state_.stopWatchdog();
-  {
-    std::lock_guard<std::mutex> lock(state_.watchdog_mu);
-    state_.watchdog_stop = false;
-  }
   detail::JobState* state = &state_;
   std::binary_semaphore started{0};
-  state_.watchdog = std::thread([state, timeout, on_expire = std::move(on_expire), &started]() {
-    std::unique_lock<std::mutex> lock(state->watchdog_mu);
-    started.release();
-    const bool stopped = state->watchdog_cv.wait_for(lock, timeout, [state] { return state->watchdog_stop; });
-    lock.unlock();
-    if (!stopped) {
-      try {
-        on_expire();
-      } catch (...) {}
-    }
-  });
+  {
+    // Held across the handle store: the watchdog takes watchdog_mu before
+    // anything else, so an on_expire that re-enters armWatchdog reads
+    // state_.watchdog only after this thread has assigned it.
+    std::lock_guard<std::mutex> lock(state_.watchdog_mu);
+    state_.watchdog_stop = false;
+    state_.watchdog = std::thread([state, timeout, on_expire = std::move(on_expire), &started]() {
+      std::unique_lock<std::mutex> lock(state->watchdog_mu);
+      started.release();
+      const bool stopped = state->watchdog_cv.wait_for(lock, timeout, [state] { return state->watchdog_stop; });
+      lock.unlock();
+      if (!stopped) {
+        try {
+          on_expire();
+        } catch (...) {}
+      }
+    });
+  }
   started.acquire();
 }
 

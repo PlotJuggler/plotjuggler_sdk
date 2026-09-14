@@ -3,6 +3,23 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.34.1]
+
+Host contract: unchanged (no floor impact).
+
+### Fix: `armWatchdog` stores the watchdog handle before the watchdog can read it (PATCH)
+
+`JobControl::armWatchdog` started the watchdog thread and then move-assigned it
+into the job state without holding `watchdog_mu`. An `on_expire` callback that
+re-arms from the watchdog thread reads that handle for its self-re-arm guard, so
+a body thread preempted for longer than the timeout between thread creation and
+the store let the guard read an empty handle: the re-arm then joined or
+overwrote a thread it should have left alone (`std::terminate` on assigning over
+a joinable thread). The store now happens under `watchdog_mu`, which the
+watchdog takes before anything else. ThreadSanitizer reported it in
+`ProviderJobTest.RearmingTheWatchdogFromOnExpireIsANoOp` on every run. No API or
+ABI change.
+
 ## [0.34.0]
 
 Host contract: extended: PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (floor 0.34.0).
