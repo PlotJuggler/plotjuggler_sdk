@@ -3,6 +3,14 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.34.1]
+
+- Fix a data race in `JobControl::armWatchdog`: the self-join guard read the
+  watchdog `std::thread` member on the watchdog thread while the body thread was
+  still move-assigning it. The guard now keys on a thread-local flag the watchdog
+  thread sets before running `on_expire`. Found by running the SDK tests under
+  ThreadSanitizer.
+
 ## [0.34.0]
 
 Host contract: extended: PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (floor 0.34.0).

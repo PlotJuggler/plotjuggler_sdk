@@ -18,6 +18,13 @@ namespace source {
 
 namespace detail {
 
+/// True only on a watchdog thread, set before it runs on_expire; the self-join
+/// guard in armWatchdog reads it instead of the still-being-assigned thread object.
+bool& inWatchdogThread() {
+  thread_local bool in_watchdog = false;
+  return in_watchdog;
+}
+
 struct JobState {
   ProviderJob::Body body;
   decltype(PJ_descriptor_import_callbacks_v1_t::on_dataset) on_dataset = nullptr;
@@ -191,8 +198,10 @@ void JobControl::armWatchdog(std::chrono::milliseconds timeout, std::function<vo
     return;
   }
   // Re-arming from inside on_expire would join the watchdog thread from
-  // itself: downgraded to a no-op (armWatchdog is body-thread-only).
-  if (state_.watchdog.joinable() && state_.watchdog.get_id() == std::this_thread::get_id()) {
+  // itself: downgraded to a no-op (armWatchdog is body-thread-only). Keyed on
+  // a thread_local rather than watchdog.get_id(): the body thread is still
+  // move-assigning `watchdog` while on_expire may already be running.
+  if (detail::inWatchdogThread()) {
     return;
   }
   state_.stopWatchdog();
@@ -203,6 +212,7 @@ void JobControl::armWatchdog(std::chrono::milliseconds timeout, std::function<vo
   detail::JobState* state = &state_;
   std::binary_semaphore started{0};
   state_.watchdog = std::thread([state, timeout, on_expire = std::move(on_expire), &started]() {
+    detail::inWatchdogThread() = true;
     std::unique_lock<std::mutex> lock(state->watchdog_mu);
     started.release();
     const bool stopped = state->watchdog_cv.wait_for(lock, timeout, [state] { return state->watchdog_stop; });
