@@ -908,6 +908,19 @@ typedef struct {
  *   - kind="markers":   a discrete PlotMarkers set (events / regions / value bands).
  *     Exactly one output topic; the host publishes the serialized PlotMarkers to the
  *     ObjectStore under markerObjectTopicName(key).
+ *   - kind="on_demand": evaluated at a CONSUMER-requested time rather than eagerly on
+ *     every data change — e.g. a script that reconstructs a PointCloud or
+ *     SceneEntities frame for the sample nearest the playhead, too expensive to
+ *     materialize for the whole series. There is no ABI surface for the request yet;
+ *     a tail-appended `evaluate_data_processor_at` slot is a PROPOSED future addition,
+ *     not part of this release. Each `outputs` entry carries a type suffix
+ *     "<name>:<type>", where <type> is "number", "string", or a BuiltinObjectType
+ *     name (e.g. "kPointCloud", "kSceneEntities") — the host needs the declared shape
+ *     up front to route a later on-demand evaluation without re-running the script.
+ *     out_topics returns, 1:1 with outputs, the resolved physical topic name for an
+ *     object-typed output and the bare (untyped) name for a number/string output.
+ *     `language` must be "luau"; the same "unknown kind is rejected" rule as any
+ *     other kind applies to a host that predates this one.
  * Future kinds (e.g. a host-owned engine backend) are added the same way — a new
  * `kind` string plus host routing, no ABI change.
  *
@@ -918,7 +931,7 @@ typedef struct {
  *                   data_processor_config). The host scopes list/remove/config to the
  *                   calling plugin (per-plugin isolation): one plugin can neither
  *                   enumerate nor remove another's.
- *   - kind        : output discriminator, see above ("transform", "markers").
+ *   - kind        : output discriminator, see above ("transform", "markers", "on_demand").
  *   - language    : script backend, "luau" today; the host rejects anything else.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
  *                   "pose/orientation/x") the script reads; the host resolves them

@@ -1502,10 +1502,10 @@ class ColorMapRegistryView {
 /// PJ_data_processors_host_vtable_t). Empty-constructible; `valid()` tells whether the
 /// host exposed the service. Strings returned by `list()`/`recipeOf()`/`create()` are
 /// copied into owned values, so they stay valid past the next vtable call. One
-/// polymorphic surface serves every `kind` ("transform", "markers"); preview is
-/// `create(..., flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL)` and teardown is `remove(id)`.
-/// `createTransform`/`createEphemeralTransform`/`createMarkers` are thin convenience
-/// shims over `create`.
+/// polymorphic surface serves every `kind` ("transform", "markers", "on_demand");
+/// preview is `create(..., flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL)` and teardown is
+/// `remove(id)`. `createTransform`/`createEphemeralTransform`/`createMarkers`/
+/// `createOnDemand` are thin convenience shims over `create`.
 class DataProcessorsHostView {
  public:
   DataProcessorsHostView() = default;
@@ -1616,6 +1616,22 @@ class DataProcessorsHostView {
     Span<const std::string_view> out_span =
         output_marker_topic.empty() ? Span<const std::string_view>{} : Span<const std::string_view>(outs.data(), 1);
     return create(id, "markers", "luau", inputs, out_span, script, params_json, flags);
+  }
+
+  /// Convenience: create a kind="on_demand" node — evaluated at a
+  /// CONSUMER-requested time rather than eagerly on every data change (see the
+  /// kind="on_demand" paragraph on PJ_data_processors_host_vtable_t in
+  /// plugin_data_api.h; there is no ABI surface for the request yet). Each entry
+  /// in `typed_outputs` carries the type suffix "<name>:<type>" ("number",
+  /// "string", or a BuiltinObjectType name such as "kPointCloud"/"kSceneEntities")
+  /// the host needs to route a later on-demand evaluation without re-running the
+  /// script. Returns the resolved output identifiers 1:1 with `typed_outputs`:
+  /// the physical topic name for an object-typed output, the bare name for a
+  /// number/string output. Inputs MAY be dataset-qualified (see create()).
+  [[nodiscard]] Expected<std::vector<std::string>> createOnDemand(
+      std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> typed_outputs,
+      std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
+    return create(id, "on_demand", "luau", inputs, typed_outputs, script, params_json, flags);
   }
 
   /// Remove a previously created node by id (persistent or ephemeral preview).

@@ -3,6 +3,32 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [Unreleased]
+
+Host contract: unchanged (no floor impact).
+
+- Add compile-time field tables (`pj_base/builtin/field_table.hpp`) describing
+  the members of builtin object structs, so a generic binder (e.g. a script
+  engine) can read/write any described field by name without per-type glue
+  code. Per-type specializations live in `frame_transforms_fields.hpp`,
+  `image_annotations_fields.hpp`, `point_cloud_fields.hpp`, and
+  `scene_entities_fields.hpp`; `field_table_registry.hpp` exposes
+  `describe(BuiltinObjectType)` to look one up from the runtime tag carried
+  by a `BuiltinObject`. `FrameTransforms`, `ImageAnnotations`, `PointCloud`,
+  and `SceneEntities` are tabled today (`kTabledTypeCount == 4`); `PointCloud`
+  exposes its packed-bytes `data` field through a `kBuffer` descriptor
+  (`buffer<>()`) resolving a `BufferLayout` view rather than a plain
+  get/set pair. Client-side only: no ABI or wire-format change.
+- Document the `kind="on_demand"` data-processor kind in
+  `PJ_data_processors_host_vtable_t`'s doc comment (`plugin_data_api.h`):
+  evaluated at a consumer-requested time rather than eagerly on every data
+  change; `outputs` entries carry a `"<name>:<type>"` suffix (`number`,
+  `string`, or a `BuiltinObjectType` name); `language` must be `"luau"`.
+  There is no ABI surface for the on-demand request itself yet — a
+  tail-appended `evaluate_data_processor_at` slot is a proposed future
+  addition. Add the matching `DataProcessorsHostView::createOnDemand`
+  convenience shim over `create()`, alongside `createTransform`/`createMarkers`.
+
 ## [0.34.1]
 
 - Fix a data race in `JobControl::armWatchdog`: the self-join guard read the
