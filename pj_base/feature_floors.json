@@ -14,6 +14,23 @@
     },
     "0.34.0": {
       "PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT": ""
+    },
+    "0.35.0": {
+      "PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT": "",
+      "PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW": "",
+      "attachTopic": "PJ_scene_view_host_vtable_t::attach_topic",
+      "catalogSnapshotV2": "PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2",
+      "closeView": "PJ_scene_view_host_vtable_t::close_view",
+      "configOf": "PJ_scene_view_host_vtable_t::view_config",
+      "createV2": "PJ_data_processors_host_vtable_t::create_data_processor_v2",
+      "createView": "PJ_scene_view_host_vtable_t::create_view",
+      "detachTopic": "PJ_scene_view_host_vtable_t::detach_topic",
+      "focusView": "PJ_scene_view_host_vtable_t::focus_view",
+      "listViews": "PJ_scene_view_host_vtable_t::list_view_ids",
+      "pj.scene_views.v1": "",
+      "pollEvaluation": "PJ_data_processors_host_vtable_t::poll_evaluation",
+      "releaseEvaluation": "PJ_data_processors_host_vtable_t::release_evaluation",
+      "submitEvaluation": "PJ_data_processors_host_vtable_t::submit_evaluation"
     }
   },
   "baseline": [

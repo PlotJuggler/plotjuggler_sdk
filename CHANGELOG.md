@@ -3,9 +3,9 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [Unreleased]
+## [0.35.0]
 
-Host contract: extended: (surfaces listed at the end of phase 0)
+Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.scene_views.v1 (PJ_scene_view_host_vtable_t), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.35.0)
 
 - Add compile-time field tables (`pj_base/builtin/field_table.hpp`) describing
   the members of builtin object structs, so a generic binder (e.g. a script
@@ -19,15 +19,42 @@ Host contract: extended: (surfaces listed at the end of phase 0)
   exposes its packed-bytes `data` field through a `kBuffer` descriptor
   (`buffer<>()`) resolving a `BufferLayout` view rather than a plain
   get/set pair. Client-side only: no ABI or wire-format change.
-- Document the `kind="on_demand"` data-processor kind in
-  `PJ_data_processors_host_vtable_t`'s doc comment (`plugin_data_api.h`):
-  evaluated at a consumer-requested time rather than eagerly on every data
-  change; `outputs` entries carry a `"<name>:<type>"` suffix (`number`,
-  `string`, or a `BuiltinObjectType` name); `language` must be `"luau"`.
-  There is no ABI surface for the on-demand request itself yet — a
-  tail-appended `evaluate_data_processor_at` slot is a proposed future
-  addition. Add the matching `DataProcessorsHostView::createOnDemand`
-  convenience shim over `create()`, alongside `createTransform`/`createMarkers`.
+- Add catalog snapshot v2: `PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2`
+  (`ToolboxHostView::catalogSnapshotV2`) returns a second, ABI-VERSIONED
+  snapshot struct (`PJ_catalog_snapshot_v2_t`) carrying the scalar catalog of
+  `acquire_catalog_snapshot` PLUS every object topic — dataset, builtin type,
+  entry count, raw time range (`PJ_object_topic_info_t`). A new struct rather
+  than a tail-append, because object topics are an ARRAY ELEMENT with a FIXED
+  STRIDE: a field that cannot be zero-defaulted needs a new struct + slot,
+  never a layout change to an existing one.
+- Add the typed data-processor request vocabulary (`PJ_data_processor_request_t`,
+  `PJ_data_processor_output_t`, `PJ_evaluation_budget_t`) and
+  `PJ_data_processors_host_vtable_t::create_data_processor_v2`
+  (`DataProcessorsHostView::createV2`): typed outputs, a human-readable label,
+  and — with `PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT` — a pinned evaluation time
+  for an on_demand finding. This is the ABI surface the `kind="on_demand"`
+  doc-comment on `PJ_data_processors_host_vtable_t` previously described as
+  not existing yet; `create_data_processor` (v1) stays valid for the
+  `"<name>:<type>"` output-suffix grammar.
+- Add asynchronous on_demand evaluation: `submit_evaluation`/`poll_evaluation`/
+  `release_evaluation` (`DataProcessorsHostView::submitEvaluation`/
+  `pollEvaluation`/`releaseEvaluation`), gated by the new
+  `PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW`/`PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT`
+  bits. A submitted evaluation returns a handle; a host may complete the work
+  before returning or in the background, and `poll_evaluation` is the only way
+  to read the result either way, as a JSON report
+  (`{"coverage":{...},"bundles":[...]}` — one bundle per requested instant, one
+  entry per output, `*_ns` values as raw int64 dataset nanoseconds).
+- Add the `pj.scene_views.v1` service (`PJ_scene_view_host_vtable_t`,
+  `SceneViewHostView`): lets a plugin compose 3D/2D scene views of its own —
+  create (upsert by id), attach/detach object topics, read back what a view
+  actually holds as JSON, focus, close — scoped by the host to the calling
+  plugin the same way `pj.plot_tabs.v1` scopes plotting tabs.
+- Add the `pj_snapshot` object-topic metadata key
+  (`ObjectTopicMetadataBuilder::snapshot`): marks a SceneEntities/
+  ImageAnnotations topic whose every entry is a complete clear-and-replace
+  snapshot, so a stateless consumer may render each entry alone without
+  replaying the topic's history.
 
 ## [0.34.1]
 

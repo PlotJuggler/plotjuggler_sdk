@@ -1,5 +1,7 @@
 PJ_DATA_PROCESSOR_FLAG_EPHEMERAL
 PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT
+PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT
+PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW
 PJ_DESCRIPTOR_IMPORT_START_FLAGS_V1_MASK
 PJ_DESCRIPTOR_IMPORT_START_FLAG_NONE
 PJ_INGEST_COMPLETION_FLAGS_V1_MASK
@@ -11,9 +13,13 @@ PJ_PARSER_ROUTE_FLAG_SCALAR_V1
 PJ_colormap_registry_vtable_t::register_map
 PJ_colormap_registry_vtable_t::unregister_map
 PJ_data_processors_host_vtable_t::create_data_processor
+PJ_data_processors_host_vtable_t::create_data_processor_v2
 PJ_data_processors_host_vtable_t::data_processor_config
 PJ_data_processors_host_vtable_t::list_data_processor_ids
+PJ_data_processors_host_vtable_t::poll_evaluation
+PJ_data_processors_host_vtable_t::release_evaluation
 PJ_data_processors_host_vtable_t::remove_data_processor
+PJ_data_processors_host_vtable_t::submit_evaluation
 PJ_data_processors_host_vtable_t::validate_data_processor_script
 PJ_data_source_runtime_host_vtable_t::attach_source_record
 PJ_data_source_runtime_host_vtable_t::complete_ingest
@@ -64,6 +70,13 @@ PJ_plot_tab_host_vtable_t::create_tab
 PJ_plot_tab_host_vtable_t::list_tab_ids
 PJ_plot_tab_host_vtable_t::remove_curve
 PJ_plot_tab_host_vtable_t::tab_config
+PJ_scene_view_host_vtable_t::attach_topic
+PJ_scene_view_host_vtable_t::close_view
+PJ_scene_view_host_vtable_t::create_view
+PJ_scene_view_host_vtable_t::detach_topic
+PJ_scene_view_host_vtable_t::focus_view
+PJ_scene_view_host_vtable_t::list_view_ids
+PJ_scene_view_host_vtable_t::view_config
 PJ_service_registry_vtable_t::get_service
 PJ_settings_store_vtable_t::contains
 PJ_settings_store_vtable_t::get_string
@@ -78,6 +91,7 @@ PJ_source_write_host_vtable_t::append_record
 PJ_source_write_host_vtable_t::ensure_field
 PJ_source_write_host_vtable_t::ensure_topic
 PJ_toolbox_host_vtable_t::acquire_catalog_snapshot
+PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2
 PJ_toolbox_host_vtable_t::append_arrow_stream
 PJ_toolbox_host_vtable_t::append_bound_record
 PJ_toolbox_host_vtable_t::append_record
@@ -104,6 +118,7 @@ pj.parser_write.v1
 pj.playback.v1
 pj.plot_tabs.v1
 pj.runtime.v1
+pj.scene_views.v1
 pj.settings.v1
 pj.source_object_write.v1
 pj.source_promotion.v1

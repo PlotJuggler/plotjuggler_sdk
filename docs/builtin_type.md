@@ -699,6 +699,18 @@ the struct's own `operator==` and its canonical wire-codec bytes, so a member
 the table forgot to list shows up as a round-trip mismatch rather than a
 silent gap.
 
+An object topic carrying a field-tabled type can mark itself with the
+`pj_snapshot` object-topic metadata key (`PJ::sdk::kSnapshotMetadataKey`,
+`ObjectTopicMetadataBuilder::snapshot()`, SDK 0.35.0). Value `"true"` means
+every entry on the topic is a complete clear-and-replace snapshot — a
+generic field-table consumer may render each entry alone, without replaying
+the topic's history to reconstruct state first. This matters for
+SceneEntities/ImageAnnotations producers in particular, whose entries can
+otherwise be incremental (add/update/delete deltas); a producer that instead
+republishes its whole set each time sets this flag so a stateless consumer
+(and `set_object_topic_retention(topic, 1)`, which keeps only the latest
+snapshot) can treat each entry as the full picture.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |

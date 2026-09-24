@@ -200,6 +200,7 @@ data store.
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
+| `catalogSnapshotV2()` (0.35.0) | Like `catalogSnapshot()`, plus every object topic (`objectTopics()`) with its dataset, builtin type, entry count and raw time range, in one deep copy. |
 | `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
 | `registerObjectTopic(source, name, type[, extra_metadata])` | Register a built-in media/object topic under a data source. The typed overload emits the canonical `builtin_object_type` renderer metadata and returns an `ObjectTopicHandle`. |
 | `registerObjectTopic(source, name, metadata_json)` | Raw-metadata overload for custom or untyped object topics. The store retains the JSON verbatim. |
@@ -214,7 +215,7 @@ Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 | `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
 | `notifyDataChanged()` | Tell the host that data was modified; refresh UI. Idempotent and cheap; coalesce per logical operation, not per record. |
 
-### Playback, viewport, and owned tabs (SDK 0.28.0)
+### Playback, viewport, owned tabs, and scene views (SDK 0.28.0; scene views 0.35.0)
 
 Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
 
@@ -223,6 +224,7 @@ Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
 | `PJ::sdk::PlaybackHostService` | `play`, `pause`, `seek`, `setPlaybackRate`, `state`: the global playback cursor. `toDisplayTime` and `toDisplayTimeForSource` convert absolute nanoseconds to display-axis seconds. |
 | `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. |
 | `PJ::sdk::ViewportHostService` | `zoomToTimeRange`, `zoomReset`: all eligible plots in the calling plugin's tabs. |
+| `PJ::sdk::SceneViewHostService` (`pj.scene_views.v1`, 0.35.0) | `createView(id, kind, title)`, `closeView`, `list`, `configOf`, `attachTopic(id, topic, dataset_source)`, `detachTopic`, `focusView`: only the calling plugin's 3D/2D scene views. `kind` is `"3d"` or `"2d"`; re-creating an id with a different kind closes and recreates it empty. `configOf` reports what a view actually holds as JSON (topics with dataset, type, visibility). |
 
 All calls run on the main thread. Services are optional. Check acquisition
 and each operation's result. A host offering viewport control also offers
@@ -289,6 +291,33 @@ Colons can occur in both parts: `(a, b:/t/f)` and `(a:b, /t/f)` compose identica
 and with both sources loaded the parser chooses `a:b`. Composition round-trips
 only when the intended source is the longest matching prefix. Do not treat this
 string as a persistent dataset identity. Hosts still validate the split result.
+
+### Typed requests and on-demand evaluation (SDK 0.35.0)
+
+`DataProcessorsHostView::createV2(request)` upserts a `kind="on_demand"` node like
+`createOnDemand`, but the request is typed (`DataProcessorRequest`): outputs carry
+a `DataProcessorOutput{name, type}` pair instead of a `"<name>:<type>"` string
+suffix, plus an optional human-readable `label` and, with `instant_ns` set, a
+pinned evaluation time. `create_data_processor` (v1) remains valid for the
+untyped suffix grammar.
+
+`submitEvaluation(request, budget)` starts an evaluation and returns a handle.
+`request.id` naming an installed on_demand node with an empty `script` evaluates
+that node; a non-empty `script` is an ephemeral recipe (`flags` must carry
+`PJ_DATA_PROCESSOR_FLAG_EPHEMERAL`) evaluated without installing or publishing
+anything. `request.instant_ns` asks for one bundle at that instant;
+`request.window` asks for one bundle per instant an input changes inside the
+window, in time order, until the `EvaluationBudget` (`max_millis`, `max_bytes`,
+`max_evaluations`, `max_report_bytes`; 0 = host default) stops it.
+
+`pollEvaluation(handle)` is the only way to read the result, whether the host
+completed the work before returning or in the background: on `kCompleted` its
+`json` is `{"coverage":{...},"bundles":[...]}` (one bundle for INSTANT, one per
+evaluated instant for WINDOW; every `*_ns` value is a raw dataset nanosecond
+count as a JSON integer). On `kFailed` it is `{"error":"..."}`. Handles are per
+host object, increasing, never reused. `releaseEvaluation(handle)` cancels a
+pending evaluation and frees its result; releasing an unknown or already-released
+handle is an error.
 
 ### Reading a series via Arrow
 

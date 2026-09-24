@@ -226,6 +226,19 @@ struct PlotTabHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// "pj.scene_views.v1" — compose 3D/2D scene views of the plugin's own: create,
+/// attach and detach object topics, read back what they hold, close. Scoped by
+/// the host to this plugin's views, the same discipline as "pj.plot_tabs.v1".
+/// Hosts with no scene workspace (headless) simply do not register it.
+struct SceneViewHostService {
+  static constexpr const char* kName = "pj.scene_views.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_scene_view_host_t;
+  using Vtable = PJ_scene_view_host_vtable_t;
+  using View = SceneViewHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Optional QSettings-like key/value persistence exposed to any plugin family.
 /// Host-backed (QSettings in the GUI app, JSON in a headless host); keys are
 /// namespaced per plugin by the host.
