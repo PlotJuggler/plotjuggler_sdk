@@ -318,6 +318,24 @@ static_assert(
     "toolbox host object-retention tail slot pinned");
 static_assert(sizeof(PJ_toolbox_host_vtable_t) == 104, "Toolbox host size (update deliberately on append)");
 
+// --- Data processors host vtable ("pj.data_processors.v1", ABI-APPENDABLE) --
+static_assert(offsetof(PJ_data_processors_host_vtable_t, protocol_version) == 0, "data processors host prefix pinned");
+static_assert(offsetof(PJ_data_processors_host_vtable_t, struct_size) == 4, "data processors host prefix pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, create_data_processor) == 8, "data processors host create slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, remove_data_processor) == 16, "data processors host remove slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, list_data_processor_ids) == 24, "data processors host list slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, data_processor_config) == 32, "data processors host config slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, validate_data_processor_script) == 40,
+    "data processors host validate tail slot pinned");
+static_assert(
+    sizeof(PJ_data_processors_host_vtable_t) == 48, "Data processors host size (update deliberately on append)");
+static_assert(sizeof(PJ_data_processors_host_t) == 16, "Data processors host fat pointer pinned");
+
 // --- Toolbox runtime host vtable (ABI-APPENDABLE within v4) ------------------
 // The vtable the host exposes to plugins under "pj.toolbox_runtime.v1".
 // Offsets of existing slots are pinned; size grows deliberately as tail slots append.

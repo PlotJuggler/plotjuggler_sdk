@@ -5,7 +5,7 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [Unreleased]
 
-Host contract: unchanged (no floor impact).
+Host contract: extended: (surfaces listed at the end of phase 0)
 
 - Add compile-time field tables (`pj_base/builtin/field_table.hpp`) describing
   the members of builtin object structs, so a generic binder (e.g. a script
