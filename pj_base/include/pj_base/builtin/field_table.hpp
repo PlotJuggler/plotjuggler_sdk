@@ -29,9 +29,11 @@
 
 #pragma once
 
+#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -53,9 +55,15 @@ enum class FieldKind : uint8_t {
   kString,  ///< `std::string` member.
   kEnum,    ///< `enum`/`enum class` member — read/written as its underlying integer via `double`.
   kStruct,  ///< Member whose type has its own `FieldTable` specialization; see `nested`.
-  kList,    ///< `std::vector<E>` member; see `element_kind`/`nested` for the element shape.
+  kList,    ///< `std::vector<E>` (growable; see `list_emplace`/`list_clear`) or `std::array<E, N>`
+            ///< (fixed-size; see `list_replace`) member; see `element_kind`/`nested` for the element shape.
   kBuffer,  ///< Raw record buffer (e.g. `PointCloud::data`), resolved through `BufferLayout`. A concrete
             ///< describable type provides its own `kBuffer` descriptor factory (see `BufferLayout`'s doc comment).
+  kOptionalNumber,  ///< `std::optional<Arithmetic>` member (e.g. `Image::compressed_depth_min`) — a
+                    ///< nullable number. Presence is read through `has_value()`; the value itself, when
+                    ///< present, is read/written as `double` through `get_number`/`set_number`, exactly
+                    ///< like `kNumber`. Calling `get_number`/`set_number` when absent is only meaningful
+                    ///< after a caller has checked `has_value()`; `set_number` also makes the field present.
 };
 
 /// Resolved view of a `kBuffer` field: a byte-packed record buffer plus a
@@ -119,9 +127,15 @@ struct FieldDescriptor {
   /// For `kind == kList`: the element type's table, or `nullptr` for a scalar list.
   const struct FieldTableView* nested = nullptr;
 
-  /// Read/write a `kNumber`, `kBool`, or `kEnum` field as `double`.
+  /// Read/write a `kNumber`, `kBool`, `kEnum`, or `kOptionalNumber` field as
+  /// `double`. For `kOptionalNumber`, meaningful only when `has_value()` is
+  /// true; `set_number` also makes the field present.
   double (*get_number)(const void*) = nullptr;
   void (*set_number)(void*, double) = nullptr;
+
+  /// For `kind == kOptionalNumber`: true iff the field currently holds a
+  /// value. `nullptr` for every other `kind`.
+  bool (*has_value)(const void*) = nullptr;
 
   /// Read/write a `kInt64` field. An underlying `uint64_t` round-trips through
   /// `int64_t` via `std::bit_cast` (same 8 bytes, reinterpreted) rather than a
@@ -137,12 +151,28 @@ struct FieldDescriptor {
   const void* (*struct_ptr)(const void*) = nullptr;
   void* (*struct_ptr_mut)(void*) = nullptr;
 
-  /// For `kind == kList`: element count, element address, append-one
-  /// (returns the address of the newly appended element), and truncate-to-empty.
+  /// For `kind == kList`: element count and element address — populated for
+  /// both a growable list (`std::vector<E>`) and a fixed-size one
+  /// (`std::array<E, N>`).
   size_t (*list_size)(const void*) = nullptr;
   const void* (*list_at)(const void*, size_t) = nullptr;
+
+  /// For `kind == kList` backed by a growable `std::vector<E>`: append-one
+  /// (returns the address of the newly appended element) and
+  /// truncate-to-empty. `nullptr` for a fixed-size list — use `list_replace`
+  /// instead.
   void* (*list_emplace)(void*) = nullptr;
   void (*list_clear)(void*) = nullptr;
+
+  /// For `kind == kList` backed by a fixed-size `std::array<E, N>` (e.g.
+  /// `CameraInfo::K`): overwrites element `i` in place and returns its
+  /// address, `i` in `[0, list_size)`. `nullptr` for a growable list — use
+  /// `list_emplace`/`list_clear` instead. The element count never changes
+  /// for such a field, so "append" and "truncate" don't apply; a generic
+  /// consumer branches on which of the two accessor pairs is non-null to
+  /// choose how to write the list (see `field_table_test.cpp`'s
+  /// `copyThroughTable` for the pattern).
+  void* (*list_replace)(void*, size_t) = nullptr;
 
   /// For `kind == kBuffer`: resolve the current buffer, or replace it
   /// (taking ownership of the bytes and re-anchoring them). See
@@ -193,6 +223,23 @@ template <class E, class A>
 struct IsVector<std::vector<E, A>> : std::true_type {};
 template <class T>
 inline constexpr bool kIsVector = IsVector<T>::value;
+
+/// Detects `std::array<E, N>` (any `E`, any `N`), for `field<>()`'s
+/// fixed-size-list branch (e.g. `CameraInfo::K`).
+template <class T>
+struct IsArray : std::false_type {};
+template <class E, std::size_t N>
+struct IsArray<std::array<E, N>> : std::true_type {};
+template <class T>
+inline constexpr bool kIsArray = IsArray<T>::value;
+
+/// Detects `std::optional<E>`, for `field<>()`'s `kOptionalNumber` branch.
+template <class T>
+struct IsOptional : std::false_type {};
+template <class E>
+struct IsOptional<std::optional<E>> : std::true_type {};
+template <class T>
+inline constexpr bool kIsOptional = IsOptional<T>::value;
 
 /// Always-false, but dependent on `T` — lets a `static_assert` inside the
 /// final branch of an `if constexpr` chain fire only when instantiated,
@@ -305,13 +352,22 @@ concept HasFieldTable = detail::kHasFieldTableImpl<T>;
 ///     other arithmetic -> kNumber; `enum`/`enum class` -> kEnum;
 ///     `std::string` -> kString.
 ///   - a class type `M` with `HasFieldTable<M>` -> kStruct.
-///   - `std::vector<E>` -> kList, with `nested`/`element_kind` set from `E`
-///     the same way (kStruct + nested table when `HasFieldTable<E>`,
-///     otherwise the scalar `FieldKind` of `E`). For a scalar `E`, the
-///     matching get_*/set_* pair is ALSO populated, but operating on an
-///     ELEMENT address (as returned by `list_at`/`list_emplace`), not on
-///     `owner->*Member` — the same accessor a struct field of kind `E`
-///     would carry, repurposed for the list's element type.
+///   - `std::vector<E>` -> kList (growable; see `list_emplace`/`list_clear`),
+///     with `nested`/`element_kind` set from `E` the same way (kStruct +
+///     nested table when `HasFieldTable<E>`, otherwise the scalar
+///     `FieldKind` of `E`). For a scalar `E`, the matching get_*/set_* pair
+///     is ALSO populated, but operating on an ELEMENT address (as returned
+///     by `list_at`/`list_emplace`), not on `owner->*Member` — the same
+///     accessor a struct field of kind `E` would carry, repurposed for the
+///     list's element type.
+///   - `std::array<E, N>` -> kList (fixed-size; see `list_replace`), `E`
+///     restricted to a scalar (no struct-element fixed arrays today). Reads
+///     the same way as a `std::vector<E>` list (`list_size`/`list_at`); the
+///     element count never changes, so writes go through `list_replace`
+///     instead of `list_emplace`/`list_clear`.
+///   - `std::optional<E>` (`E` a non-bool arithmetic type) -> kOptionalNumber,
+///     a nullable number: `has_value()` reports presence, `get_number`/
+///     `set_number` read/write the value like `kNumber` when present.
 /// Any other member type fails to compile with a `static_assert`.
 template <auto Member>
 constexpr FieldDescriptor field(std::string_view name) {
@@ -350,6 +406,28 @@ constexpr FieldDescriptor field(std::string_view name) {
     } else {
       static_assert(detail::kAlwaysFalse<Element>, "field<Member>: unsupported std::vector element type");
     }
+  } else if constexpr (detail::kIsArray<Value>) {
+    using Element = typename Value::value_type;
+    static_assert(detail::kIsSupportedScalar<Element>, "field<Member>: unsupported std::array element type");
+    constexpr size_t kSize = std::tuple_size_v<Value>;
+    d.kind = FieldKind::kList;
+    d.list_size = [](const void*) -> size_t { return kSize; };
+    d.list_at = [](const void* p, size_t i) -> const void* { return &(static_cast<const Owner*>(p)->*Member)[i]; };
+    d.list_replace = [](void* p, size_t i) -> void* { return &(static_cast<Owner*>(p)->*Member)[i]; };
+    // Same scalar accessor pair a std::vector<Element> list would carry
+    // (see field<>()'s std::vector branch), operating on an element address.
+    d.element_kind = detail::setScalarAccessors<Element, detail::DirectValueAccess<Element>>(d);
+  } else if constexpr (detail::kIsOptional<Value>) {
+    using Inner = typename Value::value_type;
+    static_assert(
+        std::is_arithmetic_v<Inner> && !std::is_same_v<Inner, bool>,
+        "field<Member>: unsupported std::optional value type (must be non-bool arithmetic)");
+    d.kind = FieldKind::kOptionalNumber;
+    d.has_value = [](const void* p) -> bool { return (static_cast<const Owner*>(p)->*Member).has_value(); };
+    d.get_number = [](const void* p) -> double {
+      return static_cast<double>(*(static_cast<const Owner*>(p)->*Member));
+    };
+    d.set_number = [](void* p, double v) { (static_cast<Owner*>(p)->*Member) = static_cast<Inner>(v); };
   } else if constexpr (HasFieldTable<Value>) {
     d.kind = FieldKind::kStruct;
     d.nested = &FieldTable<Value>::view;
@@ -358,7 +436,7 @@ constexpr FieldDescriptor field(std::string_view name) {
   } else {
     static_assert(
         detail::kAlwaysFalse<Value>,
-        "field<Member>: unsupported member type (no FieldTable<T> and not a recognized scalar/vector)");
+        "field<Member>: unsupported member type (no FieldTable<T> and not a recognized scalar/vector/array/optional)");
   }
 
   return d;

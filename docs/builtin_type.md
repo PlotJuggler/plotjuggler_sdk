@@ -687,11 +687,23 @@ with one generic recursive routine. `field_table_registry.hpp` exposes
 `describe(BuiltinObjectType)` to look up a table from the runtime tag a
 `BuiltinObject` carries.
 
-`FrameTransforms`, `ImageAnnotations`, `PointCloud`, and `SceneEntities` are
-tabled today (`frame_transforms_fields.hpp`, `image_annotations_fields.hpp`,
-`point_cloud_fields.hpp`, `scene_entities_fields.hpp`; `kTabledTypeCount == 4`
-in `field_table_registry.hpp`). A field table is hand-maintained alongside its
-struct: adding, renaming, or retyping a member requires updating the matching
+`FrameTransforms`, `ImageAnnotations`, `PointCloud`, `SceneEntities`, `Image`,
+`DepthImage`, `CameraInfo`, and `VideoFrame` are tabled today
+(`frame_transforms_fields.hpp`, `image_annotations_fields.hpp`,
+`point_cloud_fields.hpp`, `scene_entities_fields.hpp`, `image_fields.hpp`,
+`depth_image_fields.hpp`, `camera_info_fields.hpp`, `video_frame_fields.hpp`;
+`kTabledTypeCount == 8` in `field_table_registry.hpp`). `Image::data`,
+`DepthImage::data`, and `VideoFrame::data` each expose their packed pixel /
+bitstream bytes through a `kBuffer` descriptor the same way `PointCloud::data`
+does, with the per-record layout derived from the encoding/format string
+rather than a channel list (see each header's doc comment for how a raw vs.
+compressed encoding differs). `CameraInfo`'s `K`/`R`/`P` (and `DepthImage`'s
+`K`) are `std::array<double, N>` members, described as a fixed-size `kList`
+written through `list_replace` rather than `list_emplace`/`list_clear` (the
+element count never changes); `Image::compressed_depth_min`/
+`compressed_depth_max` are `kOptionalNumber` — a nullable number read/written
+like `kNumber` but guarded by `has_value()`. A field table is hand-maintained
+alongside its struct: adding, renaming, or retyping a member requires updating the matching
 `FieldTable<T>` specialization in the same change, or the table silently
 drifts from the struct it claims to describe. `pj_base/tests/field_table_test.cpp`
 enforces this — its generic copy-through-table round trip is compared against

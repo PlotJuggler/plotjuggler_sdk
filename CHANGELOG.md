@@ -19,6 +19,24 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
   exposes its packed-bytes `data` field through a `kBuffer` descriptor
   (`buffer<>()`) resolving a `BufferLayout` view rather than a plain
   get/set pair. Client-side only: no ABI or wire-format change.
+- Add field tables for `Image`, `DepthImage`, `CameraInfo`, and `VideoFrame`
+  (`image_fields.hpp`, `depth_image_fields.hpp`, `camera_info_fields.hpp`,
+  `video_frame_fields.hpp`); `describe(BuiltinObjectType)` now covers 8
+  types. `Image::data`/`DepthImage::data`/`VideoFrame::data` each get a
+  `kBuffer` descriptor whose layout is derived from the encoding/format
+  string: a raw `Image` encoding (e.g. "rgb8") or a recognized `DepthImage`
+  encoding ("16UC1"/"32FC1") resolves a static per-pixel `record_step`;
+  a compressed encoding or a `VideoFrame`'s codec bitstream has none, so
+  `record_step`/`record_count` are 0 and the encoding/format string still
+  comes through the buffer's sole channel name. `FieldKind` gains two new
+  cases to describe these structs honestly rather than faking them:
+  `kOptionalNumber` (a nullable number, `has_value()` + `get_number`/
+  `set_number`, for `Image::compressed_depth_min`/`compressed_depth_max`)
+  and a fixed-size `kList` (for a `std::array<double, N>` member — e.g.
+  `CameraInfo::K`/`R`/`P`, `DepthImage::K` — written through the new
+  `list_replace` accessor instead of `list_emplace`/`list_clear`, since the
+  element count never changes). Client-side only: no ABI or wire-format
+  change.
 - Add catalog snapshot v2: `PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2`
   (`ToolboxHostView::catalogSnapshotV2`) returns a second, ABI-VERSIONED
   snapshot struct (`PJ_catalog_snapshot_v2_t`) carrying the scalar catalog of

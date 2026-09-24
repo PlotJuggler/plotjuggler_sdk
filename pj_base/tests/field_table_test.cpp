@@ -14,11 +14,15 @@
 #include <vector>
 
 #include "pj_base/builtin/builtin_object_codec.hpp"
+#include "pj_base/builtin/camera_info_fields.hpp"
+#include "pj_base/builtin/depth_image_fields.hpp"
 #include "pj_base/builtin/field_table_registry.hpp"
 #include "pj_base/builtin/frame_transforms_fields.hpp"
 #include "pj_base/builtin/image_annotations_fields.hpp"
+#include "pj_base/builtin/image_fields.hpp"
 #include "pj_base/builtin/point_cloud_fields.hpp"
 #include "pj_base/builtin/scene_entities_fields.hpp"
+#include "pj_base/builtin/video_frame_fields.hpp"
 
 namespace {
 
@@ -27,15 +31,18 @@ using PJ::sdk::ArrowPrimitive;
 using PJ::sdk::AxesPrimitive;
 using PJ::sdk::BufferLayout;
 using PJ::sdk::BuiltinObjectType;
+using PJ::sdk::CameraInfo;
 using PJ::sdk::CircleAnnotation;
 using PJ::sdk::CubePrimitive;
 using PJ::sdk::CylinderPrimitive;
+using PJ::sdk::DepthImage;
 using PJ::sdk::FieldDescriptor;
 using PJ::sdk::FieldKind;
 using PJ::sdk::FieldTable;
 using PJ::sdk::FieldTableView;
 using PJ::sdk::FrameTransform;
 using PJ::sdk::FrameTransforms;
+using PJ::sdk::Image;
 using PJ::sdk::ImageAnnotations;
 using PJ::sdk::KeyValuePair;
 using PJ::sdk::LinePrimitive;
@@ -53,6 +60,7 @@ using PJ::sdk::TextAnnotation;
 using PJ::sdk::TextPrimitive;
 using PJ::sdk::TrianglePrimitive;
 using PJ::sdk::Vector2;
+using PJ::sdk::VideoFrame;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -88,8 +96,12 @@ void collectTables(
 // binder would use. A kList field either holds structs (nested != nullptr,
 // recurse into the nested table) or scalars (nested == nullptr; copy via the
 // get_*/set_* pair matching element_kind, applied to the element address
-// returned by list_at/list_emplace). A kBuffer field resolves its current
-// bytes and re-assigns them onto dst, taking a fresh copy/anchor.
+// returned by list_at/list_emplace for a growable list, or list_replace for
+// a fixed-size one — see field_table.hpp's kList doc comment). A kBuffer
+// field resolves its current bytes and re-assigns them onto dst, taking a
+// fresh copy/anchor. A kOptionalNumber field copies the value only when
+// present, leaving a freshly-constructed dst's absent default untouched
+// otherwise.
 void copyThroughTable(const FieldTableView& table, const void* src, void* dst) {
   for (const auto& f : table.fields) {
     switch (f.kind) {
@@ -104,15 +116,25 @@ void copyThroughTable(const FieldTableView& table, const void* src, void* dst) {
       case FieldKind::kString:
         f.set_string(dst, f.get_string(src));
         break;
+      case FieldKind::kOptionalNumber:
+        if (f.has_value(src)) {
+          f.set_number(dst, f.get_number(src));
+        }
+        break;
       case FieldKind::kStruct:
         ASSERT_NE(f.nested, nullptr);
         copyThroughTable(*f.nested, f.struct_ptr(src), f.struct_ptr_mut(dst));
         break;
       case FieldKind::kList: {
-        f.list_clear(dst);
         const size_t n = f.list_size(src);
+        const bool fixed_size = f.list_replace != nullptr;
+        if (!fixed_size) {
+          f.list_clear(dst);
+        } else {
+          ASSERT_EQ(n, f.list_size(dst)) << "fixed-size list: src/dst element counts must match";
+        }
         for (size_t i = 0; i < n; ++i) {
-          void* dst_elem = f.list_emplace(dst);
+          void* dst_elem = fixed_size ? f.list_replace(dst, i) : f.list_emplace(dst);
           const void* src_elem = f.list_at(src, i);
           if (f.nested != nullptr) {
             copyThroughTable(*f.nested, src_elem, dst_elem);
@@ -351,6 +373,76 @@ PointCloud makeSamplePointCloudUnorganized() {
   return cloud;
 }
 
+// A 4x3 rgb8 image (36 bytes, no row padding), both optionals set even
+// though they are only semantically meaningful for "compressedDepth" — this
+// exercises the kOptionalNumber accessors on every populated fixture.
+Image makeSampleImage() {
+  Image image;
+  image.width = 4;
+  image.height = 3;
+  image.encoding = "rgb8";
+  image.row_step = 12;  // 4 * 3, no padding.
+  image.is_bigendian = false;
+  image.compressed_depth_min = 0.1f;
+  image.compressed_depth_max = 6.4f;
+  image.timestamp_ns = 1'234'567'890'123'456;
+  image.frame_id = "camera_optical_frame";
+
+  std::vector<uint8_t> bytes(static_cast<size_t>(image.row_step) * image.height);
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(i + 1);
+  }
+  const FieldDescriptor* data_field = findField(FieldTable<Image>::view, "data");
+  data_field->buffer_assign(&image, std::move(bytes));
+  return image;
+}
+
+// A 2x2 32FC1 depth image (16 bytes) with a populated K and a non-empty D.
+DepthImage makeSampleDepthImage() {
+  DepthImage image;
+  image.width = 2;
+  image.height = 2;
+  image.encoding = "32FC1";
+  image.K = {525.0, 0.0, 319.5, 0.0, 525.0, 239.5, 0.0, 0.0, 1.0};
+  image.distortion_model = "plumb_bob";
+  image.D = {0.1, -0.2, 0.001, -0.002, 0.05};
+  image.timestamp_ns = -42;
+
+  std::vector<uint8_t> bytes(static_cast<size_t>(image.width) * image.height * 4);
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(i + 1);
+  }
+  const FieldDescriptor* data_field = findField(FieldTable<DepthImage>::view, "data");
+  data_field->buffer_assign(&image, std::move(bytes));
+  return image;
+}
+
+CameraInfo makeSampleCameraInfo() {
+  CameraInfo info;
+  info.timestamp_ns = 9'007'199'254'740'993;  // > 2^53: would lose precision as a double.
+  info.frame_id = "camera_optical_frame";
+  info.width = 640;
+  info.height = 480;
+  info.distortion_model = "plumb_bob";
+  info.D = {0.1, -0.2, 0.001, -0.002, 0.05};
+  info.K = {525.0, 0.0, 319.5, 0.0, 525.0, 239.5, 0.0, 0.0, 1.0};
+  info.R = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+  info.P = {525.0, 0.0, 319.5, 0.0, 0.0, 525.0, 239.5, 0.0, 0.0, 0.0, 1.0, 0.0};
+  return info;
+}
+
+VideoFrame makeSampleVideoFrame() {
+  VideoFrame frame;
+  frame.timestamp_ns = 1'000'000'000'000'123;  // > 2^53.
+  frame.frame_id = "cam0";
+  frame.format = "h264";
+
+  std::vector<uint8_t> bytes = {0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E};
+  const FieldDescriptor* data_field = findField(FieldTable<VideoFrame>::view, "data");
+  data_field->buffer_assign(&frame, std::move(bytes));
+  return frame;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -358,10 +450,12 @@ PointCloud makeSamplePointCloudUnorganized() {
 TEST(FieldTableTest, NamesUniqueAndKindsConsistent) {
   // Explicit roots so every specialization is exercised even when a struct
   // (Vector2, Pose) is not reachable from any other root.
-  const std::array<const FieldTableView*, 6> roots{
+  const std::array<const FieldTableView*, 10> roots{
       &FieldTable<FrameTransforms>::view, &FieldTable<ImageAnnotations>::view,
       &FieldTable<Vector2>::view,         &FieldTable<Pose>::view,
       &FieldTable<PointCloud>::view,      &FieldTable<SceneEntities>::view,
+      &FieldTable<Image>::view,           &FieldTable<DepthImage>::view,
+      &FieldTable<CameraInfo>::view,      &FieldTable<VideoFrame>::view,
   };
 
   std::set<std::string_view> visited;
@@ -369,7 +463,7 @@ TEST(FieldTableTest, NamesUniqueAndKindsConsistent) {
   for (const auto* root : roots) {
     collectTables(*root, visited, tables);
   }
-  ASSERT_EQ(tables.size(), 28u) << "expected all 28 field_table specializations added through step 2";
+  ASSERT_EQ(tables.size(), 32u) << "expected all 32 field_table specializations added through SDK block 5.1";
 
   for (const auto* table : tables) {
     SCOPED_TRACE(table->type_name);
@@ -422,14 +516,34 @@ TEST(FieldTableTest, NamesUniqueAndKindsConsistent) {
           EXPECT_EQ(f.get_string, nullptr);
           EXPECT_EQ(f.list_size, nullptr);
           break;
+        case FieldKind::kOptionalNumber:
+          EXPECT_NE(f.has_value, nullptr);
+          EXPECT_NE(f.get_number, nullptr);
+          EXPECT_NE(f.set_number, nullptr);
+          EXPECT_EQ(f.get_int64, nullptr);
+          EXPECT_EQ(f.get_string, nullptr);
+          EXPECT_EQ(f.struct_ptr, nullptr);
+          EXPECT_EQ(f.nested, nullptr);
+          EXPECT_EQ(f.list_size, nullptr);
+          EXPECT_EQ(f.buffer, nullptr);
+          break;
         case FieldKind::kList:
           EXPECT_NE(f.list_size, nullptr);
           EXPECT_NE(f.list_at, nullptr);
-          EXPECT_NE(f.list_emplace, nullptr);
-          EXPECT_NE(f.list_clear, nullptr);
           EXPECT_EQ(f.struct_ptr, nullptr);
           EXPECT_EQ(f.struct_ptr_mut, nullptr);
           EXPECT_EQ(f.buffer, nullptr);
+          // Exactly one of the two write-accessor pairs is set: growable
+          // (list_emplace/list_clear, e.g. std::vector) or fixed-size
+          // (list_replace, e.g. std::array) — see field_table.hpp's kList
+          // doc comment.
+          if (f.list_replace != nullptr) {
+            EXPECT_EQ(f.list_emplace, nullptr);
+            EXPECT_EQ(f.list_clear, nullptr);
+          } else {
+            EXPECT_NE(f.list_emplace, nullptr);
+            EXPECT_NE(f.list_clear, nullptr);
+          }
           if (f.nested != nullptr) {
             // Struct-element list: nested table set, element_kind == kStruct,
             // no scalar accessor (the elements are read via `nested`, not get_*/set_*).
@@ -524,6 +638,172 @@ TEST(FieldTableTest, GenericCopyMatchesCodecRoundTrip) {
     ASSERT_TRUE(dst_bytes) << dst_bytes.error();
     EXPECT_EQ(*src_bytes, *dst_bytes);
   }
+}
+
+// Image has no operator== (its payload bytes only compare meaningfully
+// through the canonical wire codec, same as PointCloud), so compare
+// serialized bytes instead. Exercises kBuffer (data) and kOptionalNumber
+// (compressed_depth_min/max, both set on the fixture).
+TEST(FieldTableTest, ImageBufferAndOptionalRoundTrip) {
+  const Image src = makeSampleImage();
+  ASSERT_FALSE(src.data.empty());
+  ASSERT_TRUE(src.compressed_depth_min.has_value());
+  ASSERT_TRUE(src.compressed_depth_max.has_value());
+
+  Image dst;
+  copyThroughTable(FieldTable<Image>::view, &src, &dst);
+
+  const FieldDescriptor* min_field = findField(FieldTable<Image>::view, "compressed_depth_min");
+  ASSERT_NE(min_field, nullptr);
+  EXPECT_EQ(min_field->kind, FieldKind::kOptionalNumber);
+  EXPECT_TRUE(min_field->has_value(&dst));
+  EXPECT_FLOAT_EQ(static_cast<float>(min_field->get_number(&dst)), *src.compressed_depth_min);
+
+  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
+  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
+  ASSERT_TRUE(src_bytes) << src_bytes.error();
+  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
+  EXPECT_EQ(*src_bytes, *dst_bytes);
+}
+
+// An Image with both optionals absent (the common case: only
+// "compressedDepth" images carry them) must round-trip as absent too — a
+// freshly-constructed dst starts absent and copyThroughTable's
+// kOptionalNumber case only writes when has_value(src) is true.
+TEST(FieldTableTest, ImageOptionalAbsentRoundTrip) {
+  Image src = makeSampleImage();
+  src.compressed_depth_min.reset();
+  src.compressed_depth_max.reset();
+
+  Image dst;
+  copyThroughTable(FieldTable<Image>::view, &src, &dst);
+
+  const FieldDescriptor* min_field = findField(FieldTable<Image>::view, "compressed_depth_min");
+  ASSERT_NE(min_field, nullptr);
+  EXPECT_FALSE(min_field->has_value(&dst));
+
+  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
+  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
+  ASSERT_TRUE(src_bytes) << src_bytes.error();
+  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
+  EXPECT_EQ(*src_bytes, *dst_bytes);
+}
+
+// DepthImage has no operator== either; exercises kBuffer (data, derived
+// row_step/record_step) and the fixed-size kList (K, via list_replace).
+TEST(FieldTableTest, DepthImageFixedArrayAndBufferRoundTrip) {
+  const DepthImage src = makeSampleDepthImage();
+  ASSERT_FALSE(src.data.empty());
+  ASSERT_FALSE(src.D.empty());
+
+  const FieldDescriptor* k_field = findField(FieldTable<DepthImage>::view, "K");
+  ASSERT_NE(k_field, nullptr);
+  EXPECT_EQ(k_field->kind, FieldKind::kList);
+  EXPECT_NE(k_field->list_replace, nullptr);
+  EXPECT_EQ(k_field->list_emplace, nullptr);
+  EXPECT_EQ(k_field->list_size(&src), 9u);
+
+  DepthImage dst;
+  copyThroughTable(FieldTable<DepthImage>::view, &src, &dst);
+  EXPECT_EQ(dst.K, src.K);
+  EXPECT_EQ(dst.D, src.D);
+
+  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
+  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
+  ASSERT_TRUE(src_bytes) << src_bytes.error();
+  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
+  EXPECT_EQ(*src_bytes, *dst_bytes);
+}
+
+// CameraInfo has operator== (no byte blob), so both the value comparison and
+// the serialized-bytes comparison apply. Exercises the fixed-size kList
+// (K, R, P) alongside the ordinary growable list (D).
+TEST(FieldTableTest, CameraInfoFixedArrayRoundTrip) {
+  const CameraInfo src = makeSampleCameraInfo();
+  ASSERT_FALSE(src.D.empty());
+
+  const FieldDescriptor* r_field = findField(FieldTable<CameraInfo>::view, "R");
+  ASSERT_NE(r_field, nullptr);
+  EXPECT_EQ(r_field->list_size(&src), 9u);
+  const FieldDescriptor* p_field = findField(FieldTable<CameraInfo>::view, "P");
+  ASSERT_NE(p_field, nullptr);
+  EXPECT_EQ(p_field->list_size(&src), 12u);
+  const FieldDescriptor* d_field = findField(FieldTable<CameraInfo>::view, "D");
+  ASSERT_NE(d_field, nullptr);
+  EXPECT_NE(d_field->list_emplace, nullptr);  // D is growable (std::vector), unlike K/R/P.
+  EXPECT_EQ(d_field->list_replace, nullptr);
+
+  CameraInfo dst;
+  copyThroughTable(FieldTable<CameraInfo>::view, &src, &dst);
+  EXPECT_EQ(dst, src);
+
+  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
+  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
+  ASSERT_TRUE(src_bytes) << src_bytes.error();
+  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
+  EXPECT_EQ(*src_bytes, *dst_bytes);
+}
+
+// VideoFrame has no operator== either; exercises kBuffer for a format with
+// no static per-record size (record_step/record_count/row_step all 0).
+TEST(FieldTableTest, VideoFrameBufferRoundTrip) {
+  const VideoFrame src = makeSampleVideoFrame();
+  ASSERT_FALSE(src.data.empty());
+
+  const FieldDescriptor* data_field = findField(FieldTable<VideoFrame>::view, "data");
+  ASSERT_NE(data_field, nullptr);
+  const BufferLayout layout = data_field->buffer(&src);
+  EXPECT_EQ(layout.record_step, 0u);
+  EXPECT_EQ(layout.record_count, 0u);
+  EXPECT_EQ(layout.row_step, 0u);
+  ASSERT_EQ(layout.channels.size(), 1u);
+  EXPECT_EQ(layout.channels[0].name, "h264");
+
+  VideoFrame dst;
+  copyThroughTable(FieldTable<VideoFrame>::view, &src, &dst);
+
+  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
+  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
+  ASSERT_TRUE(src_bytes) << src_bytes.error();
+  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
+  EXPECT_EQ(*src_bytes, *dst_bytes);
+}
+
+// The buffer descriptor's layout for a raw, uncompressed encoding: a 4x3
+// rgb8 image (3 bytes/pixel, no row padding).
+TEST(FieldTableTest, ImageRgb8BufferLayout) {
+  const Image image = makeSampleImage();
+  ASSERT_EQ(image.width, 4u);
+  ASSERT_EQ(image.height, 3u);
+  ASSERT_EQ(image.encoding, "rgb8");
+
+  const FieldDescriptor* data_field = findField(FieldTable<Image>::view, "data");
+  ASSERT_NE(data_field, nullptr);
+  const BufferLayout layout = data_field->buffer(&image);
+  EXPECT_EQ(layout.record_step, 3u);    // 3 bytes/pixel.
+  EXPECT_EQ(layout.record_count, 12u);  // 4 * 3 pixels.
+  EXPECT_EQ(layout.row_step, 12u);      // 4 pixels * 3 bytes, no padding.
+  EXPECT_FALSE(layout.is_bigendian);
+  ASSERT_EQ(layout.channels.size(), 1u);
+  EXPECT_EQ(layout.channels[0].name, "rgb8");
+  EXPECT_EQ(layout.channels[0].count, 3u);
+}
+
+// A compressed encoding has no static per-pixel size: record_step and
+// record_count are 0, but the encoding string still comes through the sole
+// channel's name, and the full compressed payload is still in `bytes`.
+TEST(FieldTableTest, ImageCompressedBufferLayoutHasNoStaticRecordSize) {
+  Image image = makeSampleImage();
+  image.encoding = "jpeg";
+
+  const FieldDescriptor* data_field = findField(FieldTable<Image>::view, "data");
+  ASSERT_NE(data_field, nullptr);
+  const BufferLayout layout = data_field->buffer(&image);
+  EXPECT_EQ(layout.record_step, 0u);
+  EXPECT_EQ(layout.record_count, 0u);
+  EXPECT_FALSE(layout.bytes.empty());
+  ASSERT_EQ(layout.channels.size(), 1u);
+  EXPECT_EQ(layout.channels[0].name, "jpeg");
 }
 
 TEST(FieldTableTest, Int64FieldsAreNotNumbers) {
@@ -621,18 +901,18 @@ TEST(FieldTableTest, DescribeCoversExactlyTheTabledTypes) {
   EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kImageAnnotations), nullptr);
   EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kPointCloud), nullptr);
   EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kSceneEntities), nullptr);
+  EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kImage), nullptr);
+  EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kDepthImage), nullptr);
+  EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kCameraInfo), nullptr);
+  EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kVideoFrame), nullptr);
 
   // Every other stable BuiltinObjectType value (mirrors the array in
   // builtin_object_codec_test.cpp) must resolve to nullptr.
-  const std::array<BuiltinObjectType, 14> other_types{
-      BuiltinObjectType::kImage,
-      BuiltinObjectType::kDepthImage,
+  const std::array<BuiltinObjectType, 10> other_types{
       BuiltinObjectType::kOccupancyGrid,
       BuiltinObjectType::kCompressedPointCloud,
       BuiltinObjectType::kMesh3D,
-      BuiltinObjectType::kVideoFrame,
       BuiltinObjectType::kRobotDescription,
-      BuiltinObjectType::kCameraInfo,
       BuiltinObjectType::kOccupancyGridUpdate,
       BuiltinObjectType::kLog,
       BuiltinObjectType::kPosesInFrame,
