@@ -70,3 +70,18 @@ TEST(DepthImageCodecTest, RoundTripPlumbBobDistortion) {
 
 }  // namespace
 }  // namespace PJ
+
+#include "pj_base/builtin/depth_image_utils.hpp"
+
+TEST(DepthImageUtils, UnprojectsRectifiedMetricDepthAndRejectsInvalidIntrinsics) {
+  std::array<double, 9> k{2, 0, 1, 0, 4, 1, 0, 0, 1};
+  auto p = PJ::sdk::unprojectPixel(k, 3, 5, 2);
+  ASSERT_TRUE(p);
+  EXPECT_EQ(*p, (std::array<double, 3>{2, 2, 2}));
+  EXPECT_FALSE(PJ::sdk::unprojectPixel(k, 3, 5, 0));
+  k[0] = 0;
+  EXPECT_FALSE(PJ::sdk::unprojectPixel(k, 3, 5, 2));
+  k[0] = 2;
+  k[1] = 1;
+  EXPECT_FALSE(PJ::sdk::unprojectPixel(k, 3, 5, 2));
+}
