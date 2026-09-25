@@ -32,4 +32,8 @@ message ImageAnnotations {
   // Additional user-provided metadata associated with the image annotations. Keys must be unique within this object.
   // Per-annotation metadata takes precedence over these values.
   repeated PJ.KeyValuePair metadata = 4;
+
+  // Topic of the image these annotations were computed for. Runtime association carried on the wire so a derived
+  // or recorded annotations topic can be paired with its image.
+  string image_topic = 6;
 }
