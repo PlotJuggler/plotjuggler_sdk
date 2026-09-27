@@ -781,7 +781,14 @@ add_dependencies(plugin_catalog_test mock_data_source_plugin
 if(WIN32)
   add_dependencies(plugin_catalog_test entry_point_forwarder_plugin)
 endif()
-add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
+if(UNIX AND NOT APPLE)
+  add_test(NAME plugin_catalog_test
+    COMMAND "${CMAKE_COMMAND}"
+      "-DTEST_EXECUTABLE=$<TARGET_FILE:plugin_catalog_test>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_plugin_catalog_test.cmake")
+else()
+  add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
+endif()
 
 endif() # PJ_BUILD_TESTS
 

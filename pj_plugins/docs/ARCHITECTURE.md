@@ -512,6 +512,19 @@ Each family has a loader that:
 3. Validates `protocol_version` and `struct_size`.
 4. Stores the vtable pointer for creating handles.
 
+Dependency lookup follows the platform loader. On Windows, restricted
+`LoadLibraryExW` search flags exclude implicit CWD/PATH directories. On ELF,
+`dlopen` still honors explicit process configuration such as `LD_LIBRARY_PATH`:
+an empty component denotes CWD and can override a sibling dependency selected
+through `RUNPATH`. Absolute plugin paths and symbol ownership checks do not
+sandbox that environment. The application must start with a trusted loader
+environment when this distinction matters.
+
+The Linux catalog regression fixture tests implicit CWD/PATH search with real
+decoys. Its CTest launcher strips empty/relative `LD_LIBRARY_PATH` entries before
+starting the process, retaining absolute dependency directories; changing the
+variable after glibc has started would not change its cached lookup settings.
+
 | Family | Loader class | Load method |
 |---|---|---|
 | DataSource | `DataSourceLibrary` | `load(path) → Expected<DataSourceLibrary>` |
