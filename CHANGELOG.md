@@ -3,6 +3,15 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.35.0]
+
+Host contract: unchanged (no floor impact) — a client-side codec helper, no new
+host surface.
+
+- Add `deserializePointCloudView(data, size, anchor)`: decodes a canonical
+  PJ.PointCloud without copying its packed point bytes (`data` aliases the input,
+  `anchor` keeps it alive), like `deserializeVideoFrameView`. A null anchor copies.
+
 ## [0.34.1]
 
 - Fix a data race in `JobControl::armWatchdog`: the self-join guard read the
