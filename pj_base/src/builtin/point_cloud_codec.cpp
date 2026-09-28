@@ -28,11 +28,17 @@ using sdk::PointField;
 
 // ---------- PointCloud payload bytes ----------
 
-bool readBytesIntoCloud(Reader& reader, PointCloud& out) {
+// Points `out.data` into the input when `input_anchor` owns it, else copies.
+bool readBytesIntoCloud(Reader& reader, PointCloud& out, const sdk::BufferAnchor& input_anchor) {
   const uint8_t* data = nullptr;
   size_t size = 0;
   if (!reader.readBytes(data, size)) {
     return false;
+  }
+  if (input_anchor) {
+    out.data = Span<const uint8_t>(data, size);
+    out.anchor = input_anchor;
+    return true;
   }
   auto owned = std::make_shared<std::vector<uint8_t>>(data, data + size);
   out.data = Span<const uint8_t>(owned->data(), owned->size());
@@ -62,7 +68,9 @@ std::vector<uint8_t> serializePointCloud(const PointCloud& cloud) {
   return out;
 }
 
-Expected<sdk::PointCloud> deserializePointCloud(const uint8_t* data, size_t size) {
+namespace {
+
+Expected<sdk::PointCloud> decodePointCloud(const uint8_t* data, size_t size, const sdk::BufferAnchor& input_anchor) {
   if (data == nullptr || size == 0) {
     return unexpected(std::string("PointCloud wire: empty buffer"));
   }
@@ -143,7 +151,7 @@ Expected<sdk::PointCloud> deserializePointCloud(const uint8_t* data, size_t size
       case 8:
         return tag.type == WireType::kLengthDelimited && readPointFieldIntoVector(r, cloud.fields);
       case 9:
-        return tag.type == WireType::kLengthDelimited && readBytesIntoCloud(r, cloud);
+        return tag.type == WireType::kLengthDelimited && readBytesIntoCloud(r, cloud, input_anchor);
       case 10:
         return tag.type == WireType::kLengthDelimited && r.readString(cloud.frame_id);
       default:
@@ -156,6 +164,16 @@ Expected<sdk::PointCloud> deserializePointCloud(const uint8_t* data, size_t size
   }
 
   return cloud;
+}
+
+}  // namespace
+
+Expected<sdk::PointCloud> deserializePointCloud(const uint8_t* data, size_t size) {
+  return decodePointCloud(data, size, nullptr);
+}
+
+Expected<sdk::PointCloud> deserializePointCloudView(const uint8_t* data, size_t size, sdk::BufferAnchor anchor) {
+  return decodePointCloud(data, size, anchor);
 }
 
 }  // namespace PJ
