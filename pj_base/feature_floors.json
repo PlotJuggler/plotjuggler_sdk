@@ -15,7 +15,7 @@
     "0.34.0": {
       "PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT": ""
     },
-    "0.35.0": {
+    "0.36.0": {
       "PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT": "",
       "PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW": "",
       "attachTopic": "PJ_scene_view_host_vtable_t::attach_topic",

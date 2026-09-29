@@ -356,7 +356,7 @@ static_assert(sizeof(PJ_object_topic_info_t) == 96, "PJ_object_topic_info_t size
 static_assert(offsetof(PJ_object_topic_info_t, entry_count) == 56, "PJ_object_topic_info_t.entry_count offset pinned");
 static_assert(offsetof(PJ_object_topic_info_t, reserved) == 80, "PJ_object_topic_info_t.reserved offset pinned");
 
-static_assert(sizeof(PJ_catalog_snapshot_v2_t) == 88, "PJ_catalog_snapshot_v2_t size pinned at introduction (0.35.0)");
+static_assert(sizeof(PJ_catalog_snapshot_v2_t) == 88, "PJ_catalog_snapshot_v2_t size pinned at introduction (0.36.0)");
 static_assert(
     offsetof(PJ_catalog_snapshot_v2_t, struct_size) == 0, "PJ_catalog_snapshot_v2_t.struct_size offset pinned");
 static_assert(
@@ -368,13 +368,13 @@ static_assert(
     offsetof(PJ_catalog_snapshot_v2_t, release_ctx) == 72, "PJ_catalog_snapshot_v2_t.release_ctx offset pinned");
 static_assert(offsetof(PJ_catalog_snapshot_v2_t, release) == 80, "PJ_catalog_snapshot_v2_t.release offset pinned");
 
-// --- Data-processor typed request vocabulary (introduced 0.35.0) ------------
+// --- Data-processor typed request vocabulary (introduced 0.36.0) ------------
 static_assert(sizeof(PJ_data_processor_output_t) == 32, "PJ_data_processor_output_t size pinned (fixed stride)");
 static_assert(offsetof(PJ_data_processor_output_t, name) == 0, "PJ_data_processor_output_t.name offset pinned");
 static_assert(offsetof(PJ_data_processor_output_t, type) == 16, "PJ_data_processor_output_t.type offset pinned");
 
 static_assert(
-    sizeof(PJ_data_processor_request_t) == 168, "PJ_data_processor_request_t size pinned at introduction (0.35.0)");
+    sizeof(PJ_data_processor_request_t) == 168, "PJ_data_processor_request_t size pinned at introduction (0.36.0)");
 static_assert(
     offsetof(PJ_data_processor_request_t, struct_size) == 0, "PJ_data_processor_request_t.struct_size offset pinned");
 static_assert(offsetof(PJ_data_processor_request_t, inputs) == 104, "PJ_data_processor_request_t.inputs offset pinned");
@@ -386,7 +386,7 @@ static_assert(
 static_assert(
     offsetof(PJ_data_processor_request_t, time_ns) == 160, "PJ_data_processor_request_t.time_ns offset pinned");
 
-static_assert(sizeof(PJ_evaluation_budget_t) == 40, "PJ_evaluation_budget_t size pinned at introduction (0.35.0)");
+static_assert(sizeof(PJ_evaluation_budget_t) == 40, "PJ_evaluation_budget_t size pinned at introduction (0.36.0)");
 static_assert(offsetof(PJ_evaluation_budget_t, struct_size) == 0, "PJ_evaluation_budget_t.struct_size offset pinned");
 static_assert(
     offsetof(PJ_evaluation_budget_t, max_report_bytes) == 32, "PJ_evaluation_budget_t.max_report_bytes offset pinned");

@@ -3,9 +3,12 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.35.0]
+## [0.36.0] — experimental, unreleased
 
-Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.scene_views.v1 (PJ_scene_view_host_vtable_t), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.35.0)
+Includes the official 0.35.0 zero-copy PointCloud codec. This development identity
+is not an official release; build consumers from the matching source branches.
+
+Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.scene_views.v1 (PJ_scene_view_host_vtable_t), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.36.0)
 
 - Add compile-time field tables (`pj_base/builtin/field_table.hpp`) describing
   the members of builtin object structs, so a generic binder (e.g. a script

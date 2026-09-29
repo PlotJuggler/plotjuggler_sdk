@@ -713,7 +713,7 @@ silent gap.
 
 An object topic carrying a field-tabled type can mark itself with the
 `pj_snapshot` object-topic metadata key (`PJ::sdk::kSnapshotMetadataKey`,
-`ObjectTopicMetadataBuilder::snapshot()`, SDK 0.35.0). Value `"true"` means
+`ObjectTopicMetadataBuilder::snapshot()`, SDK 0.36.0). Value `"true"` means
 every entry on the topic is a complete clear-and-replace snapshot — a
 generic field-table consumer may render each entry alone, without replaying
 the topic's history to reconstruct state first. This matters for

@@ -24,7 +24,7 @@ inline constexpr std::string_view kBuiltinObjectTypeMetadataKey = "builtin_objec
 /// alone without accumulating state across prior entries. Absent (or any
 /// other value) means entries may be incremental and a consumer must replay
 /// the topic's history to reconstruct the current state.
-/// @since 0.35.0
+/// @since 0.36.0
 inline constexpr std::string_view kSnapshotMetadataKey = "pj_snapshot";
 
 /// Builds deterministic metadata JSON for an object topic.
@@ -76,7 +76,7 @@ class ObjectTopicMetadataBuilder {
   /// Mark this topic as a snapshot stream (see kSnapshotMetadataKey): every
   /// entry is a complete clear-and-replace snapshot. Sets the key when
   /// `value` is true; leaves it unset (the default, incremental) when false.
-  /// @since 0.35.0
+  /// @since 0.36.0
   ObjectTopicMetadataBuilder& snapshot(bool value = true) {
     if (value) {
       strings_.insert_or_assign(std::string(kSnapshotMetadataKey), std::string("true"));
