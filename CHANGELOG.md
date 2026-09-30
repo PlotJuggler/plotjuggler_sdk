@@ -3,10 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.36.0] — experimental, unreleased
-
-Includes the official 0.35.0 zero-copy PointCloud codec. This development identity
-is not an official release; build consumers from the matching source branches.
+## [0.36.0] — Unreleased
 
 Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.scene_views.v1 (PJ_scene_view_host_vtable_t), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.36.0)
 
@@ -78,6 +75,15 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
   replaying the topic's history.
 - ImageAnnotations wire carries the top-level timestamp and image_topic;
   additive, old readers skip them.
+
+## [0.35.0]
+
+Host contract: unchanged (no floor impact) — a client-side codec helper, no new
+host surface.
+
+- Add `deserializePointCloudView(data, size, anchor)`: decodes a canonical
+  PJ.PointCloud without copying its packed point bytes (`data` aliases the input,
+  `anchor` keeps it alive), like `deserializeVideoFrameView`. A null anchor copies.
 
 ## [0.34.1]
 
