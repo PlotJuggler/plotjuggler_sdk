@@ -63,6 +63,9 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
   to read the result either way, as a JSON report
   (`{"coverage":{...},"bundles":[...]}` — one bundle per requested instant, one
   entry per output, `*_ns` values as raw int64 dataset nanoseconds).
+- Add `DataProcessorsHostView::hasTypedRequests()`: true iff the host serves
+  `create_data_processor_v2` and `submit_evaluation`/`poll_evaluation`/
+  `release_evaluation`, so a plugin can gate typed-request UI without probing.
 - Scene 3D/2D tabs are kinds of `pj.plot_tabs.v1` tabs: tail slots
   `create_tab_v2`, `attach_topic`, `detach_topic`, `focus_tab` (C++:
   `PlotTabHostView::createV2/attachTopic/detachTopic/focus/hasSceneTabs`). The

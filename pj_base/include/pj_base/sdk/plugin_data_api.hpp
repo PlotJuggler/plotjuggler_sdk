@@ -1691,7 +1691,17 @@ class DataProcessorsHostView {
     return host_.vtable != nullptr && host_.ctx != nullptr;
   }
 
-  /// Create or replace (upsert by id) a data processor of `kind` ("transform" or
+  /// True iff the host serves the typed-request surface: createV2() and the
+  /// submitEvaluation()/pollEvaluation()/releaseEvaluation() trio (four tail slots, all
+  /// covered by the vtable's struct_size). Cheap capability check; no host call is made.
+  [[nodiscard]] bool hasTypedRequests() const noexcept {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_v2) &&
+           PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, submit_evaluation) &&
+           PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, poll_evaluation) &&
+           PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, release_evaluation);
+  }
+
+  /// Create or replace (upsert by id) a data processor of `kind' ("transform" or
   /// "markers"). `outputs` may be empty for an ephemeral preview (flags &
   /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s);
   /// flags & PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT instead marks a persisted node the

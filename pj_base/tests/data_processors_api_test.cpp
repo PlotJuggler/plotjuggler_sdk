@@ -555,6 +555,24 @@ TEST(DataProcessorsApiTest, CreateV2OnOldHostReportsNotSupported) {
   EXPECT_FALSE(host.create_v2_called);
 }
 
+TEST(DataProcessorsApiTest, HasTypedRequestsReflectsTailSlots) {
+  FakeDataProcessorsHost host;
+  auto vtable = makeVtable();
+  sdk::DataProcessorsHostView full(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+  EXPECT_TRUE(full.hasTypedRequests());
+  EXPECT_FALSE(sdk::DataProcessorsHostView{}.hasTypedRequests());
+
+  // A host whose struct_size ends before the typed-request tail.
+  vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, create_data_processor_v2);
+  sdk::DataProcessorsHostView old_host(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+  EXPECT_FALSE(old_host.hasTypedRequests());
+
+  // A host that covers the tail but stops short of the last slot.
+  vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, release_evaluation);
+  sdk::DataProcessorsHostView partial(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+  EXPECT_FALSE(partial.hasTypedRequests());
+}
+
 TEST(DataProcessorsApiTest, SubmitPollReleaseRoundTrip) {
   FakeDataProcessorsHost host;
   const auto vtable = makeVtable();
