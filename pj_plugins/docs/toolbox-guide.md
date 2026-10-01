@@ -433,6 +433,7 @@ it without instantiating the plugin.
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
+| `badge` | string | no | Short label (e.g. `AI`) the host may show next to objects this plugin creates. Absent means empty; the host then falls back to the plugin name. |
 
 Example:
 ```json

@@ -295,6 +295,23 @@ TEST_F(PluginCatalogTest, SuggestedSdkVersionRoundTripsAndDefaultsEmpty) {
   EXPECT_TRUE(without_field->suggested_sdk_version.empty());
 }
 
+TEST_F(PluginCatalogTest, BadgeRoundTripsAndDefaultsEmpty) {
+  auto with_field = decodeManifest(
+      "static:sdk-test", PluginFamily::kToolbox,
+      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","badge":"AI"})");
+  ASSERT_TRUE(with_field.has_value()) << with_field.error();
+  EXPECT_EQ(with_field->badge, "AI");
+
+  auto without_field = decodeManifest(
+      "static:sdk-test", PluginFamily::kToolbox, R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0"})");
+  ASSERT_TRUE(without_field.has_value()) << without_field.error();
+  EXPECT_TRUE(without_field->badge.empty());
+
+  auto wrong_type = decodeManifest(
+      "static:sdk-test", PluginFamily::kToolbox, R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","badge":3})");
+  EXPECT_FALSE(wrong_type.has_value());
+}
+
 TEST_F(PluginCatalogTest, MinSdkRequiredAcceptsEmptyString) {
   auto descriptor = decodeManifest(
       "static:sdk-test", PluginFamily::kDataSource,

@@ -76,6 +76,9 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
   ImageAnnotations topic whose every entry is a complete clear-and-replace
   snapshot, so a stateless consumer may render each entry alone without
   replaying the topic's history.
+- Add the optional manifest string `badge` (`PluginDescriptor::badge`, "" when
+  absent): a short label a host may show next to objects the plugin creates.
+  Older manifests and hosts are unaffected.
 - ImageAnnotations wire carries the top-level timestamp and image_topic;
   additive, old readers skip them.
 

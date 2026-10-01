@@ -61,6 +61,9 @@ struct PluginDescriptor {
   /// runs the plugin with some optional features inactive. Informational, for
   /// host degradation display — never an admission criterion.
   std::string suggested_sdk_version;
+  /// Optional short label (e.g. "AI") a host may show next to objects this
+  /// plugin creates. "" when the manifest does not declare it.
+  std::string badge;
 };
 
 /// Diagnostic for a candidate DSO that could not produce a valid descriptor.
