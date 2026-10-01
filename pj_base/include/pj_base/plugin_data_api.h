@@ -999,7 +999,8 @@ typedef struct {
  *                   persisted, dropped on remove). PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT
  *                   marks a node the host's undo/redo history has no authority over
  *                   (still persisted like any other node; history never restores,
- *                   recreates or removes it). Reserved bits must be 0.
+ *                   recreates or removes it). PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS: see
+ *                   its definition below. Reserved bits must be 0.
  *
  * DATASET-QUALIFIED NAMES — a series' full identity is (dataset, topic, field); a
  * bare "topic/field" name is an abbreviation that stops being unique the moment
@@ -1042,6 +1043,19 @@ typedef struct {
  * read data_processor_config after creation: only history_exempt=true confirms
  * the property. A missing/false property or failed read does not confirm it. */
 #define PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (1u << 1)
+/* on_demand only. Output names and types are learned from what the script returns
+ * instead of being declared.
+ *  - Transient evaluation (submit_evaluation with a non-empty script and no declared
+ *    outputs): the host runs the script and infers each output's name and type from
+ *    the returned value. A non-table value gives one output "value"; a keyed table
+ *    gives one output per key (sorted by name); a positional table gives outputs
+ *    named by type ("value", "value_2", ..., "text", "cloud", "scene", "annotations",
+ *    "image", "transforms", "object"). Mixed keyed+positional or empty returns are
+ *    errors. The inferred list is returned in the report ("outputs").
+ *  - create/create_v2: the declared outputs are a binding hint learned from such a
+ *    trial. The host still validates the returned types at runtime.
+ * A host that does not know this bit rejects it as an unknown flag. */
+#define PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS (1u << 2)
 
 /* PJ_data_processor_request_t.time_flags */
 #define PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW (1u << 0) /* window_start_ns..window_end_ns are meaningful */
@@ -1184,7 +1198,10 @@ typedef struct PJ_data_processors_host_vtable_t {
    * with one bundle for INSTANT. A bundle is {"requested_ns","stamp_ns","from_cache",
    * "revision","inputs":[{"alias","resolved_ns","is_object"}],"outputs":{name:{"status":
    * "ok"|"unavailable"|"empty"|"error","value"?,"topic"?,"summary"?,"reason"?}}}.
-   * Objects never appear as bytes, only as a "summary" object. Every *_ns value is a
+   * Objects never appear as bytes, only as a "summary" object. When the request
+   * carried PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS the report root also has
+   * "outputs":[{"name":"...","type":"number"|"string"|"<BuiltinObjectType name>"|
+   * "unknown"}], the inferred outputs in report order. Every *_ns value is a
    * raw dataset nanosecond count as a JSON integer (int64; do not round-trip through
    * a double). On FAILED *out_json is {"error":"..."}. *out_json is borrowed until
    * release_evaluation(handle). An unknown handle is an error. ABI-APPENDED slot. */
