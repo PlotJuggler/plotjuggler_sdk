@@ -7,6 +7,11 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.plot_tabs.v1 tail slots (create_tab_v2, attach_topic, detach_topic, focus_tab), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT, PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS (floor 0.36.0)
 
+- Add `WidgetData::setSceneView` / `setSceneTopics` / `clearSceneView` (keys
+  `scene_view`, `scene_topics`) and the matching `WidgetDataView::sceneView` /
+  `sceneTopics`: a QFrame carrying `scene_view` becomes an embedded 3D/2D object
+  view bound to object topics and following the playback cursor. Hosts without
+  support leave the frame empty. Dialog protocol only: no ABI change.
 - Add `PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS` (on_demand): a transient evaluation
   with no declared outputs infers each output's name and type from the script's
   returned value and reports them in a root `"outputs"` array of the

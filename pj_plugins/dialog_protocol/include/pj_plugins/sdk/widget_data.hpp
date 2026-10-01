@@ -78,6 +78,14 @@ struct ChartSeries {
   bool dashed = false;  // draw with a dashed line (e.g. a faded "before" ghost curve)
 };
 
+/// One object topic shown by an embedded scene view (used by setSceneTopics).
+/// An empty `dataset` means "resolve the topic by name".
+/// @since 0.36.0
+struct SceneTopic {
+  std::string topic;
+  std::string dataset;
+};
+
 /// One marker overlaid on a chart preview (used by setChartMarkers). Interpret by
 /// `kind`, mirroring the PlotMarkers vocabulary:
 ///   "event"      → a point at (x0, y0) when `has_value`, else a vertical line at x0;
@@ -624,6 +632,37 @@ class WidgetData {
   /// hides it automatically once the chart receives data.
   WidgetData& setChartPlaceholder(std::string_view name, std::string_view text) {
     entry(name)["chart_placeholder"] = std::string(text);
+    return *this;
+  }
+
+  // --- Embedded scene view (QFrame used as a 3D/2D object view container) ---
+
+  /// Turn the named QFrame into an embedded object view of the given kind
+  /// ("3d" or "2d"). The host creates the view once inside the frame; a kind
+  /// change recreates it. Hosts without embedded-view support leave the frame empty.
+  /// @since 0.36.0
+  WidgetData& setSceneView(std::string_view name, std::string_view kind) {
+    entry(name)["scene_view"] = std::string(kind);
+    return *this;
+  }
+
+  /// Set the object topics shown by the embedded view in the named QFrame. The
+  /// host attaches the added topics and detaches the removed ones; the view
+  /// follows the playback cursor. An empty `dataset` resolves the topic by name.
+  /// @since 0.36.0
+  WidgetData& setSceneTopics(std::string_view name, const std::vector<SceneTopic>& topics) {
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& t : topics) {
+      arr.push_back({{"topic", t.topic}, {"dataset", t.dataset}});
+    }
+    entry(name)["scene_topics"] = std::move(arr);
+    return *this;
+  }
+
+  /// Remove the embedded object view (and its topics) from the named QFrame.
+  /// @since 0.36.0
+  WidgetData& clearSceneView(std::string_view name) {
+    entry(name)["scene_view"] = nullptr;
     return *this;
   }
 
