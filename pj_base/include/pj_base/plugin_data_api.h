@@ -1388,6 +1388,25 @@ typedef struct {
  * it. Whether such a tab is saved with the workspace is likewise the host's
  * policy, not this service's contract.
  *
+ * Tab kinds: "plot" (curves), "3d" and "2d" (scene tabs holding object topics).
+ * Scene tabs are served by the tail slots create_tab_v2 / attach_topic /
+ * detach_topic / focus_tab (0.36.0). The v1 slots on a scene tab: add_curve and
+ * remove_curve are errors "tab '<id>' is a <3d|2d> scene tab: use
+ * attach_topic/detach_topic"; clear_tab detaches every topic and keeps the tab;
+ * close_tab, list_tab_ids (all kinds) and tab_config work.
+ * create_tab_v2 with the same id and kind replaces a plot tab with one empty plot
+ * (v1 "create or replace") and only updates the title of a scene tab; a different
+ * kind closes the old tab and creates a new one.
+ *
+ * tab_config JSON: for a plot tab, byte-identical to v1,
+ * {"title":"...","curves":[...]} with NO "kind" key. For a scene tab,
+ * {"kind":"3d","title":"...","topics":[{"topic":"...","dataset":"...","type":"kPointCloud","visible":true}]}
+ * ("kind" is "3d" or "2d"): what the tab ACTUALLY holds, datasets resolved.
+ *
+ * A host with no scene workspace leaves the four tail slots NULL (not an error):
+ * callers check with PJ_HAS_TAIL_SLOT before calling. An error return means the
+ * host has the capability but refused this request.
+ *
  * All slots are [main-thread]. ABI-APPENDABLE: new slots may be added at the
  * tail; struct_size gates read.
  */
@@ -1447,73 +1466,50 @@ typedef struct PJ_plot_tab_host_vtable_t {
 
   /* [main-thread] Remove every curve from a tab, keeping the tab itself. */
   bool (*clear_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Create (or update) a tab of the given `kind`: "plot", "3d" or "2d".
+   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. One id namespace per
+   * plugin across kinds. The same id with the same kind: on a plot tab it replaces
+   * the tab with one empty plot (the released `create_tab` "create or replace"
+   * behaviour); on a scene tab it only updates the title. The same id with a DIFFERENT
+   * kind closes the old tab and creates a new empty one. `create_tab` (v1) is this call
+   * with kind "plot". An empty `id`, or an id containing '/', is an error here (v1
+   * keeps its released id rules). An empty `title` lets the host name the tab. */
+  bool (*create_tab_v2)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t title, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Attach an object topic to a scene tab. ABI-APPENDED slot (0.36.0):
+   * gate with PJ_HAS_TAIL_SLOT. Scene tabs only. `dataset_source` follows the same
+   * rule as add_curve: empty means the topic must be unique across loaded datasets,
+   * and an ambiguous one is refused with the qualified candidates. A "3d" tab accepts
+   * every object type the 3D view renders; a "2d" tab accepts Image/DepthImage/
+   * VideoFrame (replacing the background) and ImageAnnotations (an overlay). On a plot
+   * tab this is an error: "tab '<id>' is a plot tab: use add_curve". */
+  bool (*attach_topic)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Take one topic back out of a scene tab (same `dataset_source` rule).
+   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. A topic that is not
+   * attached is an error. On a plot tab this is an error: "tab '<id>' is a plot tab:
+   * use remove_curve". */
+  bool (*detach_topic)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Bring one of this plugin's tabs (any kind) to the front.
+   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. */
+  bool (*focus_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_plot_tab_host_vtable_t;
+
+/* Minimum acceptable struct_size: the seven slots released with the v1 layout.
+ * Slots from create_tab_v2 on are tail slots: gate each with PJ_HAS_TAIL_SLOT. */
+#define PJ_PLOT_TAB_HOST_MIN_VTABLE_SIZE (offsetof(PJ_plot_tab_host_vtable_t, create_tab_v2))
 
 typedef struct {
   void* ctx;
   const PJ_plot_tab_host_vtable_t* vtable;
 } PJ_plot_tab_host_t;
-
-/**
- * Scene-view host service ("pj.scene_views.v1", protocol_version 1).
- *
- * Lets a plugin compose 3D/2D scene views OF ITS OWN: create one, attach and
- * detach object topics in it, read back what it holds, close it. Every slot is
- * scoped to the calling binding — a view this plugin did not create is
- * rejected exactly as an unknown id is, so the service never discloses,
- * mutates or even confirms the existence of the user's views. That scoping is
- * the host's job, not the plugin's: it is enforced where ownership is known,
- * and ownership is derived from `ctx`, never passed in.
- *
- * Ids are independent of visible titles: titles may repeat or be renamed
- * without changing an id. Ids are chosen by the plugin and namespaced per
- * plugin by the host (the "pj.data_processors.v1" discipline), so an id is
- * unique within this binding and cannot collide with another plugin's. A view
- * is a VIEW: closing it discards the presentation only, never the object
- * topics it showed.
- *
- * All slots are [main-thread]. ABI-APPENDABLE: new slots may be added at the
- * tail; struct_size gates read.
- */
-typedef struct PJ_scene_view_host_vtable_t {
-  uint32_t protocol_version; /* = 1 */
-  uint32_t struct_size;      /* = sizeof(PJ_scene_view_host_vtable_t) */
-  /* Create or replace (upsert by id) a scene view owned by this plugin. kind is "3d"
-   * or "2d". Re-creating an id with a DIFFERENT kind closes the view and creates a
-   * new empty one; the same kind only updates the title. An empty title lets the host
-   * name it. An id containing '/' is rejected. */
-  bool (*create_view)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t title, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /* Close one of this plugin's views (the VIEW only; the topics it showed are data and outlive it). */
-  bool (*close_view)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /* Count-then-fill enumeration of THIS plugin's live view ids (borrowed until the next call on this host object). */
-  bool (*list_view_ids)(
-      void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /* {"kind":"3d","title":"...","topics":[{"topic":"...","dataset":"...","type":"kPointCloud","visible":true}]}
-   * — what the view ACTUALLY holds, datasets resolved. Borrowed until the next call on this host object. */
-  bool (*view_config)(void* ctx, PJ_string_view_t id, PJ_string_view_t* out_config_json, PJ_error_t* out_error)
-      PJ_NOEXCEPT;
-  /* Attach an object topic. dataset_source is the source NAME as PJ_data_source_info_t
-   * reports it; "" means the topic must be unique across loaded datasets (an ambiguous
-   * one is refused with the candidates). "3d" accepts every type the host's 3D view
-   * renders; "2d" accepts Image/DepthImage (replacing the current image) and
-   * ImageAnnotations (an overlay); any other type is an error naming it. Attaching a
-   * topic already there is success. */
-  bool (*attach_topic)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
-  /* Take one topic back out (same dataset_source rule). A topic that is not there is an error. */
-  bool (*detach_topic)(
-      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
-  /* Raise the view's tab. */
-  bool (*focus_view)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_scene_view_host_vtable_t;
-
-typedef struct {
-  void* ctx;
-  const PJ_scene_view_host_vtable_t* vtable;
-} PJ_scene_view_host_t;
 
 #ifdef __cplusplus
 }

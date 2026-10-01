@@ -222,9 +222,8 @@ Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
 | Service trait | Methods and scope |
 |---|---|
 | `PJ::sdk::PlaybackHostService` | `play`, `pause`, `seek`, `setPlaybackRate`, `state`: the global playback cursor. `toDisplayTime` and `toDisplayTimeForSource` convert absolute nanoseconds to display-axis seconds. |
-| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. |
+| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. Since 0.36.0 the same service also serves scene tabs through tail slots, absent on a host with no scene workspace (check `hasSceneTabs()`): `createV2(id, kind, title)` with `kind` `"plot"`, `"3d"` or `"2d"` (one id namespace across kinds; re-creating an id with a different kind closes and recreates it empty), `attachTopic(id, topic, dataset_source)`, `detachTopic`, `focus(id)`. On a scene tab `addCurve`/`removeCurve` are errors; `clear` detaches every topic; `configOf` reports what the tab actually holds (scene tabs: `kind`, topics with dataset, type, visibility; plot tabs: unchanged, no `kind`). |
 | `PJ::sdk::ViewportHostService` | `zoomToTimeRange`, `zoomReset`: all eligible plots in the calling plugin's tabs. |
-| `PJ::sdk::SceneViewHostService` (`pj.scene_views.v1`, 0.36.0) | `createView(id, kind, title)`, `closeView`, `list`, `configOf`, `attachTopic(id, topic, dataset_source)`, `detachTopic`, `focusView`: only the calling plugin's 3D/2D scene views. `kind` is `"3d"` or `"2d"`; re-creating an id with a different kind closes and recreates it empty. `configOf` reports what a view actually holds as JSON (topics with dataset, type, visibility). |
 
 All calls run on the main thread. Services are optional. Check acquisition
 and each operation's result. A host offering viewport control also offers

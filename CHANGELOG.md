@@ -5,7 +5,7 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.36.0] — Unreleased
 
-Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.scene_views.v1 (PJ_scene_view_host_vtable_t), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.36.0)
+Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.plot_tabs.v1 tail slots (create_tab_v2, attach_topic, detach_topic, focus_tab), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.36.0)
 
 - Add compile-time field tables (`pj_base/builtin/field_table.hpp`) describing
   the members of builtin object structs, so a generic binder (e.g. a script
@@ -63,11 +63,11 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
   to read the result either way, as a JSON report
   (`{"coverage":{...},"bundles":[...]}` — one bundle per requested instant, one
   entry per output, `*_ns` values as raw int64 dataset nanoseconds).
-- Add the `pj.scene_views.v1` service (`PJ_scene_view_host_vtable_t`,
-  `SceneViewHostView`): lets a plugin compose 3D/2D scene views of its own —
-  create (upsert by id), attach/detach object topics, read back what a view
-  actually holds as JSON, focus, close — scoped by the host to the calling
-  plugin the same way `pj.plot_tabs.v1` scopes plotting tabs.
+- Scene 3D/2D tabs are kinds of `pj.plot_tabs.v1` tabs: tail slots
+  `create_tab_v2`, `attach_topic`, `detach_topic`, `focus_tab` (C++:
+  `PlotTabHostView::createV2/attachTopic/detachTopic/focus/hasSceneTabs`). The
+  slots are NULL when the host has no scene workspace; the plot `tab_config`
+  JSON is unchanged.
 - Add the `pj_snapshot` object-topic metadata key
   (`ObjectTopicMetadataBuilder::snapshot`): marks a SceneEntities/
   ImageAnnotations topic whose every entry is a complete clear-and-replace

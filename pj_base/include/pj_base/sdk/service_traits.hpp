@@ -217,25 +217,13 @@ struct ViewportHostService {
 /// and remove curves, read back what they hold, close. Scoped by the host to
 /// this plugin's tabs, which is also what bounds "pj.viewport.v1". Hosts with
 /// no plot workspace (headless) simply do not register it.
+/// Scene (3D/2D) tabs are tail slots of this service since 0.36.0.
 struct PlotTabHostService {
   static constexpr const char* kName = "pj.plot_tabs.v1";
   static constexpr uint32_t kMinVersion = 1;
   using Raw = PJ_plot_tab_host_t;
   using Vtable = PJ_plot_tab_host_vtable_t;
   using View = PlotTabHostView;
-  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
-};
-
-/// "pj.scene_views.v1" — compose 3D/2D scene views of the plugin's own: create,
-/// attach and detach object topics, read back what they hold, close. Scoped by
-/// the host to this plugin's views, the same discipline as "pj.plot_tabs.v1".
-/// Hosts with no scene workspace (headless) simply do not register it.
-struct SceneViewHostService {
-  static constexpr const char* kName = "pj.scene_views.v1";
-  static constexpr uint32_t kMinVersion = 1;
-  using Raw = PJ_scene_view_host_t;
-  using Vtable = PJ_scene_view_host_vtable_t;
-  using View = SceneViewHostView;
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 

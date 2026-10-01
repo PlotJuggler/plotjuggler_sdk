@@ -391,18 +391,24 @@ static_assert(offsetof(PJ_evaluation_budget_t, struct_size) == 0, "PJ_evaluation
 static_assert(
     offsetof(PJ_evaluation_budget_t, max_report_bytes) == 32, "PJ_evaluation_budget_t.max_report_bytes offset pinned");
 
-// --- Scene-view host vtable ("pj.scene_views.v1", ABI-APPENDABLE) -----------
-static_assert(offsetof(PJ_scene_view_host_vtable_t, protocol_version) == 0, "scene view host prefix pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, struct_size) == 4, "scene view host prefix pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, create_view) == 8, "scene view host create_view slot pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, close_view) == 16, "scene view host close_view slot pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, list_view_ids) == 24, "scene view host list_view_ids slot pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, view_config) == 32, "scene view host view_config slot pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, attach_topic) == 40, "scene view host attach_topic slot pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, detach_topic) == 48, "scene view host detach_topic slot pinned");
-static_assert(offsetof(PJ_scene_view_host_vtable_t, focus_view) == 56, "scene view host focus_view slot pinned");
-static_assert(sizeof(PJ_scene_view_host_vtable_t) == 64, "Scene view host vtable size (update deliberately on append)");
-static_assert(sizeof(PJ_scene_view_host_t) == 16, "Scene view host fat pointer pinned");
+// --- Plot-tab host vtable ("pj.plot_tabs.v1", ABI-APPENDABLE) ---------------
+// Seven v1 slots are released and frozen; create_tab_v2 onward are tail slots (0.36.0).
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, protocol_version) == 0, "plot tab host prefix pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, struct_size) == 4, "plot tab host prefix pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, create_tab) == 8, "plot tab host create_tab slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, close_tab) == 16, "plot tab host close_tab slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, list_tab_ids) == 24, "plot tab host list_tab_ids slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, tab_config) == 32, "plot tab host tab_config slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, add_curve) == 40, "plot tab host add_curve slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, remove_curve) == 48, "plot tab host remove_curve slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, clear_tab) == 56, "plot tab host clear_tab slot pinned");
+static_assert(PJ_PLOT_TAB_HOST_MIN_VTABLE_SIZE == 64, "plot tab host min vtable size pinned at the v1 layout");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, create_tab_v2) == 64, "plot tab host create_tab_v2 tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, attach_topic) == 72, "plot tab host attach_topic tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, detach_topic) == 80, "plot tab host detach_topic tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, focus_tab) == 88, "plot tab host focus_tab tail slot pinned");
+static_assert(sizeof(PJ_plot_tab_host_vtable_t) == 96, "Plot tab host vtable size (update deliberately on append)");
+static_assert(sizeof(PJ_plot_tab_host_t) == 16, "Plot tab host fat pointer pinned");
 
 // --- Toolbox runtime host vtable (ABI-APPENDABLE within v4) ------------------
 // The vtable the host exposes to plugins under "pj.toolbox_runtime.v1".

@@ -57,7 +57,6 @@ HOST_SERVICE_IDS = {
     "pj.playback.v1",
     "pj.plot_tabs.v1",
     "pj.runtime.v1",
-    "pj.scene_views.v1",
     "pj.settings.v1",
     "pj.source_object_write.v1",
     "pj.source_promotion.v1",

@@ -2283,122 +2283,70 @@ class PlotTabHostView {
     return okStatus();
   }
 
- private:
-  PJ_plot_tab_host_t host_{};
-};
-
-// ---------------------------------------------------------------------------
-// SceneViewHostView — typed C++ view over PJ_scene_view_host_t
-// ---------------------------------------------------------------------------
-
-/// C++ wrapper around PJ_scene_view_host_t for plugins that compose 3D/2D
-/// scene views of their own (service "pj.scene_views.v1"). Empty-constructible;
-/// `valid()` tells whether the host exposed the service. Mirrors PlotTabHostView.
-class SceneViewHostView {
- public:
-  SceneViewHostView() = default;
-  explicit SceneViewHostView(PJ_scene_view_host_t host) : host_(host) {}
-
-  [[nodiscard]] bool valid() const noexcept {
-    return host_.vtable != nullptr && host_.ctx != nullptr;
+  /// True iff the host serves scene (3D/2D) tabs: all four tail slots
+  /// (create_tab_v2, attach_topic, detach_topic, focus_tab) are present. A host with
+  /// no scene workspace leaves them NULL; check this before calling them.
+  [[nodiscard]] bool hasSceneTabs() const noexcept {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, create_tab_v2) &&
+           PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, attach_topic) &&
+           PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, detach_topic) &&
+           PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, focus_tab);
   }
 
-  /// Create (or replace, upsert by id) a scene view owned by this plugin.
-  /// `kind` is "3d" or "2d". Re-creating an id with a DIFFERENT kind closes
-  /// the view and creates a new empty one; the same kind only updates the
-  /// title. An empty `title` lets the host name it.
-  [[nodiscard]] Status createView(std::string_view id, std::string_view kind, std::string_view title = {}) const {
-    if (!valid() || host_.vtable->create_view == nullptr) {
-      return unexpected("scene views host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->create_view(host_.ctx, toAbiString(id), toAbiString(kind), toAbiString(title), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
+  /// Create (or update) a tab of `kind` ("plot", "3d" or "2d"). Same id and kind: a plot
+  /// tab is replaced by one empty plot, a scene tab only gets its title updated; same id
+  /// with a different kind closes the old tab and creates a new empty one. An empty
+  /// `title` lets the host name it.
+  [[nodiscard]] Status createV2(std::string_view id, std::string_view kind, std::string_view title = {}) const {
+    return callTail<&PJ_plot_tab_host_vtable_t::create_tab_v2>(
+        "create_tab_v2", toAbiString(id), toAbiString(kind), toAbiString(title));
   }
 
-  /// Close one of this plugin's views. The topics it showed are data and
-  /// outlive the view.
-  [[nodiscard]] Status closeView(std::string_view id) const {
-    if (!valid() || host_.vtable->close_view == nullptr) {
-      return unexpected("scene views host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->close_view(host_.ctx, toAbiString(id), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
-
-  /// Enumerate the ids of this plugin's live views (owned copies).
-  [[nodiscard]] Expected<std::vector<std::string>> listViews() const {
-    if (!valid() || host_.vtable->list_view_ids == nullptr) {
-      return unexpected("scene views host is not bound");
-    }
-    return detail::listBorrowedStrings(host_.ctx, host_.vtable->list_view_ids);
-  }
-
-  /// Read back what a view actually holds, as JSON (owned copy):
-  /// {"kind":"3d","title":"...","topics":[{"topic":"...","dataset":"...","type":"kPointCloud","visible":true}]}.
-  [[nodiscard]] Expected<std::string> configOf(std::string_view id) const {
-    if (!valid() || host_.vtable->view_config == nullptr) {
-      return unexpected("scene views host is not bound");
-    }
-    PJ_error_t err{};
-    PJ_string_view_t out{};
-    if (!host_.vtable->view_config(host_.ctx, toAbiString(id), &out, &err)) {
-      return unexpected(errorToString(err));
-    }
-    return std::string(toStringView(out));
-  }
-
-  /// Attach an object topic. An empty `dataset_source` requires the topic to
-  /// be unique across loaded datasets; an ambiguous one is refused by the
-  /// host with the qualified candidates. Attaching a topic already there is
-  /// success.
+  /// Attach an object topic to a scene tab. An empty `dataset_source` requires the topic
+  /// to be unique across loaded datasets; an ambiguous one is refused by the host with
+  /// the qualified candidates. Attaching a topic already there is success.
   [[nodiscard]] Status attachTopic(
       std::string_view id, std::string_view topic, std::string_view dataset_source = {}) const {
-    if (!valid() || host_.vtable->attach_topic == nullptr) {
-      return unexpected("scene views host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->attach_topic(
-            host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(dataset_source), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
+    return callTail<&PJ_plot_tab_host_vtable_t::attach_topic>(
+        "attach_topic", toAbiString(id), toAbiString(topic), toAbiString(dataset_source));
   }
 
-  /// Take one topic back out, resolved by the same rule as attachTopic. A
-  /// topic that is not there is an error.
+  /// Take one topic back out of a scene tab, resolved by the same rule as attachTopic.
+  /// A topic that is not attached is an error.
   [[nodiscard]] Status detachTopic(
       std::string_view id, std::string_view topic, std::string_view dataset_source = {}) const {
-    if (!valid() || host_.vtable->detach_topic == nullptr) {
-      return unexpected("scene views host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->detach_topic(
-            host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(dataset_source), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
+    return callTail<&PJ_plot_tab_host_vtable_t::detach_topic>(
+        "detach_topic", toAbiString(id), toAbiString(topic), toAbiString(dataset_source));
   }
 
-  /// Raise the view's tab.
-  [[nodiscard]] Status focusView(std::string_view id) const {
-    if (!valid() || host_.vtable->focus_view == nullptr) {
-      return unexpected("scene views host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->focus_view(host_.ctx, toAbiString(id), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
+  /// Bring one of this plugin's tabs (any kind) to the front.
+  [[nodiscard]] Status focus(std::string_view id) const {
+    return callTail<&PJ_plot_tab_host_vtable_t::focus_tab>("focus_tab", toAbiString(id));
   }
 
  private:
-  PJ_scene_view_host_t host_{};
+  // Shared body of the tail-slot wrappers: bound check, PJ_HAS_TAIL_SLOT gate, call,
+  // error conversion. `Slot` is the vtable member pointer of the slot.
+  template <auto Slot, typename... Args>
+  [[nodiscard]] Status callTail(const char* slot_name, Args... args) const {
+    if (!valid()) {
+      return unexpected("plot tab host is not bound");
+    }
+    const auto* vtable = host_.vtable;
+    // PJ_HAS_TAIL_SLOT needs the field name, so check size and null through the member pointer.
+    const auto slot_end =
+        reinterpret_cast<const char*>(&(vtable->*Slot)) + sizeof(vtable->*Slot) - reinterpret_cast<const char*>(vtable);
+    if (vtable->struct_size < static_cast<size_t>(slot_end) || vtable->*Slot == nullptr) {
+      return unexpected(std::string("plot tab host does not support ") + slot_name);
+    }
+    PJ_error_t err{};
+    if (!(vtable->*Slot)(host_.ctx, args..., &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  PJ_plot_tab_host_t host_{};
 };
 
 // ---------------------------------------------------------------------------
