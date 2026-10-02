@@ -89,6 +89,25 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
 - Add the optional manifest string `badge` (`PluginDescriptor::badge`, "" when
   absent): a short label a host may show next to objects the plugin creates.
   Older manifests and hosts are unaffected.
+- Record the `struct_size` rule of the typed data-processor request and of
+  `PJ_evaluation_budget_t` as READ-PREFIX: a host reads the prefix it knows,
+  rejects a `struct_size` below the v1 layout and ACCEPTS a larger one; a field
+  appended later is zero-defaultable and announced by a new `flags`/`time_flags`
+  bit, so an older host rejects the bit, never the size. The previous text
+  (reject any `struct_size` larger than the host's own) would have made the
+  first appended field break every newer plugin on a 0.36 host. The C++
+  wrapper keeps sending `sizeof`, which is correct under this rule.
+- `create_data_processor_v2` / `create_data_processor` (`kind="on_demand"`):
+  `out_topics` now returns `<owner>/<id>/<name>` for number outputs as well as
+  object outputs (the series key of series mode; absent from the catalog when
+  the recipe cannot run in series mode); string outputs stay the bare name.
+  A reader must use the returned string, not rebuild it from the output name.
+- `DataProcessorsHostView::pollEvaluation` returns an error for an unknown
+  evaluation state ("unknown evaluation state N") instead of reading it as
+  pending, which made a caller poll forever.
+- Document `coverage.error` (present only when `coverage.stopped == "error"`)
+  and `coverage.gaps` in the `poll_evaluation` report, plus the 64-handle /
+  64 MiB limits and that polling needs the host event loop to turn.
 - ImageAnnotations wire carries the top-level timestamp and image_topic;
   additive, old readers skip them.
 

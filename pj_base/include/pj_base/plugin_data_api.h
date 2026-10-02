@@ -79,6 +79,29 @@ extern "C" {
   ((vtable_ptr)->struct_size >= (offsetof(vtable_type, field) + sizeof((vtable_ptr)->field)) && \
    (vtable_ptr)->field != NULL)
 
+/*
+ * CAPABILITY-DETECTION RULE (stated once; the toolbox guide points here).
+ * A plugin learns what a host can do in exactly one of five ways, by the kind of feature:
+ *
+ *   1. ABI service feature (new tail slot(s)): present iff the slot(s) are covered by
+ *      the vtable's struct_size and non-NULL. Read it through ONE named hasX() on the
+ *      C++ view, never through a version string: DataProcessorsHostView::hasTypedRequests,
+ *      PlotTabHostView::hasSceneTabs, ToolboxHostView::hasCatalogSnapshotV2.
+ *   2. Flag-bit feature (e.g. PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS, a future request
+ *      field announced by a bit): NO probe. A host that does not know the bit REJECTS
+ *      it, so the call fails loudly instead of being half-honoured. The floor of such
+ *      a feature is the hasX() of the slot that carries the bit.
+ *   3. Build-dependent behaviour (e.g. the Python backend of on_demand, which a WASM
+ *      host lacks): probe by doing it, e.g. validateScript("on_demand", "python",
+ *      "return {}"), and keep the UI honest when it fails.
+ *   4. Dialog-protocol feature (scene_view / scene_topics widget keys): a bit in
+ *      PJ_dialog_host_info_t::capabilities (dialog_protocol.h), read through
+ *      DialogPluginTyped::hostCapabilities(). A host that never calls set_host_info
+ *      reports 0 bits.
+ *   5. Manifest metadata (badge, custom_topics_editor): declarative, no probe; hosts
+ *      that do not know a key ignore it.
+ */
+
 typedef enum {
   PJ_PRIMITIVE_TYPE_FLOAT32 = 0,
   PJ_PRIMITIVE_TYPE_FLOAT64 = 1,
@@ -961,8 +984,14 @@ typedef struct {
  *     "<name>:<type>", where <type> is "number", "string", or a BuiltinObjectType
  *     name (e.g. "kPointCloud", "kSceneEntities") — the host needs the declared shape
  *     up front to route a later on-demand evaluation without re-running the script.
- *     out_topics returns, 1:1 with outputs, the resolved physical topic name for an
- *     object-typed output and the bare (untyped) name for a number/string output.
+ *     out_topics returns, 1:1 with outputs, the catalog path of each output:
+ *       - object output: "<owner>/<id>/<name>", the object topic the host publishes;
+ *       - number output: also "<owner>/<id>/<name>", the series key the host writes
+ *         in series mode. It is ABSENT from the catalog when the recipe cannot run in
+ *         series mode (pinned, or no object input), so a reader must tolerate a miss;
+ *       - string output: the bare name; a string is never a topic.
+ *     A consumer reads a number output's series by exactly this string; it must not
+ *     rebuild the path from the output name (a different topic may share the leaf).
  *     `language` must be "luau"; the same "unknown kind is rejected" rule as any
  *     other kind applies to a host that predates this one.
  * Future kinds (e.g. a host-owned engine backend) are added the same way — a new
@@ -1070,13 +1099,21 @@ typedef struct {
   PJ_string_view_t type;
 } PJ_data_processor_output_t;
 
-/* Typed request for create_data_processor_v2 and submit_evaluation. struct_size gates
- * the readable prefix: the v1 minimum is offsetof(time_ns) + sizeof(time_ns). A host
- * REJECTS (never ignores) a request it cannot honour: unknown flags or time_flags bits,
- * nonzero reserved, a count > 0 with a NULL pointer, struct_size below the v1 minimum,
- * or struct_size larger than the host's own sizeof (a field added later must be
- * zero-defaultable AND announced by a new flag bit, so an old host that does not know
- * the bit rejects it). Inputs use the same grammar as create_data_processor (topic
+/* Typed request for create_data_processor_v2 and submit_evaluation.
+ *
+ * struct_size RULE (read-prefix): the host reads the PREFIX of the struct that it
+ * knows and ACCEPTS a struct_size larger than its own sizeof. The v1 minimum is
+ * offsetof(time_ns) + sizeof(time_ns); a smaller struct_size is rejected. A field
+ * appended in a later SDK release must be zero-defaultable AND announced by a new
+ * flags/time_flags bit, so an older host rejects the unknown BIT -- never the size.
+ * A request that uses no new field therefore keeps working on every host.
+ * The C++ wrapper (detail::toAbiRequest) keeps sending sizeof(PJ_data_processor_request_t)
+ * of the header it was compiled with; under this rule that is correct on any host
+ * that knows the prefix.
+ *
+ * A host REJECTS (never ignores) a request it cannot honour: unknown flags or
+ * time_flags bits, nonzero reserved, a count > 0 with a NULL pointer, or struct_size
+ * below the v1 minimum. Inputs use the same grammar as create_data_processor (topic
  * names, optionally dataset-qualified); the script reads each input under its literal
  * name. All strings are borrowed for the duration of the call. */
 typedef struct {
@@ -1101,7 +1138,11 @@ typedef struct {
 
 /* Cooperative computation budget of one submit_evaluation. Checked between
  * evaluations and inside the host's native operations, NOT a wall-clock guarantee:
- * one script or native call may overrun it. 0 = host default. */
+ * one script or native call may overrun it. 0 = host default.
+ * struct_size follows the same read-prefix rule as PJ_data_processor_request_t: the
+ * host rejects a struct_size below the v1 layout (offsetof(max_report_bytes) +
+ * sizeof(max_report_bytes)), accepts a larger one and reads only the prefix it knows.
+ * A budget field added later must be zero-defaultable (0 = host default). */
 typedef struct {
   uint32_t struct_size;      /* = sizeof(PJ_evaluation_budget_t) */
   uint32_t reserved;         /* 0 */
@@ -1129,7 +1170,8 @@ typedef struct PJ_data_processors_host_vtable_t {
    * name(s) are written to out_topics using the count-then-fill convention: pass
    * out_topics=NULL/capacity=0 to read *out_topics_count, or a buffer to receive
    * min(capacity,*out_topics_count) entries (borrowed, valid only until the next call
-   * on this vtable); pass out_topics_count=NULL to ignore them. Transactional: on
+   * on this vtable); pass out_topics_count=NULL to ignore them. For kind="on_demand"
+   * see the out_topics contract in the service comment above. Transactional: on
    * failure no partial state is left AND any previously published output for this id
    * is preserved. All string arguments are borrowed for the duration of the call. */
   bool (*create_data_processor)(
@@ -1173,7 +1215,10 @@ typedef struct PJ_data_processors_host_vtable_t {
   /* [main-thread] create_data_processor with a typed request: typed outputs, a label,
    * and (INSTANT) a pinned evaluation time for an on_demand finding. Same upsert,
    * transactional and out_topics (count-then-fill, borrowed until the next call on
-   * this host object) contract as create_data_processor. ABI-APPENDED slot. */
+   * this host object) contract as create_data_processor, including the on_demand
+   * out_topics contract (object AND number outputs return "<owner>/<id>/<name>").
+   * request->struct_size follows the read-prefix rule on PJ_data_processor_request_t.
+   * ABI-APPENDED slot. */
   bool (*create_data_processor_v2)(
       void* ctx, const PJ_data_processor_request_t* request, PJ_string_view_t* out_topics, uint64_t out_topics_capacity,
       uint64_t* out_topics_count, PJ_error_t* out_error) PJ_NOEXCEPT;
@@ -1194,8 +1239,13 @@ typedef struct PJ_data_processors_host_vtable_t {
   /* [main-thread] Read an evaluation's state. On COMPLETED *out_json is the report:
    * {"coverage":{"start_ns","end_ns","evaluated_until_ns"|null,"candidates","evaluated",
    *   "cache_hits","complete","stopped":"complete"|"budget_time"|"budget_evaluations"|
-   *   "budget_bytes"|"budget_report"|"cancelled"|"error"},"bundles":[<bundle>...]}
-   * with one bundle for INSTANT. A bundle is {"requested_ns","stamp_ns","from_cache",
+   *   "budget_bytes"|"budget_report"|"cancelled"|"error","gaps":[{"from_ns","to_ns"}...],
+   *   "error"?},"bundles":[<bundle>...]}
+   * with one bundle for INSTANT. coverage.gaps lists the retention gaps (raw ns) the
+   * evaluated range fell into. coverage.error is present ONLY when stopped == "error"
+   * and carries the reason (truncated by the host); a COMPLETED report with an empty
+   * "bundles" list is therefore NOT enough to infer "no sample": read coverage.stopped
+   * and coverage.error. A bundle is {"requested_ns","stamp_ns","from_cache",
    * "revision","inputs":[{"alias","resolved_ns","is_object"}],"outputs":{name:{"status":
    * "ok"|"unavailable"|"empty"|"error","value"?,"topic"?,"summary"?,"reason"?}}}.
    * Objects never appear as bytes, only as a "summary" object. When the request
@@ -1204,7 +1254,14 @@ typedef struct PJ_data_processors_host_vtable_t {
    * "unknown"}], the inferred outputs in report order. Every *_ns value is a
    * raw dataset nanosecond count as a JSON integer (int64; do not round-trip through
    * a double). On FAILED *out_json is {"error":"..."}. *out_json is borrowed until
-   * release_evaluation(handle). An unknown handle is an error. ABI-APPENDED slot. */
+   * release_evaluation(handle). An unknown handle is an error. ABI-APPENDED slot.
+   * Limits: a host keeps at most 64 live handles and at most 64 MiB of reserved
+   * report bytes across them; a submit beyond either is an error until completed
+   * handles are released. The host completes a background evaluation from its own
+   * event loop: a caller must return to that loop between polls (poll from a timer,
+   * never a busy loop on the calling thread) or the evaluation never finishes. A state
+   * value outside PJ_EVALUATION_STATE_* is not "pending": the C++ wrapper reports it
+   * as an error. */
   bool (*poll_evaluation)(
       void* ctx, uint64_t handle, uint32_t* out_state, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 

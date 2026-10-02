@@ -51,6 +51,7 @@ struct FakeDataProcessorsHost {
   // --- create_data_processor_v2 / submit_evaluation / poll_evaluation / release_evaluation ---
 
   bool create_v2_called = false;
+  uint32_t poll_state = PJ_EVALUATION_STATE_COMPLETED;  // what poll_evaluation reports
   bool submit_called = false;
   uint32_t last_request_struct_size = 0;
   uint32_t last_request_flags = 0;
@@ -247,7 +248,7 @@ bool dpPollEvaluation(
     }
     return false;
   }
-  *out_state = PJ_EVALUATION_STATE_COMPLETED;
+  *out_state = self->poll_state;
   *out_json = sdk::toAbiString(it->second.json);
   return true;
 }
@@ -604,6 +605,38 @@ TEST(DataProcessorsApiTest, PollUnknownHandleIsAnError) {
 
   auto poll = view.pollEvaluation(/*handle=*/999);
   EXPECT_FALSE(poll);
+}
+
+TEST(DataProcessorsApiTest, PollMapsEveryKnownStateAndRejectsAnUnknownOne) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  sdk::DataProcessorRequest request;
+  request.id = "finding";
+  request.kind = "on_demand";
+  request.instant_ns = 10;
+  auto handle = view.submitEvaluation(request);
+  ASSERT_TRUE(handle) << handle.error();
+
+  const std::pair<uint32_t, sdk::EvaluationState> known[] = {
+      {PJ_EVALUATION_STATE_PENDING, sdk::EvaluationState::kPending},
+      {PJ_EVALUATION_STATE_COMPLETED, sdk::EvaluationState::kCompleted},
+      {PJ_EVALUATION_STATE_FAILED, sdk::EvaluationState::kFailed},
+      {PJ_EVALUATION_STATE_CANCELLED, sdk::EvaluationState::kCancelled},
+  };
+  for (const auto& [raw, expected] : known) {
+    host.poll_state = raw;
+    auto poll = view.pollEvaluation(*handle);
+    ASSERT_TRUE(poll) << poll.error();
+    EXPECT_EQ(poll->state, expected);
+  }
+
+  // An unknown state must not read as "pending": a caller would poll forever.
+  host.poll_state = 99;
+  auto poll = view.pollEvaluation(*handle);
+  ASSERT_FALSE(poll);
+  EXPECT_NE(poll.error().find("unknown evaluation state 99"), std::string::npos);
 }
 
 TEST(DataProcessorsApiTest, RequestStructSizeAndFlagsAreSet) {

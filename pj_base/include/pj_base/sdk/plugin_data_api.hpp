@@ -1630,6 +1630,9 @@ namespace detail {
 /// Builds the ABI request for a DataProcessorRequest, filling `in_abi`/`out_abi`
 /// with borrowed views into `request`'s owned strings — the caller must keep
 /// `request`, `in_abi`, and `out_abi` alive for the duration of the ABI call.
+/// `struct_size` is the sizeof of the header this plugin was compiled with: correct
+/// under the read-prefix rule (the host reads the prefix it knows and accepts a
+/// larger struct_size; see PJ_data_processor_request_t).
 [[nodiscard]] inline PJ_data_processor_request_t toAbiRequest(
     const DataProcessorRequest& request, std::vector<PJ_string_view_t>& in_abi,
     std::vector<PJ_data_processor_output_t>& out_abi) {
@@ -1811,8 +1814,10 @@ class DataProcessorsHostView {
   /// "<name>:<type>" ("number", "string", or a BuiltinObjectType name such as
   /// "kPointCloud"/"kSceneEntities") the host needs to route a later on-demand
   /// evaluation without re-running the script. Returns the resolved output
-  /// identifiers 1:1 with `typed_outputs`: the physical topic name for an
-  /// object-typed output, the bare name for a number/string output. Inputs MAY
+  /// identifiers 1:1 with `typed_outputs`: the catalog path "<owner>/<id>/<name>"
+  /// for an object-typed output AND for a number output (the series key of series
+  /// mode; absent from the catalog when the recipe cannot run in series mode), the
+  /// bare name for a string output. Inputs MAY
   /// be dataset-qualified (see create()). For typed outputs, a label, or a
   /// pinned evaluation time, use createV2() instead.
   [[nodiscard]] Expected<std::vector<std::string>> createOnDemand(
@@ -1892,7 +1897,16 @@ class DataProcessorsHostView {
   /// create_data_processor with a typed request: typed outputs, a label, and
   /// (with `request.instant_ns` set) a pinned evaluation time for an on_demand
   /// finding. Same upsert, transactional, and resolved-topic-names contract as
-  /// create(). Errors if the host predates this slot.
+  /// create(); for kind="on_demand" the names are 1:1 with `request.outputs`:
+  /// "<owner>/<id>/<name>" for object AND number outputs (a number output's series
+  /// key in series mode, absent from the catalog when the recipe cannot run in
+  /// series mode), the bare name for a string output. Read a number output's
+  /// series by exactly the returned string. Errors if the host predates this slot.
+  ///
+  /// struct_size: this wrapper sends sizeof(PJ_data_processor_request_t) of the
+  /// header it was compiled with. Under the read-prefix rule (the host reads the
+  /// prefix it knows and accepts a larger struct_size; see
+  /// PJ_data_processor_request_t) that is correct against any host.
   [[nodiscard]] Expected<std::vector<std::string>> createV2(const DataProcessorRequest& request) const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_v2)) {
       return unexpected("data processors host does not support create_data_processor_v2");
@@ -1957,8 +1971,9 @@ class DataProcessorsHostView {
   /// Read an evaluation's state. On kCompleted, `EvaluationPoll::json` is the
   /// coverage+bundles report (owned copy); on kFailed it is `{"error":"..."}`.
   /// See poll_evaluation's doc-comment in plugin_data_api.h for the full
-  /// report schema. Errors if the host predates this slot or `handle` is
-  /// unknown.
+  /// report schema. Errors if the host predates this slot, `handle` is
+  /// unknown, or the host reports a state this SDK does not know ("unknown
+  /// evaluation state N") -- never treated as pending.
   [[nodiscard]] Expected<EvaluationPoll> pollEvaluation(uint64_t handle) const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, poll_evaluation)) {
       return unexpected("data processors host does not support poll_evaluation");
@@ -1981,9 +1996,12 @@ class DataProcessorsHostView {
       case PJ_EVALUATION_STATE_CANCELLED:
         result.state = EvaluationState::kCancelled;
         break;
-      default:
+      case PJ_EVALUATION_STATE_PENDING:
         result.state = EvaluationState::kPending;
         break;
+      default:
+        // Never read an unknown state as "pending": the caller would poll forever.
+        return unexpected("unknown evaluation state " + std::to_string(state));
     }
     return result;
   }
