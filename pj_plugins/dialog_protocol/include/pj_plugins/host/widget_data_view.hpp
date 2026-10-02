@@ -17,7 +17,7 @@
 #include <vector>
 
 #include "pj_base/number_parse.hpp"
-#include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark
+#include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark, SceneTopic
 
 namespace PJ {
 
@@ -653,6 +653,51 @@ class WidgetDataView {
         sv.dashed = dashed_it->get<bool>();
       }
       result.push_back(std::move(sv));
+    }
+    return result;
+  }
+
+  // --- Embedded scene view (QFrame used as a 3D/2D object view container) ---
+
+  /// Kind of the embedded view ("3d"/"2d"). nullopt: key absent (leave the frame
+  /// alone). Empty string: the key is null (clearSceneView), delete the view.
+  /// @since 0.36.0
+  [[nodiscard]] std::optional<std::string> sceneView(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("scene_view");
+    if (it == w->end()) {
+      return std::nullopt;
+    }
+    if (it->is_string()) {
+      return it->get<std::string>();
+    }
+    if (it->is_null()) {
+      return std::string();
+    }
+    return std::nullopt;
+  }
+
+  /// Object topics of the embedded view; nullopt when the key is absent or not an array.
+  /// @since 0.36.0
+  [[nodiscard]] std::optional<std::vector<SceneTopic>> sceneTopics(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("scene_topics");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<SceneTopic> result;
+    result.reserve(it->size());
+    for (const auto& t : *it) {
+      if (!t.is_object()) {
+        continue;
+      }
+      result.push_back({t.value("topic", std::string()), t.value("dataset", std::string())});
     }
     return result;
   }

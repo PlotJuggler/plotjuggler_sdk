@@ -316,7 +316,99 @@ static_assert(
 static_assert(
     offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention) == 96,
     "toolbox host object-retention tail slot pinned");
-static_assert(sizeof(PJ_toolbox_host_vtable_t) == 104, "Toolbox host size (update deliberately on append)");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, acquire_catalog_snapshot_v2) == 104,
+    "toolbox host catalog-snapshot-v2 tail slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 112, "Toolbox host size (update deliberately on append)");
+
+// --- Data processors host vtable ("pj.data_processors.v1", ABI-APPENDABLE) --
+static_assert(offsetof(PJ_data_processors_host_vtable_t, protocol_version) == 0, "data processors host prefix pinned");
+static_assert(offsetof(PJ_data_processors_host_vtable_t, struct_size) == 4, "data processors host prefix pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, create_data_processor) == 8, "data processors host create slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, remove_data_processor) == 16, "data processors host remove slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, list_data_processor_ids) == 24, "data processors host list slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, data_processor_config) == 32, "data processors host config slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, validate_data_processor_script) == 40,
+    "data processors host validate tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, create_data_processor_v2) == 48,
+    "data processors host typed-create tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, submit_evaluation) == 56,
+    "data processors host submit-evaluation tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, poll_evaluation) == 64,
+    "data processors host poll-evaluation tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, release_evaluation) == 72,
+    "data processors host release-evaluation tail slot pinned");
+static_assert(
+    sizeof(PJ_data_processors_host_vtable_t) == 80, "Data processors host size (update deliberately on append)");
+static_assert(sizeof(PJ_data_processors_host_t) == 16, "Data processors host fat pointer pinned");
+
+// --- Catalog snapshot v2 (ABI-VERSIONED struct, not appendable) --------------
+static_assert(sizeof(PJ_object_topic_info_t) == 96, "PJ_object_topic_info_t size pinned (fixed stride)");
+static_assert(offsetof(PJ_object_topic_info_t, entry_count) == 56, "PJ_object_topic_info_t.entry_count offset pinned");
+static_assert(offsetof(PJ_object_topic_info_t, reserved) == 80, "PJ_object_topic_info_t.reserved offset pinned");
+
+static_assert(sizeof(PJ_catalog_snapshot_v2_t) == 88, "PJ_catalog_snapshot_v2_t size pinned at introduction (0.36.0)");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, struct_size) == 0, "PJ_catalog_snapshot_v2_t.struct_size offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, object_topics) == 56, "PJ_catalog_snapshot_v2_t.object_topics offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, object_topic_count) == 64,
+    "PJ_catalog_snapshot_v2_t.object_topic_count offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, release_ctx) == 72, "PJ_catalog_snapshot_v2_t.release_ctx offset pinned");
+static_assert(offsetof(PJ_catalog_snapshot_v2_t, release) == 80, "PJ_catalog_snapshot_v2_t.release offset pinned");
+
+// --- Data-processor typed request vocabulary (introduced 0.36.0) ------------
+static_assert(sizeof(PJ_data_processor_output_t) == 32, "PJ_data_processor_output_t size pinned (fixed stride)");
+static_assert(offsetof(PJ_data_processor_output_t, name) == 0, "PJ_data_processor_output_t.name offset pinned");
+static_assert(offsetof(PJ_data_processor_output_t, type) == 16, "PJ_data_processor_output_t.type offset pinned");
+
+static_assert(
+    sizeof(PJ_data_processor_request_t) == 168, "PJ_data_processor_request_t size pinned at introduction (0.36.0)");
+static_assert(
+    offsetof(PJ_data_processor_request_t, struct_size) == 0, "PJ_data_processor_request_t.struct_size offset pinned");
+static_assert(offsetof(PJ_data_processor_request_t, inputs) == 104, "PJ_data_processor_request_t.inputs offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, time_flags) == 136, "PJ_data_processor_request_t.time_flags offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, window_start_ns) == 144,
+    "PJ_data_processor_request_t.window_start_ns offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, time_ns) == 160, "PJ_data_processor_request_t.time_ns offset pinned");
+
+static_assert(sizeof(PJ_evaluation_budget_t) == 40, "PJ_evaluation_budget_t size pinned at introduction (0.36.0)");
+static_assert(offsetof(PJ_evaluation_budget_t, struct_size) == 0, "PJ_evaluation_budget_t.struct_size offset pinned");
+static_assert(
+    offsetof(PJ_evaluation_budget_t, max_report_bytes) == 32, "PJ_evaluation_budget_t.max_report_bytes offset pinned");
+
+// --- Plot-tab host vtable ("pj.plot_tabs.v1", ABI-APPENDABLE) ---------------
+// Seven v1 slots are released and frozen; create_tab_v2 onward are tail slots (0.36.0).
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, protocol_version) == 0, "plot tab host prefix pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, struct_size) == 4, "plot tab host prefix pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, create_tab) == 8, "plot tab host create_tab slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, close_tab) == 16, "plot tab host close_tab slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, list_tab_ids) == 24, "plot tab host list_tab_ids slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, tab_config) == 32, "plot tab host tab_config slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, add_curve) == 40, "plot tab host add_curve slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, remove_curve) == 48, "plot tab host remove_curve slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, clear_tab) == 56, "plot tab host clear_tab slot pinned");
+static_assert(PJ_PLOT_TAB_HOST_MIN_VTABLE_SIZE == 64, "plot tab host min vtable size pinned at the v1 layout");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, create_tab_v2) == 64, "plot tab host create_tab_v2 tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, attach_topic) == 72, "plot tab host attach_topic tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, detach_topic) == 80, "plot tab host detach_topic tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, focus_tab) == 88, "plot tab host focus_tab tail slot pinned");
+static_assert(sizeof(PJ_plot_tab_host_vtable_t) == 96, "Plot tab host vtable size (update deliberately on append)");
+static_assert(sizeof(PJ_plot_tab_host_t) == 16, "Plot tab host fat pointer pinned");
 
 // --- Toolbox runtime host vtable (ABI-APPENDABLE within v4) ------------------
 // The vtable the host exposes to plugins under "pj.toolbox_runtime.v1".

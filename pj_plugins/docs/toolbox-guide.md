@@ -200,6 +200,8 @@ data store.
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
+| `hasCatalogSnapshotV2()` (0.36.0) | True iff the host serves snapshot v2. Check it before `catalogSnapshotV2()`; without it object topics are not enumerable. |
+| `catalogSnapshotV2()` (0.36.0) | Like `catalogSnapshot()`, plus every object topic (`objectTopics()`) with its dataset, builtin type, entry count and raw time range, in one deep copy. The two halves are not read atomically: a topic created between the reads may appear in one half only. |
 | `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
 | `registerObjectTopic(source, name, type[, extra_metadata])` | Register a built-in media/object topic under a data source. The typed overload emits the canonical `builtin_object_type` renderer metadata and returns an `ObjectTopicHandle`. |
 | `registerObjectTopic(source, name, metadata_json)` | Raw-metadata overload for custom or untyped object topics. The store retains the JSON verbatim. |
@@ -214,14 +216,14 @@ Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 | `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
 | `notifyDataChanged()` | Tell the host that data was modified; refresh UI. Idempotent and cheap; coalesce per logical operation, not per record. |
 
-### Playback, viewport, and owned tabs (SDK 0.28.0)
+### Playback, viewport, owned tabs, and scene views (SDK 0.28.0; scene views 0.36.0)
 
 Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
 
 | Service trait | Methods and scope |
 |---|---|
 | `PJ::sdk::PlaybackHostService` | `play`, `pause`, `seek`, `setPlaybackRate`, `state`: the global playback cursor. `toDisplayTime` and `toDisplayTimeForSource` convert absolute nanoseconds to display-axis seconds. |
-| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. |
+| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. Since 0.36.0 the same service also serves scene tabs through tail slots, absent on a host with no scene workspace (check `hasSceneTabs()`): `createTabV2(id, kind, title)` with `kind` `"plot"`, `"3d"` or `"2d"` (one id namespace across kinds; re-creating an id with a different kind closes and recreates it empty), `attachTopic(id, topic, dataset_source)`, `detachTopic`, `focusTab(id)`. On a scene tab `addCurve`/`removeCurve` are errors; `clear` detaches every topic; `configOf` reports what the tab actually holds (scene tabs: `kind`, topics with dataset, type, visibility; plot tabs: unchanged, no `kind`). |
 | `PJ::sdk::ViewportHostService` | `zoomToTimeRange`, `zoomReset`: all eligible plots in the calling plugin's tabs. |
 
 All calls run on the main thread. Services are optional. Check acquisition
@@ -265,7 +267,9 @@ recomputed after user edits to source offsets or the time reference.
 Tab `id` and visible `title` are separate. `create("run-a", "Temperature")` and
 `create("run-b", "Temperature")` create two independently addressable tabs.
 Renaming or reordering tabs preserves their IDs. Recreating an ID replaces its
-contents.
+contents: PlotJuggler keeps the tab's split layout and clears the curves, so do
+not assume a single plot afterwards and read `configOf`. `attachTopic` is
+idempotent (attaching an attached topic succeeds).
 
 IDs are scoped to the plugin binding and live only while `list()` returns them.
 Re-read after workspace changes. `configOf(id)` reports the resolved curves
@@ -289,6 +293,86 @@ Colons can occur in both parts: `(a, b:/t/f)` and `(a:b, /t/f)` compose identica
 and with both sources loaded the parser chooses `a:b`. Composition round-trips
 only when the intended source is the longest matching prefix. Do not treat this
 string as a persistent dataset identity. Hosts still validate the split result.
+
+### Detecting what the host can do (capability rule)
+
+One rule, stated once in the header comment of `pj_base/plugin_data_api.h`. A
+plugin finds out what a host offers in exactly one of five ways, by the kind of
+feature:
+
+| Feature kind | How to detect | Examples |
+|---|---|---|
+| ABI service feature (tail slots) | One named `hasX()` on the C++ view; never a version string | `DataProcessorsHostView::hasTypedRequests()`, `PlotTabHostView::hasSceneTabs()`, `ToolboxHostView::hasCatalogSnapshotV2()` |
+| Flag-bit feature | No probe: an older host REJECTS an unknown bit, the call fails loudly. The floor is the `hasX()` of the slot that carries it | `PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS` (floor: `hasTypedRequests()`) |
+| Build-dependent behaviour | Probe by doing it | Python for on_demand: `validateScript("on_demand", "python", "return {}")`; a WASM host rejects it |
+| Dialog-protocol feature | A bit of `PJ_dialog_host_info_t::capabilities`, read with `hostHas()` / `hostCapabilities()` | `kEmbedsSceneViews` for `scene_view` / `scene_topics` |
+| Manifest metadata | Declarative, no probe; hosts ignore keys they do not know | `badge`, `custom_topics_editor` |
+
+When a plugin cannot find an input's type because the host has no snapshot v2,
+treat it as unknown and say the host is too old; do not guess a scalar.
+
+### Typed requests and on-demand evaluation (SDK 0.36.0)
+
+`DataProcessorsHostView::hasTypedRequests()` is true iff the host serves
+`createV2` and the `submitEvaluation` / `pollEvaluation` / `releaseEvaluation`
+trio; gate typed-request UI on it, never on a version.
+
+`DataProcessorsHostView::createV2(request)` upserts a `kind="on_demand"` node like
+`createOnDemand`, but the request is typed (`DataProcessorRequest`): outputs carry
+a `DataProcessorOutput{name, type}` pair instead of a `"<name>:<type>"` string
+suffix, plus an optional human-readable `label` and, with `instant_ns` set, a
+pinned evaluation time. `create_data_processor` (v1) remains valid for the
+untyped suffix grammar.
+
+`createV2` returns, 1:1 with `outputs`, the catalog path of each output:
+`<owner>/<id>/<name>` for an object output AND for a number output (the series
+key of series mode; it is absent from the catalog when the recipe cannot run in
+series mode: pinned, or no object input), and the bare name for a string
+output. Read a number output's series by exactly the returned string; never
+rebuild it from the output name, because another topic may share the leaf.
+
+`PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS` (on_demand): a transient evaluation
+(`submitEvaluation` with a script and no declared outputs) infers each output's
+name and type from the returned value, and the report carries them in a root
+`"outputs"` array `[{"name","type"}]` (type `number`, `string`, a builtin
+object type name, or `unknown`). On `createV2` the declared outputs are then a
+binding hint learned from such a trial. An older host rejects the unknown flag
+bit, so there is nothing to probe.
+
+Lifetime, by flag: PERSISTENT (the default) is saved in the layout and is
+subject to the host's undo/redo; EPHEMERAL is a preview owned by the plugin
+instance, never persisted and untouched by undo/redo or layout load, ended only
+by `remove` or the plugin's teardown; HISTORY_EXEMPT is persisted but history
+never restores, recreates or removes it (`recipeOf` reports `history_exempt` for
+every kind); a pinned on_demand node (`instant_ns` on `createV2`) is a persisted
+finding fixed at one time. The per-kind table of `label`, WINDOW and INSTANT
+is in the `plugin_data_api.h` comment: transforms and markers accept and ignore
+`label`, transforms reject WINDOW, and WINDOW belongs to `submitEvaluation` for
+on_demand. Python is an optional on_demand language of some hosts: probe it with
+`validateScript("on_demand", "python", ...)`.
+
+`submitEvaluation(request, budget)` starts an evaluation and returns a handle.
+`request.id` naming an installed on_demand node with an empty `script` evaluates
+that node; a non-empty `script` is an ephemeral recipe (`flags` must carry
+`PJ_DATA_PROCESSOR_FLAG_EPHEMERAL`) evaluated without installing or publishing
+anything. `request.instant_ns` asks for one bundle at that instant;
+`request.window` asks for one bundle per instant an input changes inside the
+window, in time order, until the `EvaluationBudget` (`max_millis`, `max_bytes`,
+`max_evaluations`, `max_report_bytes`; 0 = host default) stops it.
+
+`pollEvaluation(handle)` is the only way to read the result, whether the host
+completed the work before returning or in the background: on `kCompleted` its
+`json` is `{"coverage":{...},"bundles":[...]}` (one bundle for INSTANT, one per
+evaluated instant for WINDOW; every `*_ns` value is a raw dataset nanosecond
+count as a JSON integer). `coverage.stopped` says why the evaluation ended and
+`coverage.error` carries the reason only when it is `"error"`; an empty `bundles`
+list alone does not mean "no sample". `coverage.gaps` lists retention gaps. On
+`kFailed` it is `{"error":"..."}`; a state the SDK does not know is returned as
+an error, never as pending. A host keeps at most 64 live handles and 64 MiB of
+reserved report bytes: release finished handles, and poll from a timer so the
+host's event loop can finish the work. Handles are per host object, increasing, never reused. `releaseEvaluation(handle)` cancels a
+pending evaluation and frees its result; releasing an unknown or already-released
+handle is an error.
 
 ### Reading a series via Arrow
 
@@ -405,6 +489,8 @@ it without instantiating the plugin.
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
+| `badge` | string | no | Short label (e.g. `AI`) the host may show next to objects this plugin creates; at most 8 characters are advised. Absent means empty, and what the host shows then (the plugin name, nothing) is host policy, not contract. |
+| `custom_topics_editor` | bool | no | `true` declares this toolbox as the editor of the host's user-defined (Custom) topics. The host shows the "+" button for it and lets only this plugin edit or delete those rows; absent or `false` means no. Declarative, never probed. |
 
 Example:
 ```json

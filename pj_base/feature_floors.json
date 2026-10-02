@@ -14,6 +14,20 @@
     },
     "0.34.0": {
       "PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT": ""
+    },
+    "0.36.0": {
+      "PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS": "",
+      "PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT": "",
+      "PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW": "",
+      "attachTopic": "PJ_plot_tab_host_vtable_t::attach_topic",
+      "catalogSnapshotV2": "PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2",
+      "createTabV2": "PJ_plot_tab_host_vtable_t::create_tab_v2",
+      "createV2": "PJ_data_processors_host_vtable_t::create_data_processor_v2",
+      "detachTopic": "PJ_plot_tab_host_vtable_t::detach_topic",
+      "focusTab": "PJ_plot_tab_host_vtable_t::focus_tab",
+      "pollEvaluation": "PJ_data_processors_host_vtable_t::poll_evaluation",
+      "releaseEvaluation": "PJ_data_processors_host_vtable_t::release_evaluation",
+      "submitEvaluation": "PJ_data_processors_host_vtable_t::submit_evaluation"
     }
   },
   "baseline": [

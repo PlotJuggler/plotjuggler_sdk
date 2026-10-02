@@ -673,6 +673,56 @@ splice form and decodes with an empty span; the host runs `validateGridMap()`
 right after attaching the spliced bytes, and consumers that index cells run it
 again defensively.
 
+## Field tables
+
+`pj_base/builtin/field_table.hpp` describes a builtin struct's members at
+compile time — name, shape (`FieldKind`), and type-erased get/set accessors —
+so a generic consumer (e.g. a script binder) can read or write any described
+field by name without hand-written per-type glue. A struct opts in with a
+`FieldTable<T>` specialization built from `field<&T::member>("member")` calls
+(`buffer<>()` for a packed record buffer like `PointCloud::data`); nested
+structs and lists of described structs link to their own table through
+`FieldDescriptor::nested`, so a consumer walks an arbitrarily deep struct tree
+with one generic recursive routine. `field_table_registry.hpp` exposes
+`describe(BuiltinObjectType)` to look up a table from the runtime tag a
+`BuiltinObject` carries.
+
+`FrameTransforms`, `ImageAnnotations`, `PointCloud`, `SceneEntities`, `Image`,
+`DepthImage`, `CameraInfo`, and `VideoFrame` are tabled today
+(`frame_transforms_fields.hpp`, `image_annotations_fields.hpp`,
+`point_cloud_fields.hpp`, `scene_entities_fields.hpp`, `image_fields.hpp`,
+`depth_image_fields.hpp`, `camera_info_fields.hpp`, `video_frame_fields.hpp`;
+`describe()` in `field_table_registry.hpp` returns a table for exactly these eight). `Image::data`,
+`DepthImage::data`, and `VideoFrame::data` each expose their packed pixel /
+bitstream bytes through a `kBuffer` descriptor the same way `PointCloud::data`
+does, with the per-record layout derived from the encoding/format string
+rather than a channel list (see each header's doc comment for how a raw vs.
+compressed encoding differs). `CameraInfo`'s `K`/`R`/`P` (and `DepthImage`'s
+`K`) are `std::array<double, N>` members, described as a fixed-size `kList`
+written through `list_replace` rather than `list_emplace`/`list_clear` (the
+element count never changes); `Image::compressed_depth_min`/
+`compressed_depth_max` are `kOptionalNumber` — a nullable number read/written
+like `kNumber` but guarded by `has_value()`. A field table is hand-maintained
+alongside its struct: adding, renaming, or retyping a member requires updating the matching
+`FieldTable<T>` specialization in the same change, or the table silently
+drifts from the struct it claims to describe. `pj_base/tests/field_table_test.cpp`
+enforces this — its generic copy-through-table round trip is compared against
+the struct's own `operator==` and its canonical wire-codec bytes, so a member
+the table forgot to list shows up as a round-trip mismatch rather than a
+silent gap.
+
+An object topic carrying a field-tabled type can mark itself with the
+`pj_snapshot` object-topic metadata key (`PJ::sdk::kSnapshotMetadataKey`,
+`ObjectTopicMetadataBuilder::snapshot()`, SDK 0.36.0). Value `"true"` means
+every entry on the topic is a complete clear-and-replace snapshot — a
+generic field-table consumer may render each entry alone, without replaying
+the topic's history to reconstruct state first. This matters for
+SceneEntities/ImageAnnotations producers in particular, whose entries can
+otherwise be incremental (add/update/delete deltas); a producer that instead
+republishes its whole set each time sets this flag so a stateless consumer
+(and `set_object_topic_retention(topic, 1)`, which keeps only the latest
+snapshot) can treat each entry as the full picture.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |

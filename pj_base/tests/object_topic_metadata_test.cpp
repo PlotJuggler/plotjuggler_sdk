@@ -202,6 +202,38 @@ TEST(ObjectTopicMetadataBuilderTest, CanonicalKeyCannotBeInsertedAsCustomMetadat
 #endif
 }
 
+TEST(ObjectTopicMetadataBuilderTest, SnapshotFlagRoundTrips) {
+  // snapshot(true) sets the canonical key.
+  const auto snapshot_true =
+      ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kSceneEntities).snapshot().build();
+  ASSERT_TRUE(snapshot_true);
+  EXPECT_EQ(*snapshot_true, R"({"builtin_object_type":"kSceneEntities","pj_snapshot":"true"})");
+
+  // snapshot(false) is a no-op: the key stays unset (incremental, the default).
+  const auto snapshot_false =
+      ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kImageAnnotations).snapshot(false).build();
+  ASSERT_TRUE(snapshot_false);
+  EXPECT_EQ(*snapshot_false, R"({"builtin_object_type":"kImageAnnotations"})");
+
+  // Omitting snapshot() entirely leaves the key unset too.
+  const auto no_snapshot = ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kImageAnnotations).build();
+  ASSERT_TRUE(no_snapshot);
+  EXPECT_EQ(*no_snapshot, *snapshot_false);
+
+  EXPECT_EQ(kSnapshotMetadataKey, "pj_snapshot");
+}
+
+TEST(ObjectTopicMetadataBuilderTest, DerivedKeyIsStableAndRoundTripsAsACustomString) {
+  EXPECT_EQ(kDerivedMetadataKey, "pj_derived");
+  EXPECT_EQ(kDerivedOnDemandValue, "on_demand");
+  const auto built = ObjectTopicMetadataBuilder()
+                         .builtinObjectType(BuiltinObjectType::kPointCloud)
+                         .string(kDerivedMetadataKey, kDerivedOnDemandValue)
+                         .build();
+  ASSERT_TRUE(built);
+  EXPECT_EQ(*built, R"({"builtin_object_type":"kPointCloud","pj_derived":"on_demand"})");
+}
+
 TEST(ObjectTopicMetadataRegistrationTest, SourceTypedOverloadForwardsBuiltJson) {
   RegistrationRecorder recorder;
   const PJ_object_write_host_vtable_t vtable = {

@@ -635,6 +635,37 @@ TEST(WidgetDataViewTest, ChartPlaceholderRoundTrip) {
   EXPECT_EQ(*v.chartPlaceholder("chart"), "No data yet");
 }
 
+TEST(WidgetDataViewTest, SceneViewRoundTrip) {
+  PJ::WidgetData wd;
+  wd.setSceneView("view", "3d");
+  wd.setSceneTopics("view", {{"/a", "ds"}, {"/b", ""}});
+  PJ::WidgetDataView v(wd.toJson());
+  ASSERT_TRUE(v.sceneView("view").has_value());
+  EXPECT_EQ(*v.sceneView("view"), "3d");
+  auto topics = v.sceneTopics("view");
+  ASSERT_TRUE(topics.has_value());
+  ASSERT_EQ(topics->size(), 2U);
+  EXPECT_EQ((*topics)[0].topic, "/a");
+  EXPECT_EQ((*topics)[0].dataset, "ds");
+  EXPECT_EQ((*topics)[1].topic, "/b");
+  EXPECT_TRUE((*topics)[1].dataset.empty());
+}
+
+TEST(WidgetDataViewTest, SceneViewClearAndAbsent) {
+  PJ::WidgetData wd;
+  wd.clearSceneView("view");
+  PJ::WidgetDataView v(wd.toJson());
+  ASSERT_TRUE(v.sceneView("view").has_value());
+  EXPECT_TRUE(v.sceneView("view")->empty());
+  EXPECT_FALSE(v.sceneTopics("view").has_value());
+
+  PJ::WidgetData other;
+  other.setChartPlaceholder("chart", "x");
+  PJ::WidgetDataView v2(other.toJson());
+  EXPECT_FALSE(v2.sceneView("chart").has_value());
+  EXPECT_FALSE(v2.sceneTopics("chart").has_value());
+}
+
 TEST(WidgetDataViewTest, TableDeltaRoundTrip) {
   PJ::WidgetData wd;
   wd.appendTableRows("tbl", 9, std::vector<std::vector<std::string>>{{"r1c1", "r1c2"}});
