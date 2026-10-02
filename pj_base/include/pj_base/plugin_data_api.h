@@ -96,7 +96,7 @@ extern "C" {
  *      "return {}"), and keep the UI honest when it fails.
  *   4. Dialog-protocol feature (scene_view / scene_topics widget keys): a bit in
  *      PJ_dialog_host_info_t::capabilities (dialog_protocol.h), read through
- *      DialogPluginTyped::hostCapabilities(). A host that never calls set_host_info
+ *      DialogPluginBase::hostHas(). A host that never calls set_host_info
  *      reports 0 bits.
  *   5. Manifest metadata (badge, custom_topics_editor): declarative, no probe; hosts
  *      that do not know a key ignore it.
@@ -1014,9 +1014,9 @@ typedef struct {
  *                   calling plugin (per-plugin isolation): one plugin can neither
  *                   enumerate nor remove another's.
  *   - kind        : output discriminator, see above ("transform", "markers", "on_demand").
- *   - language    : script backend. "luau" everywhere; "python" only for kind
- *                   "on_demand" and only on hosts that ship it (probe with
- *                   validate_data_processor_script). The host rejects any other value.
+ *   - language    : script backend. "luau" everywhere; "python" is optional (see the
+ *                   Python note in the on_demand paragraph above). The host rejects any
+ *                   other value.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
  *                   "pose/orientation/x") the script reads; the host resolves them
  *                   and exact-joins co-timestamped inputs. A name MAY carry the
@@ -1262,7 +1262,7 @@ typedef struct PJ_data_processors_host_vtable_t {
    * and (INSTANT) a pinned evaluation time for an on_demand finding. Same upsert,
    * transactional and out_topics (count-then-fill, borrowed until the next call on
    * this host object) contract as create_data_processor, including the on_demand
-   * out_topics contract (object AND number outputs return "<owner>/<id>/<name>").
+   * out_topics contract (see the on_demand paragraph of the service comment).
    * request->struct_size follows the read-prefix rule on PJ_data_processor_request_t.
    * ABI-APPENDED slot.
    * @since 0.36.0 */

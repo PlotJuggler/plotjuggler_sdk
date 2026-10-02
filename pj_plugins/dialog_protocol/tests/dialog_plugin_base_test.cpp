@@ -61,10 +61,6 @@ class HostInfoDialog final : public PJ::DialogPluginBase {
     return hostInfo();
   }
 
-  [[nodiscard]] uint64_t observedHostCapabilities() const noexcept {
-    return hostCapabilities();
-  }
-
   [[nodiscard]] bool observedHostHas(PJ::DialogHostCapability capability) const noexcept {
     return hostHas(capability);
   }
@@ -135,13 +131,12 @@ TEST_F(DialogPluginBaseHostInfoTest, CopiesStringsAndCapabilitiesDuringDelivery)
   EXPECT_FALSE(info->has(PJ::DialogHostCapability::kCanSelectFolder));
 }
 
-TEST_F(DialogPluginBaseHostInfoTest, HostCapabilitiesReportsTheEmbedsSceneViewsBit) {
+TEST_F(DialogPluginBaseHostInfoTest, HostHasReportsTheEmbedsSceneViewsBit) {
   // No delivery (pre-0.21 host, or one that never calls set_host_info): no bits.
-  EXPECT_EQ(plugin().observedHostCapabilities(), 0u);
   EXPECT_FALSE(plugin().observedHostHas(PJ::DialogHostCapability::kEmbedsSceneViews));
 
   ASSERT_TRUE(deliver("0.36.0", "4.2.0", PJ_DIALOG_HOST_CAN_OPEN_FILE));
-  EXPECT_EQ(plugin().observedHostCapabilities(), static_cast<uint64_t>(PJ_DIALOG_HOST_CAN_OPEN_FILE));
+  EXPECT_TRUE(plugin().observedHostHas(PJ::DialogHostCapability::kCanOpenFile));
   EXPECT_FALSE(plugin().observedHostHas(PJ::DialogHostCapability::kEmbedsSceneViews));
 
   ASSERT_TRUE(deliver("0.36.0", "4.2.0", PJ_DIALOG_HOST_CAN_OPEN_FILE | PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS));

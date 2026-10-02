@@ -90,21 +90,13 @@ class DialogPluginBase {
     return host_info_;
   }
 
-  /// Capability bits the host announced through set_host_info (a
-  /// PJ_DIALOG_HOST_* mask), or 0 when no host info was delivered (pre-0.21 host
-  /// or non-conforming embedding host). Never a probe of host version: a bit absent
-  /// here means "do not use that feature".
-  ///
-  /// @since 0.36.0
-  [[nodiscard]] uint64_t hostCapabilities() const noexcept {
-    return host_info_.has_value() ? host_info_->capabilities : 0;
-  }
-
-  /// True iff the host announced `capability`. Same as hostCapabilities() & bit.
+  /// True iff the host announced `capability` through set_host_info. False when no
+  /// host info was delivered (pre-0.21 host or non-conforming embedding host). Never
+  /// a probe of host version: a bit absent here means "do not use that feature".
   ///
   /// @since 0.36.0
   [[nodiscard]] bool hostHas(DialogHostCapability capability) const noexcept {
-    return (hostCapabilities() & static_cast<uint64_t>(capability)) != 0;
+    return host_info_.has_value() && host_info_->has(capability);
   }
 
  public:

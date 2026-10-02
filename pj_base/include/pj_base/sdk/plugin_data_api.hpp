@@ -1648,9 +1648,8 @@ namespace detail {
 /// Builds the ABI request for a DataProcessorRequest, filling `in_abi`/`out_abi`
 /// with borrowed views into `request`'s owned strings — the caller must keep
 /// `request`, `in_abi`, and `out_abi` alive for the duration of the ABI call.
-/// `struct_size` is the sizeof of the header this plugin was compiled with: correct
-/// under the read-prefix rule (the host reads the prefix it knows and accepts a
-/// larger struct_size; see PJ_data_processor_request_t).
+/// `struct_size` is the sizeof of the header this plugin was compiled with (see the
+/// read-prefix rule on PJ_data_processor_request_t).
 [[nodiscard]] inline PJ_data_processor_request_t toAbiRequest(
     const DataProcessorRequest& request, std::vector<PJ_string_view_t>& in_abi,
     std::vector<PJ_data_processor_output_t>& out_abi) {
@@ -1833,10 +1832,8 @@ class DataProcessorsHostView {
   /// "<name>:<type>" ("number", "string", or a BuiltinObjectType name such as
   /// "kPointCloud"/"kSceneEntities") the host needs to route a later on-demand
   /// evaluation without re-running the script. Returns the resolved output
-  /// identifiers 1:1 with `typed_outputs`: the catalog path "<owner>/<id>/<name>"
-  /// for an object-typed output AND for a number output (the series key of series
-  /// mode; absent from the catalog when the recipe cannot run in series mode), the
-  /// bare name for a string output. Inputs MAY
+  /// identifiers 1:1 with `typed_outputs` (the out_topics contract, see
+  /// plugin_data_api.h). Inputs MAY
   /// be dataset-qualified (see create()). For typed outputs, a label, or a
   /// pinned evaluation time, use createV2() instead.
   /// @since 0.36.0
@@ -1899,8 +1896,7 @@ class DataProcessorsHostView {
   /// inputs, no run, no side effects) for the given `kind`. Cheap enough to drive a
   /// live red/green editor semaphore. Runtime/empty-output errors are NOT caught here —
   /// use an ephemeral create for that. `language` selects the backend: "luau" everywhere,
-  /// "python" only for kind "on_demand" and only on hosts that ship it (probe with
-  /// validateScript("on_demand", "python", "return {}"), never assume it).
+  /// "python" is optional per host (see the Python note in plugin_data_api.h).
   /// Errors if the host predates this slot or the language/kind is unknown.
   [[nodiscard]] Status validateScript(
       std::string_view kind, std::string_view language, std::string_view script,
@@ -1919,16 +1915,11 @@ class DataProcessorsHostView {
   /// create_data_processor with a typed request: typed outputs, a label, and
   /// (with `request.instant_ns` set) a pinned evaluation time for an on_demand
   /// finding. Same upsert, transactional, and resolved-topic-names contract as
-  /// create(); for kind="on_demand" the names are 1:1 with `request.outputs`:
-  /// "<owner>/<id>/<name>" for object AND number outputs (a number output's series
-  /// key in series mode, absent from the catalog when the recipe cannot run in
-  /// series mode), the bare name for a string output. Read a number output's
-  /// series by exactly the returned string. Errors if the host predates this slot.
+  /// create(); for kind="on_demand" the names are 1:1 with `request.outputs`
+  /// (the out_topics contract, see plugin_data_api.h). Errors if the host predates this slot.
   ///
-  /// struct_size: this wrapper sends sizeof(PJ_data_processor_request_t) of the
-  /// header it was compiled with. Under the read-prefix rule (the host reads the
-  /// prefix it knows and accepts a larger struct_size; see
-  /// PJ_data_processor_request_t) that is correct against any host.
+  /// struct_size: sizeof(PJ_data_processor_request_t) of the compiled header; correct
+  /// against any host (read-prefix rule, see PJ_data_processor_request_t).
   /// @since 0.36.0
   [[nodiscard]] Expected<std::vector<std::string>> createV2(const DataProcessorRequest& request) const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_v2)) {
