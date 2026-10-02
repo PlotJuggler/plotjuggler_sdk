@@ -619,9 +619,13 @@ class WidgetData {
     return *this;
   }
 
-  /// Auto-fit (zoom-to-extents) the chart inside the named QFrame on every series
-  /// update when `enabled` is true; when false, preserve the user's current zoom.
-  /// Mirrors the Transform/Filter editor "AutoZoom" checkbox.
+  /// Auto-fit semantics for the chart inside the named QFrame:
+  ///   - key omitted: fit on every series update until the user zooms or pans, and
+  ///     refit when the series set is new;
+  ///   - `true`: fit now and resume auto-fitting (discards the user's view);
+  ///   - `false`: keep the user's view; fit only when the series set is new.
+  /// Send `true` for one update only (e.g. a "Fit" button), not on every tick: that
+  /// would wipe the user's zoom each time. Mirrors the "AutoZoom" checkbox.
   WidgetData& setChartAutoZoom(std::string_view name, bool enabled) {
     entry(name)["chart_auto_zoom"] = enabled;
     return *this;

@@ -1049,8 +1049,11 @@ typedef struct {
  *   - EPHEMERAL (PJ_DATA_PROCESSOR_FLAG_EPHEMERAL): a preview owned by the plugin
  *     instance that created it. Never persisted; undo/redo and layout load do not
  *     end it; only remove_data_processor(id) or the owning plugin's teardown does.
- *     Hosts hide previews from list_data_processor_ids and data_processor_config; the
- *     catalog snapshot may still show their output topics. kinds: all three.
+ *     VISIBILITY: list_data_processor_ids hides previews, but
+ *     data_processor_config by exact id answers the OWNING plugin, ephemeral or not
+ *     (ids are namespaced per plugin), so a plugin can read its own preview's
+ *     progress (e.g. the on_demand "series" block). The catalog snapshot may still
+ *     show their output topics. kinds: all three.
  *   - HISTORY_EXEMPT (PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT): PERSISTED, but the host's
  *     history has no authority over it (never restored, recreated or removed by
  *     undo/redo). Meaningless on an EPHEMERAL node. kinds: all three; every kind's
@@ -1233,7 +1236,8 @@ typedef struct PJ_data_processors_host_vtable_t {
    * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
    * buffer of that size. On success the first min(capacity, *out_count) entries
    * of out_ids are filled and point into host storage valid only until the next
-   * call on this vtable. Ephemeral previews are excluded. */
+   * call on this vtable. Ephemeral previews are excluded (data_processor_config
+   * still answers for them by exact id). */
   bool (*list_data_processor_ids)(
       void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 

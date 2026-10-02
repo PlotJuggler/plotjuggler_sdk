@@ -505,7 +505,7 @@ work like polling a server for available topics.
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
 | QTableWidget | `setTableHeaders`, `setTableRows` (strings, or `TableItem` for sortable columns), `setTableSortIndicator`, `setSelectedRows`, `setVisibleRows`, `setRowColor`, `setCellTooltip` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
 | QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage`, `setCodeCursor`, `setCodeCaretTracking` | `onCodeChanged(name, code)`, or `onCodeChangedWithCursor(name, code, cursor)` when the editor opts into caret tracking |
-| QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
+| QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled`, `setChartAutoZoom` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QFrame (embedded object view, since 0.36.0) | `setSceneView(name, "3d"\|"2d")`, `setSceneTopics`, `clearSceneView`; gate on `hostHas(kEmbedsSceneViews)` | (none) |
 | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | `setDateTime`, `setDateTimeRange` | `onDateTimeChanged(name, iso8601)` |
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
@@ -514,6 +514,12 @@ work like polling a server for available topics.
 | QStackedWidget | `setStackedPage`, `setStackedIndex` | `onStackedPageChanged(name, index, page_object_name)` |
 | QTreeWidget | `setTreeHeaders`, `setTreeItems`, `setTreeSelectedIds`, `setTreeExpandedIds`, `setTreeVisibleIds`, `clearTreeVisibleIds`, `setTreeSelectionMode` | `onTreeSelectionChanged`, `onTreeItemActivated`, `onTreeExpansionChanged`, `onTreeCheckStateChanged` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
+
+Chart auto-fit: when `setChartAutoZoom` is never called the chart fits on every
+series update until the user zooms or pans, and refits when the series set is
+new. `setChartAutoZoom(name, true)` fits now and resumes auto-fit, so send it
+for one update only (for example from a "Fit" button), never on every tick.
+`false` keeps the user's view and fits only on a new series set.
 
 All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
 `setDropTarget(name, bool)`, and `setFieldValid(name, ok, tooltip)` (a generic
