@@ -717,6 +717,9 @@ typedef struct PJ_toolbox_host_vtable_t {
   /* [stream-thread] Catalog snapshot v2: the scalar catalog of acquire_catalog_snapshot
    * PLUS every object topic with its dataset, builtin type, entry count and raw time
    * range, in one deep copy. Release with out_snapshot->release(out_snapshot->release_ctx).
+   * The two halves are NOT atomic: the scalar catalog and the object-topic list are
+   * each consistent on their own, but a topic created between the two reads may show
+   * in one half only. A consumer must not assume a topic named in one appears in the other.
    * ABI-APPENDED slot: gate via struct_size before calling.
    * @since 0.36.0 */
   bool (*acquire_catalog_snapshot_v2)(void* ctx, PJ_catalog_snapshot_v2_t* out_snapshot, PJ_error_t* out_error)
@@ -995,8 +998,11 @@ typedef struct {
  *       - string output: the bare name; a string is never a topic.
  *     A consumer reads a number output's series by exactly this string; it must not
  *     rebuild the path from the output name (a different topic may share the leaf).
- *     `language` must be "luau"; the same "unknown kind is rejected" rule as any
- *     other kind applies to a host that predates this one.
+ *     `language` is "luau" on every host; "python" is OPTIONAL and per host (a
+ *     host built without it, e.g. WASM, rejects it): never assume it, probe it by
+ *     calling validate_data_processor_script("on_demand","python","return {}") and
+ *     keep the UI honest when that fails. The same "unknown kind is rejected" rule as
+ *     any other kind applies to a host that predates this one.
  * Future kinds (e.g. a host-owned engine backend) are added the same way — a new
  * `kind` string plus host routing, no ABI change.
  *
@@ -1008,7 +1014,9 @@ typedef struct {
  *                   calling plugin (per-plugin isolation): one plugin can neither
  *                   enumerate nor remove another's.
  *   - kind        : output discriminator, see above ("transform", "markers", "on_demand").
- *   - language    : script backend, "luau" today; the host rejects anything else.
+ *   - language    : script backend. "luau" everywhere; "python" only for kind
+ *                   "on_demand" and only on hosts that ship it (probe with
+ *                   validate_data_processor_script). The host rejects any other value.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
  *                   "pose/orientation/x") the script reads; the host resolves them
  *                   and exact-joins co-timestamped inputs. A name MAY carry the
@@ -1033,6 +1041,35 @@ typedef struct {
  *                   (still persisted like any other node; history never restores,
  *                   recreates or removes it). PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS: see
  *                   its definition below. Reserved bits must be 0.
+ *
+ * LIFETIME — a node is exactly one of three things, by flag and kind:
+ *   - PERSISTENT (default): saved in the layout; the host's undo/redo and layout load
+ *     may replace, recreate or remove it like any other node. It survives plugin
+ *     unload and a session reload.
+ *   - EPHEMERAL (PJ_DATA_PROCESSOR_FLAG_EPHEMERAL): a preview owned by the plugin
+ *     instance that created it. Never persisted; undo/redo and layout load do not
+ *     end it; only remove_data_processor(id) or the owning plugin's teardown does.
+ *     Hosts hide previews from list_data_processor_ids and data_processor_config; the
+ *     catalog snapshot may still show their output topics. kinds: all three.
+ *   - HISTORY_EXEMPT (PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT): PERSISTED, but the host's
+ *     history has no authority over it (never restored, recreated or removed by
+ *     undo/redo). Meaningless on an EPHEMERAL node. kinds: all three; every kind's
+ *     data_processor_config reports the boolean "history_exempt".
+ *   - PINNED (kind "on_demand" only: PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT on create): a
+ *     persisted finding fixed at one evaluation time (config key "pinned_t_ns"). It
+ *     cannot run in series mode, so its number outputs have no catalog series.
+ *     Transforms and markers REJECT INSTANT.
+ *
+ * PER-KIND REQUEST FIELDS (create_data_processor_v2 / submit_evaluation):
+ *     kind        label                         WINDOW (time_flags)                INSTANT
+ *     transform   accepted, ignored (advisory)  rejected ("not supported yet")     rejected
+ *     markers     accepted, ignored (advisory)  accepted on create: the span the   rejected
+ *                                               markers are computed over
+ *     on_demand   stored and reported           rejected on create ("use           accepted on create
+ *                                               submit_evaluation"); valid only    (pinned); valid on
+ *                                               on submit_evaluation               submit_evaluation
+ *   `label` is advisory text for a UI: a host never keys behaviour on it, and a kind
+ *   that ignores it still accepts it (the request is not rejected for carrying one).
  *
  * DATASET-QUALIFIED NAMES — a series' full identity is (dataset, topic, field); a
  * bare "topic/field" name is an abbreviation that stops being unique the moment
@@ -1205,8 +1242,8 @@ typedef struct PJ_data_processors_host_vtable_t {
    * re-edit (e.g. after a session reload). *out_recipe_json is borrowed, valid only
    * until the next call on this vtable. An unknown id is an error.
    * Hosts supporting PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT include the boolean
-   * "history_exempt" for transforms and markers, reflecting the node's actual
-   * property. Callers must not infer support from a successful create alone. */
+   * "history_exempt" for EVERY kind (transform, markers, on_demand), reflecting the
+   * node's actual property. Callers must not infer support from a successful create alone. */
   bool (*data_processor_config)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
@@ -1556,9 +1593,11 @@ typedef struct PJ_plot_tab_host_vtable_t {
 
   /* [main-thread] Create (or update) a tab of the given `kind`: "plot", "3d" or "2d".
    * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. One id namespace per
-   * plugin across kinds. The same id with the same kind: on a plot tab it replaces
-   * the tab with one empty plot (the released `create_tab` "create or replace"
-   * behaviour); on a scene tab it only updates the title. The same id with a DIFFERENT
+   * plugin across kinds. The same id with the same kind: on a plot tab it REPLACES
+   * the tab's contents (the released `create_tab` "create or replace" behaviour: the
+   * curves are cleared; a host may keep the tab's existing split layout, as PlotJuggler
+   * does, so do not assume exactly one plot afterwards: read tab_config); on a scene
+   * tab it only updates the title. The same id with a DIFFERENT
    * kind closes the old tab and creates a new empty one. `create_tab` (v1) is this call
    * with kind "plot". An empty `id`, or an id containing '/', is an error here (v1
    * keeps its released id rules). An empty `title` lets the host name the tab.
@@ -1569,7 +1608,8 @@ typedef struct PJ_plot_tab_host_vtable_t {
   /* [main-thread] Attach an object topic to a scene tab. ABI-APPENDED slot (0.36.0):
    * gate with PJ_HAS_TAIL_SLOT. Scene tabs only. `dataset_source` follows the same
    * rule as add_curve: empty means the topic must be unique across loaded datasets,
-   * and an ambiguous one is refused with the qualified candidates. A "3d" tab accepts
+   * and an ambiguous one is refused with the qualified candidates. IDEMPOTENT:
+   * attaching a topic that is already attached is success and changes nothing. A "3d" tab accepts
    * every object type the 3D view renders; a "2d" tab accepts Image/DepthImage/
    * VideoFrame (replacing the background) and ImageAnnotations (an overlay). On a plot
    * tab this is an error: "tab '<id>' is a plot tab: use add_curve".

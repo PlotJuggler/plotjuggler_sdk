@@ -62,7 +62,9 @@ struct PluginDescriptor {
   /// host degradation display — never an admission criterion.
   std::string suggested_sdk_version;
   /// Optional short label (e.g. "AI") a host may show next to objects this
-  /// plugin creates. "" when the manifest does not declare it.
+  /// plugin creates. "" when the manifest does not declare it. What a host shows
+  /// for an empty badge (the plugin name, nothing, ...) is HOST POLICY, not part of
+  /// the contract; at most 8 characters are advised, longer text may be truncated.
   std::string badge;
   /// Optional manifest flag `"custom_topics_editor": true`: this toolbox is the
   /// editor of the host's user-defined (Custom) topics. A host keys the "+" button

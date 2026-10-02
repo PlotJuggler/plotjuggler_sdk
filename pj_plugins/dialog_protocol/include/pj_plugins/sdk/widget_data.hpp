@@ -641,7 +641,10 @@ class WidgetData {
   /// ("3d" or "2d"). The host creates the view once inside the frame; a kind
   /// change recreates it. Hosts without embedded-view support leave the frame empty:
   /// gate the scene UI on DialogPluginBase::hostHas(DialogHostCapability::kEmbedsSceneViews)
-  /// (PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS), not on a version string.
+  /// (PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS), not on a version string. Embedded scene
+  /// views exist in PANELS (non-modal toolbox dialogs) only; a modal dialog never
+  /// embeds one. If the host fails to attach a requested topic it does NOT retry:
+  /// the attach is attempted again only when the requested topic set changes.
   /// @since 0.36.0
   WidgetData& setSceneView(std::string_view name, std::string_view kind) {
     entry(name)["scene_view"] = std::string(kind);

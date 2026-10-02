@@ -78,6 +78,29 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
   `dataset_source:topic/field` lookup rules are in
   `pj_plugins/docs/toolbox-guide.md` → "Playback, viewport, and owned tabs".
 
+## Detecting host features (SDK 0.36.0)
+
+One rule, in the header comment of `pj_base/plugin_data_api.h`; never test a
+version string:
+
+- ABI service feature: a named `hasX()` on the view
+  (`DataProcessorsHostView::hasTypedRequests()`, `PlotTabHostView::hasSceneTabs()`,
+  `ToolboxHostView::hasCatalogSnapshotV2()`).
+- Flag-bit feature (`PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS`): do not probe; an older
+  host rejects the bit. Its floor is the `hasX()` of the slot carrying it.
+- Build-dependent behaviour (Python for on_demand): probe by doing it,
+  `validateScript("on_demand", "python", "return {}")`.
+- Dialog feature (`scene_view`): `hostHas(DialogHostCapability::kEmbedsSceneViews)`
+  inside the dialog.
+- Manifest metadata (`badge`, `custom_topics_editor`): declarative, no probe.
+
+On-demand requests: `createV2` returns `<owner>/<id>/<name>` for object and number
+outputs (read a number series by exactly that string) and the bare name for a
+string output. `submitEvaluation` + `pollEvaluation`: check `coverage.stopped` and
+`coverage.error`; an empty `bundles` list is not "no sample". Lifetime: persistent
+by default, `EPHEMERAL` = preview that undo/redo does not end, `HISTORY_EXEMPT` =
+persisted but outside history. See `toolbox-guide.md` for the full text.
+
 ## Reading a series (Arrow)
 
 ```cpp

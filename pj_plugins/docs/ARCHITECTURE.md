@@ -248,9 +248,22 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   a materialized artifact to the host for promotion to a stock file-backed
   source — see "Plugin extension query" above and
   `pj_base/descriptor_import_protocol.h`. `"pj.data_processors.v1"` (optional) lets a toolbox create
-  catalog-resident transform nodes in the host by data — a script plus
-  input/output names and a params JSON blob; nothing executable crosses the
-  boundary (the host owns execution). Input names may carry the dataset
+  nodes in the host by data — a script plus input/output names and a params
+  JSON blob; nothing executable crosses the boundary (the host owns execution).
+  One polymorphic surface serves three `kind`s: `"transform"` (catalog-resident
+  numeric series), `"markers"` (a PlotMarkers set) and `"on_demand"` (objects or
+  numbers evaluated at a consumer-requested time). The typed request
+  (`create_data_processor_v2`, `submit_evaluation`/`poll_evaluation`/
+  `release_evaluation`, tail slots detected by
+  `DataProcessorsHostView::hasTypedRequests()`) carries typed outputs, a label
+  and an instant or window; flags are `EPHEMERAL` (preview, never persisted),
+  `HISTORY_EXEMPT` (persisted, outside undo/redo) and `INFER_OUTPUTS`
+  (outputs learned from the script). Python is an optional on_demand language
+  of some hosts, probed with `validateScript`. The request's `struct_size`
+  follows a read-prefix rule: a host accepts a larger size and a later field is
+  announced by a flag bit. The capability-detection rule (tail slot behind a
+  `hasX()`; flag bit with no probe; probe by doing; dialog capability bit;
+  manifest metadata) is stated once in `plugin_data_api.h`. Input names may carry the dataset
   qualifier `dataset_source:topic/field`, so a name several loaded datasets
   share is addressed rather than guessed — rules are normative in
   `plugin_data_api.h` (DATASET-QUALIFIED NAMES), shared parser/composer in
@@ -259,7 +272,9 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   this same data-only surface (a future host-owned WASM/Python backend is purely
   additive and survives plugin unload) — deliberately *not* a C++ kernel vtable
   that would dangle on unload. The plugin sees a Qt-free
-  `sdk::DataProcessorsHostView` (`createTransform`/`remove`/`list`/`recipeOf`).
+  `sdk::DataProcessorsHostView` (`createTransform`/`createMarkers`/
+  `createOnDemand`/`createV2`/`submitEvaluation`/`pollEvaluation`/`remove`/
+  `list`/`recipeOf`).
   `"pj.settings.v1"` (optional) is a QSettings-like key/value store any plugin
   family can use for persistent state — the plugin sees a Qt-free
   `sdk::SettingsView` (`setValue(key, v)` returns a `Status`; reads return an

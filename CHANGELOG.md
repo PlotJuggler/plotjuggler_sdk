@@ -139,6 +139,16 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
   they no longer read like `DataProcessorsHostView::createV2` or a UI focus.
   `feature_floors.json` keys follow.
 - Every slot, struct and wrapper added in 0.36 now carries `@since 0.36.0`.
+- Docs: the contract text now states, once each, the lifetime of a processor by
+  flag and kind (persistent / EPHEMERAL / HISTORY_EXEMPT / pinned), what each
+  kind does with `label`, WINDOW and INSTANT, that Python is an optional
+  per-host on_demand language probed with `validateScript`, that a plot-tab
+  re-create keeps the host's layout and clears the curves, that `attach_topic`
+  is idempotent, that the two halves of catalog snapshot v2 are not atomic,
+  that a `scene_view` frame exists in panels only and a failed attach is not
+  retried until the topic set changes, and that the empty-badge fallback is host
+  policy (at most 8 characters advised). `data_processor_config` reports
+  `history_exempt` for every kind, not only transforms and markers.
 - ImageAnnotations wire carries the top-level timestamp and image_topic;
   additive, old readers skip them.
 

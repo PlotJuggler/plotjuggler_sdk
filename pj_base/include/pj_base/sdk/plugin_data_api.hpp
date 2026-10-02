@@ -1723,7 +1723,7 @@ class DataProcessorsHostView {
            PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, release_evaluation);
   }
 
-  /// Create or replace (upsert by id) a data processor of `kind' ("transform" or
+  /// Create or replace (upsert by id) a data processor of `kind` ("transform" or
   /// "markers"). `outputs` may be empty for an ephemeral preview (flags &
   /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s);
   /// flags & PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT instead marks a persisted node the
@@ -1898,7 +1898,9 @@ class DataProcessorsHostView {
   /// Validate a script WITHOUT installing anything: compile + module-load only (no
   /// inputs, no run, no side effects) for the given `kind`. Cheap enough to drive a
   /// live red/green editor semaphore. Runtime/empty-output errors are NOT caught here —
-  /// use an ephemeral create for that. `language` selects the backend ("luau" today).
+  /// use an ephemeral create for that. `language` selects the backend: "luau" everywhere,
+  /// "python" only for kind "on_demand" and only on hosts that ship it (probe with
+  /// validateScript("on_demand", "python", "return {}"), never assume it).
   /// Errors if the host predates this slot or the language/kind is unknown.
   [[nodiscard]] Status validateScript(
       std::string_view kind, std::string_view language, std::string_view script,
