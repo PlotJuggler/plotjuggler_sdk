@@ -282,6 +282,28 @@ TEST(PluginDataApiTest, ToolboxHostViewRejectsMissingReadSeriesTailSlot) {
   EXPECT_NE(status.error().find("read_series_arrow"), std::string::npos);
 }
 
+TEST(PluginDataApiTest, HasCatalogSnapshotV2ReflectsTheTailSlot) {
+  TailSlotRecorder recorder;
+  PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_toolbox_host_vtable_t),
+      .acquire_catalog_snapshot_v2 = toolboxAcquireCatalogSnapshotV2,
+  };
+  EXPECT_TRUE(sdk::ToolboxHostView(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable}).hasCatalogSnapshotV2());
+
+  // Slot present but not covered by struct_size: an old host.
+  vtable.struct_size = offsetof(PJ_toolbox_host_vtable_t, acquire_catalog_snapshot_v2);
+  EXPECT_FALSE(sdk::ToolboxHostView(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable}).hasCatalogSnapshotV2());
+
+  // Covered but NULL.
+  vtable.struct_size = sizeof(PJ_toolbox_host_vtable_t);
+  vtable.acquire_catalog_snapshot_v2 = nullptr;
+  EXPECT_FALSE(sdk::ToolboxHostView(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable}).hasCatalogSnapshotV2());
+
+  // Unbound view.
+  EXPECT_FALSE(sdk::ToolboxHostView().hasCatalogSnapshotV2());
+}
+
 TEST(PluginDataApiTest, CatalogSnapshotV2ReleasesOnce) {
   TailSlotRecorder recorder;
   const PJ_toolbox_host_vtable_t vtable = {

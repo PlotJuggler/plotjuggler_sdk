@@ -692,7 +692,7 @@ with one generic recursive routine. `field_table_registry.hpp` exposes
 (`frame_transforms_fields.hpp`, `image_annotations_fields.hpp`,
 `point_cloud_fields.hpp`, `scene_entities_fields.hpp`, `image_fields.hpp`,
 `depth_image_fields.hpp`, `camera_info_fields.hpp`, `video_frame_fields.hpp`;
-`kTabledTypeCount == 8` in `field_table_registry.hpp`). `Image::data`,
+`describe()` in `field_table_registry.hpp` returns a table for exactly these eight). `Image::data`,
 `DepthImage::data`, and `VideoFrame::data` each expose their packed pixel /
 bitstream bytes through a `kBuffer` descriptor the same way `PointCloud::data`
 does, with the per-record layout derived from the encoding/format string

@@ -222,7 +222,7 @@ Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
 | Service trait | Methods and scope |
 |---|---|
 | `PJ::sdk::PlaybackHostService` | `play`, `pause`, `seek`, `setPlaybackRate`, `state`: the global playback cursor. `toDisplayTime` and `toDisplayTimeForSource` convert absolute nanoseconds to display-axis seconds. |
-| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. Since 0.36.0 the same service also serves scene tabs through tail slots, absent on a host with no scene workspace (check `hasSceneTabs()`): `createV2(id, kind, title)` with `kind` `"plot"`, `"3d"` or `"2d"` (one id namespace across kinds; re-creating an id with a different kind closes and recreates it empty), `attachTopic(id, topic, dataset_source)`, `detachTopic`, `focus(id)`. On a scene tab `addCurve`/`removeCurve` are errors; `clear` detaches every topic; `configOf` reports what the tab actually holds (scene tabs: `kind`, topics with dataset, type, visibility; plot tabs: unchanged, no `kind`). |
+| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. Since 0.36.0 the same service also serves scene tabs through tail slots, absent on a host with no scene workspace (check `hasSceneTabs()`): `createTabV2(id, kind, title)` with `kind` `"plot"`, `"3d"` or `"2d"` (one id namespace across kinds; re-creating an id with a different kind closes and recreates it empty), `attachTopic(id, topic, dataset_source)`, `detachTopic`, `focusTab(id)`. On a scene tab `addCurve`/`removeCurve` are errors; `clear` detaches every topic; `configOf` reports what the tab actually holds (scene tabs: `kind`, topics with dataset, type, visibility; plot tabs: unchanged, no `kind`). |
 | `PJ::sdk::ViewportHostService` | `zoomToTimeRange`, `zoomReset`: all eligible plots in the calling plugin's tabs. |
 
 All calls run on the main thread. Services are optional. Check acquisition
@@ -434,6 +434,7 @@ it without instantiating the plugin.
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
 | `badge` | string | no | Short label (e.g. `AI`) the host may show next to objects this plugin creates. Absent means empty; the host then falls back to the plugin name. |
+| `custom_topics_editor` | bool | no | `true` declares this toolbox as the editor of the host's user-defined (Custom) topics. The host shows the "+" button for it and lets only this plugin edit or delete those rows; absent or `false` means no. Declarative, never probed. |
 
 Example:
 ```json

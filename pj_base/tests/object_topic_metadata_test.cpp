@@ -223,6 +223,17 @@ TEST(ObjectTopicMetadataBuilderTest, SnapshotFlagRoundTrips) {
   EXPECT_EQ(kSnapshotMetadataKey, "pj_snapshot");
 }
 
+TEST(ObjectTopicMetadataBuilderTest, DerivedKeyIsStableAndRoundTripsAsACustomString) {
+  EXPECT_EQ(kDerivedMetadataKey, "pj_derived");
+  EXPECT_EQ(kDerivedOnDemandValue, "on_demand");
+  const auto built = ObjectTopicMetadataBuilder()
+                         .builtinObjectType(BuiltinObjectType::kPointCloud)
+                         .string(kDerivedMetadataKey, kDerivedOnDemandValue)
+                         .build();
+  ASSERT_TRUE(built);
+  EXPECT_EQ(*built, R"({"builtin_object_type":"kPointCloud","pj_derived":"on_demand"})");
+}
+
 TEST(ObjectTopicMetadataRegistrationTest, SourceTypedOverloadForwardsBuiltJson) {
   RegistrationRecorder recorder;
   const PJ_object_write_host_vtable_t vtable = {

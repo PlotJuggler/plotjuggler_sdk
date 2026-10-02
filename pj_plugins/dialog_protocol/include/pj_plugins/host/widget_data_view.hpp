@@ -661,6 +661,7 @@ class WidgetDataView {
 
   /// Kind of the embedded view ("3d"/"2d"). nullopt: key absent (leave the frame
   /// alone). Empty string: the key is null (clearSceneView), delete the view.
+  /// @since 0.36.0
   [[nodiscard]] std::optional<std::string> sceneView(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
@@ -679,6 +680,8 @@ class WidgetDataView {
     return std::nullopt;
   }
 
+  /// Object topics of the embedded view; nullopt when the key is absent or not an array.
+  /// @since 0.36.0
   [[nodiscard]] std::optional<std::vector<SceneTopic>> sceneTopics(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {

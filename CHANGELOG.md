@@ -25,14 +25,16 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
   `scene_entities_fields.hpp`; `field_table_registry.hpp` exposes
   `describe(BuiltinObjectType)` to look one up from the runtime tag carried
   by a `BuiltinObject`. `FrameTransforms`, `ImageAnnotations`, `PointCloud`,
-  and `SceneEntities` are tabled today (`kTabledTypeCount == 4`); `PointCloud`
+  and `SceneEntities` were the first four tabled types (the next entry adds four
+  more); `PointCloud`
   exposes its packed-bytes `data` field through a `kBuffer` descriptor
   (`buffer<>()`) resolving a `BufferLayout` view rather than a plain
   get/set pair. Client-side only: no ABI or wire-format change.
 - Add field tables for `Image`, `DepthImage`, `CameraInfo`, and `VideoFrame`
   (`image_fields.hpp`, `depth_image_fields.hpp`, `camera_info_fields.hpp`,
   `video_frame_fields.hpp`); `describe(BuiltinObjectType)` now covers 8
-  types. `Image::data`/`DepthImage::data`/`VideoFrame::data` each get a
+  types (there is no count constant: `FieldTableTest.DescribeCoversExactlyTheTabledTypes`
+  pins the set). `Image::data`/`DepthImage::data`/`VideoFrame::data` each get a
   `kBuffer` descriptor whose layout is derived from the encoding/format
   string: a raw `Image` encoding (e.g. "rgb8") or a recognized `DepthImage`
   encoding ("16UC1"/"32FC1") resolves a static per-pixel `record_step`;
@@ -108,6 +110,35 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
 - Document `coverage.error` (present only when `coverage.stopped == "error"`)
   and `coverage.gaps` in the `poll_evaluation` report, plus the 64-handle /
   64 MiB limits and that polling needs the host event loop to turn.
+- Add `ToolboxHostView::hasCatalogSnapshotV2()`: true iff the host serves
+  `acquire_catalog_snapshot_v2`. One `hasX()` per ABI service feature is the
+  capability rule, stated once in the `plugin_data_api.h` header comment
+  (ABI feature = tail slot behind a `hasX()`; flag-bit feature = no probe, an
+  older host rejects the bit; build-dependent behaviour = probe by doing it;
+  dialog feature = `PJ_dialog_host_info_t::capabilities`; manifest metadata =
+  no probe).
+- Add the dialog host capability `PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS`
+  (`1 << 5`, C++ `DialogHostCapability::kEmbedsSceneViews`): the host embeds
+  `scene_view` / `scene_topics` frames. `DialogPluginBase` (and so
+  `DialogPluginTyped`) gains `hostCapabilities()` and `hostHas(capability)`
+  over the host info already delivered by the existing `set_host_info` slot;
+  a host that never delivers it reports 0. A dialog gates its scene UI on the
+  bit instead of probing a different service. No ABI change.
+- Add the optional manifest flag `custom_topics_editor`
+  (`PluginDescriptor::custom_topics_editor`, false when absent): the toolbox
+  that edits the host's user-defined topics. A host keys the "+" button and
+  the ownership of those rows on it instead of a hard-coded plugin id.
+- Add `sdk::kDerivedMetadataKey` (`"pj_derived"`) and `sdk::kDerivedOnDemandValue`
+  (`"on_demand"`) in `object_topic_metadata.hpp`: the topic metadata key a host
+  sets on object topics derived by an on_demand data processor.
+- Add `sdk::unprojectPixel` (`depth_image_utils.hpp`): unprojects a rectified
+  pixel with positive metric depth through a pinhole `K`; rejects singular or
+  non-finite intrinsics and skew/projective terms. Client-side only.
+- RENAME (the 0.36 line is unreleased, so nothing shipped breaks):
+  `PlotTabHostView::createV2` -> `createTabV2` and `focus` -> `focusTab`, so
+  they no longer read like `DataProcessorsHostView::createV2` or a UI focus.
+  `feature_floors.json` keys follow.
+- Every slot, struct and wrapper added in 0.36 now carries `@since 0.36.0`.
 - ImageAnnotations wire carries the top-level timestamp and image_topic;
   additive, old readers skip them.
 

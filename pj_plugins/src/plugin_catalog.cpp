@@ -223,6 +223,17 @@ Expected<PluginDescriptor> decodeManifest(
     return it->get<std::string>();
   };
 
+  auto optional_bool = [&](std::string_view key) -> Expected<bool> {
+    const auto it = j.find(std::string(key));
+    if (it == j.end()) {
+      return false;
+    }
+    if (!it->is_boolean()) {
+      return unexpected(fmt::format("plugin embedded manifest key must be a boolean: {}", key));
+    }
+    return it->get<bool>();
+  };
+
   PluginDescriptor d;
   d.dso_path = source_path;
   d.abi_major = PJ_ABI_VERSION;
@@ -265,6 +276,10 @@ Expected<PluginDescriptor> decodeManifest(
   if (!badge) {
     return unexpected(badge.error());
   }
+  auto custom_topics_editor = optional_bool("custom_topics_editor");
+  if (!custom_topics_editor) {
+    return unexpected(custom_topics_editor.error());
+  }
   auto min_sdk_required = optional_string("min_sdk_required");
   if (!min_sdk_required) {
     return unexpected(min_sdk_required.error());
@@ -293,6 +308,7 @@ Expected<PluginDescriptor> decodeManifest(
   d.min_sdk_required = *min_sdk_required;
   d.suggested_sdk_version = *suggested_sdk_version;
   d.badge = *badge;
+  d.custom_topics_editor = *custom_topics_editor;
   d.file_extensions = *file_extensions;
   d.capabilities = *capabilities;
 

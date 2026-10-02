@@ -639,7 +639,9 @@ class WidgetData {
 
   /// Turn the named QFrame into an embedded object view of the given kind
   /// ("3d" or "2d"). The host creates the view once inside the frame; a kind
-  /// change recreates it. Hosts without embedded-view support leave the frame empty.
+  /// change recreates it. Hosts without embedded-view support leave the frame empty:
+  /// gate the scene UI on DialogPluginBase::hostHas(DialogHostCapability::kEmbedsSceneViews)
+  /// (PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS), not on a version string.
   /// @since 0.36.0
   WidgetData& setSceneView(std::string_view name, std::string_view kind) {
     entry(name)["scene_view"] = std::string(kind);

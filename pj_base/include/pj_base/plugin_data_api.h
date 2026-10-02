@@ -388,7 +388,8 @@ typedef struct {
 
 /* One object topic of the catalog (snapshot v2). ARRAY ELEMENT with a FIXED
  * STRIDE: a field that cannot be zero-defaulted needs a new struct + slot, never
- * a change of this layout. `reserved` must be 0. */
+ * a change of this layout. `reserved` must be 0.
+ * @since 0.36.0 */
 typedef struct {
   PJ_object_topic_handle_t handle;
   PJ_data_source_handle_t source; /* the dataset the topic lives on */
@@ -404,7 +405,8 @@ typedef struct {
 /* ABI-VERSIONED (not appendable): a later shape is a new struct + new slot. The
  * scalar arrays have exactly the content of PJ_catalog_snapshot_t. Object topics
  * include derived and marker topics; clients filter by metadata_json (key
- * "pj_derived") or by the "__markers__/" name prefix. */
+ * "pj_derived") or by the "__markers__/" name prefix.
+ * @since 0.36.0 */
 typedef struct {
   uint32_t struct_size; /* = sizeof(PJ_catalog_snapshot_v2_t), set by the host */
   uint32_t reserved;    /* 0 */
@@ -715,7 +717,8 @@ typedef struct PJ_toolbox_host_vtable_t {
   /* [stream-thread] Catalog snapshot v2: the scalar catalog of acquire_catalog_snapshot
    * PLUS every object topic with its dataset, builtin type, entry count and raw time
    * range, in one deep copy. Release with out_snapshot->release(out_snapshot->release_ctx).
-   * ABI-APPENDED slot: gate via struct_size before calling. */
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 0.36.0 */
   bool (*acquire_catalog_snapshot_v2)(void* ctx, PJ_catalog_snapshot_v2_t* out_snapshot, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
@@ -1083,17 +1086,20 @@ typedef struct {
  *    errors. The inferred list is returned in the report ("outputs").
  *  - create/create_v2: the declared outputs are a binding hint learned from such a
  *    trial. The host still validates the returned types at runtime.
- * A host that does not know this bit rejects it as an unknown flag. */
+ * A host that does not know this bit rejects it as an unknown flag.
+ * @since 0.36.0 */
 #define PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS (1u << 2)
 
-/* PJ_data_processor_request_t.time_flags */
+/* PJ_data_processor_request_t.time_flags
+ * @since 0.36.0 */
 #define PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW (1u << 0) /* window_start_ns..window_end_ns are meaningful */
 #define PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT \
   (1u << 1) /* time_ns is meaningful: a pinned finding on create, the instant to evaluate on submit */
 
 /* A declared output. ARRAY ELEMENT with a FIXED STRIDE (see PJ_object_topic_info_t).
  * type: "number" | "string" | a builtin object type name ("kPointCloud") | "" (untyped,
- * legacy transform/markers output). */
+ * legacy transform/markers output).
+ * @since 0.36.0 */
 typedef struct {
   PJ_string_view_t name;
   PJ_string_view_t type;
@@ -1115,7 +1121,8 @@ typedef struct {
  * time_flags bits, nonzero reserved, a count > 0 with a NULL pointer, or struct_size
  * below the v1 minimum. Inputs use the same grammar as create_data_processor (topic
  * names, optionally dataset-qualified); the script reads each input under its literal
- * name. All strings are borrowed for the duration of the call. */
+ * name. All strings are borrowed for the duration of the call.
+ * @since 0.36.0 */
 typedef struct {
   uint32_t struct_size; /* = sizeof(PJ_data_processor_request_t) */
   uint32_t flags;       /* PJ_DATA_PROCESSOR_FLAG_* */
@@ -1142,7 +1149,8 @@ typedef struct {
  * struct_size follows the same read-prefix rule as PJ_data_processor_request_t: the
  * host rejects a struct_size below the v1 layout (offsetof(max_report_bytes) +
  * sizeof(max_report_bytes)), accepts a larger one and reads only the prefix it knows.
- * A budget field added later must be zero-defaultable (0 = host default). */
+ * A budget field added later must be zero-defaultable (0 = host default).
+ * @since 0.36.0 */
 typedef struct {
   uint32_t struct_size;      /* = sizeof(PJ_evaluation_budget_t) */
   uint32_t reserved;         /* 0 */
@@ -1152,7 +1160,8 @@ typedef struct {
   uint64_t max_report_bytes; /* whole report; default 1 MiB, host cap 8 MiB */
 } PJ_evaluation_budget_t;
 
-/* poll_evaluation states */
+/* poll_evaluation states
+ * @since 0.36.0 */
 #define PJ_EVALUATION_STATE_PENDING 0u
 #define PJ_EVALUATION_STATE_COMPLETED 1u
 #define PJ_EVALUATION_STATE_FAILED 2u
@@ -1218,7 +1227,8 @@ typedef struct PJ_data_processors_host_vtable_t {
    * this host object) contract as create_data_processor, including the on_demand
    * out_topics contract (object AND number outputs return "<owner>/<id>/<name>").
    * request->struct_size follows the read-prefix rule on PJ_data_processor_request_t.
-   * ABI-APPENDED slot. */
+   * ABI-APPENDED slot.
+   * @since 0.36.0 */
   bool (*create_data_processor_v2)(
       void* ctx, const PJ_data_processor_request_t* request, PJ_string_view_t* out_topics, uint64_t out_topics_capacity,
       uint64_t* out_topics_count, PJ_error_t* out_error) PJ_NOEXCEPT;
@@ -1231,7 +1241,8 @@ typedef struct PJ_data_processors_host_vtable_t {
    * the window, in time order, until the budget stops it). A host may complete the
    * work before returning (phase 0) or in the background; poll_evaluation is the only
    * way to read the result either way. Handles are per host object, increasing, never
-   * reused. Kinds other than on_demand are an error. ABI-APPENDED slot. */
+   * reused. Kinds other than on_demand are an error. ABI-APPENDED slot.
+   * @since 0.36.0 */
   bool (*submit_evaluation)(
       void* ctx, const PJ_data_processor_request_t* request, const PJ_evaluation_budget_t* budget, uint64_t* out_handle,
       PJ_error_t* out_error) PJ_NOEXCEPT;
@@ -1261,12 +1272,14 @@ typedef struct PJ_data_processors_host_vtable_t {
    * event loop: a caller must return to that loop between polls (poll from a timer,
    * never a busy loop on the calling thread) or the evaluation never finishes. A state
    * value outside PJ_EVALUATION_STATE_* is not "pending": the C++ wrapper reports it
-   * as an error. */
+   * as an error.
+   * @since 0.36.0 */
   bool (*poll_evaluation)(
       void* ctx, uint64_t handle, uint32_t* out_state, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Cancel a pending evaluation (cooperative) and free its result.
-   * Releasing an unknown handle is an error; releasing twice is an error. ABI-APPENDED slot. */
+   * Releasing an unknown handle is an error; releasing twice is an error. ABI-APPENDED slot.
+   * @since 0.36.0 */
   bool (*release_evaluation)(void* ctx, uint64_t handle, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_processors_host_vtable_t;
 
@@ -1548,7 +1561,8 @@ typedef struct PJ_plot_tab_host_vtable_t {
    * behaviour); on a scene tab it only updates the title. The same id with a DIFFERENT
    * kind closes the old tab and creates a new empty one. `create_tab` (v1) is this call
    * with kind "plot". An empty `id`, or an id containing '/', is an error here (v1
-   * keeps its released id rules). An empty `title` lets the host name the tab. */
+   * keeps its released id rules). An empty `title` lets the host name the tab.
+   * @since 0.36.0 */
   bool (*create_tab_v2)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t title, PJ_error_t* out_error) PJ_NOEXCEPT;
 
@@ -1558,7 +1572,8 @@ typedef struct PJ_plot_tab_host_vtable_t {
    * and an ambiguous one is refused with the qualified candidates. A "3d" tab accepts
    * every object type the 3D view renders; a "2d" tab accepts Image/DepthImage/
    * VideoFrame (replacing the background) and ImageAnnotations (an overlay). On a plot
-   * tab this is an error: "tab '<id>' is a plot tab: use add_curve". */
+   * tab this is an error: "tab '<id>' is a plot tab: use add_curve".
+   * @since 0.36.0 */
   bool (*attach_topic)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
       PJ_error_t* out_error) PJ_NOEXCEPT;
@@ -1566,13 +1581,15 @@ typedef struct PJ_plot_tab_host_vtable_t {
   /* [main-thread] Take one topic back out of a scene tab (same `dataset_source` rule).
    * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. A topic that is not
    * attached is an error. On a plot tab this is an error: "tab '<id>' is a plot tab:
-   * use remove_curve". */
+   * use remove_curve".
+   * @since 0.36.0 */
   bool (*detach_topic)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Bring one of this plugin's tabs (any kind) to the front.
-   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. */
+   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT.
+   * @since 0.36.0 */
   bool (*focus_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_plot_tab_host_vtable_t;
 

@@ -27,6 +27,20 @@ inline constexpr std::string_view kBuiltinObjectTypeMetadataKey = "builtin_objec
 /// @since 0.36.0
 inline constexpr std::string_view kSnapshotMetadataKey = "pj_snapshot";
 
+/// Canonical metadata key marking a DERIVED object topic: one a host's on_demand
+/// data-processor re-evaluates at a consumer-requested time (kind="on_demand"), as
+/// opposed to a topic a data source ingested. A host that sets it uses the value
+/// `kDerivedOnDemandValue`. A consumer (a viewer, the assistant, a script author)
+/// may read it to tell derived results from recorded data; it is set by the HOST,
+/// never by the plugin that created the processor. Absent or any other value means
+/// "not derived". Match the key by parsing the metadata JSON, never by substring.
+/// @since 0.36.0
+inline constexpr std::string_view kDerivedMetadataKey = "pj_derived";
+
+/// The value `kDerivedMetadataKey` takes for an on_demand-derived topic.
+/// @since 0.36.0
+inline constexpr std::string_view kDerivedOnDemandValue = "on_demand";
+
 /// Builds deterministic metadata JSON for an object topic.
 ///
 /// `builtinObjectType()` accepts only the SDK enum and serializes its canonical

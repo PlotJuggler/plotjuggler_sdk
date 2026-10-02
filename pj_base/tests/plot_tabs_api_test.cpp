@@ -512,8 +512,8 @@ TEST(PlotTabSceneApiTest, CreateAndListRoundTrip) {
   const auto vtable = makePlotTabVtable();
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
-  ASSERT_TRUE(view.createV2("view-a", "3d", "First"));
-  ASSERT_TRUE(view.createV2("view-b", "2d", "Second"));
+  ASSERT_TRUE(view.createTabV2("view-a", "3d", "First"));
+  ASSERT_TRUE(view.createTabV2("view-b", "2d", "Second"));
 
   auto ids = view.list();
   ASSERT_TRUE(ids) << ids.error();
@@ -527,7 +527,7 @@ TEST(PlotTabSceneApiTest, ConfigReadsBackWhatWasAttached) {
   const auto vtable = makePlotTabVtable();
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
-  ASSERT_TRUE(view.createV2("view-a", "3d", "My View"));
+  ASSERT_TRUE(view.createTabV2("view-a", "3d", "My View"));
   ASSERT_TRUE(view.attachTopic("view-a", "lidar/points", "bag1"));
   ASSERT_TRUE(view.attachTopic("view-a", "camera/image", "bag1"));
 
@@ -550,7 +550,7 @@ TEST(PlotTabSceneApiTest, DetachMissingTopicIsAnError) {
   const auto vtable = makePlotTabVtable();
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
-  ASSERT_TRUE(view.createV2("view-a", "3d"));
+  ASSERT_TRUE(view.createTabV2("view-a", "3d"));
   auto status = view.detachTopic("view-a", "lidar/points", "bag1");
   EXPECT_FALSE(status);
 }
@@ -563,7 +563,7 @@ TEST(PlotTabSceneApiTest, UnknownIdIsAnError) {
   EXPECT_FALSE(view.attachTopic("nope", "lidar/points"));
   EXPECT_FALSE(view.configOf("nope"));
   EXPECT_FALSE(view.close("nope"));
-  EXPECT_FALSE(view.focus("nope"));
+  EXPECT_FALSE(view.focusTab("nope"));
 }
 
 TEST(PlotTabSceneApiTest, HostFailureSurfacesTheMessage) {
@@ -572,7 +572,7 @@ TEST(PlotTabSceneApiTest, HostFailureSurfacesTheMessage) {
   const auto vtable = makePlotTabVtable();
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
-  auto create_status = view.createV2("view-a", "3d");
+  auto create_status = view.createTabV2("view-a", "3d");
   EXPECT_FALSE(create_status);
   EXPECT_NE(create_status.error().find("tab boom"), std::string::npos);
 
@@ -589,7 +589,7 @@ TEST(PlotTabSceneApiTest, UnboundViewReportsNotBound) {
   sdk::PlotTabHostView view;  // default-constructed = not bound
   EXPECT_FALSE(view.valid());
 
-  auto create_status = view.createV2("view-a", "3d");
+  auto create_status = view.createTabV2("view-a", "3d");
   EXPECT_FALSE(create_status);
   EXPECT_NE(create_status.error().find("not bound"), std::string::npos);
 
@@ -613,7 +613,7 @@ TEST(PlotTabSceneApiTest, UnboundViewReportsNotBound) {
   EXPECT_FALSE(detach_status);
   EXPECT_NE(detach_status.error().find("not bound"), std::string::npos);
 
-  auto focus_status = view.focus("view-a");
+  auto focus_status = view.focusTab("view-a");
   EXPECT_FALSE(focus_status);
   EXPECT_NE(focus_status.error().find("not bound"), std::string::npos);
 }
@@ -623,7 +623,7 @@ TEST(PlotTabSceneApiTest, DatasetQualifierReachesTheHost) {
   const auto vtable = makePlotTabVtable();
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
-  ASSERT_TRUE(view.createV2("view-a", "3d"));
+  ASSERT_TRUE(view.createTabV2("view-a", "3d"));
   ASSERT_TRUE(view.attachTopic("view-a", "lidar/points", "bag1"));
   ASSERT_TRUE(view.attachTopic("view-a", "camera/image"));
 
@@ -649,12 +649,12 @@ TEST(PlotTabSceneApiTest, V1HostWithStructSize64ReportsNoSceneTabs) {
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
   EXPECT_FALSE(view.hasSceneTabs());
-  auto status = view.createV2("tab-a", "3d");
+  auto status = view.createTabV2("tab-a", "3d");
   EXPECT_FALSE(status);
   EXPECT_NE(status.error().find("does not support"), std::string::npos);
   EXPECT_FALSE(view.attachTopic("tab-a", "t"));
   EXPECT_FALSE(view.detachTopic("tab-a", "t"));
-  EXPECT_FALSE(view.focus("tab-a"));
+  EXPECT_FALSE(view.focusTab("tab-a"));
   EXPECT_TRUE(host.tabs.empty());
 }
 
@@ -666,7 +666,7 @@ TEST(PlotTabSceneApiTest, NullTailSlotOnLargeStructReportsNoSceneTabs) {
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
   EXPECT_FALSE(view.hasSceneTabs());
-  auto status = view.createV2("tab-a", "3d");
+  auto status = view.createTabV2("tab-a", "3d");
   EXPECT_FALSE(status);
   EXPECT_NE(status.error().find("does not support"), std::string::npos);
 }
@@ -676,7 +676,7 @@ TEST(PlotTabSceneApiTest, AddCurveOnSceneTabSurfacesHostError) {
   auto vtable = makePlotTabVtable();
   sdk::PlotTabHostView view(PJ_plot_tab_host_t{.ctx = &host, .vtable = &vtable});
 
-  ASSERT_TRUE(view.createV2("tab-a", "3d"));
+  ASSERT_TRUE(view.createTabV2("tab-a", "3d"));
   auto status = view.addCurve("tab-a", "imu/accel", "x");
   EXPECT_FALSE(status);
   EXPECT_NE(status.error().find("tab 'tab-a' is a 3d scene tab: use attach_topic/detach_topic"), std::string::npos);

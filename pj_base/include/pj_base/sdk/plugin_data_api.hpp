@@ -177,6 +177,7 @@ class CatalogSnapshot {
 /// RAII wrapper around PJ_catalog_snapshot_v2_t — the scalar catalog plus
 /// every object topic (dataset, builtin type, entry count, raw time range).
 /// See ToolboxHostView::catalogSnapshotV2().
+/// @since 0.36.0
 class CatalogSnapshotV2 {
  public:
   CatalogSnapshotV2() = default;
@@ -1320,14 +1321,26 @@ class ToolboxHostView {
     return CatalogSnapshot(raw);
   }
 
+  /// True iff the host serves catalog snapshot v2 (the acquire_catalog_snapshot_v2
+  /// tail slot). Cheap capability check, no host call; see the capability-detection
+  /// rule in plugin_data_api.h. Without it, catalogSnapshot() (scalars only) is all
+  /// the host offers: object topics are not enumerable.
+  /// @since 0.36.0
+  [[nodiscard]] bool hasCatalogSnapshotV2() const noexcept {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, acquire_catalog_snapshot_v2);
+  }
+
   /// Snapshot v2: the scalar catalog of catalogSnapshot() PLUS every object
   /// topic with its dataset, builtin type, entry count and raw time range,
-  /// in one deep copy.
+  /// in one deep copy. The two halves are NOT read atomically: the scalar
+  /// catalog and the object-topic list are each consistent on their own, but a
+  /// topic created between the two reads may appear in one and not the other.
+  /// @since 0.36.0
   [[nodiscard]] Expected<CatalogSnapshotV2> catalogSnapshotV2() const {
     if (!valid()) {
       return unexpected("toolbox host is not bound");
     }
-    if (!PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, acquire_catalog_snapshot_v2)) {
+    if (!hasCatalogSnapshotV2()) {
       return unexpected("toolbox host does not support acquire_catalog_snapshot_v2");
     }
     PJ_catalog_snapshot_v2_t raw{};
@@ -1581,6 +1594,7 @@ class ColorMapRegistryView {
 /// A declared output for the typed create/evaluate request surface. `type` is
 /// "number", "string", a builtin object type name ("kPointCloud"), or ""
 /// (untyped, legacy transform/markers output). Mirrors PJ_data_processor_output_t.
+/// @since 0.36.0
 struct DataProcessorOutput {
   std::string name;
   std::string type;
@@ -1591,6 +1605,7 @@ struct DataProcessorOutput {
 /// full contract). `window`/`instant_ns` set time_flags: a `window` selects
 /// PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, an `instant_ns` selects
 /// PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT; both may be set together.
+/// @since 0.36.0
 struct DataProcessorRequest {
   std::string id;
   std::string kind;
@@ -1607,6 +1622,7 @@ struct DataProcessorRequest {
 
 /// Cooperative computation budget of one submit_evaluation. Mirrors
 /// PJ_evaluation_budget_t; 0 fields mean "host default".
+/// @since 0.36.0
 struct EvaluationBudget {
   uint64_t max_millis = 0;
   uint64_t max_bytes = 0;
@@ -1615,11 +1631,13 @@ struct EvaluationBudget {
 };
 
 /// Mirrors the poll_evaluation states (PJ_EVALUATION_STATE_*).
+/// @since 0.36.0
 enum class EvaluationState { kPending, kCompleted, kFailed, kCancelled };
 
 /// Result of DataProcessorsHostView::pollEvaluation(): the evaluation's state
 /// plus its report JSON (owned copy), see poll_evaluation's doc-comment in
 /// plugin_data_api.h for the report schema.
+/// @since 0.36.0
 struct EvaluationPoll {
   EvaluationState state = EvaluationState::kPending;
   std::string json;
@@ -1697,6 +1715,7 @@ class DataProcessorsHostView {
   /// True iff the host serves the typed-request surface: createV2() and the
   /// submitEvaluation()/pollEvaluation()/releaseEvaluation() trio (four tail slots, all
   /// covered by the vtable's struct_size). Cheap capability check; no host call is made.
+  /// @since 0.36.0
   [[nodiscard]] bool hasTypedRequests() const noexcept {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_v2) &&
            PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, submit_evaluation) &&
@@ -1820,6 +1839,7 @@ class DataProcessorsHostView {
   /// bare name for a string output. Inputs MAY
   /// be dataset-qualified (see create()). For typed outputs, a label, or a
   /// pinned evaluation time, use createV2() instead.
+  /// @since 0.36.0
   [[nodiscard]] Expected<std::vector<std::string>> createOnDemand(
       std::string_view id, Span<const std::string_view> inputs, Span<const std::string_view> typed_outputs,
       std::string_view script, std::string_view params_json, uint32_t flags = 0) const {
@@ -1907,6 +1927,7 @@ class DataProcessorsHostView {
   /// header it was compiled with. Under the read-prefix rule (the host reads the
   /// prefix it knows and accepts a larger struct_size; see
   /// PJ_data_processor_request_t) that is correct against any host.
+  /// @since 0.36.0
   [[nodiscard]] Expected<std::vector<std::string>> createV2(const DataProcessorRequest& request) const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_v2)) {
       return unexpected("data processors host does not support create_data_processor_v2");
@@ -1945,6 +1966,7 @@ class DataProcessorsHostView {
   /// host may complete the work before returning or in the background;
   /// pollEvaluation() is the only way to read the result either way. Errors
   /// if the host predates this slot.
+  /// @since 0.36.0
   [[nodiscard]] Expected<uint64_t> submitEvaluation(
       const DataProcessorRequest& request, const EvaluationBudget& budget = {}) const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, submit_evaluation)) {
@@ -1974,6 +1996,7 @@ class DataProcessorsHostView {
   /// report schema. Errors if the host predates this slot, `handle` is
   /// unknown, or the host reports a state this SDK does not know ("unknown
   /// evaluation state N") -- never treated as pending.
+  /// @since 0.36.0
   [[nodiscard]] Expected<EvaluationPoll> pollEvaluation(uint64_t handle) const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, poll_evaluation)) {
       return unexpected("data processors host does not support poll_evaluation");
@@ -2009,6 +2032,7 @@ class DataProcessorsHostView {
   /// Cancel a pending evaluation (cooperative) and free its result. Errors if
   /// the host predates this slot, `handle` is unknown, or it was already
   /// released.
+  /// @since 0.36.0
   [[nodiscard]] Status releaseEvaluation(uint64_t handle) const {
     if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, release_evaluation)) {
       return unexpected("data processors host does not support release_evaluation");
@@ -2314,6 +2338,7 @@ class PlotTabHostView {
   /// True iff the host serves scene (3D/2D) tabs: all four tail slots
   /// (create_tab_v2, attach_topic, detach_topic, focus_tab) are present. A host with
   /// no scene workspace leaves them NULL; check this before calling them.
+  /// @since 0.36.0
   [[nodiscard]] bool hasSceneTabs() const noexcept {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, create_tab_v2) &&
            PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, attach_topic) &&
@@ -2325,7 +2350,8 @@ class PlotTabHostView {
   /// tab is replaced by one empty plot, a scene tab only gets its title updated; same id
   /// with a different kind closes the old tab and creates a new empty one. An empty
   /// `title` lets the host name it.
-  [[nodiscard]] Status createV2(std::string_view id, std::string_view kind, std::string_view title = {}) const {
+  /// @since 0.36.0
+  [[nodiscard]] Status createTabV2(std::string_view id, std::string_view kind, std::string_view title = {}) const {
     return callTail<&PJ_plot_tab_host_vtable_t::create_tab_v2>(
         "create_tab_v2", toAbiString(id), toAbiString(kind), toAbiString(title));
   }
@@ -2333,6 +2359,7 @@ class PlotTabHostView {
   /// Attach an object topic to a scene tab. An empty `dataset_source` requires the topic
   /// to be unique across loaded datasets; an ambiguous one is refused by the host with
   /// the qualified candidates. Attaching a topic already there is success.
+  /// @since 0.36.0
   [[nodiscard]] Status attachTopic(
       std::string_view id, std::string_view topic, std::string_view dataset_source = {}) const {
     return callTail<&PJ_plot_tab_host_vtable_t::attach_topic>(
@@ -2341,6 +2368,7 @@ class PlotTabHostView {
 
   /// Take one topic back out of a scene tab, resolved by the same rule as attachTopic.
   /// A topic that is not attached is an error.
+  /// @since 0.36.0
   [[nodiscard]] Status detachTopic(
       std::string_view id, std::string_view topic, std::string_view dataset_source = {}) const {
     return callTail<&PJ_plot_tab_host_vtable_t::detach_topic>(
@@ -2348,7 +2376,8 @@ class PlotTabHostView {
   }
 
   /// Bring one of this plugin's tabs (any kind) to the front.
-  [[nodiscard]] Status focus(std::string_view id) const {
+  /// @since 0.36.0
+  [[nodiscard]] Status focusTab(std::string_view id) const {
     return callTail<&PJ_plot_tab_host_vtable_t::focus_tab>("focus_tab", toAbiString(id));
   }
 
