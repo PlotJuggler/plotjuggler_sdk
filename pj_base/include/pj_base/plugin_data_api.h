@@ -984,10 +984,12 @@ typedef struct {
  *     materialize for the whole series. The request's ABI surface is
  *     create_data_processor_v2 / submit_evaluation / poll_evaluation /
  *     release_evaluation (PJ_data_processor_request_t, PJ_evaluation_budget_t):
- *     create_data_processor (v1) stays valid to install an on_demand node using the
+ *     create_data_processor (v1) can still install an on_demand node using the
  *     "<name>:<type>" output-suffix grammar below, but reading a result requires the
- *     v2 evaluation surface. Each `outputs` entry carries a type suffix
- *     "<name>:<type>", where <type> is "number", "string", or a BuiltinObjectType
+ *     v2 evaluation surface. DEPRECATED: the "<name>:<type>" suffix still works, but
+ *     new clients use create_data_processor_v2 with PJ_data_processor_output_t; the
+ *     suffix will be removed in a future version. In that grammar each `outputs`
+ *     entry carries a type suffix "<name>:<type>", where <type> is "number", "string", or a BuiltinObjectType
  *     name (e.g. "kPointCloud", "kSceneEntities") — the host needs the declared shape
  *     up front to route a later on-demand evaluation without re-running the script.
  *     out_topics returns, 1:1 with outputs, the catalog path of each output:
@@ -1124,6 +1126,8 @@ typedef struct {
  *    named by type ("value", "value_2", ..., "text", "cloud", "scene", "annotations",
  *    "image", "transforms", "object"). Mixed keyed+positional or empty returns are
  *    errors. The inferred list is returned in the report ("outputs").
+ *    The names are chosen by the host; read them from the report's outputs, never
+ *    assume them (the list above is the current host behaviour, not a contract).
  *  - create/create_v2: the declared outputs are a binding hint learned from such a
  *    trial. The host still validates the returned types at runtime.
  * A host that does not know this bit rejects it as an unknown flag.
@@ -1188,7 +1192,9 @@ typedef struct {
 
 /* Cooperative computation budget of one submit_evaluation. Checked between
  * evaluations and inside the host's native operations, NOT a wall-clock guarantee:
- * one script or native call may overrun it. 0 = host default.
+ * one script or native call may overrun it. 0 = host default. Each field is clamped
+ * to a host-defined maximum (host policy); a submit is never rejected for asking
+ * more. coverage.stopped reports which budget ended an evaluation.
  * struct_size follows the same read-prefix rule as PJ_data_processor_request_t: the
  * host rejects a struct_size below the v1 layout (offsetof(max_report_bytes) +
  * sizeof(max_report_bytes)), accepts a larger one and reads only the prefix it knows.
@@ -1197,10 +1203,10 @@ typedef struct {
 typedef struct {
   uint32_t struct_size;      /* = sizeof(PJ_evaluation_budget_t) */
   uint32_t reserved;         /* 0 */
-  uint64_t max_millis;       /* default 1000, host cap 5000 */
+  uint64_t max_millis;       /* cooperative time budget, ms */
   uint64_t max_bytes;        /* per-evaluation VM + native ceiling */
-  uint64_t max_evaluations;  /* WINDOW: instants evaluated; default 200, host cap 2000 */
-  uint64_t max_report_bytes; /* whole report; default 1 MiB, host cap 8 MiB */
+  uint64_t max_evaluations;  /* WINDOW: instants evaluated */
+  uint64_t max_report_bytes; /* whole report */
 } PJ_evaluation_budget_t;
 
 /* poll_evaluation states
@@ -1246,7 +1252,11 @@ typedef struct PJ_data_processors_host_vtable_t {
 
   /* [main-thread] Read a node's full recipe as JSON
    * {"kind":"...","language":"...","inputs":[...],"outputs":[...],"params":{...}} for
-   * re-edit (e.g. after a session reload). *out_recipe_json is borrowed, valid only
+   * re-edit (e.g. after a session reload). An on_demand node that runs in series
+   * mode also reports "series":{"topic","rows","failed","first_error","complete",
+   * "done","total"}; "done" (instants already evaluated) and "total" (instants known
+   * to be evaluated; may grow with live data) are OPTIONAL: absent before the first
+   * step, and a client must tolerate their absence. *out_recipe_json is borrowed, valid only
    * until the next call on this vtable. An unknown id is an error.
    * Hosts supporting PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT include the boolean
    * "history_exempt" for EVERY kind (transform, markers, on_demand), reflecting the
@@ -1308,10 +1318,14 @@ typedef struct PJ_data_processors_host_vtable_t {
    * "outputs":[{"name":"...","type":"number"|"string"|"<BuiltinObjectType name>"|
    * "unknown"}], the inferred outputs in report order. Every *_ns value is a
    * raw dataset nanosecond count as a JSON integer (int64; do not round-trip through
-   * a double). On FAILED *out_json is {"error":"..."}. *out_json is borrowed until
+   * a double). Unknown keys are ignored, but a string value a client does not
+   * recognise in a key it knows (e.g. coverage.stopped, outputs[].status) must be
+   * treated as an error, never as success; a host emits a new value only for a
+   * request that opted into it. Exception: outputs[].type "unknown" is a defined
+   * value. On FAILED *out_json is {"error":"..."}. *out_json is borrowed until
    * release_evaluation(handle). An unknown handle is an error. ABI-APPENDED slot.
-   * Limits: a host keeps at most 64 live handles and at most 64 MiB of reserved
-   * report bytes across them; a submit beyond either is an error until completed
+   * Limits: a host bounds the number of live handles and the reserved report
+   * bytes (host policy); a submit beyond either bound is an error until completed
    * handles are released. The host completes a background evaluation from its own
    * event loop: a caller must return to that loop between polls (poll from a timer,
    * never a busy loop on the calling thread) or the evaluation never finishes. A state

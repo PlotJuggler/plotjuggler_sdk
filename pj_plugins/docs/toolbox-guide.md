@@ -305,7 +305,7 @@ feature:
 | ABI service feature (tail slots) | One named `hasX()` on the C++ view; never a version string | `DataProcessorsHostView::hasTypedRequests()`, `PlotTabHostView::hasSceneTabs()`, `ToolboxHostView::hasCatalogSnapshotV2()` |
 | Flag-bit feature | No probe: an older host REJECTS an unknown bit, the call fails loudly. The floor is the `hasX()` of the slot that carries it | `PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS` (floor: `hasTypedRequests()`) |
 | Build-dependent behaviour | Probe by doing it | Python for on_demand: `validateScript("on_demand", "python", "return {}")`; a WASM host rejects it |
-| Dialog-protocol feature | A bit of `PJ_dialog_host_info_t::capabilities`, read with `hostHas()` / `hostCapabilities()` | `kEmbedsSceneViews` for `scene_view` / `scene_topics` |
+| Dialog-protocol feature | A bit of `PJ_dialog_host_info_t::capabilities`, read with `hostHas()` | `kEmbedsSceneViews` for `scene_view` / `scene_topics` |
 | Manifest metadata | Declarative, no probe; hosts ignore keys they do not know | `badge`, `custom_topics_editor` |
 
 When a plugin cannot find an input's type because the host has no snapshot v2,

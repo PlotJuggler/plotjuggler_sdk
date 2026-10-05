@@ -190,9 +190,8 @@ Available `DialogHostCapability` values are:
 | `kStagesBrowserFile` | A browser-selected file is staged to a host-accessible path before delivery. |
 | `kEmbedsSceneViews` (0.36.0) | The host turns a QFrame carrying `scene_view` / `scene_topics` into an embedded 3D/2D object view. |
 
-`hostCapabilities()` returns the raw mask (0 when nothing was delivered) and
-`hostHas(DialogHostCapability)` tests one bit; both are protected, like
-`hostInfo()`. This is the way to detect a dialog-protocol feature: a bit you do
+`hostHas(DialogHostCapability)` tests one bit (false when nothing was
+delivered); it is protected, like `hostInfo()`. This is the way to detect a dialog-protocol feature: a bit you do
 not see means "do not use it" (capability rule 4 in `pj_base/plugin_data_api.h`).
 Embedded scene views exist in panels (non-modal toolbox dialogs) only, and a
 failed attach of a topic is not retried until the requested topic set changes.

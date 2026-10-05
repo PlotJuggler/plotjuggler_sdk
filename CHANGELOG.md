@@ -7,6 +7,24 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.plot_tabs.v1 tail slots (create_tab_v2, attach_topic, detach_topic, focus_tab), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT, PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS (floor 0.36.0)
 
+- Add `uint64_t reserved[2]` (must be 0) to `PJ_data_processor_output_t`, which is
+  an array element with a fixed stride: the struct grows from 32 to 48 bytes. The
+  C++ wrapper zeroes it; a host rejects an output with nonzero `reserved`.
+- Deprecate the `"<name>:<type>"` output suffix of `create_data_processor`: it
+  still works, new clients use `create_data_processor_v2` with
+  `PJ_data_processor_output_t`; it will be removed in a future version.
+- Evaluation budgets and live-handle / report-byte limits are host policy: `0` =
+  host default, each field is clamped to a host-defined maximum, and a submit is
+  never rejected for asking more (`coverage.stopped` says which budget ended the
+  run). The documented default and cap numbers are removed. Docs only.
+- Document the unknown-value rule of the evaluation report: an unrecognised string
+  value in a key the client knows (e.g. `coverage.stopped`, `outputs[].status`)
+  is an error, never success; `outputs[].type` `"unknown"` is a defined value.
+  The names inferred by `INFER_OUTPUTS` are chosen by the host and must be read
+  from the report. Docs only.
+- Document the optional `done` / `total` keys of the on_demand `series` block of
+  `data_processor_config` (instants evaluated / known total); a client tolerates
+  their absence. Docs only.
 - Document the visibility rule for ephemeral data processors: `list_data_processor_ids`
   hides them, but `data_processor_config` by exact id answers the owning plugin
   (hosts no longer reject it), so a plugin can read its preview's `series` progress.
@@ -127,7 +145,7 @@ Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, 
 - Add the dialog host capability `PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS`
   (`1 << 5`, C++ `DialogHostCapability::kEmbedsSceneViews`): the host embeds
   `scene_view` / `scene_topics` frames. `DialogPluginBase` (and so
-  `DialogPluginTyped`) gains `hostCapabilities()` and `hostHas(capability)`
+  `DialogPluginTyped`) gains `hostHas(capability)`
   over the host info already delivered by the existing `set_host_info` slot;
   a host that never delivers it reports 0. A dialog gates its scene UI on the
   bit instead of probing a different service. No ABI change.
