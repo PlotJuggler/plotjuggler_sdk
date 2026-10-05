@@ -391,6 +391,8 @@ static_assert(sizeof(PJ_evaluation_budget_t) == 40, "PJ_evaluation_budget_t size
 static_assert(offsetof(PJ_evaluation_budget_t, struct_size) == 0, "PJ_evaluation_budget_t.struct_size offset pinned");
 static_assert(
     offsetof(PJ_evaluation_budget_t, max_report_bytes) == 32, "PJ_evaluation_budget_t.max_report_bytes offset pinned");
+static_assert(PJ_DATA_PROCESSOR_REQUEST_V1_MIN_SIZE == 168, "request v1 minimum size pinned");
+static_assert(PJ_EVALUATION_BUDGET_V1_MIN_SIZE == 40, "evaluation budget v1 minimum size pinned");
 
 // --- Plot-tab host vtable ("pj.plot_tabs.v1", ABI-APPENDABLE) ---------------
 // Seven v1 slots are released and frozen; create_tab_v2 onward are tail slots (0.36.0).

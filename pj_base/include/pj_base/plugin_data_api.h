@@ -1156,7 +1156,7 @@ typedef struct {
  *
  * struct_size RULE (read-prefix): the host reads the PREFIX of the struct that it
  * knows and ACCEPTS a struct_size larger than its own sizeof. The v1 minimum is
- * offsetof(time_ns) + sizeof(time_ns); a smaller struct_size is rejected. A field
+ * PJ_DATA_PROCESSOR_REQUEST_V1_MIN_SIZE; a smaller struct_size is rejected. A field
  * appended in a later SDK release must be zero-defaultable AND announced by a new
  * flags/time_flags bit, so an older host rejects the unknown BIT -- never the size.
  * A request that uses no new field therefore keeps working on every host.
@@ -1190,14 +1190,16 @@ typedef struct {
   int64_t time_ns;         /* raw ns; INSTANT */
 } PJ_data_processor_request_t;
 
+#define PJ_DATA_PROCESSOR_REQUEST_V1_MIN_SIZE (offsetof(PJ_data_processor_request_t, time_ns) + sizeof(int64_t))
+
 /* Cooperative computation budget of one submit_evaluation. Checked between
  * evaluations and inside the host's native operations, NOT a wall-clock guarantee:
  * one script or native call may overrun it. 0 = host default. Each field is clamped
  * to a host-defined maximum (host policy); a submit is never rejected for asking
  * more. coverage.stopped reports which budget ended an evaluation.
  * struct_size follows the same read-prefix rule as PJ_data_processor_request_t: the
- * host rejects a struct_size below the v1 layout (offsetof(max_report_bytes) +
- * sizeof(max_report_bytes)), accepts a larger one and reads only the prefix it knows.
+ * host rejects a struct_size below PJ_EVALUATION_BUDGET_V1_MIN_SIZE, accepts a larger
+ * one and reads only the prefix it knows.
  * A budget field added later must be zero-defaultable (0 = host default).
  * @since 0.36.0 */
 typedef struct {
@@ -1208,6 +1210,8 @@ typedef struct {
   uint64_t max_evaluations;  /* WINDOW: instants evaluated */
   uint64_t max_report_bytes; /* whole report */
 } PJ_evaluation_budget_t;
+
+#define PJ_EVALUATION_BUDGET_V1_MIN_SIZE (offsetof(PJ_evaluation_budget_t, max_report_bytes) + sizeof(uint64_t))
 
 /* poll_evaluation states
  * @since 0.36.0 */
