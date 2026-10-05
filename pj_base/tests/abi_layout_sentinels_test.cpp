@@ -369,9 +369,10 @@ static_assert(
 static_assert(offsetof(PJ_catalog_snapshot_v2_t, release) == 80, "PJ_catalog_snapshot_v2_t.release offset pinned");
 
 // --- Data-processor typed request vocabulary (introduced 0.36.0) ------------
-static_assert(sizeof(PJ_data_processor_output_t) == 32, "PJ_data_processor_output_t size pinned (fixed stride)");
+static_assert(sizeof(PJ_data_processor_output_t) == 48, "PJ_data_processor_output_t size pinned (fixed stride)");
 static_assert(offsetof(PJ_data_processor_output_t, name) == 0, "PJ_data_processor_output_t.name offset pinned");
 static_assert(offsetof(PJ_data_processor_output_t, type) == 16, "PJ_data_processor_output_t.type offset pinned");
+static_assert(offsetof(PJ_data_processor_output_t, reserved) == 32, "PJ_data_processor_output_t.reserved offset pinned");
 
 static_assert(
     sizeof(PJ_data_processor_request_t) == 168, "PJ_data_processor_request_t size pinned at introduction (0.36.0)");

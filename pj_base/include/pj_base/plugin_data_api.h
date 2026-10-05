@@ -1136,13 +1136,16 @@ typedef struct {
 #define PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT \
   (1u << 1) /* time_ns is meaningful: a pinned finding on create, the instant to evaluate on submit */
 
-/* A declared output. ARRAY ELEMENT with a FIXED STRIDE (see PJ_object_topic_info_t).
+/* A declared output. ARRAY ELEMENT with a FIXED STRIDE: a field that cannot be
+ * zero-defaulted needs a new struct + slot, never a change of this layout (see
+ * PJ_object_topic_info_t). `reserved` must be 0.
  * type: "number" | "string" | a builtin object type name ("kPointCloud") | "" (untyped,
  * legacy transform/markers output).
  * @since 0.36.0 */
 typedef struct {
   PJ_string_view_t name;
   PJ_string_view_t type;
+  uint64_t reserved[2]; /* 0 */
 } PJ_data_processor_output_t;
 
 /* Typed request for create_data_processor_v2 and submit_evaluation.
@@ -1158,7 +1161,7 @@ typedef struct {
  * that knows the prefix.
  *
  * A host REJECTS (never ignores) a request it cannot honour: unknown flags or
- * time_flags bits, nonzero reserved, a count > 0 with a NULL pointer, or struct_size
+ * time_flags bits, nonzero reserved (in the request or in any output), a count > 0 with a NULL pointer, or struct_size
  * below the v1 minimum. Inputs use the same grammar as create_data_processor (topic
  * names, optionally dataset-qualified); the script reads each input under its literal
  * name. All strings are borrowed for the duration of the call.

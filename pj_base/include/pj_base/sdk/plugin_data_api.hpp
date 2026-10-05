@@ -1661,7 +1661,7 @@ namespace detail {
   out_abi.clear();
   out_abi.reserve(request.outputs.size());
   for (const auto& output : request.outputs) {
-    out_abi.push_back(PJ_data_processor_output_t{toAbiString(output.name), toAbiString(output.type)});
+    out_abi.push_back(PJ_data_processor_output_t{toAbiString(output.name), toAbiString(output.type), {0, 0}});
   }
   uint32_t time_flags = 0;
   if (request.window.has_value()) {

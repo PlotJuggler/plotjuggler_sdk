@@ -68,6 +68,7 @@ struct FakeDataProcessorsHost {
   std::string last_request_label;
   std::vector<std::string> last_request_inputs;
   std::vector<std::pair<std::string, std::string>> last_request_outputs;  // (name, type)
+  bool last_request_outputs_reserved_zero = true;
 
   std::vector<std::string> v2_resolved_storage;  // host storage out_topics point into
   std::string v2_auto_topic = "__on_demand__/__preview__/finding";
@@ -191,7 +192,11 @@ bool dpCreateV2(
     self->last_request_inputs.emplace_back(sdk::toStringView(request->inputs[i]));
   }
   self->last_request_outputs.clear();
+  self->last_request_outputs_reserved_zero = true;
   for (uint64_t i = 0; i < request->output_count; ++i) {
+    if (request->outputs[i].reserved[0] != 0 || request->outputs[i].reserved[1] != 0) {
+      self->last_request_outputs_reserved_zero = false;
+    }
     self->last_request_outputs.emplace_back(
         std::string(sdk::toStringView(request->outputs[i].name)),
         std::string(sdk::toStringView(request->outputs[i].type)));
@@ -534,6 +539,7 @@ TEST(DataProcessorsApiTest, CreateV2ForwardsTypedOutputsAndInstant) {
   ASSERT_EQ(host.last_request_outputs.size(), 1u);
   EXPECT_EQ(host.last_request_outputs[0].first, "cloud");
   EXPECT_EQ(host.last_request_outputs[0].second, "kPointCloud");
+  EXPECT_TRUE(host.last_request_outputs_reserved_zero);
   EXPECT_EQ(host.last_request_time_flags, static_cast<uint32_t>(PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT));
   EXPECT_EQ(host.last_request_time_ns, 123456789);
   ASSERT_EQ(topics->size(), 1u);
