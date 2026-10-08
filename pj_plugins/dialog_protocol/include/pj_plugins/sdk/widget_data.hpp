@@ -78,6 +78,14 @@ struct ChartSeries {
   bool dashed = false;  // draw with a dashed line (e.g. a faded "before" ghost curve)
 };
 
+/// One object topic shown by an embedded scene view (used by setSceneTopics).
+/// An empty `dataset` means "resolve the topic by name".
+/// @since 0.36.0
+struct SceneTopic {
+  std::string topic;
+  std::string dataset;
+};
+
 /// One marker overlaid on a chart preview (used by setChartMarkers). Interpret by
 /// `kind`, mirroring the PlotMarkers vocabulary:
 ///   "event"      → a point at (x0, y0) when `has_value`, else a vertical line at x0;
@@ -611,9 +619,13 @@ class WidgetData {
     return *this;
   }
 
-  /// Auto-fit (zoom-to-extents) the chart inside the named QFrame on every series
-  /// update when `enabled` is true; when false, preserve the user's current zoom.
-  /// Mirrors the Transform/Filter editor "AutoZoom" checkbox.
+  /// Auto-fit semantics for the chart inside the named QFrame:
+  ///   - key omitted: fit on every series update until the user zooms or pans, and
+  ///     refit when the series set is new;
+  ///   - `true`: fit now and resume auto-fitting (discards the user's view);
+  ///   - `false`: keep the user's view; fit only when the series set is new.
+  /// Send `true` for one update only (e.g. a "Fit" button), not on every tick: that
+  /// would wipe the user's zoom each time. Mirrors the "AutoZoom" checkbox.
   WidgetData& setChartAutoZoom(std::string_view name, bool enabled) {
     entry(name)["chart_auto_zoom"] = enabled;
     return *this;
@@ -624,6 +636,42 @@ class WidgetData {
   /// hides it automatically once the chart receives data.
   WidgetData& setChartPlaceholder(std::string_view name, std::string_view text) {
     entry(name)["chart_placeholder"] = std::string(text);
+    return *this;
+  }
+
+  // --- Embedded scene view (QFrame used as a 3D/2D object view container) ---
+
+  /// Turn the named QFrame into an embedded object view of the given kind
+  /// ("3d" or "2d"). The host creates the view once inside the frame; a kind
+  /// change recreates it. Hosts without embedded-view support leave the frame empty:
+  /// gate the scene UI on DialogPluginBase::hostHas(DialogHostCapability::kEmbedsSceneViews)
+  /// (PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS), not on a version string. Embedded scene
+  /// views exist in PANELS (non-modal toolbox dialogs) only; a modal dialog never
+  /// embeds one. If the host fails to attach a requested topic it does NOT retry:
+  /// the attach is attempted again only when the requested topic set changes.
+  /// @since 0.36.0
+  WidgetData& setSceneView(std::string_view name, std::string_view kind) {
+    entry(name)["scene_view"] = std::string(kind);
+    return *this;
+  }
+
+  /// Set the object topics shown by the embedded view in the named QFrame. The
+  /// host attaches the added topics and detaches the removed ones; the view
+  /// follows the playback cursor. An empty `dataset` resolves the topic by name.
+  /// @since 0.36.0
+  WidgetData& setSceneTopics(std::string_view name, const std::vector<SceneTopic>& topics) {
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& t : topics) {
+      arr.push_back({{"topic", t.topic}, {"dataset", t.dataset}});
+    }
+    entry(name)["scene_topics"] = std::move(arr);
+    return *this;
+  }
+
+  /// Remove the embedded object view (and its topics) from the named QFrame.
+  /// @since 0.36.0
+  WidgetData& clearSceneView(std::string_view name) {
+    entry(name)["scene_view"] = nullptr;
     return *this;
   }
 

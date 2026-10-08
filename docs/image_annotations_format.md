@@ -66,16 +66,17 @@ the renderable annotation fields and ignores the rest:
 | `ImageAnnotations.circles` | Mapped to `ImageAnnotations::circles`. |
 | `ImageAnnotations.points` | Mapped to `ImageAnnotations::points`. |
 | `ImageAnnotations.texts` | Mapped to `ImageAnnotations::texts`. |
-| Top-level `timestamp` | Not serialized or decoded today. |
+| Top-level `timestamp` | Serialized when non-zero, decoded into `ImageAnnotations::timestamp`. |
+| `image_topic` (field 6, string) | Serialized when non-empty, decoded into `ImageAnnotations::image_topic`. |
 | Top-level `metadata` | Not serialized or decoded today. |
 | Per-annotation `timestamp` | Not serialized or decoded today. |
 | Per-annotation `metadata` | Not serialized or decoded today. |
 | `TextAnnotation.background_color` | Not represented by the SDK type; skipped on decode and not emitted on encode. |
 
-`PJ::sdk::ImageAnnotations::image_topic` is also not part of this payload. It is
-runtime association metadata used by PlotJuggler to attach overlays to an image
-stream. Adapters that need to preserve it across storage or transport must store
-it outside the `PJ.ImageAnnotations` bytes.
+`PJ::sdk::ImageAnnotations::image_topic` is part of the payload: it is written
+as field 6 when non-empty, so runtime association between an annotation set
+and its image stream can be carried on the wire. A reader predating this
+addition ignores the unknown field.
 
 ## Codec Rules
 

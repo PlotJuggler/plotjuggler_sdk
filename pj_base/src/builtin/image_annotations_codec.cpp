@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "geometry_codec.hpp"
 #include "protobuf_wire.hpp"
 
 namespace PJ {
@@ -31,7 +32,7 @@ void writePoint2(Writer& writer, const Point2& point) {
   writer.doubleField(2, point.y);
 }
 
-void writeColor(Writer& writer, const ColorRGBA& color) {
+void writeAnnotationColor(Writer& writer, const ColorRGBA& color) {
   writer.doubleField(1, static_cast<double>(color.r) / 255.0);
   writer.doubleField(2, static_cast<double>(color.g) / 255.0);
   writer.doubleField(3, static_cast<double>(color.b) / 255.0);
@@ -59,13 +60,13 @@ void writePointsAnnotation(Writer& writer, const PointsAnnotation& points) {
     writer.message(3, [&](Writer& nested) { writePoint2(nested, point); });
   }
 
-  writer.message(4, [&](Writer& nested) { writeColor(nested, points.color); });
+  writer.message(4, [&](Writer& nested) { writeAnnotationColor(nested, points.color); });
 
   for (const auto& color : points.colors) {
-    writer.message(5, [&](Writer& nested) { writeColor(nested, color); });
+    writer.message(5, [&](Writer& nested) { writeAnnotationColor(nested, color); });
   }
 
-  writer.message(6, [&](Writer& nested) { writeColor(nested, points.fill_color); });
+  writer.message(6, [&](Writer& nested) { writeAnnotationColor(nested, points.fill_color); });
   writer.doubleField(7, points.thickness);
 }
 
@@ -73,15 +74,15 @@ void writeCircleAnnotation(Writer& writer, const CircleAnnotation& circle) {
   writer.message(2, [&](Writer& nested) { writePoint2(nested, circle.center); });
   writer.doubleField(3, circle.radius * 2.0);
   writer.doubleField(4, circle.thickness);
-  writer.message(5, [&](Writer& nested) { writeColor(nested, circle.fill_color); });
-  writer.message(6, [&](Writer& nested) { writeColor(nested, circle.color); });
+  writer.message(5, [&](Writer& nested) { writeAnnotationColor(nested, circle.fill_color); });
+  writer.message(6, [&](Writer& nested) { writeAnnotationColor(nested, circle.color); });
 }
 
 void writeTextAnnotation(Writer& writer, const TextAnnotation& text) {
   writer.message(2, [&](Writer& nested) { writePoint2(nested, text.position); });
   writer.string(3, text.text);
   writer.doubleField(4, text.font_size);
-  writer.message(5, [&](Writer& nested) { writeColor(nested, text.color); });
+  writer.message(5, [&](Writer& nested) { writeAnnotationColor(nested, text.color); });
 }
 
 AnnotationTopology mapTopology(uint64_t type) {
@@ -127,7 +128,7 @@ bool decodePoint2(Reader& reader, Point2& out) {
   return true;
 }
 
-bool decodeColor(Reader& reader, ColorRGBA& out) {
+bool decodeAnnotationColor(Reader& reader, ColorRGBA& out) {
   double r = 0.0;
   double g = 0.0;
   double b = 0.0;
@@ -174,9 +175,9 @@ bool readPoint2Message(Reader& reader, Point2& out) {
   return reader.readMessage(nested) && decodePoint2(nested, out);
 }
 
-bool readColorMessage(Reader& reader, ColorRGBA& out) {
+bool readAnnotationColorMessage(Reader& reader, ColorRGBA& out) {
   Reader nested;
-  return reader.readMessage(nested) && decodeColor(nested, out);
+  return reader.readMessage(nested) && decodeAnnotationColor(nested, out);
 }
 
 bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
@@ -211,7 +212,7 @@ bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
       }
       case 4:
         if (tag.type == WireType::kLengthDelimited) {
-          if (!readColorMessage(reader, out.color)) {
+          if (!readAnnotationColorMessage(reader, out.color)) {
             return false;
           }
           continue;
@@ -222,7 +223,7 @@ bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
           break;
         }
         ColorRGBA color;
-        if (!readColorMessage(reader, color)) {
+        if (!readAnnotationColorMessage(reader, color)) {
           return false;
         }
         out.colors.push_back(color);
@@ -230,7 +231,7 @@ bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
       }
       case 6:
         if (tag.type == WireType::kLengthDelimited) {
-          if (!readColorMessage(reader, out.fill_color)) {
+          if (!readAnnotationColorMessage(reader, out.fill_color)) {
             return false;
           }
           continue;
@@ -297,7 +298,7 @@ bool decodeCircleAnnotation(Reader& reader, CircleAnnotation& out) {
         break;
       case 5:
         if (tag.type == WireType::kLengthDelimited) {
-          if (!readColorMessage(reader, out.fill_color)) {
+          if (!readAnnotationColorMessage(reader, out.fill_color)) {
             return false;
           }
           continue;
@@ -305,7 +306,7 @@ bool decodeCircleAnnotation(Reader& reader, CircleAnnotation& out) {
         break;
       case 6:
         if (tag.type == WireType::kLengthDelimited) {
-          if (!readColorMessage(reader, out.color)) {
+          if (!readAnnotationColorMessage(reader, out.color)) {
             return false;
           }
           continue;
@@ -359,7 +360,7 @@ bool decodeTextAnnotation(Reader& reader, TextAnnotation& out) {
         break;
       case 5:
         if (tag.type == WireType::kLengthDelimited) {
-          if (!readColorMessage(reader, out.color)) {
+          if (!readAnnotationColorMessage(reader, out.color)) {
             return false;
           }
           continue;
@@ -392,6 +393,13 @@ std::vector<uint8_t> serializeImageAnnotations(const ImageAnnotations& annotatio
     writer.message(3, [&](Writer& nested) { writeTextAnnotation(nested, text); });
   }
 
+  if (annotations.timestamp != 0) {
+    writer.message(5, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, annotations.timestamp); });
+  }
+  if (!annotations.image_topic.empty()) {
+    writer.string(6, annotations.image_topic);
+  }
+
   return out;
 }
 
@@ -412,6 +420,17 @@ Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data,
     if (tag.type != WireType::kLengthDelimited) {
       if (!reader.skip(tag.type)) {
         return unexpected(std::string("ImageAnnotations wire: skip failed"));
+      }
+      continue;
+    }
+
+    // image_topic (field 6) is a plain string, not a nested message: read it
+    // directly off `reader` rather than through the generic readMessage()
+    // path below, which wraps the length-delimited payload as a sub-Reader
+    // for per-message field dispatch.
+    if (tag.field == 6) {
+      if (!reader.readString(annotations.image_topic)) {
+        return unexpected(std::string("ImageAnnotations wire: image_topic decode failed"));
       }
       continue;
     }
@@ -446,6 +465,12 @@ Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data,
           return unexpected(std::string("ImageAnnotations wire: TextAnnotation decode failed"));
         }
         annotations.texts.push_back(std::move(text));
+        break;
+      }
+      case 5: {
+        if (!builtin_wire::decodeTimestamp(nested, annotations.timestamp)) {
+          return unexpected(std::string("ImageAnnotations wire: Timestamp decode failed"));
+        }
         break;
       }
       default:

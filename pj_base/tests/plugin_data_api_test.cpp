@@ -35,6 +35,7 @@ static_assert(
 
 struct TailSlotRecorder {
   bool called = false;
+  int release_count = 0;
 };
 
 bool sourceAppendArrowStream(
@@ -78,6 +79,31 @@ bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapsho
 bool toolboxReadSeriesArrow(
     void* ctx, PJ_field_handle_t, struct ArrowSchema*, struct ArrowArray*, PJ_error_t*) noexcept {
   static_cast<TailSlotRecorder*>(ctx)->called = true;
+  return true;
+}
+
+void releaseCatalogSnapshotV2(void* release_ctx) noexcept {
+  static_cast<TailSlotRecorder*>(release_ctx)->release_count++;
+}
+
+bool toolboxAcquireCatalogSnapshotV2(void* ctx, PJ_catalog_snapshot_v2_t* out_snapshot, PJ_error_t*) noexcept {
+  auto* recorder = static_cast<TailSlotRecorder*>(ctx);
+  recorder->called = true;
+  *out_snapshot = PJ_catalog_snapshot_v2_t{};
+  out_snapshot->struct_size = sizeof(PJ_catalog_snapshot_v2_t);
+  out_snapshot->release_ctx = ctx;
+  out_snapshot->release = releaseCatalogSnapshotV2;
+  return true;
+}
+
+bool toolboxAcquireUndersizedCatalogSnapshotV2(
+    void* ctx, PJ_catalog_snapshot_v2_t* out_snapshot, PJ_error_t*) noexcept {
+  auto* recorder = static_cast<TailSlotRecorder*>(ctx);
+  recorder->called = true;
+  *out_snapshot = PJ_catalog_snapshot_v2_t{};
+  out_snapshot->struct_size = 8;  // deliberately below sizeof(PJ_catalog_snapshot_v2_t)
+  out_snapshot->release_ctx = ctx;
+  out_snapshot->release = releaseCatalogSnapshotV2;
   return true;
 }
 
@@ -254,6 +280,78 @@ TEST(PluginDataApiTest, ToolboxHostViewRejectsMissingReadSeriesTailSlot) {
   EXPECT_FALSE(status);
   EXPECT_FALSE(recorder.called);
   EXPECT_NE(status.error().find("read_series_arrow"), std::string::npos);
+}
+
+TEST(PluginDataApiTest, HasCatalogSnapshotV2ReflectsTheTailSlot) {
+  TailSlotRecorder recorder;
+  PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_toolbox_host_vtable_t),
+      .acquire_catalog_snapshot_v2 = toolboxAcquireCatalogSnapshotV2,
+  };
+  EXPECT_TRUE(sdk::ToolboxHostView(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable}).hasCatalogSnapshotV2());
+
+  // Slot present but not covered by struct_size: an old host.
+  vtable.struct_size = offsetof(PJ_toolbox_host_vtable_t, acquire_catalog_snapshot_v2);
+  EXPECT_FALSE(sdk::ToolboxHostView(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable}).hasCatalogSnapshotV2());
+
+  // Covered but NULL.
+  vtable.struct_size = sizeof(PJ_toolbox_host_vtable_t);
+  vtable.acquire_catalog_snapshot_v2 = nullptr;
+  EXPECT_FALSE(sdk::ToolboxHostView(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable}).hasCatalogSnapshotV2());
+
+  // Unbound view.
+  EXPECT_FALSE(sdk::ToolboxHostView().hasCatalogSnapshotV2());
+}
+
+TEST(PluginDataApiTest, CatalogSnapshotV2ReleasesOnce) {
+  TailSlotRecorder recorder;
+  const PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_toolbox_host_vtable_t),
+      .acquire_catalog_snapshot_v2 = toolboxAcquireCatalogSnapshotV2,
+  };
+  sdk::ToolboxHostView view(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  {
+    auto snapshot = view.catalogSnapshotV2();
+    ASSERT_TRUE(snapshot) << snapshot.error();
+    EXPECT_TRUE(recorder.called);
+    EXPECT_EQ(recorder.release_count, 0);
+  }
+  EXPECT_EQ(recorder.release_count, 1);
+}
+
+TEST(PluginDataApiTest, CatalogSnapshotV2OnOldHostReportsNotSupported) {
+  TailSlotRecorder recorder;
+  const PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = offsetof(PJ_toolbox_host_vtable_t, acquire_catalog_snapshot_v2),
+      .acquire_catalog_snapshot_v2 = toolboxAcquireCatalogSnapshotV2,
+  };
+  sdk::ToolboxHostView view(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  auto snapshot = view.catalogSnapshotV2();
+
+  EXPECT_FALSE(snapshot);
+  EXPECT_FALSE(recorder.called);
+  EXPECT_NE(snapshot.error().find("acquire_catalog_snapshot_v2"), std::string::npos);
+}
+
+TEST(PluginDataApiTest, CatalogSnapshotV2RejectsUndersizedStruct) {
+  TailSlotRecorder recorder;
+  const PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_toolbox_host_vtable_t),
+      .acquire_catalog_snapshot_v2 = toolboxAcquireUndersizedCatalogSnapshotV2,
+  };
+  sdk::ToolboxHostView view(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  auto snapshot = view.catalogSnapshotV2();
+
+  EXPECT_FALSE(snapshot);
+  EXPECT_TRUE(recorder.called);
+  EXPECT_EQ(recorder.release_count, 1) << "undersized snapshot must still be released before returning the error";
 }
 
 }  // namespace

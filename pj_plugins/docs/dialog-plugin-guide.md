@@ -188,6 +188,13 @@ Available `DialogHostCapability` values are:
 | `kCanSaveFilePath` | The host can choose a destination file path. |
 | `kCanSelectFolder` | The host can select a folder. |
 | `kStagesBrowserFile` | A browser-selected file is staged to a host-accessible path before delivery. |
+| `kEmbedsSceneViews` (0.36.0) | The host turns a QFrame carrying `scene_view` / `scene_topics` into an embedded 3D/2D object view. |
+
+`hostHas(DialogHostCapability)` tests one bit (false when nothing was
+delivered); it is protected, like `hostInfo()`. This is the way to detect a dialog-protocol feature: a bit you do
+not see means "do not use it" (capability rule 4 in `pj_base/plugin_data_api.h`).
+Embedded scene views exist in panels (non-modal toolbox dialogs) only, and a
+failed attach of a topic is not retried until the requested topic set changes.
 
 Delivery is last-writer-wins: a later successful host-info call replaces both
 stored strings and the complete capability mask. Plugin code should normally
@@ -497,7 +504,8 @@ work like polling a server for available topics.
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
 | QTableWidget | `setTableHeaders`, `setTableRows` (strings, or `TableItem` for sortable columns), `setTableSortIndicator`, `setSelectedRows`, `setVisibleRows`, `setRowColor`, `setCellTooltip` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
 | QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage`, `setCodeCursor`, `setCodeCaretTracking` | `onCodeChanged(name, code)`, or `onCodeChangedWithCursor(name, code, cursor)` when the editor opts into caret tracking |
-| QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
+| QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled`, `setChartAutoZoom` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
+| QFrame (embedded object view, since 0.36.0) | `setSceneView(name, "3d"\|"2d")`, `setSceneTopics`, `clearSceneView`; gate on `hostHas(kEmbedsSceneViews)` | (none) |
 | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | `setDateTime`, `setDateTimeRange` | `onDateTimeChanged(name, iso8601)` |
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
 | DateRangePicker (date range) | `setDateRangePlaceholder` | `onDateRangeChanged(name, from_iso, to_iso)` |
@@ -505,6 +513,12 @@ work like polling a server for available topics.
 | QStackedWidget | `setStackedPage`, `setStackedIndex` | `onStackedPageChanged(name, index, page_object_name)` |
 | QTreeWidget | `setTreeHeaders`, `setTreeItems`, `setTreeSelectedIds`, `setTreeExpandedIds`, `setTreeVisibleIds`, `clearTreeVisibleIds`, `setTreeSelectionMode` | `onTreeSelectionChanged`, `onTreeItemActivated`, `onTreeExpansionChanged`, `onTreeCheckStateChanged` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
+
+Chart auto-fit: when `setChartAutoZoom` is never called the chart fits on every
+series update until the user zooms or pans, and refits when the series set is
+new. `setChartAutoZoom(name, true)` fits now and resumes auto-fit, so send it
+for one update only (for example from a "Fit" button), never on every tick.
+`false` keeps the user's view and fits only on a new series set.
 
 All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
 `setDropTarget(name, bool)`, and `setFieldValid(name, ok, tooltip)` (a generic

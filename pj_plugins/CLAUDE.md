@@ -69,3 +69,16 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
 | Authoring native functional parser modules | `../pj_base/include/pj_base/parser_module/README.md`, `module.hpp`, `../.claude/skills/plotjuggler-plugin/references/parser-module.md` |
 | Service wiring into `bind()` | `include/pj_plugins/host/service_registry_builder.hpp` |
 | Builtin-object ingest policy | `include/pj_plugins/sdk/object_ingest_policy.hpp` |
+
+## Loader-environment test isolation
+
+On ELF platforms the host uses ordinary `dlopen`; an explicit `LD_LIBRARY_PATH`
+(including an empty component meaning the current directory) is a trusted process
+configuration and can override a plugin's `RUNPATH`. The host does not rewrite that
+configuration or claim to isolate it. `plugin_catalog_test` checks implicit CWD/PATH
+search with sibling and decoy dependencies. Its CTest launcher removes empty and
+relative `LD_LIBRARY_PATH` components before starting the test process, preserving
+absolute dependency directories. This makes its assertions independent of a
+shell's trailing colon; modifying the variable inside the already-running test
+would not change glibc's cached search path. The Windows test retains the real
+CWD/PATH decoys and exercises the restricted `LoadLibraryExW` search flags.

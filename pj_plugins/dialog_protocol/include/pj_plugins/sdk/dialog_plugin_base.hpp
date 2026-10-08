@@ -23,6 +23,8 @@ enum class DialogHostCapability : uint64_t {
   kCanSaveFilePath = PJ_DIALOG_HOST_CAN_SAVE_FILE_PATH,
   kCanSelectFolder = PJ_DIALOG_HOST_CAN_SELECT_FOLDER,
   kStagesBrowserFile = PJ_DIALOG_HOST_STAGES_BROWSER_FILE,
+  /// @since 0.36.0
+  kEmbedsSceneViews = PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS,
 };
 
 /// Owned copy of the runtime information supplied by the embedding host.
@@ -86,6 +88,15 @@ class DialogPluginBase {
   /// @since 0.21.0
   [[nodiscard]] const std::optional<DialogHostInfo>& hostInfo() const noexcept {
     return host_info_;
+  }
+
+  /// True iff the host announced `capability` through set_host_info. False when no
+  /// host info was delivered (pre-0.21 host or non-conforming embedding host). Never
+  /// a probe of host version: a bit absent here means "do not use that feature".
+  ///
+  /// @since 0.36.0
+  [[nodiscard]] bool hostHas(DialogHostCapability capability) const noexcept {
+    return host_info_.has_value() && host_info_->has(capability);
   }
 
  public:

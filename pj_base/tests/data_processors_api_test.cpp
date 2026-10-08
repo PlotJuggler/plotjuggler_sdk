@@ -4,8 +4,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "pj_base/plugin_data_api.h"
@@ -44,6 +47,37 @@ struct FakeDataProcessorsHost {
   bool validate_should_fail = false;
   std::string last_validate_kind;
   std::string last_validate_script;
+
+  // --- create_data_processor_v2 / submit_evaluation / poll_evaluation / release_evaluation ---
+
+  bool create_v2_called = false;
+  uint32_t poll_state = PJ_EVALUATION_STATE_COMPLETED;  // what poll_evaluation reports
+  bool submit_called = false;
+  uint32_t last_request_struct_size = 0;
+  uint32_t last_request_flags = 0;
+  uint32_t last_request_time_flags = 0;
+  uint32_t last_request_reserved = 0;
+  int64_t last_request_window_start_ns = 0;
+  int64_t last_request_window_end_ns = 0;
+  int64_t last_request_time_ns = 0;
+  std::string last_request_id;
+  std::string last_request_kind;
+  std::string last_request_language;
+  std::string last_request_script;
+  std::string last_request_params;
+  std::string last_request_label;
+  std::vector<std::string> last_request_inputs;
+  std::vector<std::pair<std::string, std::string>> last_request_outputs;  // (name, type)
+  bool last_request_outputs_reserved_zero = true;
+
+  std::vector<std::string> v2_resolved_storage;  // host storage out_topics point into
+  std::string v2_auto_topic = "__on_demand__/__preview__/finding";
+
+  struct Evaluation {
+    std::string json;
+  };
+  std::unordered_map<uint64_t, Evaluation> evaluations;  // handle -> stored report
+  uint64_t next_handle = 1;
 };
 
 bool dpCreate(
@@ -133,6 +167,110 @@ bool dpValidate(
   return true;
 }
 
+bool dpCreateV2(
+    void* ctx, const PJ_data_processor_request_t* request, PJ_string_view_t* out_topics, uint64_t out_topics_capacity,
+    uint64_t* out_topics_count, PJ_error_t* /*out_error*/) noexcept {
+  auto* self = static_cast<FakeDataProcessorsHost*>(ctx);
+  self->create_v2_called = true;
+  // Copy every borrowed string/array out of `request` immediately: the SDK contract
+  // says they are borrowed for the duration of the call only.
+  self->last_request_struct_size = request->struct_size;
+  self->last_request_flags = request->flags;
+  self->last_request_time_flags = request->time_flags;
+  self->last_request_reserved = request->reserved;
+  self->last_request_window_start_ns = request->window_start_ns;
+  self->last_request_window_end_ns = request->window_end_ns;
+  self->last_request_time_ns = request->time_ns;
+  self->last_request_id = std::string(sdk::toStringView(request->id));
+  self->last_request_kind = std::string(sdk::toStringView(request->kind));
+  self->last_request_language = std::string(sdk::toStringView(request->language));
+  self->last_request_script = std::string(sdk::toStringView(request->script));
+  self->last_request_params = std::string(sdk::toStringView(request->params_json));
+  self->last_request_label = std::string(sdk::toStringView(request->label));
+  self->last_request_inputs.clear();
+  for (uint64_t i = 0; i < request->input_count; ++i) {
+    self->last_request_inputs.emplace_back(sdk::toStringView(request->inputs[i]));
+  }
+  self->last_request_outputs.clear();
+  self->last_request_outputs_reserved_zero = true;
+  for (uint64_t i = 0; i < request->output_count; ++i) {
+    if (request->outputs[i].reserved[0] != 0 || request->outputs[i].reserved[1] != 0) {
+      self->last_request_outputs_reserved_zero = false;
+    }
+    self->last_request_outputs.emplace_back(
+        std::string(sdk::toStringView(request->outputs[i].name)),
+        std::string(sdk::toStringView(request->outputs[i].type)));
+  }
+
+  // Resolve sink names: echo provided output names, else host-named (auto preview).
+  self->v2_resolved_storage.clear();
+  if (request->output_count > 0) {
+    for (uint64_t i = 0; i < request->output_count; ++i) {
+      self->v2_resolved_storage.emplace_back(sdk::toStringView(request->outputs[i].name));
+    }
+  } else {
+    self->v2_resolved_storage.push_back(self->v2_auto_topic);
+  }
+  if (out_topics_count != nullptr) {
+    *out_topics_count = self->v2_resolved_storage.size();
+  }
+  if (out_topics != nullptr) {
+    const uint64_t n = std::min<uint64_t>(out_topics_capacity, self->v2_resolved_storage.size());
+    for (uint64_t i = 0; i < n; ++i) {
+      out_topics[i] = sdk::toAbiString(self->v2_resolved_storage[i]);
+    }
+  }
+  return true;
+}
+
+bool dpSubmitEvaluation(
+    void* ctx, const PJ_data_processor_request_t* request, const PJ_evaluation_budget_t* /*budget*/,
+    uint64_t* out_handle, PJ_error_t* /*out_error*/) noexcept {
+  auto* self = static_cast<FakeDataProcessorsHost*>(ctx);
+  self->submit_called = true;
+  self->last_request_id = std::string(sdk::toStringView(request->id));
+  self->last_request_time_flags = request->time_flags;
+  self->last_request_time_ns = request->time_ns;
+
+  // "Phase 0" fake: completes inline, one canned bundle.
+  const uint64_t handle = self->next_handle++;
+  self->evaluations[handle] = FakeDataProcessorsHost::Evaluation{
+      .json = R"({"coverage":{"start_ns":0,"end_ns":0,"evaluated_until_ns":null,"candidates":1,)"
+              R"("evaluated":1,"cache_hits":0,"complete":true,"stopped":"complete"},)"
+              R"("bundles":[{"requested_ns":0,"stamp_ns":0,"from_cache":false,"revision":1,)"
+              R"("inputs":[],"outputs":{}}]})"};
+  *out_handle = handle;
+  return true;
+}
+
+bool dpPollEvaluation(
+    void* ctx, uint64_t handle, uint32_t* out_state, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<FakeDataProcessorsHost*>(ctx);
+  auto it = self->evaluations.find(handle);
+  if (it == self->evaluations.end()) {
+    if (out_error != nullptr) {
+      sdk::fillError(out_error, 1, "data_processors", "unknown evaluation handle");
+    }
+    return false;
+  }
+  *out_state = self->poll_state;
+  *out_json = sdk::toAbiString(it->second.json);
+  return true;
+}
+
+bool dpReleaseEvaluation(void* ctx, uint64_t handle, PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<FakeDataProcessorsHost*>(ctx);
+  auto it = self->evaluations.find(handle);
+  if (it == self->evaluations.end()) {
+    if (out_error != nullptr) {
+      sdk::fillError(out_error, 1, "data_processors", "unknown evaluation handle");
+    }
+    return false;
+  }
+  self->evaluations.erase(it);
+  return true;
+}
+
 PJ_data_processors_host_vtable_t makeVtable() {
   return PJ_data_processors_host_vtable_t{
       .protocol_version = 1,
@@ -142,6 +280,10 @@ PJ_data_processors_host_vtable_t makeVtable() {
       .list_data_processor_ids = dpList,
       .data_processor_config = dpConfig,
       .validate_data_processor_script = dpValidate,
+      .create_data_processor_v2 = dpCreateV2,
+      .submit_evaluation = dpSubmitEvaluation,
+      .poll_evaluation = dpPollEvaluation,
+      .release_evaluation = dpReleaseEvaluation,
   };
 }
 
@@ -368,6 +510,156 @@ TEST(DataProcessorsApiTest, ValidateFailureSurfacesError) {
   auto status = view.validateScript("markers", "luau", "this is not lua");
   EXPECT_FALSE(status);
   EXPECT_NE(status.error().find("syntax boom"), std::string::npos);
+}
+
+// --- createV2 / submitEvaluation / pollEvaluation / releaseEvaluation ------------
+
+TEST(DataProcessorsApiTest, CreateV2ForwardsTypedOutputsAndInstant) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  sdk::DataProcessorRequest request;
+  request.id = "nearest_cloud";
+  request.kind = "on_demand";
+  request.language = "luau";
+  request.script = "return {}";
+  request.params_json = "{}";
+  request.label = "Nearest cloud";
+  request.inputs = {"lidar/points"};
+  request.outputs = {sdk::DataProcessorOutput{"cloud", "kPointCloud"}};
+  request.instant_ns = 123456789;
+
+  auto topics = view.createV2(request);
+  ASSERT_TRUE(topics) << topics.error();
+  EXPECT_TRUE(host.create_v2_called);
+  EXPECT_EQ(host.last_request_id, "nearest_cloud");
+  EXPECT_EQ(host.last_request_kind, "on_demand");
+  EXPECT_EQ(host.last_request_label, "Nearest cloud");
+  ASSERT_EQ(host.last_request_outputs.size(), 1u);
+  EXPECT_EQ(host.last_request_outputs[0].first, "cloud");
+  EXPECT_EQ(host.last_request_outputs[0].second, "kPointCloud");
+  EXPECT_TRUE(host.last_request_outputs_reserved_zero);
+  EXPECT_EQ(host.last_request_time_flags, static_cast<uint32_t>(PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT));
+  EXPECT_EQ(host.last_request_time_ns, 123456789);
+  ASSERT_EQ(topics->size(), 1u);
+  EXPECT_EQ((*topics)[0], "cloud");
+}
+
+TEST(DataProcessorsApiTest, CreateV2OnOldHostReportsNotSupported) {
+  FakeDataProcessorsHost host;
+  auto vtable = makeVtable();
+  vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, create_data_processor_v2);
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  sdk::DataProcessorRequest request;
+  request.id = "x";
+  request.kind = "on_demand";
+
+  auto topics = view.createV2(request);
+  EXPECT_FALSE(topics);
+  EXPECT_NE(topics.error().find("create_data_processor_v2"), std::string::npos);
+  EXPECT_FALSE(host.create_v2_called);
+}
+
+TEST(DataProcessorsApiTest, HasTypedRequestsReflectsTailSlots) {
+  FakeDataProcessorsHost host;
+  auto vtable = makeVtable();
+  sdk::DataProcessorsHostView full(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+  EXPECT_TRUE(full.hasTypedRequests());
+  EXPECT_FALSE(sdk::DataProcessorsHostView{}.hasTypedRequests());
+
+  // A host whose struct_size ends before the typed-request tail.
+  vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, create_data_processor_v2);
+  sdk::DataProcessorsHostView old_host(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+  EXPECT_FALSE(old_host.hasTypedRequests());
+
+  // A host that covers the tail but stops short of the last slot.
+  vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, release_evaluation);
+  sdk::DataProcessorsHostView partial(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+  EXPECT_FALSE(partial.hasTypedRequests());
+}
+
+TEST(DataProcessorsApiTest, SubmitPollReleaseRoundTrip) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  sdk::DataProcessorRequest request;
+  request.id = "finding";
+  request.kind = "on_demand";
+  request.instant_ns = 10;
+
+  auto handle = view.submitEvaluation(request);
+  ASSERT_TRUE(handle) << handle.error();
+  EXPECT_TRUE(host.submit_called);
+
+  auto poll = view.pollEvaluation(*handle);
+  ASSERT_TRUE(poll) << poll.error();
+  EXPECT_EQ(poll->state, sdk::EvaluationState::kCompleted);
+  EXPECT_NE(poll->json.find("\"coverage\""), std::string::npos);
+
+  ASSERT_TRUE(view.releaseEvaluation(*handle));
+  auto second_release = view.releaseEvaluation(*handle);
+  EXPECT_FALSE(second_release);
+}
+
+TEST(DataProcessorsApiTest, PollUnknownHandleIsAnError) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  auto poll = view.pollEvaluation(/*handle=*/999);
+  EXPECT_FALSE(poll);
+}
+
+TEST(DataProcessorsApiTest, PollMapsEveryKnownStateAndRejectsAnUnknownOne) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  sdk::DataProcessorRequest request;
+  request.id = "finding";
+  request.kind = "on_demand";
+  request.instant_ns = 10;
+  auto handle = view.submitEvaluation(request);
+  ASSERT_TRUE(handle) << handle.error();
+
+  const std::pair<uint32_t, sdk::EvaluationState> known[] = {
+      {PJ_EVALUATION_STATE_PENDING, sdk::EvaluationState::kPending},
+      {PJ_EVALUATION_STATE_COMPLETED, sdk::EvaluationState::kCompleted},
+      {PJ_EVALUATION_STATE_FAILED, sdk::EvaluationState::kFailed},
+      {PJ_EVALUATION_STATE_CANCELLED, sdk::EvaluationState::kCancelled},
+  };
+  for (const auto& [raw, expected] : known) {
+    host.poll_state = raw;
+    auto poll = view.pollEvaluation(*handle);
+    ASSERT_TRUE(poll) << poll.error();
+    EXPECT_EQ(poll->state, expected);
+  }
+
+  // An unknown state must not read as "pending": a caller would poll forever.
+  host.poll_state = 99;
+  auto poll = view.pollEvaluation(*handle);
+  ASSERT_FALSE(poll);
+  EXPECT_NE(poll.error().find("unknown evaluation state 99"), std::string::npos);
+}
+
+TEST(DataProcessorsApiTest, RequestStructSizeAndFlagsAreSet) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  sdk::DataProcessorRequest request;
+  request.id = "x";
+  request.kind = "on_demand";
+  request.instant_ns = 42;
+
+  auto topics = view.createV2(request);
+  ASSERT_TRUE(topics) << topics.error();
+  EXPECT_EQ(host.last_request_struct_size, sizeof(PJ_data_processor_request_t));
+  EXPECT_EQ(host.last_request_time_flags, static_cast<uint32_t>(PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT));
+  EXPECT_EQ(host.last_request_reserved, 0u);
 }
 
 }  // namespace

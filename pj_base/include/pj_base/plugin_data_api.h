@@ -79,6 +79,29 @@ extern "C" {
   ((vtable_ptr)->struct_size >= (offsetof(vtable_type, field) + sizeof((vtable_ptr)->field)) && \
    (vtable_ptr)->field != NULL)
 
+/*
+ * CAPABILITY-DETECTION RULE (stated once; the toolbox guide points here).
+ * A plugin learns what a host can do in exactly one of five ways, by the kind of feature:
+ *
+ *   1. ABI service feature (new tail slot(s)): present iff the slot(s) are covered by
+ *      the vtable's struct_size and non-NULL. Read it through ONE named hasX() on the
+ *      C++ view, never through a version string: DataProcessorsHostView::hasTypedRequests,
+ *      PlotTabHostView::hasSceneTabs, ToolboxHostView::hasCatalogSnapshotV2.
+ *   2. Flag-bit feature (e.g. PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS, a future request
+ *      field announced by a bit): NO probe. A host that does not know the bit REJECTS
+ *      it, so the call fails loudly instead of being half-honoured. The floor of such
+ *      a feature is the hasX() of the slot that carries the bit.
+ *   3. Build-dependent behaviour (e.g. the Python backend of on_demand, which a WASM
+ *      host lacks): probe by doing it, e.g. validateScript("on_demand", "python",
+ *      "return {}"), and keep the UI honest when it fails.
+ *   4. Dialog-protocol feature (scene_view / scene_topics widget keys): a bit in
+ *      PJ_dialog_host_info_t::capabilities (dialog_protocol.h), read through
+ *      DialogPluginBase::hostHas(). A host that never calls set_host_info
+ *      reports 0 bits.
+ *   5. Manifest metadata (badge, custom_topics_editor): declarative, no probe; hosts
+ *      that do not know a key ignore it.
+ */
+
 typedef enum {
   PJ_PRIMITIVE_TYPE_FLOAT32 = 0,
   PJ_PRIMITIVE_TYPE_FLOAT64 = 1,
@@ -362,6 +385,42 @@ typedef struct {
   void* release_ctx;
   void (*release)(void* release_ctx);
 } PJ_catalog_snapshot_t;
+
+/* One object topic of the catalog (snapshot v2). ARRAY ELEMENT with a FIXED
+ * STRIDE: a field that cannot be zero-defaulted needs a new struct + slot, never
+ * a change of this layout. `reserved` must be 0.
+ * @since 0.36.0 */
+typedef struct {
+  PJ_object_topic_handle_t handle;
+  PJ_data_source_handle_t source; /* the dataset the topic lives on */
+  PJ_string_view_t name;
+  PJ_string_view_t builtin_object_type; /* PJ::sdk::name() value, "" when unknown */
+  PJ_string_view_t metadata_json;       /* the topic's whole metadata document */
+  uint64_t entry_count;
+  int64_t time_min_ns; /* raw dataset-domain ns; 0/0 when entry_count == 0 */
+  int64_t time_max_ns;
+  uint64_t reserved[2];
+} PJ_object_topic_info_t;
+
+/* ABI-VERSIONED (not appendable): a later shape is a new struct + new slot. The
+ * scalar arrays have exactly the content of PJ_catalog_snapshot_t. Object topics
+ * include derived and marker topics; clients filter by metadata_json (key
+ * "pj_derived") or by the "__markers__/" name prefix.
+ * @since 0.36.0 */
+typedef struct {
+  uint32_t struct_size; /* = sizeof(PJ_catalog_snapshot_v2_t), set by the host */
+  uint32_t reserved;    /* 0 */
+  const PJ_data_source_info_t* data_sources;
+  uint64_t data_source_count;
+  const PJ_topic_info_t* topics;
+  uint64_t topic_count;
+  const PJ_field_info_t* fields;
+  uint64_t field_count;
+  const PJ_object_topic_info_t* object_topics;
+  uint64_t object_topic_count;
+  void* release_ctx;
+  void (*release)(void* release_ctx);
+} PJ_catalog_snapshot_v2_t;
 
 /* ==========================================================================
  * Three distinct write-host vtables (protocol v4).
@@ -654,6 +713,17 @@ typedef struct PJ_toolbox_host_vtable_t {
    * ABI-APPENDED slot: gate via struct_size before calling. */
   bool (*set_object_topic_retention)(
       void* ctx, PJ_object_topic_handle_t topic, uint64_t max_entries, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Catalog snapshot v2: the scalar catalog of acquire_catalog_snapshot
+   * PLUS every object topic with its dataset, builtin type, entry count and raw time
+   * range, in one deep copy. Release with out_snapshot->release(out_snapshot->release_ctx).
+   * The two halves are NOT atomic: the scalar catalog and the object-topic list are
+   * each consistent on their own, but a topic created between the two reads may show
+   * in one half only. A consumer must not assume a topic named in one appears in the other.
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 0.36.0 */
+  bool (*acquire_catalog_snapshot_v2)(void* ctx, PJ_catalog_snapshot_v2_t* out_snapshot, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
@@ -908,6 +978,33 @@ typedef struct {
  *   - kind="markers":   a discrete PlotMarkers set (events / regions / value bands).
  *     Exactly one output topic; the host publishes the serialized PlotMarkers to the
  *     ObjectStore under markerObjectTopicName(key).
+ *   - kind="on_demand": evaluated at a CONSUMER-requested time rather than eagerly on
+ *     every data change — e.g. a script that reconstructs a PointCloud or
+ *     SceneEntities frame for the sample nearest the playhead, too expensive to
+ *     materialize for the whole series. The request's ABI surface is
+ *     create_data_processor_v2 / submit_evaluation / poll_evaluation /
+ *     release_evaluation (PJ_data_processor_request_t, PJ_evaluation_budget_t):
+ *     create_data_processor (v1) can still install an on_demand node using the
+ *     "<name>:<type>" output-suffix grammar below, but reading a result requires the
+ *     v2 evaluation surface. DEPRECATED: the "<name>:<type>" suffix still works, but
+ *     new clients use create_data_processor_v2 with PJ_data_processor_output_t; the
+ *     suffix will be removed in a future version. In that grammar each `outputs`
+ *     entry carries a type suffix "<name>:<type>", where <type> is "number", "string", or a BuiltinObjectType
+ *     name (e.g. "kPointCloud", "kSceneEntities") — the host needs the declared shape
+ *     up front to route a later on-demand evaluation without re-running the script.
+ *     out_topics returns, 1:1 with outputs, the catalog path of each output:
+ *       - object output: "<owner>/<id>/<name>", the object topic the host publishes;
+ *       - number output: also "<owner>/<id>/<name>", the series key the host writes
+ *         in series mode. It is ABSENT from the catalog when the recipe cannot run in
+ *         series mode (pinned, or no object input), so a reader must tolerate a miss;
+ *       - string output: the bare name; a string is never a topic.
+ *     A consumer reads a number output's series by exactly this string; it must not
+ *     rebuild the path from the output name (a different topic may share the leaf).
+ *     `language` is "luau" on every host; "python" is OPTIONAL and per host (a
+ *     host built without it, e.g. WASM, rejects it): never assume it, probe it by
+ *     calling validate_data_processor_script("on_demand","python","return {}") and
+ *     keep the UI honest when that fails. The same "unknown kind is rejected" rule as
+ *     any other kind applies to a host that predates this one.
  * Future kinds (e.g. a host-owned engine backend) are added the same way — a new
  * `kind` string plus host routing, no ABI change.
  *
@@ -918,8 +1015,10 @@ typedef struct {
  *                   data_processor_config). The host scopes list/remove/config to the
  *                   calling plugin (per-plugin isolation): one plugin can neither
  *                   enumerate nor remove another's.
- *   - kind        : output discriminator, see above ("transform", "markers").
- *   - language    : script backend, "luau" today; the host rejects anything else.
+ *   - kind        : output discriminator, see above ("transform", "markers", "on_demand").
+ *   - language    : script backend. "luau" everywhere; "python" is optional (see the
+ *                   Python note in the on_demand paragraph above). The host rejects any
+ *                   other value.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
  *                   "pose/orientation/x") the script reads; the host resolves them
  *                   and exact-joins co-timestamped inputs. A name MAY carry the
@@ -942,7 +1041,40 @@ typedef struct {
  *                   persisted, dropped on remove). PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT
  *                   marks a node the host's undo/redo history has no authority over
  *                   (still persisted like any other node; history never restores,
- *                   recreates or removes it). Reserved bits must be 0.
+ *                   recreates or removes it). PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS: see
+ *                   its definition below. Reserved bits must be 0.
+ *
+ * LIFETIME — a node is exactly one of three things, by flag and kind:
+ *   - PERSISTENT (default): saved in the layout; the host's undo/redo and layout load
+ *     may replace, recreate or remove it like any other node. It survives plugin
+ *     unload and a session reload.
+ *   - EPHEMERAL (PJ_DATA_PROCESSOR_FLAG_EPHEMERAL): a preview owned by the plugin
+ *     instance that created it. Never persisted; undo/redo and layout load do not
+ *     end it; only remove_data_processor(id) or the owning plugin's teardown does.
+ *     VISIBILITY: list_data_processor_ids hides previews, but
+ *     data_processor_config by exact id answers the OWNING plugin, ephemeral or not
+ *     (ids are namespaced per plugin), so a plugin can read its own preview's
+ *     progress (e.g. the on_demand "series" block). The catalog snapshot may still
+ *     show their output topics. kinds: all three.
+ *   - HISTORY_EXEMPT (PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT): PERSISTED, but the host's
+ *     history has no authority over it (never restored, recreated or removed by
+ *     undo/redo). Meaningless on an EPHEMERAL node. kinds: all three; every kind's
+ *     data_processor_config reports the boolean "history_exempt".
+ *   - PINNED (kind "on_demand" only: PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT on create): a
+ *     persisted finding fixed at one evaluation time (config key "pinned_t_ns"). It
+ *     cannot run in series mode, so its number outputs have no catalog series.
+ *     Transforms and markers REJECT INSTANT.
+ *
+ * PER-KIND REQUEST FIELDS (create_data_processor_v2 / submit_evaluation):
+ *     kind        label                         WINDOW (time_flags)                INSTANT
+ *     transform   accepted, ignored (advisory)  rejected ("not supported yet")     rejected
+ *     markers     accepted, ignored (advisory)  accepted on create: the span the   rejected
+ *                                               markers are computed over
+ *     on_demand   stored and reported           rejected on create ("use           accepted on create
+ *                                               submit_evaluation"); valid only    (pinned); valid on
+ *                                               on submit_evaluation               submit_evaluation
+ *   `label` is advisory text for a UI: a host never keys behaviour on it, and a kind
+ *   that ignores it still accepts it (the request is not rejected for carrying one).
  *
  * DATASET-QUALIFIED NAMES — a series' full identity is (dataset, topic, field); a
  * bare "topic/field" name is an abbreviation that stops being unique the moment
@@ -985,6 +1117,108 @@ typedef struct {
  * read data_processor_config after creation: only history_exempt=true confirms
  * the property. A missing/false property or failed read does not confirm it. */
 #define PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT (1u << 1)
+/* on_demand only. Output names and types are learned from what the script returns
+ * instead of being declared.
+ *  - Transient evaluation (submit_evaluation with a non-empty script and no declared
+ *    outputs): the host runs the script and infers each output's name and type from
+ *    the returned value. A non-table value gives one output "value"; a keyed table
+ *    gives one output per key (sorted by name); a positional table gives outputs
+ *    named by type ("value", "value_2", ..., "text", "cloud", "scene", "annotations",
+ *    "image", "transforms", "object"). Mixed keyed+positional or empty returns are
+ *    errors. The inferred list is returned in the report ("outputs").
+ *    The names are chosen by the host; read them from the report's outputs, never
+ *    assume them (the list above is the current host behaviour, not a contract).
+ *  - create/create_v2: the declared outputs are a binding hint learned from such a
+ *    trial. The host still validates the returned types at runtime.
+ * A host that does not know this bit rejects it as an unknown flag.
+ * @since 0.36.0 */
+#define PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS (1u << 2)
+
+/* PJ_data_processor_request_t.time_flags
+ * @since 0.36.0 */
+#define PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW (1u << 0) /* window_start_ns..window_end_ns are meaningful */
+#define PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT \
+  (1u << 1) /* time_ns is meaningful: a pinned finding on create, the instant to evaluate on submit */
+
+/* A declared output. ARRAY ELEMENT with a FIXED STRIDE: a field that cannot be
+ * zero-defaulted needs a new struct + slot, never a change of this layout (see
+ * PJ_object_topic_info_t). `reserved` must be 0.
+ * type: "number" | "string" | a builtin object type name ("kPointCloud") | "" (untyped,
+ * legacy transform/markers output).
+ * @since 0.36.0 */
+typedef struct {
+  PJ_string_view_t name;
+  PJ_string_view_t type;
+  uint64_t reserved[2]; /* 0 */
+} PJ_data_processor_output_t;
+
+/* Typed request for create_data_processor_v2 and submit_evaluation.
+ *
+ * struct_size RULE (read-prefix): the host reads the PREFIX of the struct that it
+ * knows and ACCEPTS a struct_size larger than its own sizeof. The v1 minimum is
+ * PJ_DATA_PROCESSOR_REQUEST_V1_MIN_SIZE; a smaller struct_size is rejected. A field
+ * appended in a later SDK release must be zero-defaultable AND announced by a new
+ * flags/time_flags bit, so an older host rejects the unknown BIT -- never the size.
+ * A request that uses no new field therefore keeps working on every host.
+ * The C++ wrapper (detail::toAbiRequest) keeps sending sizeof(PJ_data_processor_request_t)
+ * of the header it was compiled with; under this rule that is correct on any host
+ * that knows the prefix.
+ *
+ * A host REJECTS (never ignores) a request it cannot honour: unknown flags or
+ * time_flags bits, nonzero reserved (in the request or in any output), a count > 0 with a NULL pointer, or struct_size
+ * below the v1 minimum. Inputs use the same grammar as create_data_processor (topic
+ * names, optionally dataset-qualified); the script reads each input under its literal
+ * name. All strings are borrowed for the duration of the call.
+ * @since 0.36.0 */
+typedef struct {
+  uint32_t struct_size; /* = sizeof(PJ_data_processor_request_t) */
+  uint32_t flags;       /* PJ_DATA_PROCESSOR_FLAG_* */
+  PJ_string_view_t id;
+  PJ_string_view_t kind;
+  PJ_string_view_t language;
+  PJ_string_view_t script;
+  PJ_string_view_t params_json;
+  PJ_string_view_t label; /* human-readable name, may be empty */
+  const PJ_string_view_t* inputs;
+  uint64_t input_count;
+  const PJ_data_processor_output_t* outputs;
+  uint64_t output_count;
+  uint32_t time_flags;     /* PJ_DATA_PROCESSOR_TIME_FLAG_* */
+  uint32_t reserved;       /* 0 */
+  int64_t window_start_ns; /* raw ns, inclusive; WINDOW */
+  int64_t window_end_ns;   /* raw ns, inclusive; WINDOW */
+  int64_t time_ns;         /* raw ns; INSTANT */
+} PJ_data_processor_request_t;
+
+#define PJ_DATA_PROCESSOR_REQUEST_V1_MIN_SIZE (offsetof(PJ_data_processor_request_t, time_ns) + sizeof(int64_t))
+
+/* Cooperative computation budget of one submit_evaluation. Checked between
+ * evaluations and inside the host's native operations, NOT a wall-clock guarantee:
+ * one script or native call may overrun it. 0 = host default. Each field is clamped
+ * to a host-defined maximum (host policy); a submit is never rejected for asking
+ * more. coverage.stopped reports which budget ended an evaluation.
+ * struct_size follows the same read-prefix rule as PJ_data_processor_request_t: the
+ * host rejects a struct_size below PJ_EVALUATION_BUDGET_V1_MIN_SIZE, accepts a larger
+ * one and reads only the prefix it knows.
+ * A budget field added later must be zero-defaultable (0 = host default).
+ * @since 0.36.0 */
+typedef struct {
+  uint32_t struct_size;      /* = sizeof(PJ_evaluation_budget_t) */
+  uint32_t reserved;         /* 0 */
+  uint64_t max_millis;       /* cooperative time budget, ms */
+  uint64_t max_bytes;        /* per-evaluation VM + native ceiling */
+  uint64_t max_evaluations;  /* WINDOW: instants evaluated */
+  uint64_t max_report_bytes; /* whole report */
+} PJ_evaluation_budget_t;
+
+#define PJ_EVALUATION_BUDGET_V1_MIN_SIZE (offsetof(PJ_evaluation_budget_t, max_report_bytes) + sizeof(uint64_t))
+
+/* poll_evaluation states
+ * @since 0.36.0 */
+#define PJ_EVALUATION_STATE_PENDING 0u
+#define PJ_EVALUATION_STATE_COMPLETED 1u
+#define PJ_EVALUATION_STATE_FAILED 2u
+#define PJ_EVALUATION_STATE_CANCELLED 3u
 
 typedef struct PJ_data_processors_host_vtable_t {
   uint32_t protocol_version;  // = 1
@@ -998,7 +1232,8 @@ typedef struct PJ_data_processors_host_vtable_t {
    * name(s) are written to out_topics using the count-then-fill convention: pass
    * out_topics=NULL/capacity=0 to read *out_topics_count, or a buffer to receive
    * min(capacity,*out_topics_count) entries (borrowed, valid only until the next call
-   * on this vtable); pass out_topics_count=NULL to ignore them. Transactional: on
+   * on this vtable); pass out_topics_count=NULL to ignore them. For kind="on_demand"
+   * see the out_topics contract in the service comment above. Transactional: on
    * failure no partial state is left AND any previously published output for this id
    * is preserved. All string arguments are borrowed for the duration of the call. */
   bool (*create_data_processor)(
@@ -1014,17 +1249,22 @@ typedef struct PJ_data_processors_host_vtable_t {
    * Count-then-fill: pass capacity 0 to read *out_count, then call again with a
    * buffer of that size. On success the first min(capacity, *out_count) entries
    * of out_ids are filled and point into host storage valid only until the next
-   * call on this vtable. Ephemeral previews are excluded. */
+   * call on this vtable. Ephemeral previews are excluded (data_processor_config
+   * still answers for them by exact id). */
   bool (*list_data_processor_ids)(
       void* ctx, PJ_string_view_t* out_ids, uint64_t capacity, uint64_t* out_count, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /* [main-thread] Read a node's full recipe as JSON
    * {"kind":"...","language":"...","inputs":[...],"outputs":[...],"params":{...}} for
-   * re-edit (e.g. after a session reload). *out_recipe_json is borrowed, valid only
+   * re-edit (e.g. after a session reload). An on_demand node that runs in series
+   * mode also reports "series":{"topic","rows","failed","first_error","complete",
+   * "done","total"}; "done" (instants already evaluated) and "total" (instants known
+   * to be evaluated; may grow with live data) are OPTIONAL: absent before the first
+   * step, and a client must tolerate their absence. *out_recipe_json is borrowed, valid only
    * until the next call on this vtable. An unknown id is an error.
    * Hosts supporting PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT include the boolean
-   * "history_exempt" for transforms and markers, reflecting the node's actual
-   * property. Callers must not infer support from a successful create alone. */
+   * "history_exempt" for EVERY kind (transform, markers, on_demand), reflecting the
+   * node's actual property. Callers must not infer support from a successful create alone. */
   bool (*data_processor_config)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
@@ -1038,6 +1278,71 @@ typedef struct PJ_data_processors_host_vtable_t {
   bool (*validate_data_processor_script)(
       void* ctx, PJ_string_view_t kind, PJ_string_view_t language, PJ_string_view_t script,
       PJ_string_view_t params_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] create_data_processor with a typed request: typed outputs, a label,
+   * and (INSTANT) a pinned evaluation time for an on_demand finding. Same upsert,
+   * transactional and out_topics (count-then-fill, borrowed until the next call on
+   * this host object) contract as create_data_processor, including the on_demand
+   * out_topics contract (see the on_demand paragraph of the service comment).
+   * request->struct_size follows the read-prefix rule on PJ_data_processor_request_t.
+   * ABI-APPENDED slot.
+   * @since 0.36.0 */
+  bool (*create_data_processor_v2)(
+      void* ctx, const PJ_data_processor_request_t* request, PJ_string_view_t* out_topics, uint64_t out_topics_capacity,
+      uint64_t* out_topics_count, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Start an evaluation and return its handle. request->id naming an
+   * installed on_demand node of THIS plugin with an empty script evaluates that node;
+   * a non-empty script is an EPHEMERAL recipe (flags must carry EPHEMERAL) evaluated
+   * without installing or publishing anything. time_flags selects INSTANT (one bundle
+   * at time_ns) or WINDOW (one bundle per instant at which an input changes inside
+   * the window, in time order, until the budget stops it). A host may complete the
+   * work before returning (phase 0) or in the background; poll_evaluation is the only
+   * way to read the result either way. Handles are per host object, increasing, never
+   * reused. Kinds other than on_demand are an error. ABI-APPENDED slot.
+   * @since 0.36.0 */
+  bool (*submit_evaluation)(
+      void* ctx, const PJ_data_processor_request_t* request, const PJ_evaluation_budget_t* budget, uint64_t* out_handle,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Read an evaluation's state. On COMPLETED *out_json is the report:
+   * {"coverage":{"start_ns","end_ns","evaluated_until_ns"|null,"candidates","evaluated",
+   *   "cache_hits","complete","stopped":"complete"|"budget_time"|"budget_evaluations"|
+   *   "budget_bytes"|"budget_report"|"cancelled"|"error","gaps":[{"from_ns","to_ns"}...],
+   *   "error"?},"bundles":[<bundle>...]}
+   * with one bundle for INSTANT. coverage.gaps lists the retention gaps (raw ns) the
+   * evaluated range fell into. coverage.error is present ONLY when stopped == "error"
+   * and carries the reason (truncated by the host); a COMPLETED report with an empty
+   * "bundles" list is therefore NOT enough to infer "no sample": read coverage.stopped
+   * and coverage.error. A bundle is {"requested_ns","stamp_ns","from_cache",
+   * "revision","inputs":[{"alias","resolved_ns","is_object"}],"outputs":{name:{"status":
+   * "ok"|"unavailable"|"empty"|"error","value"?,"topic"?,"summary"?,"reason"?}}}.
+   * Objects never appear as bytes, only as a "summary" object. When the request
+   * carried PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS the report root also has
+   * "outputs":[{"name":"...","type":"number"|"string"|"<BuiltinObjectType name>"|
+   * "unknown"}], the inferred outputs in report order. Every *_ns value is a
+   * raw dataset nanosecond count as a JSON integer (int64; do not round-trip through
+   * a double). Unknown keys are ignored, but a string value a client does not
+   * recognise in a key it knows (e.g. coverage.stopped, outputs[].status) must be
+   * treated as an error, never as success; a host emits a new value only for a
+   * request that opted into it. Exception: outputs[].type "unknown" is a defined
+   * value. On FAILED *out_json is {"error":"..."}. *out_json is borrowed until
+   * release_evaluation(handle). An unknown handle is an error. ABI-APPENDED slot.
+   * Limits: a host bounds the number of live handles and the reserved report
+   * bytes (host policy); a submit beyond either bound is an error until completed
+   * handles are released. The host completes a background evaluation from its own
+   * event loop: a caller must return to that loop between polls (poll from a timer,
+   * never a busy loop on the calling thread) or the evaluation never finishes. A state
+   * value outside PJ_EVALUATION_STATE_* is not "pending": the C++ wrapper reports it
+   * as an error.
+   * @since 0.36.0 */
+  bool (*poll_evaluation)(
+      void* ctx, uint64_t handle, uint32_t* out_state, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Cancel a pending evaluation (cooperative) and free its result.
+   * Releasing an unknown handle is an error; releasing twice is an error. ABI-APPENDED slot.
+   * @since 0.36.0 */
+  bool (*release_evaluation)(void* ctx, uint64_t handle, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_processors_host_vtable_t;
 
 typedef struct {
@@ -1232,6 +1537,25 @@ typedef struct {
  * it. Whether such a tab is saved with the workspace is likewise the host's
  * policy, not this service's contract.
  *
+ * Tab kinds: "plot" (curves), "3d" and "2d" (scene tabs holding object topics).
+ * Scene tabs are served by the tail slots create_tab_v2 / attach_topic /
+ * detach_topic / focus_tab (0.36.0). The v1 slots on a scene tab: add_curve and
+ * remove_curve are errors "tab '<id>' is a <3d|2d> scene tab: use
+ * attach_topic/detach_topic"; clear_tab detaches every topic and keeps the tab;
+ * close_tab, list_tab_ids (all kinds) and tab_config work.
+ * create_tab_v2 with the same id and kind replaces a plot tab with one empty plot
+ * (v1 "create or replace") and only updates the title of a scene tab; a different
+ * kind closes the old tab and creates a new one.
+ *
+ * tab_config JSON: for a plot tab, byte-identical to v1,
+ * {"title":"...","curves":[...]} with NO "kind" key. For a scene tab,
+ * {"kind":"3d","title":"...","topics":[{"topic":"...","dataset":"...","type":"kPointCloud","visible":true}]}
+ * ("kind" is "3d" or "2d"): what the tab ACTUALLY holds, datasets resolved.
+ *
+ * A host with no scene workspace leaves the four tail slots NULL (not an error):
+ * callers check with PJ_HAS_TAIL_SLOT before calling. An error return means the
+ * host has the capability but refused this request.
+ *
  * All slots are [main-thread]. ABI-APPENDABLE: new slots may be added at the
  * tail; struct_size gates read.
  */
@@ -1291,7 +1615,52 @@ typedef struct PJ_plot_tab_host_vtable_t {
 
   /* [main-thread] Remove every curve from a tab, keeping the tab itself. */
   bool (*clear_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Create (or update) a tab of the given `kind`: "plot", "3d" or "2d".
+   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. One id namespace per
+   * plugin across kinds. The same id with the same kind: on a plot tab it REPLACES
+   * the tab's contents (the released `create_tab` "create or replace" behaviour: the
+   * curves are cleared; a host may keep the tab's existing split layout, as PlotJuggler
+   * does, so do not assume exactly one plot afterwards: read tab_config); on a scene
+   * tab it only updates the title. The same id with a DIFFERENT
+   * kind closes the old tab and creates a new empty one. `create_tab` (v1) is this call
+   * with kind "plot". An empty `id`, or an id containing '/', is an error here (v1
+   * keeps its released id rules). An empty `title` lets the host name the tab.
+   * @since 0.36.0 */
+  bool (*create_tab_v2)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t title, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Attach an object topic to a scene tab. ABI-APPENDED slot (0.36.0):
+   * gate with PJ_HAS_TAIL_SLOT. Scene tabs only. `dataset_source` follows the same
+   * rule as add_curve: empty means the topic must be unique across loaded datasets,
+   * and an ambiguous one is refused with the qualified candidates. IDEMPOTENT:
+   * attaching a topic that is already attached is success and changes nothing. A "3d" tab accepts
+   * every object type the 3D view renders; a "2d" tab accepts Image/DepthImage/
+   * VideoFrame (replacing the background) and ImageAnnotations (an overlay). On a plot
+   * tab this is an error: "tab '<id>' is a plot tab: use add_curve".
+   * @since 0.36.0 */
+  bool (*attach_topic)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Take one topic back out of a scene tab (same `dataset_source` rule).
+   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT. A topic that is not
+   * attached is an error. On a plot tab this is an error: "tab '<id>' is a plot tab:
+   * use remove_curve".
+   * @since 0.36.0 */
+  bool (*detach_topic)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Bring one of this plugin's tabs (any kind) to the front.
+   * ABI-APPENDED slot (0.36.0): gate with PJ_HAS_TAIL_SLOT.
+   * @since 0.36.0 */
+  bool (*focus_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_plot_tab_host_vtable_t;
+
+/* Minimum acceptable struct_size: the seven slots released with the v1 layout.
+ * Slots from create_tab_v2 on are tail slots: gate each with PJ_HAS_TAIL_SLOT. */
+#define PJ_PLOT_TAB_HOST_MIN_VTABLE_SIZE (offsetof(PJ_plot_tab_host_vtable_t, create_tab_v2))
 
 typedef struct {
   void* ctx;

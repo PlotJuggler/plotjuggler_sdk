@@ -3,6 +3,180 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.36.0] — Unreleased
+
+Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2, PJ_data_processors_host_vtable_t::create_data_processor_v2, PJ_data_processors_host_vtable_t::submit_evaluation, PJ_data_processors_host_vtable_t::poll_evaluation, PJ_data_processors_host_vtable_t::release_evaluation, pj.plot_tabs.v1 tail slots (create_tab_v2, attach_topic, detach_topic, focus_tab), PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW, PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT, PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS (floor 0.36.0)
+
+- Add `uint64_t reserved[2]` (must be 0) to `PJ_data_processor_output_t`, which is
+  an array element with a fixed stride: the struct grows from 32 to 48 bytes. The
+  C++ wrapper zeroes it; a host rejects an output with nonzero `reserved`.
+- Deprecate the `"<name>:<type>"` output suffix of `create_data_processor`: it
+  still works, new clients use `create_data_processor_v2` with
+  `PJ_data_processor_output_t`; it will be removed in a future version.
+- Evaluation budgets and live-handle / report-byte limits are host policy: `0` =
+  host default, each field is clamped to a host-defined maximum, and a submit is
+  never rejected for asking more (`coverage.stopped` says which budget ended the
+  run). The documented default and cap numbers are removed. Docs only.
+- Document the unknown-value rule of the evaluation report: an unrecognised string
+  value in a key the client knows (e.g. `coverage.stopped`, `outputs[].status`)
+  is an error, never success; `outputs[].type` `"unknown"` is a defined value.
+  The names inferred by `INFER_OUTPUTS` are chosen by the host and must be read
+  from the report. Docs only.
+- Document the optional `done` / `total` keys of the on_demand `series` block of
+  `data_processor_config` (instants evaluated / known total); a client tolerates
+  their absence. Docs only.
+- Document the visibility rule for ephemeral data processors: `list_data_processor_ids`
+  hides them, but `data_processor_config` by exact id answers the owning plugin
+  (hosts no longer reject it), so a plugin can read its preview's `series` progress.
+  Docs only: no ABI change.
+- Document the `chart_auto_zoom` semantics (`setChartAutoZoom`): omitted fits until
+  the user zooms or pans, `true` fits now and resumes auto-fit, `false` keeps the
+  user's view. Docs only: no ABI change.
+- Add `WidgetData::setSceneView` / `setSceneTopics` / `clearSceneView` (keys
+  `scene_view`, `scene_topics`) and the matching `WidgetDataView::sceneView` /
+  `sceneTopics`: a QFrame carrying `scene_view` becomes an embedded 3D/2D object
+  view bound to object topics and following the playback cursor. Hosts without
+  support leave the frame empty. Dialog protocol only: no ABI change.
+- Add `PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS` (on_demand): a transient evaluation
+  with no declared outputs infers each output's name and type from the script's
+  returned value and reports them in a root `"outputs"` array of the
+  `poll_evaluation` report; on create/create_v2 the declared outputs are a
+  binding hint learned from such a trial.
+- Add compile-time field tables (`pj_base/builtin/field_table.hpp`) describing
+  the members of builtin object structs, so a generic binder (e.g. a script
+  engine) can read/write any described field by name without per-type glue
+  code. Per-type specializations live in `frame_transforms_fields.hpp`,
+  `image_annotations_fields.hpp`, `point_cloud_fields.hpp`, and
+  `scene_entities_fields.hpp`; `field_table_registry.hpp` exposes
+  `describe(BuiltinObjectType)` to look one up from the runtime tag carried
+  by a `BuiltinObject`. `FrameTransforms`, `ImageAnnotations`, `PointCloud`,
+  and `SceneEntities` were the first four tabled types (the next entry adds four
+  more); `PointCloud`
+  exposes its packed-bytes `data` field through a `kBuffer` descriptor
+  (`buffer<>()`) resolving a `BufferLayout` view rather than a plain
+  get/set pair. Client-side only: no ABI or wire-format change.
+- Add field tables for `Image`, `DepthImage`, `CameraInfo`, and `VideoFrame`
+  (`image_fields.hpp`, `depth_image_fields.hpp`, `camera_info_fields.hpp`,
+  `video_frame_fields.hpp`); `describe(BuiltinObjectType)` now covers 8
+  types (there is no count constant: `FieldTableTest.DescribeCoversExactlyTheTabledTypes`
+  pins the set). `Image::data`/`DepthImage::data`/`VideoFrame::data` each get a
+  `kBuffer` descriptor whose layout is derived from the encoding/format
+  string: a raw `Image` encoding (e.g. "rgb8") or a recognized `DepthImage`
+  encoding ("16UC1"/"32FC1") resolves a static per-pixel `record_step`;
+  a compressed encoding or a `VideoFrame`'s codec bitstream has none, so
+  `record_step`/`record_count` are 0 and the encoding/format string still
+  comes through the buffer's sole channel name. `FieldKind` gains two new
+  cases to describe these structs honestly rather than faking them:
+  `kOptionalNumber` (a nullable number, `has_value()` + `get_number`/
+  `set_number`, for `Image::compressed_depth_min`/`compressed_depth_max`)
+  and a fixed-size `kList` (for a `std::array<double, N>` member — e.g.
+  `CameraInfo::K`/`R`/`P`, `DepthImage::K` — written through the new
+  `list_replace` accessor instead of `list_emplace`/`list_clear`, since the
+  element count never changes). Client-side only: no ABI or wire-format
+  change.
+- Add catalog snapshot v2: `PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2`
+  (`ToolboxHostView::catalogSnapshotV2`) returns a second, ABI-VERSIONED
+  snapshot struct (`PJ_catalog_snapshot_v2_t`) carrying the scalar catalog of
+  `acquire_catalog_snapshot` PLUS every object topic — dataset, builtin type,
+  entry count, raw time range (`PJ_object_topic_info_t`). A new struct rather
+  than a tail-append, because object topics are an ARRAY ELEMENT with a FIXED
+  STRIDE: a field that cannot be zero-defaulted needs a new struct + slot,
+  never a layout change to an existing one.
+- Add the typed data-processor request vocabulary (`PJ_data_processor_request_t`,
+  `PJ_data_processor_output_t`, `PJ_evaluation_budget_t`) and
+  `PJ_data_processors_host_vtable_t::create_data_processor_v2`
+  (`DataProcessorsHostView::createV2`): typed outputs, a human-readable label,
+  and — with `PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT` — a pinned evaluation time
+  for an on_demand finding. This is the ABI surface the `kind="on_demand"`
+  doc-comment on `PJ_data_processors_host_vtable_t` previously described as
+  not existing yet; `create_data_processor` (v1) stays valid for the
+  `"<name>:<type>"` output-suffix grammar.
+- Add asynchronous on_demand evaluation: `submit_evaluation`/`poll_evaluation`/
+  `release_evaluation` (`DataProcessorsHostView::submitEvaluation`/
+  `pollEvaluation`/`releaseEvaluation`), gated by the new
+  `PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW`/`PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT`
+  bits. A submitted evaluation returns a handle; a host may complete the work
+  before returning or in the background, and `poll_evaluation` is the only way
+  to read the result either way, as a JSON report
+  (`{"coverage":{...},"bundles":[...]}` — one bundle per requested instant, one
+  entry per output, `*_ns` values as raw int64 dataset nanoseconds).
+- Add `DataProcessorsHostView::hasTypedRequests()`: true iff the host serves
+  `create_data_processor_v2` and `submit_evaluation`/`poll_evaluation`/
+  `release_evaluation`, so a plugin can gate typed-request UI without probing.
+- Scene 3D/2D tabs are kinds of `pj.plot_tabs.v1` tabs: tail slots
+  `create_tab_v2`, `attach_topic`, `detach_topic`, `focus_tab` (C++:
+  `PlotTabHostView::createV2/attachTopic/detachTopic/focus/hasSceneTabs`). The
+  slots are NULL when the host has no scene workspace; the plot `tab_config`
+  JSON is unchanged.
+- Add the `pj_snapshot` object-topic metadata key
+  (`ObjectTopicMetadataBuilder::snapshot`): marks a SceneEntities/
+  ImageAnnotations topic whose every entry is a complete clear-and-replace
+  snapshot, so a stateless consumer may render each entry alone without
+  replaying the topic's history.
+- Add the optional manifest string `badge` (`PluginDescriptor::badge`, "" when
+  absent): a short label a host may show next to objects the plugin creates.
+  Older manifests and hosts are unaffected.
+- Record the `struct_size` rule of the typed data-processor request and of
+  `PJ_evaluation_budget_t` as READ-PREFIX: a host reads the prefix it knows,
+  rejects a `struct_size` below the v1 layout and ACCEPTS a larger one; a field
+  appended later is zero-defaultable and announced by a new `flags`/`time_flags`
+  bit, so an older host rejects the bit, never the size. The previous text
+  (reject any `struct_size` larger than the host's own) would have made the
+  first appended field break every newer plugin on a 0.36 host. The C++
+  wrapper keeps sending `sizeof`, which is correct under this rule.
+- `create_data_processor_v2` / `create_data_processor` (`kind="on_demand"`):
+  `out_topics` now returns `<owner>/<id>/<name>` for number outputs as well as
+  object outputs (the series key of series mode; absent from the catalog when
+  the recipe cannot run in series mode); string outputs stay the bare name.
+  A reader must use the returned string, not rebuild it from the output name.
+- `DataProcessorsHostView::pollEvaluation` returns an error for an unknown
+  evaluation state ("unknown evaluation state N") instead of reading it as
+  pending, which made a caller poll forever.
+- Document `coverage.error` (present only when `coverage.stopped == "error"`)
+  and `coverage.gaps` in the `poll_evaluation` report, plus the 64-handle /
+  64 MiB limits and that polling needs the host event loop to turn.
+- Add `ToolboxHostView::hasCatalogSnapshotV2()`: true iff the host serves
+  `acquire_catalog_snapshot_v2`. One `hasX()` per ABI service feature is the
+  capability rule, stated once in the `plugin_data_api.h` header comment
+  (ABI feature = tail slot behind a `hasX()`; flag-bit feature = no probe, an
+  older host rejects the bit; build-dependent behaviour = probe by doing it;
+  dialog feature = `PJ_dialog_host_info_t::capabilities`; manifest metadata =
+  no probe).
+- Add the dialog host capability `PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS`
+  (`1 << 5`, C++ `DialogHostCapability::kEmbedsSceneViews`): the host embeds
+  `scene_view` / `scene_topics` frames. `DialogPluginBase` (and so
+  `DialogPluginTyped`) gains `hostHas(capability)`
+  over the host info already delivered by the existing `set_host_info` slot;
+  a host that never delivers it reports 0. A dialog gates its scene UI on the
+  bit instead of probing a different service. No ABI change.
+- Add the optional manifest flag `custom_topics_editor`
+  (`PluginDescriptor::custom_topics_editor`, false when absent): the toolbox
+  that edits the host's user-defined topics. A host keys the "+" button and
+  the ownership of those rows on it instead of a hard-coded plugin id.
+- Add `sdk::kDerivedMetadataKey` (`"pj_derived"`) and `sdk::kDerivedOnDemandValue`
+  (`"on_demand"`) in `object_topic_metadata.hpp`: the topic metadata key a host
+  sets on object topics derived by an on_demand data processor.
+- Add `sdk::unprojectPixel` (`depth_image_utils.hpp`): unprojects a rectified
+  pixel with positive metric depth through a pinhole `K`; rejects singular or
+  non-finite intrinsics and skew/projective terms. Client-side only.
+- RENAME (the 0.36 line is unreleased, so nothing shipped breaks):
+  `PlotTabHostView::createV2` -> `createTabV2` and `focus` -> `focusTab`, so
+  they no longer read like `DataProcessorsHostView::createV2` or a UI focus.
+  `feature_floors.json` keys follow.
+- Every slot, struct and wrapper added in 0.36 now carries `@since 0.36.0`.
+- Docs: the contract text now states, once each, the lifetime of a processor by
+  flag and kind (persistent / EPHEMERAL / HISTORY_EXEMPT / pinned), what each
+  kind does with `label`, WINDOW and INSTANT, that Python is an optional
+  per-host on_demand language probed with `validateScript`, that a plot-tab
+  re-create keeps the host's layout and clears the curves, that `attach_topic`
+  is idempotent, that the two halves of catalog snapshot v2 are not atomic,
+  that a `scene_view` frame exists in panels only and a failed attach is not
+  retried until the topic set changes, and that the empty-badge fallback is host
+  policy (at most 8 characters advised). `data_processor_config` reports
+  `history_exempt` for every kind, not only transforms and markers.
+- ImageAnnotations wire carries the top-level timestamp and image_topic;
+  additive, old readers skip them.
+
 ## [0.35.0]
 
 Host contract: unchanged (no floor impact) — a client-side codec helper, no new
