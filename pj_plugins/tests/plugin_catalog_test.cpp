@@ -40,9 +40,16 @@ std::string pluginFileName(const std::string& stem) {
 #endif
 }
 
+constexpr std::string_view kMinimalManifest = R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0"})";
+
+// kMinimalManifest plus one `"key":json_value` member.
+std::string manifestWith(std::string_view key, std::string_view json_value) {
+  return std::string(kMinimalManifest.substr(0, kMinimalManifest.size() - 1)) + ",\"" + std::string(key) +
+         "\":" + std::string(json_value) + "}";
+}
+
 std::string manifestWithMinSdk(std::string_view json_value) {
-  return std::string(R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","min_sdk_required":)") +
-         std::string(json_value) + "}";
+  return manifestWith("min_sdk_required", json_value);
 }
 
 class PluginCatalogTest : public ::testing::Test {
@@ -296,44 +303,35 @@ TEST_F(PluginCatalogTest, SuggestedSdkVersionRoundTripsAndDefaultsEmpty) {
 }
 
 TEST_F(PluginCatalogTest, BadgeRoundTripsAndDefaultsEmpty) {
-  auto with_field = decodeManifest(
-      "static:sdk-test", PluginFamily::kToolbox,
-      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","badge":"AI"})");
+  auto with_field = decodeManifest("static:sdk-test", PluginFamily::kToolbox, manifestWith("badge", R"("AI")"));
   ASSERT_TRUE(with_field.has_value()) << with_field.error();
   EXPECT_EQ(with_field->badge, "AI");
 
-  auto without_field = decodeManifest(
-      "static:sdk-test", PluginFamily::kToolbox, R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0"})");
+  auto without_field = decodeManifest("static:sdk-test", PluginFamily::kToolbox, kMinimalManifest);
   ASSERT_TRUE(without_field.has_value()) << without_field.error();
   EXPECT_TRUE(without_field->badge.empty());
 
-  auto wrong_type = decodeManifest(
-      "static:sdk-test", PluginFamily::kToolbox, R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","badge":3})");
-  EXPECT_FALSE(wrong_type.has_value());
+  EXPECT_FALSE(decodeManifest("static:sdk-test", PluginFamily::kToolbox, manifestWith("badge", "3")).has_value());
 }
 
 TEST_F(PluginCatalogTest, CustomTopicsEditorRoundTripsAndDefaultsFalse) {
-  auto declared = decodeManifest(
-      "static:sdk-test", PluginFamily::kToolbox,
-      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","custom_topics_editor":true})");
+  auto declared =
+      decodeManifest("static:sdk-test", PluginFamily::kToolbox, manifestWith("custom_topics_editor", "true"));
   ASSERT_TRUE(declared.has_value()) << declared.error();
   EXPECT_TRUE(declared->custom_topics_editor);
 
-  auto explicit_false = decodeManifest(
-      "static:sdk-test", PluginFamily::kToolbox,
-      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","custom_topics_editor":false})");
+  auto explicit_false =
+      decodeManifest("static:sdk-test", PluginFamily::kToolbox, manifestWith("custom_topics_editor", "false"));
   ASSERT_TRUE(explicit_false.has_value()) << explicit_false.error();
   EXPECT_FALSE(explicit_false->custom_topics_editor);
 
-  auto absent = decodeManifest(
-      "static:sdk-test", PluginFamily::kToolbox, R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0"})");
+  auto absent = decodeManifest("static:sdk-test", PluginFamily::kToolbox, kMinimalManifest);
   ASSERT_TRUE(absent.has_value()) << absent.error();
   EXPECT_FALSE(absent->custom_topics_editor);
 
-  auto wrong_type = decodeManifest(
-      "static:sdk-test", PluginFamily::kToolbox,
-      R"({"id":"sdk-test","name":"SDK Test","version":"1.0.0","custom_topics_editor":"yes"})");
-  EXPECT_FALSE(wrong_type.has_value());
+  EXPECT_FALSE(
+      decodeManifest("static:sdk-test", PluginFamily::kToolbox, manifestWith("custom_topics_editor", R"("yes")"))
+          .has_value());
 }
 
 TEST_F(PluginCatalogTest, MinSdkRequiredAcceptsEmptyString) {
