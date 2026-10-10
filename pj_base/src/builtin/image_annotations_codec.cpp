@@ -3,7 +3,6 @@
 
 #include "pj_base/builtin/image_annotations_codec.hpp"
 
-#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -15,9 +14,11 @@
 namespace PJ {
 namespace {
 
+using builtin_wire::normalizedToByte;
 using builtin_wire::Reader;
 using builtin_wire::Tag;
 using builtin_wire::WireType;
+using builtin_wire::writeColor;
 using builtin_wire::Writer;
 using sdk::AnnotationTopology;
 using sdk::CircleAnnotation;
@@ -30,13 +31,6 @@ using sdk::TextAnnotation;
 void writePoint2(Writer& writer, const Point2& point) {
   writer.doubleField(1, point.x);
   writer.doubleField(2, point.y);
-}
-
-void writeAnnotationColor(Writer& writer, const ColorRGBA& color) {
-  writer.doubleField(1, static_cast<double>(color.r) / 255.0);
-  writer.doubleField(2, static_cast<double>(color.g) / 255.0);
-  writer.doubleField(3, static_cast<double>(color.b) / 255.0);
-  writer.doubleField(4, static_cast<double>(color.a) / 255.0);
 }
 
 uint32_t topologyToEnum(AnnotationTopology topology) {
@@ -60,13 +54,13 @@ void writePointsAnnotation(Writer& writer, const PointsAnnotation& points) {
     writer.message(3, [&](Writer& nested) { writePoint2(nested, point); });
   }
 
-  writer.message(4, [&](Writer& nested) { writeAnnotationColor(nested, points.color); });
+  writer.message(4, [&](Writer& nested) { writeColor(nested, points.color); });
 
   for (const auto& color : points.colors) {
-    writer.message(5, [&](Writer& nested) { writeAnnotationColor(nested, color); });
+    writer.message(5, [&](Writer& nested) { writeColor(nested, color); });
   }
 
-  writer.message(6, [&](Writer& nested) { writeAnnotationColor(nested, points.fill_color); });
+  writer.message(6, [&](Writer& nested) { writeColor(nested, points.fill_color); });
   writer.doubleField(7, points.thickness);
 }
 
@@ -74,15 +68,15 @@ void writeCircleAnnotation(Writer& writer, const CircleAnnotation& circle) {
   writer.message(2, [&](Writer& nested) { writePoint2(nested, circle.center); });
   writer.doubleField(3, circle.radius * 2.0);
   writer.doubleField(4, circle.thickness);
-  writer.message(5, [&](Writer& nested) { writeAnnotationColor(nested, circle.fill_color); });
-  writer.message(6, [&](Writer& nested) { writeAnnotationColor(nested, circle.color); });
+  writer.message(5, [&](Writer& nested) { writeColor(nested, circle.fill_color); });
+  writer.message(6, [&](Writer& nested) { writeColor(nested, circle.color); });
 }
 
 void writeTextAnnotation(Writer& writer, const TextAnnotation& text) {
   writer.message(2, [&](Writer& nested) { writePoint2(nested, text.position); });
   writer.string(3, text.text);
   writer.doubleField(4, text.font_size);
-  writer.message(5, [&](Writer& nested) { writeAnnotationColor(nested, text.color); });
+  writer.message(5, [&](Writer& nested) { writeColor(nested, text.color); });
 }
 
 AnnotationTopology mapTopology(uint64_t type) {
@@ -99,11 +93,6 @@ AnnotationTopology mapTopology(uint64_t type) {
     default:
       return AnnotationTopology::kPoints;
   }
-}
-
-uint8_t normalizedToByte(double value) {
-  value = std::clamp(value, 0.0, 1.0);
-  return static_cast<uint8_t>(value * 255.0 + 0.5);
 }
 
 bool decodePoint2(Reader& reader, Point2& out) {
@@ -128,6 +117,7 @@ bool decodePoint2(Reader& reader, Point2& out) {
   return true;
 }
 
+// Not builtin_wire::decodeColor: annotation colours default alpha to 1 and skip unknown fields.
 bool decodeAnnotationColor(Reader& reader, ColorRGBA& out) {
   double r = 0.0;
   double g = 0.0;
