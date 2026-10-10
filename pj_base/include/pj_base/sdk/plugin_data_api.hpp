@@ -1335,6 +1335,8 @@ class ToolboxHostView {
   /// in one deep copy. The two halves are NOT read atomically: the scalar
   /// catalog and the object-topic list are each consistent on their own, but a
   /// topic created between the two reads may appear in one and not the other.
+  /// The copy covers every field of every topic: acquire it when the catalog may
+  /// have changed, not on every timer tick.
   /// @since 0.36.0
   [[nodiscard]] Expected<CatalogSnapshotV2> catalogSnapshotV2() const {
     if (!valid()) {
@@ -1684,11 +1686,37 @@ namespace detail {
   raw.outputs = out_abi.data();
   raw.output_count = out_abi.size();
   raw.time_flags = time_flags;
-  raw.reserved = 0;
   raw.window_start_ns = request.window.has_value() ? request.window->first : 0;
   raw.window_end_ns = request.window.has_value() ? request.window->second : 0;
   raw.time_ns = request.instant_ns.value_or(0);
   return raw;
+}
+
+/// Count-then-fill of the resolved topic names an upsert returns. Pre-sizes to the
+/// declared outputs (8 when none, e.g. an auto-named ephemeral preview) and re-issues
+/// `call(out, capacity, &count, &err)` once when the host resolved more: a re-upsert
+/// with identical args is idempotent.
+template <typename Call>
+[[nodiscard]] Expected<std::vector<std::string>> collectResolvedTopics(std::size_t declared_outputs, Call&& call) {
+  const uint64_t capacity = declared_outputs == 0 ? 8 : declared_outputs;
+  std::vector<PJ_string_view_t> resolved(capacity);
+  uint64_t count = 0;
+  PJ_error_t err{};
+  if (!call(resolved.data(), resolved.size(), &count, &err)) {
+    return unexpected(errorToString(err));
+  }
+  if (count > capacity) {
+    resolved.assign(count, PJ_string_view_t{});
+    if (!call(resolved.data(), resolved.size(), &count, &err)) {
+      return unexpected(errorToString(err));
+    }
+  }
+  std::vector<std::string> topics;
+  topics.reserve(count);
+  for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
+    topics.emplace_back(toStringView(resolved[i]));
+  }
+  return topics;
 }
 
 }  // namespace detail
@@ -1750,40 +1778,14 @@ class DataProcessorsHostView {
     for (const auto& name : outputs) {
       out_abi.push_back(toAbiString(name));
     }
-    PJ_error_t err{};
-    // Convert the immutable scalar args once — they are identical across the (rare)
-    // count-then-fill retry below.
-    const PJ_string_view_t id_abi = toAbiString(id);
-    const PJ_string_view_t kind_abi = toAbiString(kind);
-    const PJ_string_view_t language_abi = toAbiString(language);
-    const PJ_string_view_t script_abi = toAbiString(script);
-    const PJ_string_view_t params_abi = toAbiString(params_json);
-    // The resolved sink name(s) are filled on the SAME upsert call. Pre-size to the
-    // caller's output count (the host resolves exactly that many for non-empty
-    // outputs); for an auto-named ephemeral preview reserve headroom and grow once if
-    // the host resolved more than fit — a re-upsert with identical args is idempotent.
-    uint64_t capacity = out_abi.empty() ? 8 : out_abi.size();
-    std::vector<PJ_string_view_t> resolved(capacity);
-    uint64_t count = 0;
-    if (!host_.vtable->create_data_processor(
-            host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
-            script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
-      return unexpected(errorToString(err));
-    }
-    if (count > capacity) {
-      resolved.assign(count, PJ_string_view_t{});
-      if (!host_.vtable->create_data_processor(
-              host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
-              script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
-        return unexpected(errorToString(err));
-      }
-    }
-    std::vector<std::string> topics;
-    topics.reserve(count);
-    for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
-      topics.emplace_back(toStringView(resolved[i]));
-    }
-    return topics;
+    // The resolved sink name(s) are filled on the SAME upsert call.
+    return detail::collectResolvedTopics(
+        out_abi.size(), [&](PJ_string_view_t* out, uint64_t capacity, uint64_t* count, PJ_error_t* err) {
+          return host_.vtable->create_data_processor(
+              host_.ctx, toAbiString(id), toAbiString(kind), toAbiString(language), in_abi.data(), in_abi.size(),
+              out_abi.data(), out_abi.size(), toAbiString(script), toAbiString(params_json), flags, out, capacity,
+              count, err);
+        });
   }
 
   /// Convenience: create a kind="transform" node (DerivedEngine timeseries). `outputs`
@@ -1928,25 +1930,10 @@ class DataProcessorsHostView {
     std::vector<PJ_string_view_t> in_abi;
     std::vector<PJ_data_processor_output_t> out_abi;
     const PJ_data_processor_request_t raw = detail::toAbiRequest(request, in_abi, out_abi);
-    PJ_error_t err{};
-    uint64_t capacity = out_abi.empty() ? 8 : out_abi.size();
-    std::vector<PJ_string_view_t> resolved(capacity);
-    uint64_t count = 0;
-    if (!host_.vtable->create_data_processor_v2(host_.ctx, &raw, resolved.data(), resolved.size(), &count, &err)) {
-      return unexpected(errorToString(err));
-    }
-    if (count > capacity) {
-      resolved.assign(count, PJ_string_view_t{});
-      if (!host_.vtable->create_data_processor_v2(host_.ctx, &raw, resolved.data(), resolved.size(), &count, &err)) {
-        return unexpected(errorToString(err));
-      }
-    }
-    std::vector<std::string> topics;
-    topics.reserve(count);
-    for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
-      topics.emplace_back(toStringView(resolved[i]));
-    }
-    return topics;
+    return detail::collectResolvedTopics(
+        out_abi.size(), [&](PJ_string_view_t* out, uint64_t capacity, uint64_t* count, PJ_error_t* err) {
+          return host_.vtable->create_data_processor_v2(host_.ctx, &raw, out, capacity, count, err);
+        });
   }
 
   /// Start an evaluation and return its handle. `request.id` naming an
@@ -1970,7 +1957,6 @@ class DataProcessorsHostView {
     const PJ_data_processor_request_t raw = detail::toAbiRequest(request, in_abi, out_abi);
     PJ_evaluation_budget_t raw_budget{};
     raw_budget.struct_size = sizeof(PJ_evaluation_budget_t);
-    raw_budget.reserved = 0;
     raw_budget.max_millis = budget.max_millis;
     raw_budget.max_bytes = budget.max_bytes;
     raw_budget.max_evaluations = budget.max_evaluations;

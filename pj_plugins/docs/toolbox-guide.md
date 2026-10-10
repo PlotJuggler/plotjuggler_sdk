@@ -201,7 +201,7 @@ data store.
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
 | `hasCatalogSnapshotV2()` (0.36.0) | True iff the host serves snapshot v2. Check it before `catalogSnapshotV2()`; without it object topics are not enumerable. |
-| `catalogSnapshotV2()` (0.36.0) | Like `catalogSnapshot()`, plus every object topic (`objectTopics()`) with its dataset, builtin type, entry count and raw time range, in one deep copy. The two halves are not read atomically: a topic created between the reads may appear in one half only. |
+| `catalogSnapshotV2()` (0.36.0) | Like `catalogSnapshot()`, plus every object topic (`objectTopics()`) with its dataset, builtin type, entry count and raw time range, in one deep copy. The two halves are not read atomically: a topic created between the reads may appear in one half only. The copy covers every field of every topic, so acquire it when the catalog may have changed, not per tick. |
 | `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
 | `registerObjectTopic(source, name, type[, extra_metadata])` | Register a built-in media/object topic under a data source. The typed overload emits the canonical `builtin_object_type` renderer metadata and returns an `ObjectTopicHandle`. |
 | `registerObjectTopic(source, name, metadata_json)` | Raw-metadata overload for custom or untyped object topics. The store retains the JSON verbatim. |
@@ -317,8 +317,9 @@ treat it as unknown and say the host is too old; do not guess a scalar.
 `createV2` and the `submitEvaluation` / `pollEvaluation` / `releaseEvaluation`
 trio; gate typed-request UI on it, never on a version.
 
-`DataProcessorsHostView::createV2(request)` upserts a `kind="on_demand"` node like
-`createOnDemand`, but the request is typed (`DataProcessorRequest`): outputs carry
+`DataProcessorsHostView::createV2(request)` upserts a node of any kind like
+`create`, but the request is typed (`DataProcessorRequest`; typed outputs other
+than `number` are for `kind="on_demand"`): outputs carry
 a `DataProcessorOutput{name, type}` pair instead of a `"<name>:<type>"` string
 suffix, plus an optional human-readable `label` and, with `instant_ns` set, a
 pinned evaluation time. `create_data_processor` (v1) remains valid for the
@@ -368,9 +369,9 @@ count as a JSON integer). `coverage.stopped` says why the evaluation ended and
 `coverage.error` carries the reason only when it is `"error"`; an empty `bundles`
 list alone does not mean "no sample". `coverage.gaps` lists retention gaps. On
 `kFailed` it is `{"error":"..."}`; a state the SDK does not know is returned as
-an error, never as pending. A host keeps at most 64 live handles and 64 MiB of
-reserved report bytes: release finished handles, and poll from a timer so the
-host's event loop can finish the work. Handles are per host object, increasing, never reused. `releaseEvaluation(handle)` cancels a
+an error, never as pending. Host policy bounds the live handles and the retained
+report bytes: release finished handles, and poll from a timer so the host's event
+loop can finish the work. Handles are per host object, increasing, never reused. `releaseEvaluation(handle)` cancels a
 pending evaluation and frees its result; releasing an unknown or already-released
 handle is an error.
 

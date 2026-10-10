@@ -66,7 +66,7 @@ the renderable annotation fields and ignores the rest:
 | `ImageAnnotations.circles` | Mapped to `ImageAnnotations::circles`. |
 | `ImageAnnotations.points` | Mapped to `ImageAnnotations::points`. |
 | `ImageAnnotations.texts` | Mapped to `ImageAnnotations::texts`. |
-| Top-level `timestamp` | Serialized when non-zero, decoded into `ImageAnnotations::timestamp`. |
+| Top-level `timestamp` | Serialized when non-zero, decoded into `ImageAnnotations::timestamp`; a timestamp of 0 is indistinguishable from an absent one. |
 | `image_topic` (field 6, string) | Serialized when non-empty, decoded into `ImageAnnotations::image_topic`. |
 | Top-level `metadata` | Not serialized or decoded today. |
 | Per-annotation `timestamp` | Not serialized or decoded today. |

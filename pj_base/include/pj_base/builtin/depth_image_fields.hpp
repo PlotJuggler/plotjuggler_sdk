@@ -12,24 +12,25 @@
 
 #include "pj_base/builtin/depth_image.hpp"
 #include "pj_base/builtin/field_table.hpp"
+#include "pj_base/builtin/point_cloud.hpp"
 
 namespace PJ::sdk {
 
 namespace detail {
 
-/// Bytes-per-pixel for a `DepthImage::encoding` value, or 0 when the string
-/// is not one of the two encodings `depth_image.hpp`'s doc comment documents
-/// ("16UC1" — millimeters as uint16 — or "32FC1" — meters as float32).
-/// `DepthImage::encoding` is an open string (like `Image::encoding`), so an
-/// unrecognized value is expected, not an error.
-[[nodiscard]] constexpr uint32_t depthImageBytesPerPixel(std::string_view encoding) noexcept {
+/// Pixel datatype of a `DepthImage::encoding` value, or `kUnknown` when the
+/// string is not one of the two encodings `depth_image.hpp`'s doc comment
+/// documents ("16UC1" — millimeters as uint16 — or "32FC1" — meters as
+/// float32). `DepthImage::encoding` is an open string (like `Image::encoding`),
+/// so an unrecognized value is expected, not an error.
+[[nodiscard]] constexpr PointField::Datatype depthImageDatatype(std::string_view encoding) noexcept {
   if (encoding == "16UC1") {
-    return 2;
+    return PointField::Datatype::kUint16;
   }
   if (encoding == "32FC1") {
-    return 4;
+    return PointField::Datatype::kFloat32;
   }
-  return 0;
+  return PointField::Datatype::kUnknown;
 }
 
 }  // namespace detail
@@ -37,19 +38,19 @@ namespace detail {
 /// `kBuffer` descriptor for `DepthImage::data`. Unlike `Image`, `DepthImage`
 /// has no `row_step` member, so `buffer()` derives it as `width * bpp` (no
 /// row padding representable) whenever `bpp` (from
-/// `detail::depthImageBytesPerPixel(encoding)`) is known; an unrecognized
+/// `bytesPerElement(detail::depthImageDatatype(encoding))`) is known; an unrecognized
 /// encoding reports `record_step = row_step = 0` and `bytes` alone (its full
 /// span) is the payload — same convention as `imageDataField()`
 /// (`image_fields.hpp`). `channels` always carries exactly one entry naming
-/// the encoding string. `buffer_assign()` follows the same
-/// take-ownership-and-re-anchor idiom as `pointCloudDataField()`.
+/// the encoding string. `buffer_assign()` is `detail::assignPayloadBytes`.
 [[nodiscard]] constexpr FieldDescriptor depthImageDataField(std::string_view name) {
   FieldDescriptor d{};
   d.name = name;
   d.kind = FieldKind::kBuffer;
   d.buffer = [](const void* p) -> BufferLayout {
     const auto& image = *static_cast<const DepthImage*>(p);
-    const uint32_t bpp = detail::depthImageBytesPerPixel(image.encoding);
+    const PointField::Datatype datatype = detail::depthImageDatatype(image.encoding);
+    const uint32_t bpp = bytesPerElement(datatype);
     BufferLayout layout;
     layout.bytes = image.data;
     layout.record_step = bpp;
@@ -60,16 +61,11 @@ namespace detail {
         BufferLayout::Channel{
             .name = image.encoding,
             .offset = 0,
-            .datatype = bpp == 2 ? uint8_t{4} : (bpp == 4 ? uint8_t{7} : uint8_t{0}),  // 4=uint16, 7=float32
+            .datatype = static_cast<uint8_t>(datatype),
             .count = bpp == 0 ? 0 : uint32_t{1}});
     return layout;
   };
-  d.buffer_assign = [](void* p, std::vector<uint8_t> bytes) {
-    auto& image = *static_cast<DepthImage*>(p);
-    const PayloadView view = makePayloadView(std::move(bytes));
-    image.data = view.bytes;
-    image.anchor = view.anchor;
-  };
+  d.buffer_assign = &detail::assignPayloadBytes<DepthImage>;
   return d;
 }
 
@@ -81,7 +77,7 @@ namespace detail {
 /// (`std::vector<double>`, size depends on `distortion_model`).
 template <>
 struct FieldTable<DepthImage> {
-  static constexpr std::array<FieldDescriptor, 8> fields{
+  static constexpr std::array fields{
       field<&DepthImage::width>("width"),
       field<&DepthImage::height>("height"),
       field<&DepthImage::encoding>("encoding"),

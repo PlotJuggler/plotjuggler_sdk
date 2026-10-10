@@ -22,8 +22,7 @@ namespace PJ::sdk {
 /// naming the codec (`format`), so a consumer that gets a zeroed
 /// `record_step` still learns which codec produced the bytes — same
 /// convention as `imageDataField()` (`image_fields.hpp`) for a compressed
-/// `Image`. `buffer_assign()` follows the same take-ownership-and-re-anchor
-/// idiom as `pointCloudDataField()`.
+/// `Image`. `buffer_assign()` is `detail::assignPayloadBytes`.
 [[nodiscard]] constexpr FieldDescriptor videoFrameDataField(std::string_view name) {
   FieldDescriptor d{};
   d.name = name;
@@ -35,12 +34,7 @@ namespace PJ::sdk {
     layout.channels.push_back(BufferLayout::Channel{.name = frame.format, .offset = 0, .datatype = 0, .count = 0});
     return layout;
   };
-  d.buffer_assign = [](void* p, std::vector<uint8_t> bytes) {
-    auto& frame = *static_cast<VideoFrame*>(p);
-    const PayloadView view = makePayloadView(std::move(bytes));
-    frame.data = view.bytes;
-    frame.anchor = view.anchor;
-  };
+  d.buffer_assign = &detail::assignPayloadBytes<VideoFrame>;
   return d;
 }
 
@@ -49,7 +43,7 @@ namespace PJ::sdk {
 /// `buffer_assign()` and is not listed.
 template <>
 struct FieldTable<VideoFrame> {
-  static constexpr std::array<FieldDescriptor, 4> fields{
+  static constexpr std::array fields{
       field<&VideoFrame::timestamp_ns>("timestamp_ns"),
       field<&VideoFrame::frame_id>("frame_id"),
       field<&VideoFrame::format>("format"),

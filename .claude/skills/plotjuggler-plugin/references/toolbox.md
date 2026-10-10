@@ -80,19 +80,9 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
 
 ## Detecting host features (SDK 0.36.0)
 
-One rule, in the header comment of `pj_base/plugin_data_api.h`; never test a
-version string:
-
-- ABI service feature: a named `hasX()` on the view
-  (`DataProcessorsHostView::hasTypedRequests()`, `PlotTabHostView::hasSceneTabs()`,
-  `ToolboxHostView::hasCatalogSnapshotV2()`).
-- Flag-bit feature (`PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS`): do not probe; an older
-  host rejects the bit. Its floor is the `hasX()` of the slot carrying it.
-- Build-dependent behaviour (Python for on_demand): probe by doing it,
-  `validateScript("on_demand", "python", "return {}")`.
-- Dialog feature (`scene_view`): `hostHas(DialogHostCapability::kEmbedsSceneViews)`
-  inside the dialog.
-- Manifest metadata (`badge`, `custom_topics_editor`): declarative, no probe.
+Never test a version string. The rule is in the header comment of
+`pj_base/plugin_data_api.h`; `pj_plugins/docs/toolbox-guide.md` → "Detecting what
+the host can do" has the table with one example per feature kind.
 
 On-demand requests: `createV2` returns `<owner>/<id>/<name>` for object and number
 outputs (read a number series by exactly that string) and the bare name for a

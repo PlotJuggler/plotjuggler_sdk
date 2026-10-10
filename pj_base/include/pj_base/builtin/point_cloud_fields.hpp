@@ -17,7 +17,7 @@ namespace PJ::sdk {
 /// Fields of `PointField`: `name`, `offset`, `datatype` (enum), `count`.
 template <>
 struct FieldTable<PointField> {
-  static constexpr std::array<FieldDescriptor, 4> fields{
+  static constexpr std::array fields{
       field<&PointField::name>("name"),
       field<&PointField::offset>("offset"),
       field<&PointField::datatype>("datatype"),
@@ -30,11 +30,8 @@ struct FieldTable<PointField> {
 /// record bytes plus a per-channel layout read from `fields` / `point_step` /
 /// `row_step` / `width` / `height` / `is_bigendian` (record count is
 /// `width * height`, with `height == 0` read as one row; a zero `point_step`
-/// yields zero records). `buffer_assign()` takes ownership of the new bytes:
-/// `data` views them and `anchor` keeps them alive, the same idiom the codec
-/// uses (`makePayloadView`). `anchor` itself is not a table field. Concrete on
-/// purpose: no other buffer-bearing builtin carries a channel layout, so a
-/// generic factory would describe a family of one.
+/// yields zero records). `buffer_assign()` is `detail::assignPayloadBytes`.
+/// `anchor` itself is not a table field.
 [[nodiscard]] constexpr FieldDescriptor pointCloudDataField(std::string_view name) {
   FieldDescriptor d{};
   d.name = name;
@@ -56,12 +53,7 @@ struct FieldTable<PointField> {
     }
     return layout;
   };
-  d.buffer_assign = [](void* p, std::vector<uint8_t> bytes) {
-    auto& cloud = *static_cast<PointCloud*>(p);
-    const PayloadView view = makePayloadView(std::move(bytes));
-    cloud.data = view.bytes;
-    cloud.anchor = view.anchor;
-  };
+  d.buffer_assign = &detail::assignPayloadBytes<PointCloud>;
   return d;
 }
 
@@ -70,7 +62,7 @@ struct FieldTable<PointField> {
 /// `buffer_assign()` and is not listed.
 template <>
 struct FieldTable<PointCloud> {
-  static constexpr std::array<FieldDescriptor, 10> fields{
+  static constexpr std::array fields{
       field<&PointCloud::width>("width"),
       field<&PointCloud::height>("height"),
       field<&PointCloud::point_step>("point_step"),

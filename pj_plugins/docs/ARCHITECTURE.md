@@ -261,9 +261,8 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   (outputs learned from the script). Python is an optional on_demand language
   of some hosts, probed with `validateScript`. The request's `struct_size`
   follows a read-prefix rule: a host accepts a larger size and a later field is
-  announced by a flag bit. The capability-detection rule (tail slot behind a
-  `hasX()`; flag bit with no probe; probe by doing; dialog capability bit;
-  manifest metadata) is stated once in `plugin_data_api.h`. Input names may carry the dataset
+  announced by a flag bit. The capability-detection rule is stated once in
+  `plugin_data_api.h`. Input names may carry the dataset
   qualifier `dataset_source:topic/field`, so a name several loaded datasets
   share is addressed rather than guessed — rules are normative in
   `plugin_data_api.h` (DATASET-QUALIFIED NAMES), shared parser/composer in

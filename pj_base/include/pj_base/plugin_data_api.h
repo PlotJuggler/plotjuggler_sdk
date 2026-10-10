@@ -1044,7 +1044,8 @@ typedef struct {
  *                   recreates or removes it). PJ_DATA_PROCESSOR_FLAG_INFER_OUTPUTS: see
  *                   its definition below. Reserved bits must be 0.
  *
- * LIFETIME — a node is exactly one of three things, by flag and kind:
+ * LIFETIME — by flag and kind. A node is PERSISTENT unless it is EPHEMERAL;
+ *   HISTORY_EXEMPT and PINNED each qualify a persisted node and may be combined:
  *   - PERSISTENT (default): saved in the layout; the host's undo/redo and layout load
  *     may replace, recreate or remove it like any other node. It survives plugin
  *     unload and a session reload.

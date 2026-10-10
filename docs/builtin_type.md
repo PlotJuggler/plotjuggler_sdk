@@ -680,19 +680,16 @@ compile time â€” name, shape (`FieldKind`), and type-erased get/set accessors â€
 so a generic consumer (e.g. a script binder) can read or write any described
 field by name without hand-written per-type glue. A struct opts in with a
 `FieldTable<T>` specialization built from `field<&T::member>("member")` calls
-(`buffer<>()` for a packed record buffer like `PointCloud::data`); nested
+(a `kBuffer` factory such as `pointCloudDataField()` for a packed record buffer
+like `PointCloud::data`); nested
 structs and lists of described structs link to their own table through
 `FieldDescriptor::nested`, so a consumer walks an arbitrarily deep struct tree
 with one generic recursive routine. `field_table_registry.hpp` exposes
 `describe(BuiltinObjectType)` to look up a table from the runtime tag a
 `BuiltinObject` carries.
 
-`FrameTransforms`, `ImageAnnotations`, `PointCloud`, `SceneEntities`, `Image`,
-`DepthImage`, `CameraInfo`, and `VideoFrame` are tabled today
-(`frame_transforms_fields.hpp`, `image_annotations_fields.hpp`,
-`point_cloud_fields.hpp`, `scene_entities_fields.hpp`, `image_fields.hpp`,
-`depth_image_fields.hpp`, `camera_info_fields.hpp`, `video_frame_fields.hpp`;
-`describe()` in `field_table_registry.hpp` returns a table for exactly these eight). `Image::data`,
+Each tabled builtin has a `<type>_fields.hpp` header; `describe()` in
+`field_table_registry.hpp` is the authoritative list. `Image::data`,
 `DepthImage::data`, and `VideoFrame::data` each expose their packed pixel /
 bitstream bytes through a `kBuffer` descriptor the same way `PointCloud::data`
 does, with the per-record layout derived from the encoding/format string

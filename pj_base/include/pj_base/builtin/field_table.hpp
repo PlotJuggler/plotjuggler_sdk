@@ -153,7 +153,8 @@ struct FieldDescriptor {
 
   /// For `kind == kList`: element count and element address — populated for
   /// both a growable list (`std::vector<E>`) and a fixed-size one
-  /// (`std::array<E, N>`).
+  /// (`std::array<E, N>`). Elements are addressable one by one: a binder should
+  /// read `list_at(i)` lazily rather than materialize the whole list per access.
   size_t (*list_size)(const void*) = nullptr;
   const void* (*list_at)(const void*, size_t) = nullptr;
 
@@ -335,6 +336,17 @@ inline constexpr bool kHasFieldTableImpl = false;
 /// `FieldTable` is declared but never defined and so stays incomplete.
 template <class T>
 inline constexpr bool kHasFieldTableImpl<T, std::void_t<decltype(FieldTable<T>::view)>> = true;
+
+/// `buffer_assign` of a builtin whose payload is a `data` view plus its `anchor`:
+/// takes ownership of `bytes` (`makePayloadView`), `data` views them and `anchor`
+/// keeps them alive.
+template <class T>
+void assignPayloadBytes(void* p, std::vector<uint8_t> bytes) {
+  auto& object = *static_cast<T*>(p);
+  const PayloadView view = makePayloadView(std::move(bytes));
+  object.data = view.bytes;
+  object.anchor = view.anchor;
+}
 
 }  // namespace detail
 

@@ -23,27 +23,49 @@
 namespace PJ {
 namespace sdk {
 
-/// Unproject a rectified pixel with positive metric depth using a conventional
-/// pinhole intrinsic matrix. Rejects singular/nonfinite intrinsics and unsupported
-/// skew/projective terms; distortion correction belongs to the caller.
+/// Conventional pinhole intrinsics, validated once so a per-pixel loop checks only
+/// its own inputs.
+struct PinholeIntrinsics {
+  double fx = 0.0;
+  double fy = 0.0;
+  double cx = 0.0;
+  double cy = 0.0;
+
+  /// Rejects singular/nonfinite intrinsics and unsupported skew/projective terms;
+  /// distortion correction belongs to the caller.
+  [[nodiscard]] static std::optional<PinholeIntrinsics> fromK(const std::array<double, 9>& k) noexcept {
+    for (double value : k) {
+      if (!std::isfinite(value)) {
+        return std::nullopt;
+      }
+    }
+    if (k[0] <= 0 || k[4] <= 0 || k[1] != 0 || k[3] != 0 || k[6] != 0 || k[7] != 0 || k[8] != 1) {
+      return std::nullopt;
+    }
+    return PinholeIntrinsics{.fx = k[0], .fy = k[4], .cx = k[2], .cy = k[5]};
+  }
+
+  /// Unproject a rectified pixel with positive metric depth.
+  [[nodiscard]] std::optional<std::array<double, 3>> unproject(double u, double v, double depth_m) const noexcept {
+    if (!std::isfinite(u) || !std::isfinite(v) || !std::isfinite(depth_m) || depth_m <= 0) {
+      return std::nullopt;
+    }
+    std::array<double, 3> result{(u - cx) * depth_m / fx, (v - cy) * depth_m / fy, depth_m};
+    for (double value : result) {
+      if (!std::isfinite(value)) {
+        return std::nullopt;
+      }
+    }
+    return result;
+  }
+};
+
+/// One-pixel form of `PinholeIntrinsics::fromK(k)->unproject(u, v, depth_m)`; a loop
+/// over an image should call `fromK` once instead.
 [[nodiscard]] inline std::optional<std::array<double, 3>> unprojectPixel(
     const std::array<double, 9>& k, double u, double v, double depth_m) noexcept {
-  for (double value : k) {
-    if (!std::isfinite(value)) {
-      return std::nullopt;
-    }
-  }
-  if (!std::isfinite(u) || !std::isfinite(v) || !std::isfinite(depth_m) || depth_m <= 0 || k[0] <= 0 || k[4] <= 0 ||
-      k[1] != 0 || k[3] != 0 || k[6] != 0 || k[7] != 0 || k[8] != 1) {
-    return std::nullopt;
-  }
-  std::array<double, 3> result{(u - k[2]) * depth_m / k[0], (v - k[5]) * depth_m / k[4], depth_m};
-  for (double value : result) {
-    if (!std::isfinite(value)) {
-      return std::nullopt;
-    }
-  }
-  return result;
+  const auto intrinsics = PinholeIntrinsics::fromK(k);
+  return intrinsics ? intrinsics->unproject(u, v, depth_m) : std::nullopt;
 }
 
 /// Rectification rotation. For a DepthImage with empty distortion_model

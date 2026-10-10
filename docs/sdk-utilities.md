@@ -60,6 +60,10 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::sdk::MediaMetadataBuilder, ObjectTopicMetadataBuilder` | Build media hints and canonical renderer metadata | `pj_base/sdk/media_metadata.hpp; pj_base/sdk/object_topic_metadata.hpp` |
 | `PJ::sdk::ObjectBytes` | Own object-read bytes through move-only RAII | `pj_base/sdk/object_bytes.hpp` |
 | `PJ::sdk::ArrowSchemaHolder, ArrowArrayHolder, ArrowStreamHolder` | Own Arrow out-params; successful writes transfer ownership, failed writes retain it | `pj_base/sdk/arrow.hpp` |
+| `PJ::sdk::FieldTable<T>, field<&T::member>, describe` | Read/write builtin struct members by name in a generic binder; lists are element-addressable | `pj_base/builtin/field_table.hpp; pj_base/builtin/field_table_registry.hpp` |
+| `PJ::sdk::PinholeIntrinsics, unprojectPixel` | Unproject rectified metric depth pixels; validate K once per image | `pj_base/builtin/depth_image_utils.hpp` |
+| `PJ::sdk::fieldCovered, PJ_HAS_TAIL_SLOT` | struct_size checks before reading an appended field or tail slot | `pj_base/sdk/plugin_data_api.hpp; pj_base/plugin_data_api.h` |
+| `PJ::sdk::DialogPluginBase::hostHas` | Gate dialog UI on a host dialog-capability bit | `pj_plugins/sdk/dialog_plugin_base.hpp` |
 | `pj_embed_file, pj_configure_plugin` | Embed UI/manifest assets and configure plugin exports/build rules | `cmake/PjPlugin.cmake` |
 
 Outside this SDK, reuse pj-official-plugins common/:

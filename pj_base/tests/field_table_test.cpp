@@ -168,6 +168,17 @@ void copyThroughTable(const FieldTableView& table, const void* src, void* dst) {
   }
 }
 
+// Serializes both objects through the canonical wire codec and expects identical
+// bytes: the comparison for builtins whose payload has no meaningful operator==.
+template <class T>
+void expectSameWireBytes(const T& src, const T& dst) {
+  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
+  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
+  ASSERT_TRUE(src_bytes) << src_bytes.error();
+  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
+  EXPECT_EQ(*src_bytes, *dst_bytes);
+}
+
 // ---------------------------------------------------------------------------
 // Sample data — populated, so every accessor path is exercised.
 // ---------------------------------------------------------------------------
@@ -603,11 +614,7 @@ TEST(FieldTableTest, GenericCopyMatchesCodecRoundTrip) {
     copyThroughTable(FieldTable<FrameTransforms>::view, &src, &dst);
     EXPECT_EQ(dst, src);
 
-    auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-    auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-    ASSERT_TRUE(src_bytes) << src_bytes.error();
-    ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-    EXPECT_EQ(*src_bytes, *dst_bytes);
+    expectSameWireBytes(src, dst);
   }
   {
     const ImageAnnotations src = makeSampleImageAnnotations();
@@ -618,11 +625,7 @@ TEST(FieldTableTest, GenericCopyMatchesCodecRoundTrip) {
     copyThroughTable(FieldTable<ImageAnnotations>::view, &src, &dst);
     EXPECT_EQ(dst, src);
 
-    auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-    auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-    ASSERT_TRUE(src_bytes) << src_bytes.error();
-    ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-    EXPECT_EQ(*src_bytes, *dst_bytes);
+    expectSameWireBytes(src, dst);
   }
   {
     const SceneEntities src = makeSampleSceneEntities();
@@ -632,11 +635,7 @@ TEST(FieldTableTest, GenericCopyMatchesCodecRoundTrip) {
     copyThroughTable(FieldTable<SceneEntities>::view, &src, &dst);
     EXPECT_EQ(dst, src);
 
-    auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-    auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-    ASSERT_TRUE(src_bytes) << src_bytes.error();
-    ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-    EXPECT_EQ(*src_bytes, *dst_bytes);
+    expectSameWireBytes(src, dst);
   }
 }
 
@@ -659,11 +658,7 @@ TEST(FieldTableTest, ImageBufferAndOptionalRoundTrip) {
   EXPECT_TRUE(min_field->has_value(&dst));
   EXPECT_FLOAT_EQ(static_cast<float>(min_field->get_number(&dst)), *src.compressed_depth_min);
 
-  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-  ASSERT_TRUE(src_bytes) << src_bytes.error();
-  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-  EXPECT_EQ(*src_bytes, *dst_bytes);
+  expectSameWireBytes(src, dst);
 }
 
 // An Image with both optionals absent (the common case: only
@@ -682,11 +677,7 @@ TEST(FieldTableTest, ImageOptionalAbsentRoundTrip) {
   ASSERT_NE(min_field, nullptr);
   EXPECT_FALSE(min_field->has_value(&dst));
 
-  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-  ASSERT_TRUE(src_bytes) << src_bytes.error();
-  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-  EXPECT_EQ(*src_bytes, *dst_bytes);
+  expectSameWireBytes(src, dst);
 }
 
 // DepthImage has no operator== either; exercises kBuffer (data, derived
@@ -708,11 +699,7 @@ TEST(FieldTableTest, DepthImageFixedArrayAndBufferRoundTrip) {
   EXPECT_EQ(dst.K, src.K);
   EXPECT_EQ(dst.D, src.D);
 
-  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-  ASSERT_TRUE(src_bytes) << src_bytes.error();
-  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-  EXPECT_EQ(*src_bytes, *dst_bytes);
+  expectSameWireBytes(src, dst);
 }
 
 // CameraInfo has operator== (no byte blob), so both the value comparison and
@@ -737,11 +724,7 @@ TEST(FieldTableTest, CameraInfoFixedArrayRoundTrip) {
   copyThroughTable(FieldTable<CameraInfo>::view, &src, &dst);
   EXPECT_EQ(dst, src);
 
-  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-  ASSERT_TRUE(src_bytes) << src_bytes.error();
-  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-  EXPECT_EQ(*src_bytes, *dst_bytes);
+  expectSameWireBytes(src, dst);
 }
 
 // VideoFrame has no operator== either; exercises kBuffer for a format with
@@ -762,11 +745,7 @@ TEST(FieldTableTest, VideoFrameBufferRoundTrip) {
   VideoFrame dst;
   copyThroughTable(FieldTable<VideoFrame>::view, &src, &dst);
 
-  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-  ASSERT_TRUE(src_bytes) << src_bytes.error();
-  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-  EXPECT_EQ(*src_bytes, *dst_bytes);
+  expectSameWireBytes(src, dst);
 }
 
 // The buffer descriptor's layout for a raw, uncompressed encoding: a 4x3
@@ -864,11 +843,7 @@ TEST(FieldTableTest, PointCloudBufferRoundTrip) {
   PointCloud dst;
   copyThroughTable(FieldTable<PointCloud>::view, &src, &dst);
 
-  auto src_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(src));
-  auto dst_bytes = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(dst));
-  ASSERT_TRUE(src_bytes) << src_bytes.error();
-  ASSERT_TRUE(dst_bytes) << dst_bytes.error();
-  EXPECT_EQ(*src_bytes, *dst_bytes);
+  expectSameWireBytes(src, dst);
 }
 
 TEST(FieldTableTest, PointCloudOrganizedBufferLayout) {
