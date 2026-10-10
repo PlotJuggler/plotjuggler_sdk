@@ -649,6 +649,7 @@ class WidgetData {
   /// views exist in PANELS (non-modal toolbox dialogs) only; a modal dialog never
   /// embeds one. If the host fails to attach a requested topic it does NOT retry:
   /// the attach is attempted again only when the requested topic set changes.
+  /// An empty `kind` clears the view, like clearSceneView().
   /// @since 0.36.0
   WidgetData& setSceneView(std::string_view name, std::string_view kind) {
     entry(name)["scene_view"] = std::string(kind);

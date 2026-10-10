@@ -18,7 +18,8 @@ build details. It must not depend on Qt, `pj_datastore` or `pj_plugins`.
 - `include/pj_base/builtin/` — 18 builtin struct headers (`*.hpp`) and all 18
   wire codecs (`*_codec.hpp`). Numeric tags are stable; values 2 and 12 are
   permanently reserved. Also contains the tagged, type-erased `BuiltinObject`
-  holder and type-erased codec dispatcher.
+  holder and type-erased codec dispatcher, and the compile-time field tables
+  (`field_table.hpp`, one `<type>_fields.hpp` per tabled struct).
 - `include/pj_base/sdk/` — C++ SDK over the ABI: DataSource + Toolbox `*_plugin_base.hpp`, `service_registry.hpp`/`service_traits.hpp`, host views, Arrow RAII holders, `testing/`.
 - `include/pj_base/*_protocol.h`, `plugin_data_api.h`, `builtin_object_abi.h`, `plugin_abi_export.hpp` — the stable C-ABI surface for DataSource/MessageParser/Toolbox (the Dialog protocol header lives in `pj_plugins/dialog_protocol/`).
 - `proto/pj/` — canonical `.proto` wire contracts for the builtin types (see its README).
