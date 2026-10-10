@@ -209,11 +209,18 @@ TEST(ObjectTopicMetadataBuilderTest, SnapshotFlagRoundTrips) {
   ASSERT_TRUE(snapshot_true);
   EXPECT_EQ(*snapshot_true, R"({"builtin_object_type":"kSceneEntities","pj_snapshot":"true"})");
 
-  // snapshot(false) is a no-op: the key stays unset (incremental, the default).
+  // snapshot(false) leaves the key unset (incremental, the default), also after a snapshot(true).
   const auto snapshot_false =
       ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kImageAnnotations).snapshot(false).build();
   ASSERT_TRUE(snapshot_false);
   EXPECT_EQ(*snapshot_false, R"({"builtin_object_type":"kImageAnnotations"})");
+  const auto snapshot_reset = ObjectTopicMetadataBuilder()
+                                  .builtinObjectType(BuiltinObjectType::kImageAnnotations)
+                                  .snapshot()
+                                  .snapshot(false)
+                                  .build();
+  ASSERT_TRUE(snapshot_reset);
+  EXPECT_EQ(*snapshot_reset, R"({"builtin_object_type":"kImageAnnotations"})");
 
   // Omitting snapshot() entirely leaves the key unset too.
   const auto no_snapshot = ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kImageAnnotations).build();

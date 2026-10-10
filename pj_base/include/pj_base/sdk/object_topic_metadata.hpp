@@ -18,7 +18,7 @@ namespace PJ::sdk {
 /// @since 0.21.0
 inline constexpr std::string_view kBuiltinObjectTypeMetadataKey = "builtin_object_type";
 
-/// Canonical metadata key marking a "field table" stream. Value `"true"` on a
+/// Canonical metadata key marking a snapshot stream. Value `"true"` on a
 /// SceneEntities/ImageAnnotations topic means EVERY entry is a complete
 /// clear-and-replace snapshot, so a stateless consumer may render each entry
 /// alone without accumulating state across prior entries. Absent (or any
@@ -88,12 +88,14 @@ class ObjectTopicMetadataBuilder {
   }
 
   /// Mark this topic as a snapshot stream (see kSnapshotMetadataKey): every
-  /// entry is a complete clear-and-replace snapshot. Sets the key when
-  /// `value` is true; leaves it unset (the default, incremental) when false.
+  /// entry is a complete clear-and-replace snapshot. `false` removes the key
+  /// again (incremental, the default).
   /// @since 0.36.0
   ObjectTopicMetadataBuilder& snapshot(bool value = true) {
     if (value) {
       strings_.insert_or_assign(std::string(kSnapshotMetadataKey), std::string("true"));
+    } else {
+      strings_.erase(std::string(kSnapshotMetadataKey));
     }
     return *this;
   }
