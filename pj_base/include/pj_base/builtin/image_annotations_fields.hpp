@@ -18,7 +18,7 @@ namespace PJ::sdk {
 /// Fields of `Point2`: `x`, `y`.
 template <>
 struct FieldTable<Point2> {
-  static constexpr std::array<FieldDescriptor, 2> fields{
+  static constexpr std::array fields{
       field<&Point2::x>("x"),
       field<&Point2::y>("y"),
   };
@@ -28,7 +28,7 @@ struct FieldTable<Point2> {
 /// Fields of `ColorRGBA`: `r`, `g`, `b`, `a` (each `uint8_t`, read/written as `double`).
 template <>
 struct FieldTable<ColorRGBA> {
-  static constexpr std::array<FieldDescriptor, 4> fields{
+  static constexpr std::array fields{
       field<&ColorRGBA::r>("r"),
       field<&ColorRGBA::g>("g"),
       field<&ColorRGBA::b>("b"),
@@ -41,7 +41,7 @@ struct FieldTable<ColorRGBA> {
 /// `Point2`), `thickness`, `color`, `colors` (list of `ColorRGBA`), `fill_color`.
 template <>
 struct FieldTable<PointsAnnotation> {
-  static constexpr std::array<FieldDescriptor, 6> fields{
+  static constexpr std::array fields{
       field<&PointsAnnotation::topology>("topology"),   field<&PointsAnnotation::points>("points"),
       field<&PointsAnnotation::thickness>("thickness"), field<&PointsAnnotation::color>("color"),
       field<&PointsAnnotation::colors>("colors"),       field<&PointsAnnotation::fill_color>("fill_color"),
@@ -53,7 +53,7 @@ struct FieldTable<PointsAnnotation> {
 /// `color`, `fill_color`.
 template <>
 struct FieldTable<CircleAnnotation> {
-  static constexpr std::array<FieldDescriptor, 5> fields{
+  static constexpr std::array fields{
       field<&CircleAnnotation::center>("center"),         field<&CircleAnnotation::radius>("radius"),
       field<&CircleAnnotation::thickness>("thickness"),   field<&CircleAnnotation::color>("color"),
       field<&CircleAnnotation::fill_color>("fill_color"),
@@ -64,7 +64,7 @@ struct FieldTable<CircleAnnotation> {
 /// Fields of `TextAnnotation`: `position` (Point2), `font_size`, `color`, `text`.
 template <>
 struct FieldTable<TextAnnotation> {
-  static constexpr std::array<FieldDescriptor, 4> fields{
+  static constexpr std::array fields{
       field<&TextAnnotation::position>("position"),
       field<&TextAnnotation::font_size>("font_size"),
       field<&TextAnnotation::color>("color"),
@@ -77,7 +77,7 @@ struct FieldTable<TextAnnotation> {
 /// (string), `points`, `circles`, `texts` (lists of the primitive structs above).
 template <>
 struct FieldTable<ImageAnnotations> {
-  static constexpr std::array<FieldDescriptor, 5> fields{
+  static constexpr std::array fields{
       field<&ImageAnnotations::timestamp>("timestamp"), field<&ImageAnnotations::image_topic>("image_topic"),
       field<&ImageAnnotations::points>("points"),       field<&ImageAnnotations::circles>("circles"),
       field<&ImageAnnotations::texts>("texts"),

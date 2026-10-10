@@ -25,7 +25,7 @@ namespace PJ::sdk {
 /// Fields of `Point3`: `x`, `y`, `z`.
 template <>
 struct FieldTable<Point3> {
-  static constexpr std::array<FieldDescriptor, 3> fields{
+  static constexpr std::array fields{
       field<&Point3::x>("x"),
       field<&Point3::y>("y"),
       field<&Point3::z>("z"),
@@ -36,7 +36,7 @@ struct FieldTable<Point3> {
 /// Fields of `KeyValuePair`: `key`, `value`.
 template <>
 struct FieldTable<KeyValuePair> {
-  static constexpr std::array<FieldDescriptor, 2> fields{
+  static constexpr std::array fields{
       field<&KeyValuePair::key>("key"),
       field<&KeyValuePair::value>("value"),
   };
@@ -47,7 +47,7 @@ struct FieldTable<KeyValuePair> {
 /// `head_length`, `head_diameter`, `color`.
 template <>
 struct FieldTable<ArrowPrimitive> {
-  static constexpr std::array<FieldDescriptor, 6> fields{
+  static constexpr std::array fields{
       field<&ArrowPrimitive::pose>("pose"),
       field<&ArrowPrimitive::shaft_length>("shaft_length"),
       field<&ArrowPrimitive::shaft_diameter>("shaft_diameter"),
@@ -61,7 +61,7 @@ struct FieldTable<ArrowPrimitive> {
 /// Fields of `CubePrimitive`: `pose`, `size`, `color`.
 template <>
 struct FieldTable<CubePrimitive> {
-  static constexpr std::array<FieldDescriptor, 3> fields{
+  static constexpr std::array fields{
       field<&CubePrimitive::pose>("pose"),
       field<&CubePrimitive::size>("size"),
       field<&CubePrimitive::color>("color"),
@@ -72,7 +72,7 @@ struct FieldTable<CubePrimitive> {
 /// Fields of `SpherePrimitive`: `pose`, `size`, `color`.
 template <>
 struct FieldTable<SpherePrimitive> {
-  static constexpr std::array<FieldDescriptor, 3> fields{
+  static constexpr std::array fields{
       field<&SpherePrimitive::pose>("pose"),
       field<&SpherePrimitive::size>("size"),
       field<&SpherePrimitive::color>("color"),
@@ -84,7 +84,7 @@ struct FieldTable<SpherePrimitive> {
 /// `top_scale`, `color`.
 template <>
 struct FieldTable<CylinderPrimitive> {
-  static constexpr std::array<FieldDescriptor, 5> fields{
+  static constexpr std::array fields{
       field<&CylinderPrimitive::pose>("pose"),
       field<&CylinderPrimitive::size>("size"),
       field<&CylinderPrimitive::bottom_scale>("bottom_scale"),
@@ -99,7 +99,7 @@ struct FieldTable<CylinderPrimitive> {
 /// of `ColorRGBA`), `indices` (scalar list of `uint32_t` -> kNumber).
 template <>
 struct FieldTable<LinePrimitive> {
-  static constexpr std::array<FieldDescriptor, 8> fields{
+  static constexpr std::array fields{
       field<&LinePrimitive::type>("type"),           field<&LinePrimitive::pose>("pose"),
       field<&LinePrimitive::thickness>("thickness"), field<&LinePrimitive::scale_invariant>("scale_invariant"),
       field<&LinePrimitive::points>("points"),       field<&LinePrimitive::color>("color"),
@@ -113,7 +113,7 @@ struct FieldTable<LinePrimitive> {
 /// `uint32_t` -> kNumber).
 template <>
 struct FieldTable<TrianglePrimitive> {
-  static constexpr std::array<FieldDescriptor, 5> fields{
+  static constexpr std::array fields{
       field<&TrianglePrimitive::pose>("pose"),       field<&TrianglePrimitive::points>("points"),
       field<&TrianglePrimitive::color>("color"),     field<&TrianglePrimitive::colors>("colors"),
       field<&TrianglePrimitive::indices>("indices"),
@@ -125,7 +125,7 @@ struct FieldTable<TrianglePrimitive> {
 /// `scale_invariant`, `color`, `text`.
 template <>
 struct FieldTable<TextPrimitive> {
-  static constexpr std::array<FieldDescriptor, 6> fields{
+  static constexpr std::array fields{
       field<&TextPrimitive::pose>("pose"),           field<&TextPrimitive::billboard>("billboard"),
       field<&TextPrimitive::font_size>("font_size"), field<&TextPrimitive::scale_invariant>("scale_invariant"),
       field<&TextPrimitive::color>("color"),         field<&TextPrimitive::text>("text"),
@@ -136,7 +136,7 @@ struct FieldTable<TextPrimitive> {
 /// Fields of `AxesPrimitive`: `pose`, `length`, `thickness`, `scale_invariant`.
 template <>
 struct FieldTable<AxesPrimitive> {
-  static constexpr std::array<FieldDescriptor, 4> fields{
+  static constexpr std::array fields{
       field<&AxesPrimitive::pose>("pose"),
       field<&AxesPrimitive::length>("length"),
       field<&AxesPrimitive::thickness>("thickness"),
@@ -151,7 +151,7 @@ struct FieldTable<AxesPrimitive> {
 /// `Span`+`BufferAnchor` pair described through a `kBuffer` descriptor such as `pointCloudDataField()` instead).
 template <>
 struct FieldTable<ModelPrimitive> {
-  static constexpr std::array<FieldDescriptor, 7> fields{
+  static constexpr std::array fields{
       field<&ModelPrimitive::pose>("pose"),   field<&ModelPrimitive::scale>("scale"),
       field<&ModelPrimitive::color>("color"), field<&ModelPrimitive::override_color>("override_color"),
       field<&ModelPrimitive::url>("url"),     field<&ModelPrimitive::media_type>("media_type"),
@@ -167,7 +167,7 @@ struct FieldTable<ModelPrimitive> {
 /// `triangles`, `texts`, `models`, `axes`).
 template <>
 struct FieldTable<SceneEntity> {
-  static constexpr std::array<FieldDescriptor, 15> fields{
+  static constexpr std::array fields{
       field<&SceneEntity::timestamp>("timestamp"),
       field<&SceneEntity::frame_id>("frame_id"),
       field<&SceneEntity::id>("id"),
@@ -190,7 +190,7 @@ struct FieldTable<SceneEntity> {
 /// Fields of `SceneEntityDeletion`: `type` (enum), `timestamp` (int64), `id`.
 template <>
 struct FieldTable<SceneEntityDeletion> {
-  static constexpr std::array<FieldDescriptor, 3> fields{
+  static constexpr std::array fields{
       field<&SceneEntityDeletion::type>("type"),
       field<&SceneEntityDeletion::timestamp>("timestamp"),
       field<&SceneEntityDeletion::id>("id"),
@@ -202,7 +202,7 @@ struct FieldTable<SceneEntityDeletion> {
 /// `deletions` (list of `SceneEntityDeletion`).
 template <>
 struct FieldTable<SceneEntities> {
-  static constexpr std::array<FieldDescriptor, 2> fields{
+  static constexpr std::array fields{
       field<&SceneEntities::entities>("entities"),
       field<&SceneEntities::deletions>("deletions"),
   };

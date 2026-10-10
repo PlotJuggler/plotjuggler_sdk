@@ -18,7 +18,7 @@ namespace PJ::sdk {
 /// Fields of `Vector2`: `x`, `y`.
 template <>
 struct FieldTable<Vector2> {
-  static constexpr std::array<FieldDescriptor, 2> fields{
+  static constexpr std::array fields{
       field<&Vector2::x>("x"),
       field<&Vector2::y>("y"),
   };
@@ -28,7 +28,7 @@ struct FieldTable<Vector2> {
 /// Fields of `Vector3`: `x`, `y`, `z`.
 template <>
 struct FieldTable<Vector3> {
-  static constexpr std::array<FieldDescriptor, 3> fields{
+  static constexpr std::array fields{
       field<&Vector3::x>("x"),
       field<&Vector3::y>("y"),
       field<&Vector3::z>("z"),
@@ -39,7 +39,7 @@ struct FieldTable<Vector3> {
 /// Fields of `Quaternion`: `x`, `y`, `z`, `w`.
 template <>
 struct FieldTable<Quaternion> {
-  static constexpr std::array<FieldDescriptor, 4> fields{
+  static constexpr std::array fields{
       field<&Quaternion::x>("x"),
       field<&Quaternion::y>("y"),
       field<&Quaternion::z>("z"),
@@ -51,7 +51,7 @@ struct FieldTable<Quaternion> {
 /// Fields of `Pose`: `position` (Vector3), `orientation` (Quaternion).
 template <>
 struct FieldTable<Pose> {
-  static constexpr std::array<FieldDescriptor, 2> fields{
+  static constexpr std::array fields{
       field<&Pose::position>("position"),
       field<&Pose::orientation>("orientation"),
   };
@@ -62,7 +62,7 @@ struct FieldTable<Pose> {
 /// `child_frame_id` (strings), `translation` (Vector3), `rotation` (Quaternion).
 template <>
 struct FieldTable<FrameTransform> {
-  static constexpr std::array<FieldDescriptor, 5> fields{
+  static constexpr std::array fields{
       field<&FrameTransform::timestamp>("timestamp"),
       field<&FrameTransform::parent_frame_id>("parent_frame_id"),
       field<&FrameTransform::child_frame_id>("child_frame_id"),
@@ -75,7 +75,7 @@ struct FieldTable<FrameTransform> {
 /// Fields of `FrameTransforms`: `transforms` (list of `FrameTransform`).
 template <>
 struct FieldTable<FrameTransforms> {
-  static constexpr std::array<FieldDescriptor, 1> fields{
+  static constexpr std::array fields{
       field<&FrameTransforms::transforms>("transforms"),
   };
   static constexpr FieldTableView view{"FrameTransforms", Span<const FieldDescriptor>(fields)};

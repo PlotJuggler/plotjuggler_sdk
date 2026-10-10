@@ -5,10 +5,12 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <vector>
 
+#include "pj_base/builtin/depth_image_utils.hpp"
 #include "protobuf_wire_test_helpers.hpp"
 
 namespace PJ {
@@ -68,20 +70,22 @@ TEST(DepthImageCodecTest, RoundTripPlumbBobDistortion) {
   }
 }
 
-}  // namespace
-}  // namespace PJ
-
-#include "pj_base/builtin/depth_image_utils.hpp"
-
-TEST(DepthImageUtils, UnprojectsRectifiedMetricDepthAndRejectsInvalidIntrinsics) {
+TEST(DepthImageUtilsTest, UnprojectsRectifiedMetricDepthAndRejectsInvalidIntrinsics) {
   std::array<double, 9> k{2, 0, 1, 0, 4, 1, 0, 0, 1};
-  auto p = PJ::sdk::unprojectPixel(k, 3, 5, 2);
+  auto p = sdk::unprojectPixel(k, 3, 5, 2);
   ASSERT_TRUE(p);
   EXPECT_EQ(*p, (std::array<double, 3>{2, 2, 2}));
-  EXPECT_FALSE(PJ::sdk::unprojectPixel(k, 3, 5, 0));
+  const auto intrinsics = sdk::PinholeIntrinsics::fromK(k);
+  ASSERT_TRUE(intrinsics);
+  EXPECT_EQ(intrinsics->unproject(3, 5, 2), p);
+  EXPECT_FALSE(sdk::unprojectPixel(k, 3, 5, 0));
   k[0] = 0;
-  EXPECT_FALSE(PJ::sdk::unprojectPixel(k, 3, 5, 2));
+  EXPECT_FALSE(sdk::unprojectPixel(k, 3, 5, 2));
   k[0] = 2;
   k[1] = 1;
-  EXPECT_FALSE(PJ::sdk::unprojectPixel(k, 3, 5, 2));
+  EXPECT_FALSE(sdk::unprojectPixel(k, 3, 5, 2));
+  EXPECT_FALSE(sdk::PinholeIntrinsics::fromK(k));
 }
+
+}  // namespace
+}  // namespace PJ

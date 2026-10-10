@@ -22,7 +22,7 @@ namespace PJ::sdk {
 /// `distortion_model`).
 template <>
 struct FieldTable<CameraInfo> {
-  static constexpr std::array<FieldDescriptor, 9> fields{
+  static constexpr std::array fields{
       field<&CameraInfo::timestamp_ns>("timestamp_ns"),
       field<&CameraInfo::frame_id>("frame_id"),
       field<&CameraInfo::width>("width"),
