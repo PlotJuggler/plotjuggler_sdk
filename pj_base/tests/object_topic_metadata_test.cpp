@@ -202,6 +202,45 @@ TEST(ObjectTopicMetadataBuilderTest, CanonicalKeyCannotBeInsertedAsCustomMetadat
 #endif
 }
 
+TEST(ObjectTopicMetadataBuilderTest, SnapshotFlagRoundTrips) {
+  // snapshot(true) sets the canonical key.
+  const auto snapshot_true =
+      ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kSceneEntities).snapshot().build();
+  ASSERT_TRUE(snapshot_true);
+  EXPECT_EQ(*snapshot_true, R"({"builtin_object_type":"kSceneEntities","pj_snapshot":"true"})");
+
+  // snapshot(false) leaves the key unset (incremental, the default), also after a snapshot(true).
+  const auto snapshot_false =
+      ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kImageAnnotations).snapshot(false).build();
+  ASSERT_TRUE(snapshot_false);
+  EXPECT_EQ(*snapshot_false, R"({"builtin_object_type":"kImageAnnotations"})");
+  const auto snapshot_reset = ObjectTopicMetadataBuilder()
+                                  .builtinObjectType(BuiltinObjectType::kImageAnnotations)
+                                  .snapshot()
+                                  .snapshot(false)
+                                  .build();
+  ASSERT_TRUE(snapshot_reset);
+  EXPECT_EQ(*snapshot_reset, R"({"builtin_object_type":"kImageAnnotations"})");
+
+  // Omitting snapshot() entirely leaves the key unset too.
+  const auto no_snapshot = ObjectTopicMetadataBuilder().builtinObjectType(BuiltinObjectType::kImageAnnotations).build();
+  ASSERT_TRUE(no_snapshot);
+  EXPECT_EQ(*no_snapshot, *snapshot_false);
+
+  EXPECT_EQ(kSnapshotMetadataKey, "pj_snapshot");
+}
+
+TEST(ObjectTopicMetadataBuilderTest, DerivedKeyIsStableAndRoundTripsAsACustomString) {
+  EXPECT_EQ(kDerivedMetadataKey, "pj_derived");
+  EXPECT_EQ(kDerivedOnDemandValue, "on_demand");
+  const auto built = ObjectTopicMetadataBuilder()
+                         .builtinObjectType(BuiltinObjectType::kPointCloud)
+                         .string(kDerivedMetadataKey, kDerivedOnDemandValue)
+                         .build();
+  ASSERT_TRUE(built);
+  EXPECT_EQ(*built, R"({"builtin_object_type":"kPointCloud","pj_derived":"on_demand"})");
+}
+
 TEST(ObjectTopicMetadataRegistrationTest, SourceTypedOverloadForwardsBuiltJson) {
   RegistrationRecorder recorder;
   const PJ_object_write_host_vtable_t vtable = {

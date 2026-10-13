@@ -17,8 +17,9 @@ inline constexpr std::string_view kSchemaImageAnnotations = "PJ.ImageAnnotations
 
 /// Serializes a sdk::ImageAnnotations to canonical PJ.ImageAnnotations wire bytes.
 ///
-/// `timestamp` and `image_topic` are not serialized; callers that need them
-/// must preserve them outside this payload.
+/// The top-level `timestamp` (when non-zero) and `image_topic` (when non-empty) are
+/// serialized; the payload is empty only when there are no circles, points or texts and
+/// both are unset.
 [[nodiscard]] std::vector<uint8_t> serializeImageAnnotations(const sdk::ImageAnnotations& ia);
 
 /// Decodes canonical PJ.ImageAnnotations wire bytes into sdk::ImageAnnotations.

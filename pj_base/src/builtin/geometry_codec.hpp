@@ -12,11 +12,11 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 
 #include "pj_base/builtin/frame_transforms.hpp"   // Vector2, Vector3, Quaternion, Pose
 #include "pj_base/builtin/image_annotations.hpp"  // ColorRGBA
 #include "pj_base/builtin/scene_entities.hpp"     // Point3
+#include "pj_base/time_math.hpp"
 #include "pj_base/types.hpp"
 #include "protobuf_wire.hpp"
 
@@ -43,18 +43,11 @@ inline TimestampParts splitTimestamp(Timestamp timestamp_ns) {
 }
 
 inline bool combineTimestamp(const TimestampParts& parts, Timestamp& out) {
-  if (parts.nanos < 0 || parts.nanos >= kNanosecondsPerSecond) {
+  const auto combined = combineSecondsAndNanos(parts.seconds, parts.nanos);
+  if (!combined) {
     return false;
   }
-  if (parts.seconds > std::numeric_limits<Timestamp>::max() / kNanosecondsPerSecond ||
-      parts.seconds < std::numeric_limits<Timestamp>::min() / kNanosecondsPerSecond) {
-    return false;
-  }
-  const Timestamp seconds_ns = parts.seconds * kNanosecondsPerSecond;
-  if (seconds_ns > std::numeric_limits<Timestamp>::max() - parts.nanos) {
-    return false;
-  }
-  out = seconds_ns + parts.nanos;
+  out = *combined;
   return true;
 }
 

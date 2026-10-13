@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "protobuf_wire_test_helpers.hpp"
@@ -29,7 +30,7 @@ sdk::ImageAnnotations roundTrip(const sdk::ImageAnnotations& input) {
   auto bytes = serializeImageAnnotations(input);
   auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   EXPECT_TRUE(result.has_value());
-  return *result;
+  return result.value();  // throws (a clean test failure) instead of reading an empty result
 }
 
 // Compare two ColorRGBA values allowing 1-LSB drift on each channel from the
@@ -294,6 +295,121 @@ TEST(ImageAnnotationCodecTest, RoundTrip_PerVertexColors) {
   EXPECT_TRUE(colorEq(in.points[0].colors[0], out.points[0].colors[0]));
   EXPECT_TRUE(colorEq(in.points[0].colors[1], out.points[0].colors[1]));
   EXPECT_TRUE(colorEq(in.points[0].colors[2], out.points[0].colors[2]));
+}
+
+// -----------------------------------------------------------------------------
+// 4. Top-level timestamp / image_topic (wire fields 5, 6).
+// -----------------------------------------------------------------------------
+
+TEST(ImageAnnotationCodecTest, RoundTrip_TimestampAndImageTopic) {
+  sdk::ImageAnnotations in;
+  in.timestamp = 5'250'000'000;  // 5s, 250000000ns
+  in.image_topic = "/camera/image_raw";
+
+  CircleAnnotation ca;
+  ca.center = {1.0, 2.0};
+  ca.radius = 3.0;
+  ca.thickness = 1.0;
+  ca.color = {0, 255, 0, 255};
+  ca.fill_color = {0, 0, 0, 0};
+  in.circles.push_back(std::move(ca));
+
+  auto out = roundTrip(in);
+  EXPECT_EQ(out.timestamp, in.timestamp);
+  EXPECT_EQ(out.image_topic, in.image_topic);
+  ASSERT_EQ(out.circles.size(), 1u);
+  EXPECT_DOUBLE_EQ(out.circles[0].radius, 3.0);
+}
+
+TEST(ImageAnnotationCodecTest, TimestampZeroAndEmptyTopicEmitNothing) {
+  // A default-constructed timestamp (0) and image_topic ("") must not emit
+  // fields 5/6, even when other annotation content is present.
+  sdk::ImageAnnotations with_defaults;
+  CircleAnnotation ca;
+  ca.center = {5.0, 6.0};
+  ca.radius = 1.0;
+  ca.thickness = 1.0;
+  ca.color = {0, 255, 0, 255};
+  ca.fill_color = {0, 0, 0, 0};
+  with_defaults.circles.push_back(ca);
+
+  sdk::ImageAnnotations explicit_zero = with_defaults;
+  explicit_zero.timestamp = 0;
+  explicit_zero.image_topic.clear();
+
+  EXPECT_EQ(serializeImageAnnotations(with_defaults), serializeImageAnnotations(explicit_zero));
+}
+
+TEST(ImageAnnotationCodecTest, OldPayloadWithoutTheFieldsDecodesToDefaults) {
+  // A payload with only a circle annotation (as produced before fields 5/6
+  // existed, and as still produced today when timestamp/image_topic are
+  // unset) must decode to Timestamp{0} and an empty image_topic.
+  sdk::ImageAnnotations in;
+  CircleAnnotation ca;
+  ca.center = {7.0, 8.0};
+  ca.radius = 2.0;
+  ca.thickness = 1.0;
+  ca.color = {0, 255, 0, 255};
+  ca.fill_color = {0, 0, 0, 0};
+  in.circles.push_back(std::move(ca));
+
+  auto bytes = serializeImageAnnotations(in);
+  auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->timestamp, 0);
+  EXPECT_TRUE(result->image_topic.empty());
+}
+
+TEST(ImageAnnotationCodecTest, GoldenBytes_TimestampAndImageTopic) {
+  sdk::ImageAnnotations ia;
+  ia.timestamp = 5'250'000'000;  // 5s, 250000000ns
+  ia.image_topic = "/camera/image_raw";
+
+  // Field 5: Timestamp submessage (seconds=5, nanos=250000000).
+  std::vector<uint8_t> expected;
+  pb::appendTag(expected, 5, 2);
+  pb::appendLenDelim(expected, pb::encodeTimestamp(ia.timestamp));
+
+  // Field 6: image_topic string.
+  pb::appendTag(expected, 6, 2);
+  pb::appendString(expected, "/camera/image_raw");
+
+  auto actual = serializeImageAnnotations(ia);
+  EXPECT_EQ(actual, expected) << "wire format mismatch";
+}
+
+TEST(ImageAnnotationCodecTest, RoundTrip_TimestampExtremes) {
+  // INT64_MIN is not a whole number of seconds: the encoder floors it to seconds
+  // -9223372037 with positive nanos, which the decoder must accept again.
+  for (const Timestamp timestamp :
+       {std::numeric_limits<Timestamp>::min(), std::numeric_limits<Timestamp>::min() + 1,
+        std::numeric_limits<Timestamp>::max(), std::numeric_limits<Timestamp>::max() - 1, Timestamp{-1},
+        Timestamp{-1'000'000'000}}) {
+    sdk::ImageAnnotations in;
+    in.timestamp = timestamp;
+    EXPECT_EQ(roundTrip(in).timestamp, timestamp) << timestamp;
+  }
+}
+
+TEST(ImageAnnotationCodecTest, TimestampOutsideInt64NanosIsRejected) {
+  // Hand-built field 5 (Timestamp{seconds, nanos}); INT64_MIN is (-9223372037, 145224192).
+  const auto decodes = [](int64_t seconds, uint32_t nanos) {
+    std::vector<uint8_t> body;
+    pb::appendTag(body, 1, 0);
+    pb::appendVarint(body, static_cast<uint64_t>(seconds));
+    pb::appendTag(body, 2, 0);
+    pb::appendVarint(body, nanos);
+    std::vector<uint8_t> bytes;
+    pb::appendTag(bytes, 5, 2);
+    pb::appendLenDelim(bytes, body);
+    return deserializeImageAnnotations(bytes.data(), bytes.size()).has_value();
+  };
+  EXPECT_TRUE(decodes(-9223372037, 145224192));   // INT64_MIN
+  EXPECT_FALSE(decodes(-9223372037, 145224191));  // INT64_MIN - 1
+  EXPECT_FALSE(decodes(-9223372038, 999999999));  // whole second below the range
+  EXPECT_TRUE(decodes(9223372036, 854775807));    // INT64_MAX
+  EXPECT_FALSE(decodes(9223372036, 854775808));   // INT64_MAX + 1
+  EXPECT_FALSE(decodes(9223372037, 0));
 }
 
 }  // namespace

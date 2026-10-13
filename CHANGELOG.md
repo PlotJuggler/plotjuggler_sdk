@@ -3,6 +3,38 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.36.0]
+
+Host contract: unchanged (no floor impact) — client-side helpers and an additive codec
+change, no new host surface.
+
+Builtin objects (client-side):
+
+- Add compile-time field tables (`pj_base/builtin/field_table.hpp`, one
+  `<type>_fields.hpp` per tabled struct, `describe(BuiltinObjectType)` in
+  `field_table_registry.hpp`) for `FrameTransforms`, `ImageAnnotations`, `PointCloud`,
+  `SceneEntities`, `Image`, `DepthImage`, `CameraInfo` and `VideoFrame`: a generic
+  binder reads and writes any described field by name. Packed payloads are `kBuffer`
+  descriptors; nullable numbers are `kOptionalNumber`; `std::array` members are
+  fixed-size `kList`s written through `list_replace`. A `kBuffer` layout never promises
+  more records than its bytes hold (`record_count` is 0 otherwise), and `set_number`
+  saturates to the target integer type (NaN becomes 0) instead of an undefined
+  float-to-integer conversion.
+- Add `sdk::PinholeIntrinsics` and `sdk::unprojectPixel` (`depth_image_utils.hpp`):
+  unproject a pixel with positive metric depth through K^-1, validating K once per
+  image. Skew and projective terms are honoured (a float32-rounded K is accepted);
+  only a non-finite or singular K is rejected. Distortion correction stays the
+  caller's job.
+- Add the object-topic metadata keys `pj_snapshot`
+  (`ObjectTopicMetadataBuilder::snapshot`: every entry is a complete clear-and-replace
+  snapshot) and `pj_derived` (`kDerivedMetadataKey`; set by a host on topics produced
+  by a host data processor, the value names the processor kind, an open set:
+  `kDerivedOnDemandValue` is `"on_demand"`).
+- The ImageAnnotations wire carries the top-level `timestamp` and `image_topic`;
+  additive, old readers skip them.
+- Fix the shared Timestamp decoder rejecting `INT64_MIN` nanoseconds (and anything within
+  one second of it): a payload our own encoder wrote failed to decode.
+
 ## [0.35.0]
 
 Host contract: unchanged (no floor impact) — a client-side codec helper, no new

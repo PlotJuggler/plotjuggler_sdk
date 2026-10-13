@@ -18,6 +18,30 @@ namespace PJ::sdk {
 /// @since 0.21.0
 inline constexpr std::string_view kBuiltinObjectTypeMetadataKey = "builtin_object_type";
 
+/// Canonical metadata key marking a snapshot stream. Value `"true"` on a
+/// SceneEntities/ImageAnnotations topic means EVERY entry is a complete
+/// clear-and-replace snapshot, so a stateless consumer may render each entry
+/// alone without accumulating state across prior entries. Absent (or any
+/// other value) means entries may be incremental and a consumer must replay
+/// the topic's history to reconstruct the current state.
+/// @since 0.36.0
+inline constexpr std::string_view kSnapshotMetadataKey = "pj_snapshot";
+
+/// Canonical metadata key marking a DERIVED object topic: one produced by a host
+/// data processor rather than ingested from a data source. The value names the
+/// kind of processor that produced it and is an open set: `kDerivedOnDemandValue`
+/// ("on_demand") today, and a host may stamp other kinds (e.g. "markers"). A
+/// consumer (a viewer, the assistant, a script author) checks the key's presence
+/// for "is derived" and the value for one specific kind; it is set by the HOST,
+/// never by the plugin that created the processor. Match the key by parsing the
+/// metadata JSON, never by substring.
+/// @since 0.36.0
+inline constexpr std::string_view kDerivedMetadataKey = "pj_derived";
+
+/// The `kDerivedMetadataKey` value for a topic produced by an "on_demand" processor.
+/// @since 0.36.0
+inline constexpr std::string_view kDerivedOnDemandValue = "on_demand";
+
 /// Builds deterministic metadata JSON for an object topic.
 ///
 /// `builtinObjectType()` accepts only the SDK enum and serializes its canonical
@@ -61,6 +85,19 @@ class ObjectTopicMetadataBuilder {
       return *this;
     }
     strings_.insert_or_assign(std::string(key), std::string(value));
+    return *this;
+  }
+
+  /// Mark this topic as a snapshot stream (see kSnapshotMetadataKey): every
+  /// entry is a complete clear-and-replace snapshot. `false` removes the key
+  /// again (incremental, the default).
+  /// @since 0.36.0
+  ObjectTopicMetadataBuilder& snapshot(bool value = true) {
+    if (value) {
+      strings_.insert_or_assign(std::string(kSnapshotMetadataKey), std::string("true"));
+    } else {
+      strings_.erase(std::string(kSnapshotMetadataKey));
+    }
     return *this;
   }
 
