@@ -33,6 +33,12 @@
         "declaration": "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS",
         "aliases": ["setSceneView"]
       }
+    },
+    "0.39.0": {
+      "WidgetHostService": "pj.widget_host.v1",
+      "queryHistory": "PJ_widget_host_vtable_t::query_history",
+      "notifyInputsChanged": "PJ_widget_host_vtable_t::notify_inputs_changed",
+      "reportWidgetMessage": "PJ_widget_host_vtable_t::report_widget_message"
     }
   },
   "baseline": [

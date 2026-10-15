@@ -33,6 +33,16 @@ enum class PluginFamily : uint32_t {
   kMessageParser = 2,
   kToolbox = 3,
   kDialog = 4,
+  kWidget = 5,  ///< @since 0.39.0
+};
+
+/// One widget type a Widget plugin library offers, from the manifest's `widgets` array.
+/// @since 0.39.0
+struct WidgetTypeDescriptor {
+  std::string type;           ///< stable id within the library; recorded in layouts, never renamed
+  std::string name;           ///< display name
+  std::string icon;           ///< inline SVG markup; empty when the manifest gives none
+  std::string settings_json;  ///< raw JSON array of the user-editable settings declaration; "[]" when absent
 };
 
 /// Plugin descriptor parsed from a DSO's embedded manifest.
@@ -67,6 +77,12 @@ struct PluginDescriptor {
   /// nothing) is host policy. At most 8 characters are advised; a host may truncate.
   /// @since 0.38.0
   std::string badge;
+  /// Widget plugins only: the widget types the library offers (non-empty for kWidget).
+  /// @since 0.39.0
+  std::vector<WidgetTypeDescriptor> widgets;
+  /// Widget plugins only: Qt modules the library declares it links, from the manifest's `qt_modules`.
+  /// @since 0.39.0
+  std::vector<std::string> qt_modules;
 
   /// True iff the manifest's `capabilities` array declares `tag`. Declarative: a
   /// host that does not know a tag ignores it, and no tag is probed at runtime.
@@ -97,8 +113,10 @@ struct PluginScanResult {
 /// Decode a plugin's embedded manifest JSON into a descriptor, applying the
 /// canonical validation both discovery paths share: `id`/`name`/`version` are
 /// required non-empty strings, typed fields reject mismatched JSON types,
-/// `min_sdk_required` is empty or one concrete SemVer 2.0.0 version, and a
-/// message parser must declare a non-empty `encoding` array. `source_path` is
+/// `min_sdk_required` is empty or one concrete SemVer 2.0.0 version, a
+/// message parser must declare a non-empty `encoding` array, and a widget
+/// plugin must declare a non-empty `widgets` array whose entries have a unique
+/// non-empty `type` and a `name`. `source_path` is
 /// recorded as the descriptor's dso_path (for a DSO the file path; a host
 /// registering a statically linked plugin passes a synthetic label instead);
 /// error strings do not embed it — callers prefix their own source context.

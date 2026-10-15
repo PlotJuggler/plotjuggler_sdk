@@ -1,0 +1,22 @@
+{
+  "id": "mock-widget",
+  "name": "Mock Widget",
+  "version": "1.0.0",
+  "min_sdk_required": "0.37.0",
+  "qt_modules": ["Core", "Gui", "Widgets"],
+  "widgets": [
+    {
+      "type": "gauge",
+      "name": "Gauge",
+      "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\"><circle cx=\"8\" cy=\"8\" r=\"6\"/></svg>",
+      "settings": [
+        {"key": "min", "type": "number", "default": 0, "label": "Minimum"},
+        {"key": "mode", "type": "enum", "options": ["arc", "bar"], "default": "arc", "label": "Mode"}
+      ]
+    },
+    {
+      "type": "table",
+      "name": "Table"
+    }
+  ]
+}

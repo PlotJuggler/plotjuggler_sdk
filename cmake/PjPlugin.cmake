@@ -18,7 +18,7 @@ include_guard(GLOBAL)
 include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR — the sidecar install rule needs it
 
 function(_pj_plugin_check_family CONTEXT FAMILY)
-  set(_families data_source message_parser toolbox dialog)
+  set(_families data_source message_parser toolbox dialog widget)
   if(NOT FAMILY IN_LIST _families)
     message(FATAL_ERROR "${CONTEXT}: family \"${FAMILY}\" is invalid. Must be one of: ${_families}")
   endif()
@@ -118,7 +118,7 @@ endfunction()
 # visibility merging, whereas the version script selects by final symbol name after
 # resolution.
 #
-# All four family entry points are always kept exported (naming an absent symbol is a
+# All five family entry points are always kept exported (naming an absent symbol is a
 # no-op), so an embedded dialog's PJ_get_dialog_vtable is never localized by mistake;
 # FAMILIES decides which of them the gate insists on. PE exports nothing without dllexport.
 #
@@ -185,6 +185,7 @@ ${_export_lines}
     PJ_get_message_parser_vtable
     PJ_get_toolbox_vtable
     PJ_get_dialog_vtable
+    PJ_get_widget_vtable
     ${ARG_REQUIRED_EXPORTS}
     ${ARG_EXTRA_EXPORTS})
   list(REMOVE_DUPLICATES _global)
@@ -222,7 +223,7 @@ endfunction()
 # pj_configure_plugin
 # ---------------------------------------------------------------------------
 # pj_configure_plugin(<target>
-#   FAMILIES <family>...              # data_source | message_parser | toolbox | dialog;
+#   FAMILIES <family>...              # data_source | message_parser | toolbox | dialog | widget;
 #                                     # the first is the primary family recorded in the sidecar
 #   [MANIFEST_FILE <path>]            # default: ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
 #   [MANIFEST_HEADER <path>]          # also embed MANIFEST_FILE as a constexpr header (pj_embed_file)
