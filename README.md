@@ -15,7 +15,7 @@ Both guides ship under `share/plotjuggler_sdk/docs/` in the installed package.
 |--------|-------------|--------------|---------|
 | **pj_base** | Vocabulary types: `Timestamp`, `DatasetId`, `TopicId`, type trees, `Expected<T>`, `Span<T>` | None | Apache-2.0 |
 | **pj_source** | Provider descriptors, origins, artifact cache, jobs, limits, presentation, completion and Stop; link `plotjuggler_sdk::source` | pj_base, nlohmann/json | Apache-2.0 |
-| **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox families), C++ SDK base classes, plugin discovery, host-side loaders, and config helpers | pj_base, nlohmann/json | Apache-2.0 |
+| **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox, Widget families), C++ SDK base classes, plugin discovery, host-side loaders, and config helpers | pj_base, nlohmann/json | Apache-2.0 |
 | **cmake/** | Plugin-authoring CMake helpers shipped with `plugin_sdk`: `pj_configure_plugin()` (symbol isolation, export allowlist + gate, manifest validation/sidecar/embed), `pj_embed_file()`, `pj_harden_plugin_exports()`, `pj_add_parser_module()`, `pj_add_sdk_test_fixture()` — see `examples/sdk_consumer` | — | Apache-2.0 |
 
 ## Getting Started

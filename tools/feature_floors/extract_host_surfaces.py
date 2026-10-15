@@ -45,6 +45,7 @@ PLUGIN_SIDE_VTABLES = {
     "PJ_data_source_vtable_t",
     "PJ_message_parser_vtable_t",
     "PJ_toolbox_vtable_t",
+    "PJ_widget_vtable_t",
     "PJ_joinable_job_vtable_t",
 }
 # Versioned ids the HOST serves through the service registry (host surfaces).
@@ -65,6 +66,7 @@ HOST_SERVICE_IDS = {
     "pj.toolbox_runtime.v1",
     "pj.toolbox_write.v1",
     "pj.viewport.v1",
+    "pj.widget_host.v1",
 }
 # Versioned ids of PLUGIN-provided extensions (the host queries the plugin).
 PLUGIN_EXTENSION_IDS = {
@@ -84,11 +86,13 @@ FLAG_RE = re.compile(r"#\s*define\s+(PJ_\w*_FLAG\w*)[\s(]")
 
 PROTOCOL_HEADER_GLOBS = [
     ("pj_base/include/pj_base", "*.h"),
+    ("pj_plugins/widget_protocol/include/pj_plugins", "*.h"),
 ]
 SERVICE_ID_GLOBS = [
     ("pj_base/include/pj_base", "**/*.h*"),
     ("pj_plugins/include", "**/*.h*"),
     ("pj_plugins/dialog_protocol/include", "**/*.h*"),
+    ("pj_plugins/widget_protocol/include", "**/*.h*"),
 ]
 
 

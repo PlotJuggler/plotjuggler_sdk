@@ -3,6 +3,32 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.37.0]
+
+Host contract: extended: PJ_widget_host_vtable_t::query_history, PJ_widget_host_vtable_t::notify_inputs_changed,
+PJ_widget_host_vtable_t::report_widget_message, pj.widget_host.v1 (floor 0.37.0). The plugin-side
+`PJ_widget_vtable_t` is not a host surface and carries no floor.
+
+- Add the Widget plugin family (`pj_plugins/widget_protocol/`): a library contributes dockable panels whose content is
+  a widget object the plugin creates with its own GUI toolkit. The SDK stays toolkit-free; the object crosses the ABI
+  as an opaque `PJ_qwidget_t` (`void*`). New C ABI in `pj_plugins/widget_protocol.h`
+  (`PJ_get_widget_vtable`, `PJ_widget_vtable_t`, `PJ_WIDGET_MIN_VTABLE_SIZE`, `PJ_widget_input_t`,
+  `PJ_widget_value_t`, `PJ_widget_build_info_t`) and the host service `pj.widget_host.v1`
+  (`PJ_widget_host_vtable_t`: on-demand `query_history`, `notify_inputs_changed`, `report_widget_message`).
+- Add the C++ authoring base `PJ::WidgetPluginBase` with `PJ_WIDGET_PLUGIN` / `PJ_WIDGET_PLUGIN_NAMED` (and the
+  `PJ_STATIC_PLUGINS` variant emitting `pj_static_get_widget_vtable_<Symbol>`), linked through
+  `plotjuggler_sdk::plugin_sdk`.
+- Add the host loader: `WidgetLibrary` (`load` / `loadFromHandle` / `loadStatic` / `createHandle(type)`),
+  `WidgetHandle`, and `WidgetHostBridge` to build `pj.widget_host.v1` from `std::function` callbacks; linked through
+  `plotjuggler_sdk::plugin_host`.
+- Add `PluginFamily::kWidget`. The manifest decoder reads `widgets: [{type, name, icon, settings}]` into
+  `PluginDescriptor::widgets` and `qt_modules` into `PluginDescriptor::qt_modules`; a widget manifest without a
+  non-empty `widgets` array is invalid.
+- Add `pj_plugins/widget_qt_modules.h`, the canonical Qt module list a widget may declare, installed as
+  `share/plotjuggler_sdk/widget_qt_modules.json`.
+- `pj_configure_plugin` / `pj_harden_plugin_exports` accept `widget` and keep `PJ_get_widget_vtable` exported.
+- Add the widget plugin guide (`pj_plugins/docs/widget-guide.md`).
+
 ## [0.35.0]
 
 Host contract: unchanged (no floor impact) — a client-side codec helper, no new

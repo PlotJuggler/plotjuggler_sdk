@@ -7,7 +7,7 @@ PlotJuggler loads functionality at runtime from shared libraries (`.so` /
 between the host application and these libraries, plus convenience layers that
 make plugin development practical.
 
-Four plugin families exist:
+Five plugin families exist:
 
 - **DataSource** — acquires data from files, network streams, or hardware.
   Write-only; one instance per application data source.
@@ -18,6 +18,9 @@ Four plugin families exist:
   via typed callbacks — without linking Qt itself.
 - **Toolbox** — stateful interactive tools with full read+write access to host
   data. Long-lived, UI-driven; may create new data sources or transform data.
+- **Widget** — dockable panels whose content is a widget the plugin creates
+  with the GUI toolkit itself. Consumes values pushed by the host; never reads
+  or writes the data store. One library offers several widget types.
 
 ## 2. Design Principles
 
@@ -31,8 +34,13 @@ Four plugin families exist:
 
 3. **No Qt dependency in the plugin SDK.** Installed plugins link the
    `plotjuggler_sdk::plugin_sdk` umbrella, which supplies `pj_base` plus the
-   parser/dialog authoring headers without linking Qt. Qt is a host-side
-   concern.
+   parser/dialog/widget authoring headers without linking Qt. Qt is a host-side
+   concern. **Exception:** a Widget plugin links Qt itself, because it creates
+   a Qt widget; only the opaque pointer to that widget crosses the ABI, and no
+   SDK header or library includes or links Qt. A plugin of any other family
+   must not depend on Qt (the Widget plugin is the only place the exception
+   applies, and it is why Widget code lives in a separate library even when the
+   same product also ships a plugin of another family).
 
 4. **Version negotiation.** Each protocol carries `protocol_version` and
    `struct_size` for forward/backward compatibility.
@@ -146,6 +154,30 @@ Stateful interactive tools with full data access.
   data sources, perform destructive updates.
 - No state machine — either alive or destroyed.
 - UI via the dialog protocol.
+
+### Widget
+
+Dockable panel whose content is a toolkit widget created by the plugin.
+
+- The plugin library links Qt and builds the widget (typically from a Qt
+  Designer `.ui` compiled with `uic`). The widget pointer crosses the ABI as
+  `void*`; the SDK never dereferences it.
+- A library declares `widgets: [{type, name, icon, settings}]` in its
+  manifest. `create(type)` makes one independent instance per open panel. The
+  panel id in layouts is `plugin_id/type`; `type` is permanent.
+- Inputs are named slots (`inputs()`), possibly `multiple`; the user wires
+  series to them in the host. The widget receives the value at the tracker time
+  through `on_update` and reads history on demand through the host service
+  `pj.widget_host.v1`. It never sees topics, datasets or the store, and creates
+  no series.
+- Settings are declared in the manifest per widget type; the host draws the
+  form and pushes the JSON through `load_config`.
+- Every call is on the GUI thread. The library is never unloaded while the
+  process runs; instance destruction is synchronous.
+- Compatibility: the plugin records the Qt version it was built against
+  (`build_info`); the host requires the same major.minor and refuses to create
+  the widget otherwise. Qt private headers and QRhi are forbidden. Qt modules
+  come from the canonical list in `widget_qt_modules.h`.
 
 ## 4. Shared Host Services
 
@@ -276,7 +308,8 @@ The source never sees `parser_binding`; the host manages it.
   or git submodule (secondary).
 - A plugin author builds against `pj_base` without depending on
   `pj_datastore`.
-- The SDK is componentized: headless families don't require the dialog SDK.
+- The SDK is componentized: headless families don't require the dialog SDK
+  or the widget SDK.
 
 ## 9. Permission Summary
 
@@ -286,6 +319,7 @@ The source never sees `parser_binding`; the host manages it.
 | MessageParser | No | Yes | No | No | Optional |
 | Dialog | No | No | No | No | Yes |
 | Toolbox | Yes | Yes | Yes | Yes | Yes |
+| Widget | No (values pushed by the host; history on demand) | No | No | No | Yes (its own widget) |
 
 ## 10. Non-Goals / Deferred
 
