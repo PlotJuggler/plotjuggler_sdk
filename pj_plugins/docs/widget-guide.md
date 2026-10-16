@@ -158,11 +158,14 @@ manifest, per widget type:
 | Field | Meaning |
 |---|---|
 | `key` | JSON key in the configuration object |
-| `type` | `number`, `boolean`, `text`, `color`, `enum` |
-| `min`, `max` | optional limits for `number` |
+| `type` | `number`, `integer`, `boolean`, `text`, `color`, `enum` |
+| `min`, `max` | optional limits for `number` and `integer` |
 | `options` | values for `enum` |
 | `default` | initial value |
 | `label` | form label |
+
+`integer` is a whole number: the host shows it without decimals and stores a JSON
+integer (use it for counts such as `decimals`); `number` is a double.
 
 The host draws the form, stores the complete JSON in the layout and calls
 `loadConfig(json)` on every change. Restoring a layout is the same call, so
