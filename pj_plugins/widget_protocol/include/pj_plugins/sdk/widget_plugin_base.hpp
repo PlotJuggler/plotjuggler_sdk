@@ -70,6 +70,11 @@ class WidgetHostView {
       std::optional<std::string> thrown;
     };
     Delivery delivery{&on_value, std::nullopt};
+#if defined(_MSC_VER)
+// A callback that always throws, inlined, leaves the `return` after it unreachable: C4702 under /WX.
+#pragma warning(push)
+#pragma warning(disable : 4702)
+#endif
     auto sink = +[](void* user, const PJ_widget_value_t* value) noexcept -> bool {
       auto* target = static_cast<Delivery*>(user);
       try {
@@ -92,6 +97,9 @@ class WidgetHostView {
         return false;
       }
     };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
     PJ_error_t err{};
     uint32_t total = 0;
     if (!host_.vtable->query_history(host_.ctx, input, slot, from, to, max_samples, sink, &delivery, &total, &err)) {
