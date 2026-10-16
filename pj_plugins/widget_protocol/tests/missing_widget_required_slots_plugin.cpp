@@ -17,9 +17,10 @@ bool bind(void*, PJ_service_registry_t, PJ_error_t*) noexcept {
   return true;
 }
 
-uint32_t inputs(void*, const PJ_widget_input_t** out) noexcept {
+bool inputs(void*, const PJ_widget_input_t** out, uint32_t* count, PJ_error_t*) noexcept {
   *out = nullptr;
-  return 0;
+  *count = 0;
+  return true;
 }
 
 PJ_qwidget_t createQWidget(void*, PJ_qwidget_t, PJ_error_t*) noexcept {

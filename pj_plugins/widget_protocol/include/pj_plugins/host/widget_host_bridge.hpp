@@ -33,16 +33,21 @@ struct WidgetHistoryQuery {
   uint32_t max_samples = 0;  ///< 0 = host default cap
 };
 
-/// Receives one sample. The value (and what it points to) is valid only inside the call.
-using WidgetValueSink = std::function<void(const PJ_widget_value_t&)>;
+/// Receives one sample. The value (and what it points to) is valid only inside the call. Returns
+/// false when the plugin asked to stop: deliver nothing more and return the total.
+using WidgetValueSink = std::function<bool(const PJ_widget_value_t&)>;
 
 /// Host implementation of the widget service. Non-copyable and non-movable: the registered
 /// fat pointer refers to this object.
 class WidgetHostBridge {
  public:
-  /// Resolve the wire and call @p sink per sample in ascending time. Return an error when the
-  /// wire does not exist; the sink must not have been called then. Unset = history unsupported.
-  std::function<Status(const WidgetHistoryQuery& query, const WidgetValueSink& sink)> history;
+  /// Resolve the wire and call @p sink per sample in ascending time, at most `max_samples` of them
+  /// (0 = the host's cap), stopping as soon as the sink returns false. Return the number of samples
+  /// the range held before the cap or decimation (saturated at UINT32_MAX), or an error when the wire
+  /// does not exist or the call is not allowed (off the main thread, inside a paint handler); the
+  /// sink must not have been called then.
+  /// Unset = history unsupported.
+  std::function<Expected<uint32_t>(const WidgetHistoryQuery& query, const WidgetValueSink& sink)> history;
   /// Unset = ignored.
   std::function<void()> inputs_changed;
   /// Unset = dropped.
@@ -71,22 +76,35 @@ class WidgetHostBridge {
 
   static bool queryHistory(
       void* ctx, uint32_t input, uint32_t slot, double from, double to, uint32_t max_samples,
-      PJ_widget_value_sink_fn sink, void* user, PJ_error_t* out_error) noexcept {
+      PJ_widget_value_sink_fn sink, void* user, uint32_t* out_total, PJ_error_t* out_error) noexcept {
     auto* self = static_cast<WidgetHostBridge*>(ctx);
+    if (out_total != nullptr) {
+      *out_total = 0;
+    }
     if (!self->history) {
       sdk::fillError(out_error, 1, "widget_host", "history is not available");
       return false;
     }
     try {
       const WidgetHistoryQuery query{input, slot, from, to, max_samples};
-      auto status = self->history(query, [&](const PJ_widget_value_t& value) {
-        if (sink != nullptr) {
-          sink(user, &value);
+      // Once the plugin's sink said stop, it is never called again, even by a host callback that
+      // ignores the false.
+      bool stopped = false;
+      auto total = self->history(query, [&](const PJ_widget_value_t& value) -> bool {
+        if (stopped) {
+          return false;
         }
+        if (sink != nullptr && !sink(user, &value)) {
+          stopped = true;
+        }
+        return !stopped;
       });
-      if (!status) {
-        sdk::fillError(out_error, 1, "widget_host", status.error());
+      if (!total) {
+        sdk::fillError(out_error, 1, "widget_host", total.error());
         return false;
+      }
+      if (out_total != nullptr) {
+        *out_total = *total;
       }
       return true;
     } catch (const std::exception& e) {
@@ -107,7 +125,7 @@ class WidgetHostBridge {
     } catch (...) {}
   }
 
-  static void reportWidgetMessage(void* ctx, PJ_toolbox_message_level_t level, PJ_string_view_t message) noexcept {
+  static void reportWidgetMessage(void* ctx, PJ_widget_message_level_t level, PJ_string_view_t message) noexcept {
     auto* self = static_cast<WidgetHostBridge*>(ctx);
     try {
       if (self->report_message) {

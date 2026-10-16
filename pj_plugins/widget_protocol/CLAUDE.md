@@ -14,9 +14,17 @@ Local traps not visible from the headers:
 - `PJ_WIDGET_PLUGIN` reads `QT_VERSION_MAJOR/MINOR/PATCH/STR` where it expands,
   to fill `build_info`. The translation unit using it must have included a Qt
   header. The Qt-free mock defines the four macros itself.
-- Every slot is main-thread. `inputs()` returns an array the base class keeps
-  until the next `inputs()`, `load_config()` or destroy; the host copies it.
-  `inputs()` never changes in the middle of `on_update()`.
+- Every slot is main-thread except the constant `build_info` and
+  `get_plugin_extension`. `inputs()` returns an array the base class keeps
+  until the next successful `inputs()`, `load_config()` or destroy; a failing
+  `inputs()` (the author threw) returns false and leaves the previous array
+  intact. The host copies it. `inputs()` never changes in the middle of
+  `on_update()`.
+- `PJ_widget_input_t` / `PJ_widget_value_t` travel in arrays, so they are
+  ABI-FROZEN (no `struct_size`): never append a field, add a tail slot.
+- `vtableWithCreate` is a template and the macros pass lambdas: each macro
+  expansion gets its own static vtable. A non-template version silently gave
+  every static plugin in one binary the first plugin's vtable.
 - `destroy` is synchronous and deletes the widget object if still alive. The
   host calls `setParent(nullptr)` first. A Widget library is never unloaded:
   the loader itself guarantees it (`load` uses a no-op deleter, `loadFromHandle`

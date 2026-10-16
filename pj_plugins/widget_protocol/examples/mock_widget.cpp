@@ -55,15 +55,25 @@ class MockWidget : public PJ::WidgetPluginBase {
     ++state_.updates;
     state_.last_count = static_cast<uint32_t>(values.size());
     state_.last_time = time;
-    state_.last_number = values.empty() ? 0.0 : values[0].number;
-    state_.last_kind = values.empty() ? PJ_WIDGET_VALUE_NONE : values[0].kind;
+    state_.last_number = 0.0;
+    state_.last_kind = PJ_WIDGET_VALUE_NONE;
+    // One entry per wire: dispatch on the input index, never on the position in the array.
+    for (const PJ_widget_value_t& value : values) {
+      if (value.input == 0 && value.slot == 0) {
+        state_.last_number = value.number;
+        state_.last_kind = value.kind;
+      }
+    }
     if (config_.find("history") != std::string::npos && widgetHostBound()) {
       state_.history_samples = 0;
-      auto status = widgetHost().queryHistory(0, 0, 0.0, time, 100, [this](const PJ_widget_value_t& value) {
+      const bool stop_early = config_.find("history_stop") != std::string::npos;
+      auto total = widgetHost().queryHistory(0, 0, 0.0, time, 100, [this, stop_early](const PJ_widget_value_t& value) {
         ++state_.history_samples;
         state_.history_last = value.number;
+        return !stop_early;
       });
-      state_.history_ok = status.has_value();
+      state_.history_ok = total.has_value();
+      state_.history_total = total.has_value() ? *total : 0;
     }
   }
 

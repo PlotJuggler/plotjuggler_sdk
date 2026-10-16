@@ -9,7 +9,8 @@
  * history), settings and lifecycle travel through the C structs below.
  *
  * Rules that shape the contract:
- *   - Every slot, host and plugin side, is called on the GUI thread only.
+ *   - Every slot, host and plugin side, is called on the GUI thread only, except the two
+ *     constant getters build_info and get_plugin_extension, which are [thread-safe].
  *   - One plugin library may expose several widget types; `create(type)` makes
  *     one independent instance per open panel.
  *   - The plugin never sees topics, datasets or the data store: the host wires
@@ -29,7 +30,6 @@
 #include <stdint.h>
 
 #include "pj_base/plugin_data_api.h"
-#include "pj_base/toolbox_protocol.h" /* PJ_toolbox_message_level_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,6 +40,9 @@ extern "C" {
 
 /** Protocol version of the "pj.widget_host.v1" service vtable. */
 #define PJ_WIDGET_HOST_PROTOCOL_VERSION 1
+
+/** Service id of the widget host service (PJ_widget_host_vtable_t), one instance per open panel. */
+#define PJ_WIDGET_HOST_SERVICE_V1 "pj.widget_host.v1"
 
 /**
  * Minimum vtable size for v1.0 compatibility, pinned at the first release.
@@ -66,7 +69,13 @@ extern "C" {
  */
 typedef void* PJ_qwidget_t;
 
-/** What a value delivered to an input slot looks like. */
+/**
+ * What a value delivered to an input slot looks like.
+ *
+ * A kind the host does not know is an error on the host side: the host refuses
+ * the whole inputs() array (an unknown kind cannot be delivered correctly). Contrast
+ * PJ_widget_input_flags_t, whose unknown bits are ignored.
+ */
 typedef enum {
   PJ_WIDGET_INPUT_NUMBER = 0,               /* scalar series, delivered as `number` */
   PJ_WIDGET_INPUT_TEXT = 1,                 /* string-valued series (states such as "ARMED") */
@@ -75,21 +84,33 @@ typedef enum {
 } PJ_widget_input_kind_t;
 
 /**
+ * Bit values for PJ_widget_input_t::flags. A reader MUST ignore bits it does
+ * not know, so a new bit can only add an optional refinement.
+ */
+typedef enum {
+  PJ_WIDGET_INPUT_FLAG_NONE = 0,
+  PJ_WIDGET_INPUT_MULTIPLE = 1u << 0,             /* any number of series, one slot each. Unset: one series, a new
+                                                     drop replaces it */
+  PJ_WIDGET_INPUT_FLAGS_FORCE_INT32 = 0x7FFFFFFF, /* pin 4-byte width; not a real flag */
+} PJ_widget_input_flags_t;
+
+/**
  * One named input of a widget, as returned by PJ_widget_vtable_t::inputs.
  *
- * ABI-APPENDABLE: the reader honors `struct_size`; fields past it are absent.
+ * ABI-FROZEN: layout permanent; growth goes through a new tail slot (e.g.
+ * inputs_v2), never by appending a field, because these travel in arrays.
+ *
  * String views point into plugin-owned storage with the lifetime stated on
  * `inputs`. `name` is the stable identity of the input: the host keeps a
  * wiring across `load_config`/`inputs_changed` by matching names, never by
- * position.
+ * position. The host refuses an array with an empty or duplicate `name`.
  */
 typedef struct {
-  uint32_t struct_size;   /* sizeof(PJ_widget_input_t) as compiled by the plugin */
-  PJ_string_view_t name;  /* stable, non-empty, unique within the widget */
-  PJ_string_view_t label; /* display text; empty = use `name` */
-  PJ_string_view_t unit;  /* display unit, may be empty */
-  PJ_widget_input_kind_t kind;
-  bool multiple; /* false: one series, a new drop replaces it. true: any number, one slot each */
+  PJ_string_view_t name;       /* stable, non-empty, unique within the widget */
+  PJ_string_view_t label;      /* display text; empty = use `name` */
+  PJ_string_view_t unit;       /* display unit, may be empty */
+  PJ_widget_input_kind_t kind; /* unknown value = the host refuses the array */
+  uint32_t flags;              /* PJ_WIDGET_INPUT_* bits; unknown bits are ignored */
 } PJ_widget_input_t;
 
 /** Kind of a PJ_widget_value_t; selects which of its payload fields is valid. */
@@ -104,12 +125,14 @@ typedef enum {
 /**
  * Value of one wire (input + slot) at a time.
  *
- * ABI-APPENDABLE. Every pointer inside (text, bytes, type_name) is valid only
- * for the duration of the call that delivers it (on_update, or the history
- * sink); a widget keeps what it needs by copying.
+ * ABI-FROZEN: layout permanent; growth goes through a new tail slot (e.g.
+ * on_update_v2), never by appending a field, because these travel in arrays.
+ *
+ * Every pointer inside (text, bytes, type_name, label) is valid only for the
+ * duration of the call that delivers it (on_update, or the history sink); a
+ * widget keeps what it needs by copying.
  */
 typedef struct {
-  uint32_t struct_size;        /* sizeof(PJ_widget_value_t) as compiled by the host */
   uint32_t input;              /* index into the array last returned by inputs() */
   uint32_t slot;               /* 0 for a non-`multiple` input; stable per wire for `multiple` ones */
   PJ_widget_value_kind_t kind; /* selects the payload below */
@@ -124,7 +147,8 @@ typedef struct {
 
 /** Bit values for PJ_widget_build_info_t::flags. */
 enum {
-  PJ_WIDGET_BUILD_DEBUG = 1u << 0, /* the plugin was built in a debug configuration */
+  PJ_WIDGET_BUILD_DEBUG = 1u << 0, /* the plugin links the MSVC debug C/C++ runtime (_DEBUG), which
+                                      loads the Qt6*d.dll libraries; always 0 with GCC/Clang */
 };
 
 /**
@@ -146,8 +170,20 @@ typedef struct {
   PJ_string_view_t qt_version_str; /* full version string, for messages only */
 } PJ_widget_build_info_t;
 
-/** Sink invoked once per sample inside PJ_widget_host_vtable_t::query_history. */
-typedef void (*PJ_widget_value_sink_fn)(void* user, const PJ_widget_value_t* value) PJ_NOEXCEPT;
+/**
+ * Sink invoked once per sample inside PJ_widget_host_vtable_t::query_history.
+ * Return true to receive the next sample, false to stop early: the host then
+ * delivers nothing more and query_history returns true.
+ */
+typedef bool (*PJ_widget_value_sink_fn)(void* user, const PJ_widget_value_t* value) PJ_NOEXCEPT;
+
+/** Severity of a message sent with PJ_widget_host_vtable_t::report_widget_message. */
+typedef enum {
+  PJ_WIDGET_MESSAGE_INFO = 0,
+  PJ_WIDGET_MESSAGE_WARNING = 1,
+  PJ_WIDGET_MESSAGE_ERROR = 2,
+  PJ_WIDGET_MESSAGE_FORCE_INT32 = 0x7FFFFFFF, /* pin 4-byte width; not a real level */
+} PJ_widget_message_level_t;
 
 /**
  * Widget host vtable, delivered as the "pj.widget_host.v1" service. One
@@ -160,19 +196,31 @@ typedef struct PJ_widget_host_vtable_t {
 
   /**
    * [main-thread] Read the history of one wire. Not pushed: the widget asks
-   * for it from on_update (never from a paint handler) and keeps a copy.
+   * for it and keeps a copy.
+   *
+   * Where it may be called: from any plugin-side vtable slot (on_update,
+   * load_config, ...) and from the widget's own toolkit slots, always on the
+   * main thread, never from a paint handler. Off the main thread and inside a
+   * paint handler are the only "not allowed" cases.
    *
    * The host calls `sink` once per sample, in ascending time, synchronously
    * and before returning; `value` and everything it points to are valid only
-   * inside that call. `from`/`to` are display-time seconds, inclusive. At most
-   * `max_samples` samples are delivered (0 = host default cap); when the range
-   * holds more, which ones are omitted is host policy. Returns false with
-   * `out_error` filled when the input/slot is not wired or the call is not
-   * allowed; the sink was not called in that case.
+   * inside that call. A sink returning false stops the delivery early and the
+   * call still returns true. `from`/`to` are display-time seconds, inclusive.
+   * At most `max_samples` samples are delivered (0 = host default cap); when
+   * the range holds more, which ones are omitted is host policy.
+   *
+   * `out_total` (may be NULL) receives the number of samples the range held
+   * before the host's cap or decimation, saturated at UINT32_MAX, so a widget
+   * can tell a complete history from a reduced one; 0 on failure.
+   *
+   * Returns false with `out_error` filled when the input/slot is not wired, the
+   * host has no history, or the call is not allowed; the sink was not called
+   * in that case.
    */
   bool (*query_history)(
       void* ctx, uint32_t input, uint32_t slot, double from, double to, uint32_t max_samples,
-      PJ_widget_value_sink_fn sink, void* user, PJ_error_t* out_error) PJ_NOEXCEPT;
+      PJ_widget_value_sink_fn sink, void* user, uint32_t* out_total, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
    * [main-thread] The widget's inputs() changed (typically after a settings
@@ -183,7 +231,7 @@ typedef struct PJ_widget_host_vtable_t {
   void (*notify_inputs_changed)(void* ctx) PJ_NOEXCEPT;
 
   /** [main-thread] Diagnostic text for the host's message list; copied before return. */
-  void (*report_widget_message)(void* ctx, PJ_toolbox_message_level_t level, PJ_string_view_t message) PJ_NOEXCEPT;
+  void (*report_widget_message)(void* ctx, PJ_widget_message_level_t level, PJ_string_view_t message) PJ_NOEXCEPT;
 } PJ_widget_host_vtable_t;
 /* ABI-APPENDABLE: new slots go at the tail; plugin-side reads guard with PJ_HAS_TAIL_SLOT. */
 
@@ -198,7 +246,8 @@ typedef struct {
  *
  * Lifecycle of one panel: create(type) -> bind(registry) -> [load_config]
  * -> inputs() -> create_qwidget(parent) -> { on_update, load_config, inputs()
- * }* -> save_config -> destroy. Every slot is PJ_NOEXCEPT and [main-thread].
+ * }* -> save_config -> destroy. Every slot is PJ_NOEXCEPT and [main-thread]
+ * except the [thread-safe] build_info and get_plugin_extension.
  */
 typedef struct PJ_widget_vtable_t {
   uint32_t protocol_version;
@@ -221,12 +270,19 @@ typedef struct PJ_widget_vtable_t {
 
   /**
    * Static JSON manifest (compile-time constant). Required keys: "id",
-   * "name", "version", and a non-empty "widgets" array of
-   * {"type","name","icon","settings"} objects; optional "qt_modules" array.
+   * "name", "version", and a non-empty "widgets" array of objects with a
+   * required "type" and "name" and an optional "icon" (inline SVG) and
+   * "settings" (array; the host draws the form); optional "qt_modules" array.
+   *
+   * The settings form is declarative on purpose. Nothing here blocks a later
+   * escape hatch for widgets that outgrow it: a future tail slot
+   * (create_settings_qwidget, a plugin-built settings editor) or a dynamic
+   * settings_schema may be added without touching v1.
    */
   const char* manifest_json;
 
-  /** [main-thread] Static toolkit build identity; never NULL for a valid plugin. */
+  /** [thread-safe] Static toolkit build identity; never NULL for a valid plugin. Constant data, so
+   *  a scan thread or an out-of-process checker may read it before any instance exists. */
   const PJ_widget_build_info_t* (*build_info)(void)PJ_NOEXCEPT;
 
   /**
@@ -236,12 +292,20 @@ typedef struct PJ_widget_vtable_t {
   bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * [main-thread] Current inputs. Writes the address of a plugin-owned array
-   * to `*out_inputs` and returns its length. The array and the strings in it
-   * stay valid until the next inputs(), load_config() or destroy() on this
-   * instance. The list never changes in the middle of on_update().
+   * [main-thread] Current inputs. On success writes the address of a
+   * plugin-owned array to `*out_inputs` (NULL allowed when the count is 0)
+   * and its length to `*out_count`, and returns true. The array and the
+   * strings in it stay valid until the next successful inputs(), the next
+   * load_config() or destroy() on this instance. The list never changes in
+   * the middle of on_update().
+   *
+   * Returns false with `out_error` filled when the plugin cannot produce its
+   * inputs; `*out_inputs` / `*out_count` are then not written and the array of
+   * the previous successful call stays valid, so the host keeps the wiring it
+   * has instead of treating the failure as "no inputs".
    */
-  uint32_t (*inputs)(void* ctx, const PJ_widget_input_t** out_inputs) PJ_NOEXCEPT;
+  bool (*inputs)(void* ctx, const PJ_widget_input_t** out_inputs, uint32_t* out_count, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 
   /**
    * [main-thread] Create the widget object as a child of `parent` (the
@@ -253,9 +317,16 @@ typedef struct PJ_widget_vtable_t {
 
   /**
    * [main-thread] New values for the wired inputs at time `time` (display time
-   * axis, seconds). `values[0..count)` holds one entry per wire (input, slot),
-   * with kind NONE where there is no sample at or before `time`. Not called
-   * when nothing changed. `values` is valid only during the call.
+   * axis, seconds). `values[0..count)` holds ONE entry per WIRE (input, slot):
+   * an unwired input has no entry, a `multiple` input has one per wired
+   * series. Entries are ordered by input index, then slot, but readers MUST
+   * dispatch on `input` (and `slot`), never on the position in the array.
+   * kind is NONE where the wire has no sample at or before `time`.
+   *
+   * The host calls it on the tracker tick when a value changed, and also,
+   * even when no sample changed, after create_qwidget, after every accepted
+   * load_config and after any wiring change, so the widget never paints
+   * stale state. `values` is valid only during the call.
    */
   void (*on_update)(void* ctx, const PJ_widget_value_t* values, uint32_t count, double time) PJ_NOEXCEPT;
 
@@ -266,14 +337,22 @@ typedef struct PJ_widget_vtable_t {
   bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * [main-thread] Apply a configuration JSON. The host passes the user's
-   * settings (the keys declared in the manifest) as well as any state that
-   * save_config produced; restoring a layout and editing a setting are the
-   * same call. `config_json` is valid only during the call.
+   * [main-thread] Apply a configuration JSON object. Restoring a layout and
+   * editing a setting are the same call. `config_json` is valid only during
+   * the call.
+   *
+   * The object holds EVERY key declared in the widget's manifest `settings`
+   * (the host fills in the manifest `default` for a key the user never
+   * touched), with whatever the widget last returned from save_config laid
+   * over it. A save_config key that collides with a setting key wins, so do
+   * not reuse setting names for internal state. A widget may keep code
+   * fallbacks, but the manifest is the single source of defaults.
    */
   bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** [main-thread] Plugin-exposed extension by reverse-DNS id, or NULL. */
+  /** [thread-safe] Query a plugin-exposed extension by reverse-DNS id, or NULL.
+   *  See PJ_data_source_vtable_t::get_plugin_extension for the full contract (a static,
+   *  plugin-owned POD valid for the instance lifetime) and the ID-versioning convention. */
   const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id)PJ_NOEXCEPT;
 
   /* ====================================================================

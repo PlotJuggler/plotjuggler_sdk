@@ -24,6 +24,7 @@ struct WidgetState {
   PJ_widget_value_kind_t last_kind = PJ_WIDGET_VALUE_NONE;
   uint32_t history_samples = 0;
   double history_last = 0.0;
+  uint32_t history_total = 0;
   bool history_ok = false;
 };
 

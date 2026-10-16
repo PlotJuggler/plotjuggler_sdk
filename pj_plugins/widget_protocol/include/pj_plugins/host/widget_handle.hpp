@@ -22,10 +22,29 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace PJ {
+
+namespace detail {
+
+/// @p view as a string_view, or an error for the shapes no valid plugin produces (null data with a
+/// size, or longer than @p max_bytes). Checked before any pointer arithmetic, so a corrupt size is
+/// reported instead of being added to the pointer.
+[[nodiscard]] inline Expected<std::string_view> checkedWidgetView(
+    PJ_string_view_t view, size_t max_bytes, const char* what) {
+  if (view.size == 0) {
+    return std::string_view{};
+  }
+  if (view.data == nullptr || view.size > max_bytes) {
+    return unexpected(std::string("widget plugin returned an invalid ") + what + " string view");
+  }
+  return std::string_view(view.data, view.size);
+}
+
+}  // namespace detail
 
 /// RAII handle owning one Widget plugin instance (one open panel).
 ///
@@ -84,7 +103,7 @@ class WidgetHandle {
   }
 
   /// Valid for the process lifetime (the library is never unloaded); never null for a handle from
-  /// WidgetLibrary.
+  /// WidgetLibrary, which validated it (size and string views) at load.
   [[nodiscard]] const PJ_widget_build_info_t* buildInfo() const {
     return vt_ != nullptr ? vt_->build_info() : nullptr;
   }
@@ -104,28 +123,57 @@ class WidgetHandle {
   static constexpr size_t kMaxInputTextBytes = size_t{1} << 20;
   static constexpr size_t kMaxConfigBytes = size_t{64} << 20;
 
-  /// Copy of the plugin's current inputs. Entries whose struct_size predates a field keep that
-  /// field's default. Throws std::invalid_argument when the plugin returns more than kMaxInputs or
-  /// a string view that cannot be valid (null data with a size, or longer than kMaxInputTextBytes).
-  [[nodiscard]] std::vector<WidgetInput> inputs() const {
-    std::vector<WidgetInput> result;
+  /// Copy of the plugin's current inputs. Fails, and the host keeps the inputs it had, when the plugin
+  /// reports an error, or returns an array no valid plugin produces: more than kMaxInputs entries, a
+  /// null array with a count, a string view that cannot be valid (null data with a size, or longer
+  /// than kMaxInputTextBytes), an empty or duplicate `name`, or a `kind` this host does not know.
+  /// Unknown `flags` bits are ignored.
+  [[nodiscard]] Expected<std::vector<WidgetInput>> inputs() const {
     const PJ_widget_input_t* array = nullptr;
-    const uint32_t count = vt_->inputs(ctx_, &array);
-    if (array == nullptr) {
+    uint32_t count = 0;
+    PJ_error_t err{};
+    if (!vt_->inputs(ctx_, &array, &count, &err)) {
+      return unexpected(err.message[0] != '\0' ? sdk::errorToString(err) : std::string("inputs failed"));
+    }
+    std::vector<WidgetInput> result;
+    if (count == 0) {
       return result;
     }
+    if (array == nullptr) {
+      return unexpected("widget plugin returned a null inputs array with a non-zero count");
+    }
     if (count > kMaxInputs) {
-      throw std::invalid_argument("widget plugin returned an impossible number of inputs");
+      return unexpected("widget plugin returned an impossible number of inputs");
     }
     result.reserve(count);
+    std::unordered_set<std::string_view> names;
     for (uint32_t i = 0; i < count; ++i) {
       const PJ_widget_input_t& in = array[i];
+      auto name = detail::checkedWidgetView(in.name, kMaxInputTextBytes, "input name");
+      auto label = detail::checkedWidgetView(in.label, kMaxInputTextBytes, "input label");
+      auto unit = detail::checkedWidgetView(in.unit, kMaxInputTextBytes, "input unit");
+      for (const auto* view : {&name, &label, &unit}) {
+        if (!*view) {
+          return unexpected(view->error());
+        }
+      }
+      if (name->empty()) {
+        return unexpected("widget plugin returned an input with an empty name");
+      }
+      if (!names.insert(*name).second) {
+        return unexpected("widget plugin returned the input name '" + std::string(*name) + "' twice");
+      }
+      if (in.kind != PJ_WIDGET_INPUT_NUMBER && in.kind != PJ_WIDGET_INPUT_TEXT && in.kind != PJ_WIDGET_INPUT_OBJECT) {
+        return unexpected(
+            "widget plugin returned input '" + std::string(*name) + "' with unknown kind " +
+            std::to_string(static_cast<uint32_t>(in.kind)));
+      }
       WidgetInput item;
-      item.name = std::string(checkedView(in.name, kMaxInputTextBytes, "input name"));
-      item.label = std::string(checkedView(in.label, kMaxInputTextBytes, "input label"));
-      item.unit = std::string(checkedView(in.unit, kMaxInputTextBytes, "input unit"));
+      item.name = std::string(*name);
+      item.label = std::string(*label);
+      item.unit = std::string(*unit);
       item.kind = static_cast<WidgetInputKind>(in.kind);
-      item.multiple = in.multiple;
+      item.multiple = (in.flags & PJ_WIDGET_INPUT_MULTIPLE) != 0;
       result.push_back(std::move(item));
     }
     return result;
@@ -147,14 +195,19 @@ class WidgetHandle {
     vt_->on_update(ctx_, values.data(), static_cast<uint32_t>(values.size()), time);
   }
 
-  /// Throws std::invalid_argument when the returned view cannot be valid (see inputs()).
+  /// Throws std::invalid_argument when the returned view cannot be valid (null data with a size, or
+  /// longer than kMaxConfigBytes).
   [[nodiscard]] Status saveConfig(std::string& out_json) {
     PJ_string_view_t sv{};
     PJ_error_t err{};
     if (!vt_->save_config(ctx_, &sv, &err)) {
       return unexpected(sdk::errorToString(err));
     }
-    out_json.assign(checkedView(sv, kMaxConfigBytes, "save_config"));
+    auto json = detail::checkedWidgetView(sv, kMaxConfigBytes, "save_config");
+    if (!json) {
+      throw std::invalid_argument(json.error());
+    }
+    out_json.assign(*json);
     return okStatus();
   }
 
@@ -183,18 +236,6 @@ class WidgetHandle {
   }
 
  private:
-  /// The view as a string_view, after refusing the shapes no valid plugin produces. Checked before
-  /// any pointer arithmetic, so a corrupt size is reported instead of being added to the pointer.
-  static std::string_view checkedView(PJ_string_view_t view, size_t max_bytes, const char* what) {
-    if (view.size == 0) {
-      return {};
-    }
-    if (view.data == nullptr || view.size > max_bytes) {
-      throw std::invalid_argument(std::string("widget plugin returned an invalid ") + what + " string view");
-    }
-    return std::string_view(view.data, view.size);
-  }
-
   const PJ_widget_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
   std::shared_ptr<void> library_owner_;
