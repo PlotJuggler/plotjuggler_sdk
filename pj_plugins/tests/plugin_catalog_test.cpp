@@ -401,11 +401,73 @@ TEST_F(PluginCatalogTest, ResultIsSortedByPath) {
   EXPECT_EQ(result->plugins[1].dso_path.filename(), pluginFileName("zz_plugin"));
 }
 
+TEST_F(PluginCatalogTest, InspectWidgetDsoDecodesWidgetsAndQtModules) {
+  auto descriptor = inspectPluginDso(PJ_MOCK_WIDGET_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "mock-widget");
+  EXPECT_EQ(descriptor->family, PluginFamily::kWidget);
+  EXPECT_EQ(descriptor->min_sdk_required, "0.37.0");
+  EXPECT_EQ(descriptor->qt_modules, (std::vector<std::string>{"Core", "Gui", "Widgets"}));
+  ASSERT_EQ(descriptor->widgets.size(), 2U);
+  EXPECT_EQ(descriptor->widgets[0].type, "gauge");
+  EXPECT_EQ(descriptor->widgets[0].name, "Gauge");
+  EXPECT_NE(descriptor->widgets[0].icon.find("<svg"), std::string::npos);
+  EXPECT_NE(descriptor->widgets[0].settings_json.find("\"key\":\"min\""), std::string::npos);
+  EXPECT_EQ(descriptor->widgets[1].type, "table");
+  EXPECT_TRUE(descriptor->widgets[1].icon.empty());
+  EXPECT_EQ(descriptor->widgets[1].settings_json, "[]");
+}
+
+TEST_F(PluginCatalogTest, WidgetManifestRequiresNonEmptyWidgetsArray) {
+  const std::string head = R"({"id":"w","name":"W","version":"1.0.0")";
+  for (const std::string& manifest : {head + "}", head + R"(,"widgets":[]})", head + R"(,"widgets":"gauge"})"}) {
+    auto descriptor = decodeManifest("static:w", PluginFamily::kWidget, manifest);
+    ASSERT_FALSE(descriptor.has_value()) << manifest;
+    EXPECT_NE(descriptor.error().find("widgets"), std::string::npos) << manifest;
+  }
+  // Other families are unaffected by the key.
+  EXPECT_TRUE(decodeManifest("static:w", PluginFamily::kToolbox, head + "}").has_value());
+}
+
+TEST_F(PluginCatalogTest, WidgetManifestRejectsMalformedEntries) {
+  const std::string head = R"({"id":"w","name":"W","version":"1.0.0","widgets":)";
+  for (const std::string_view widgets : {
+           R"([42])",                                                // not an object
+           R"([{"name":"G"}])",                                      // no type
+           R"([{"type":"g"}])",                                      // no name
+           R"([{"type":"","name":"G"}])",                            // empty type
+           R"([{"type":"a/b","name":"G"}])",                         // '/' joins plugin id and type
+           R"([{"type":"g","name":"G"},{"type":"g","name":"H"}])",   // duplicate type
+           R"([{"type":"g","name":"G","icon":3}])",                  // icon not a string
+           R"([{"type":"g","name":"G","settings":{"key":"min"}}])",  // settings not an array
+       }) {
+    auto descriptor = decodeManifest("static:w", PluginFamily::kWidget, head + std::string(widgets) + "}");
+    EXPECT_FALSE(descriptor.has_value()) << widgets;
+  }
+}
+
+TEST_F(PluginCatalogTest, WidgetManifestRejectsNonStringQtModules) {
+  auto descriptor = decodeManifest(
+      "static:w", PluginFamily::kWidget,
+      R"({"id":"w","name":"W","version":"1.0.0","qt_modules":[1],"widgets":[{"type":"g","name":"G"}]})");
+  ASSERT_FALSE(descriptor.has_value());
+  EXPECT_NE(descriptor.error().find("qt_modules"), std::string::npos);
+}
+
+TEST_F(PluginCatalogTest, ScanFindsWidgetPluginAndReportsItsFamily) {
+  copyPlugin(PJ_MOCK_WIDGET_PLUGIN_PATH, pluginFileName("widget_plugin"));
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  ASSERT_EQ(result->plugins.size(), 1U) << (result->diagnostics.empty() ? "" : result->diagnostics[0].message);
+  EXPECT_EQ(result->plugins[0].family, PluginFamily::kWidget);
+}
+
 TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {
   EXPECT_EQ(toString(PluginFamily::kDataSource), "data_source");
   EXPECT_EQ(toString(PluginFamily::kMessageParser), "message_parser");
   EXPECT_EQ(toString(PluginFamily::kToolbox), "toolbox");
   EXPECT_EQ(toString(PluginFamily::kDialog), "dialog");
+  EXPECT_EQ(toString(PluginFamily::kWidget), "widget");
   EXPECT_EQ(toString(PluginFamily::kUnknown), "unknown");
 }
 

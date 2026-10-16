@@ -10,7 +10,8 @@ plotjuggler_sdk::source. PJ utilities require plotjuggler_sdk::base,
 also supplied by plugin_sdk.
 
 A namespace prefix applies to every symbol in its cell. Dialog headers come
-from `pj_plugins/dialog_protocol/include/`. Packaged guides are installed in
+from `pj_plugins/dialog_protocol/include/`; Widget headers from
+`pj_plugins/widget_protocol/include/`. Packaged guides are installed in
 `share/plotjuggler_sdk/docs/`; resolve header paths against the package's `include/`.
 
 | Symbol | Use it for | Header |
@@ -60,6 +61,9 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::sdk::MediaMetadataBuilder, ObjectTopicMetadataBuilder` | Build media hints and canonical renderer metadata | `pj_base/sdk/media_metadata.hpp; pj_base/sdk/object_topic_metadata.hpp` |
 | `PJ::sdk::ObjectBytes` | Own object-read bytes through move-only RAII | `pj_base/sdk/object_bytes.hpp` |
 | `PJ::sdk::ArrowSchemaHolder, ArrowArrayHolder, ArrowStreamHolder` | Own Arrow out-params; successful writes transfer ownership, failed writes retain it | `pj_base/sdk/arrow.hpp` |
+| `PJ::WidgetPluginBase, PJ_WIDGET_PLUGIN, PJ::WidgetHostView` | Author a Widget plugin (inputs, `onUpdate`, history, config); Qt-free header | `pj_plugins/sdk/widget_plugin_base.hpp` |
+| `PJ::WidgetLibrary, WidgetHandle, WidgetHostBridge` | Host side of the Widget family: load, instantiate per type, serve `pj.widget_host.v1` from callbacks | `pj_plugins/host/widget_library.hpp; widget_handle.hpp; widget_host_bridge.hpp` |
+| `PJ_WIDGET_QT_MODULES` | Canonical Qt module list a widget may declare in `qt_modules` | `pj_plugins/widget_qt_modules.h` |
 | `pj_embed_file, pj_configure_plugin` | Embed UI/manifest assets and configure plugin exports/build rules | `cmake/PjPlugin.cmake` |
 
 Outside this SDK, reuse pj-official-plugins common/:

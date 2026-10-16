@@ -4,7 +4,7 @@ Before adding a helper, use [Existing SDK utilities](../docs/sdk-utilities.md).
 Provider work also follows [the provider contract](../docs/provider-guide.md).
 
 `pj_plugins` owns host loaders, discovery, parser routing and the MessageParser
-and Dialog authoring APIs. The `plotjuggler_sdk::plugin_sdk` umbrella combines
+Dialog and Widget authoring APIs. The `plotjuggler_sdk::plugin_sdk` umbrella combines
 those headers with `pj_base`. Compiled providers also link `source`.
 
 Host libraries depend on `pj_base`, never Qt. Datastore bridges and duplicate
@@ -28,13 +28,16 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
   (toolbox/data-source hosts recording attachment, payload ownership, completion, Stop and discard).
 - `dialog_protocol/` — **nested module** (own CMake): the Dialog C ABI, C++
   dialog SDK, and host dialog loader/handle. See `dialog_protocol/CLAUDE.md`.
+- `widget_protocol/` — **nested module** (own CMake): the Widget C ABI, C++
+  widget SDK, and host widget loader/handle. The one family whose plugins link
+  Qt; the SDK does not. See `widget_protocol/CLAUDE.md`.
 - `src/` — loader/catalog `.cpp`; `src/detail/` vtable validation + dlopen.
 - `examples/` — mock plugins exercised by tests (`mock_data_source`, …).
 - `tests/` — host-side loader + lifecycle tests.
 
 ## Gotchas
-- **Protocol v4 under boot-ABI v5.** All four family vtables are
-  `PROTOCOL_VERSION == 4`; the DSO-level `pj_plugin_abi_version` symbol is
+- **Protocol v4 under boot-ABI v5.** The DataSource, MessageParser, Toolbox and
+  Dialog vtables are `PROTOCOL_VERSION == 4` (Widget is `1`, same rules); the DSO-level `pj_plugin_abi_version` symbol is
   `PJ_ABI_VERSION == 5`. New slots are tail-appended and read via
   `PJ_HAS_TAIL_SLOT` — never grow `*_MIN_VTABLE_SIZE`. See `docs/ARCHITECTURE.md` §0a.
 - **The SDK is split across two modules.** `DataSourcePluginBase` /
