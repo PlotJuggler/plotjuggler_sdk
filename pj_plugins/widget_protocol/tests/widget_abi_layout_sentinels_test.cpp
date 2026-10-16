@@ -3,9 +3,11 @@
  * @brief Compile-time sentinels that pin the Widget plugin C ABI layout.
  *
  * Same maintenance rule as pj_base/tests/abi_layout_sentinels_test.cpp: sizes
- * may grow at the tail when a slot or field is appended (update them
- * deliberately); offsets of existing members never change;
- * PJ_WIDGET_MIN_VTABLE_SIZE never increases. This lives next to the protocol
+ * of ABI-APPENDABLE structs may grow at the tail when a slot or field is
+ * appended (update them deliberately); offsets of existing members never
+ * change; PJ_WIDGET_MIN_VTABLE_SIZE never increases. The ABI-FROZEN array
+ * element structs (PJ_widget_input_t, PJ_widget_value_t) never change at all:
+ * their sizeof and alignof pins are permanent. This lives next to the protocol
  * rather than in pj_base because the Widget family is a pj_plugins module.
  *
  * Pinning target: x86-64 System V (64-bit pointers).
@@ -23,33 +25,38 @@ static_assert(sizeof(void*) == 8, "ABI pinned to 64-bit targets");
 // --- Enums -------------------------------------------------------------------
 static_assert(sizeof(PJ_widget_input_kind_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_widget_value_kind_t) == 4, "enum layout pinned");
+static_assert(sizeof(PJ_widget_input_flags_t) == 4, "enum layout pinned");
+static_assert(sizeof(PJ_widget_message_level_t) == 4, "enum layout pinned");
+static_assert(PJ_WIDGET_INPUT_FLAG_NONE == 0 && PJ_WIDGET_INPUT_MULTIPLE == 1, "flag bits pinned");
+static_assert(
+    PJ_WIDGET_MESSAGE_INFO == 0 && PJ_WIDGET_MESSAGE_WARNING == 1 && PJ_WIDGET_MESSAGE_ERROR == 2, "values pinned");
 static_assert(PJ_WIDGET_INPUT_NUMBER == 0 && PJ_WIDGET_INPUT_TEXT == 1 && PJ_WIDGET_INPUT_OBJECT == 2, "values pinned");
 static_assert(
     PJ_WIDGET_VALUE_NONE == 0 && PJ_WIDGET_VALUE_NUMBER == 1 && PJ_WIDGET_VALUE_TEXT == 2 &&
         PJ_WIDGET_VALUE_OBJECT == 3,
     "values pinned");
 
-// --- PJ_widget_input_t (ABI-APPENDABLE) --------------------------------------
-static_assert(offsetof(PJ_widget_input_t, struct_size) == 0, "prefix pinned");
-static_assert(offsetof(PJ_widget_input_t, name) == 8, "layout pinned");
-static_assert(offsetof(PJ_widget_input_t, label) == 24, "layout pinned");
-static_assert(offsetof(PJ_widget_input_t, unit) == 40, "layout pinned");
-static_assert(offsetof(PJ_widget_input_t, kind) == 56, "layout pinned");
-static_assert(offsetof(PJ_widget_input_t, multiple) == 60, "layout pinned");
-static_assert(sizeof(PJ_widget_input_t) == 64, "size (update deliberately on append)");
+// --- PJ_widget_input_t (ABI-FROZEN: array element, never grows) --------------
+static_assert(offsetof(PJ_widget_input_t, name) == 0, "layout pinned");
+static_assert(offsetof(PJ_widget_input_t, label) == 16, "layout pinned");
+static_assert(offsetof(PJ_widget_input_t, unit) == 32, "layout pinned");
+static_assert(offsetof(PJ_widget_input_t, kind) == 48, "layout pinned");
+static_assert(offsetof(PJ_widget_input_t, flags) == 52, "layout pinned");
+static_assert(sizeof(PJ_widget_input_t) == 56, "ABI-FROZEN size: NEVER CHANGE (array stride)");
+static_assert(alignof(PJ_widget_input_t) == 8, "ABI-FROZEN alignment: NEVER CHANGE");
 
-// --- PJ_widget_value_t (ABI-APPENDABLE) --------------------------------------
-static_assert(offsetof(PJ_widget_value_t, struct_size) == 0, "prefix pinned");
-static_assert(offsetof(PJ_widget_value_t, input) == 4, "layout pinned");
-static_assert(offsetof(PJ_widget_value_t, slot) == 8, "layout pinned");
-static_assert(offsetof(PJ_widget_value_t, kind) == 12, "layout pinned");
+// --- PJ_widget_value_t (ABI-FROZEN: array element, never grows) --------------
+static_assert(offsetof(PJ_widget_value_t, input) == 0, "layout pinned");
+static_assert(offsetof(PJ_widget_value_t, slot) == 4, "layout pinned");
+static_assert(offsetof(PJ_widget_value_t, kind) == 8, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, time) == 16, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, number) == 24, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, text) == 32, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, bytes) == 48, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, type_name) == 64, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, label) == 80, "layout pinned");
-static_assert(sizeof(PJ_widget_value_t) == 96, "size (update deliberately on append)");
+static_assert(sizeof(PJ_widget_value_t) == 96, "ABI-FROZEN size: NEVER CHANGE (array stride)");
+static_assert(alignof(PJ_widget_value_t) == 8, "ABI-FROZEN alignment: NEVER CHANGE");
 
 // --- PJ_widget_build_info_t (ABI-APPENDABLE) ---------------------------------
 static_assert(offsetof(PJ_widget_build_info_t, struct_size) == 0, "prefix pinned");

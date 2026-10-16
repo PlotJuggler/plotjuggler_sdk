@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -44,30 +45,64 @@ class WidgetHostView {
   }
 
   /// Read the history of one wire. @p on_value is called once per sample, in ascending time, before
-  /// this function returns; the PJ_widget_value_t it receives (text, bytes, type_name included) is
-  /// valid only inside that call, so copy what you keep. @p max_samples == 0 lets the host pick its cap.
-  /// Call it from onUpdate, never from a paint handler.
+  /// this function returns; the PJ_widget_value_t it receives (text, bytes, type_name, label included)
+  /// is valid only inside that call, so copy what you keep. @p on_value returns void (take every
+  /// sample) or bool (false stops the delivery early). @p max_samples == 0 lets the host pick its cap.
+  ///
+  /// Returns the number of samples the range held before the host's cap or decimation: more than you
+  /// received means the history was reduced. Fails when the wire does not exist, the host has no
+  /// history, or @p on_value threw (the delivery stops at the throw and the message is returned).
+  ///
+  /// Valid from any plugin method and from the widget's own Qt slots, on the main thread; never from
+  /// a paint handler.
   template <typename OnValue>
-  [[nodiscard]] Status queryHistory(
+  [[nodiscard]] Expected<uint32_t> queryHistory(
       uint32_t input, uint32_t slot, double from, double to, uint32_t max_samples, OnValue&& on_value) const {
     if (!valid() || host_.vtable->query_history == nullptr) {
       return unexpected("widget host does not provide query_history");
     }
     using Callback = std::remove_reference_t<OnValue>;
-    PJ_error_t err{};
-    auto sink = +[](void* user, const PJ_widget_value_t* value) noexcept {
+    using Result = std::invoke_result_t<Callback&, const PJ_widget_value_t&>;
+    static_assert(
+        std::is_void_v<Result> || std::is_convertible_v<Result, bool>, "the history callback returns void or bool");
+    struct Delivery {
+      Callback* callback;
+      std::optional<std::string> thrown;
+    };
+    Delivery delivery{&on_value, std::nullopt};
+    auto sink = +[](void* user, const PJ_widget_value_t* value) noexcept -> bool {
+      auto* target = static_cast<Delivery*>(user);
       try {
-        (*static_cast<Callback*>(user))(*value);
+        if constexpr (std::is_void_v<Result>) {
+          (*target->callback)(*value);
+          return true;
+        } else {
+          return static_cast<bool>((*target->callback)(*value));
+        }
+      } catch (const std::exception& e) {
+        // A throwing callback must not unwind through the host: stop the delivery and report it.
+        try {
+          target->thrown = e.what();  // the copy may itself throw under memory pressure
+        } catch (...) {
+          target->thrown.emplace();
+        }
+        return false;
       } catch (...) {
-        // A throwing callback must not unwind through the host; the sample is dropped.
+        target->thrown.emplace();
+        return false;
       }
     };
-    if (!host_.vtable->query_history(
-            host_.ctx, input, slot, from, to, max_samples, sink, const_cast<void*>(static_cast<const void*>(&on_value)),
-            &err)) {
+    PJ_error_t err{};
+    uint32_t total = 0;
+    if (!host_.vtable->query_history(host_.ctx, input, slot, from, to, max_samples, sink, &delivery, &total, &err)) {
       return unexpected(sdk::errorToString(err));
     }
-    return okStatus();
+    if (delivery.thrown.has_value()) {
+      return unexpected(
+          delivery.thrown->empty() ? std::string("history callback threw")
+                                   : std::string("history callback threw: ") + *delivery.thrown);
+    }
+    return total;
   }
 
   /// Tell the host inputs() changed so it re-reads and reconciles by name. Not from inside onUpdate
@@ -82,7 +117,7 @@ class WidgetHostView {
   void reportWidgetMessage(WidgetMessageLevel level, std::string_view message) const noexcept {
     if (valid() && host_.vtable->report_widget_message != nullptr) {
       host_.vtable->report_widget_message(
-          host_.ctx, static_cast<PJ_toolbox_message_level_t>(level), sdk::toAbiString(message));
+          host_.ctx, static_cast<PJ_widget_message_level_t>(level), sdk::toAbiString(message));
     }
   }
 
@@ -100,7 +135,7 @@ namespace PJ::sdk {
 
 /// Service trait for "pj.widget_host.v1".
 struct WidgetHostService {
-  static constexpr const char* kName = "pj.widget_host.v1";
+  static constexpr const char* kName = PJ_WIDGET_HOST_SERVICE_V1;
   static constexpr uint32_t kMinVersion = 1;
   using Raw = PJ_widget_host_t;
   using Vtable = PJ_widget_host_vtable_t;
@@ -141,15 +176,20 @@ class WidgetPluginBase {
   virtual ~WidgetPluginBase() = default;
 
   /// Inputs of this widget. Called after construction, after loadConfig and whenever the host
-  /// asks again; may depend on settings. Names must be unique and stable.
+  /// asks again; may depend on settings. Names must be non-empty, unique and stable (the host refuses
+  /// the list otherwise). Throw to report a failure: the host keeps the inputs it had.
   virtual std::vector<WidgetInput> inputs() const = 0;
 
   /// Create the widget object as a child of @p parent (possibly null) and return it. Called at most
   /// once. Throw on failure; the message reaches the host.
   virtual void* createWidget(void* parent) = 0;
 
-  /// New values at @p time (display axis, seconds): one entry per wire, kind NONE where there is no
-  /// sample at or before @p time. @p values is valid only during the call.
+  /// New values at @p time (display axis, seconds): one entry per WIRE (an unwired input has none, a
+  /// `multiple` input one per series), kind NONE where there is no sample at or before @p time.
+  /// Dispatch on `value.input` / `value.slot`, never on the position. Also called with unchanged
+  /// samples after createWidget, after an accepted loadConfig and after a wiring change. @p values is
+  /// valid only during the call. A throw is reported once through reportWidgetMessage (again only
+  /// after a call that succeeded).
   virtual void onUpdate(Span<const PJ_widget_value_t> values, double time) = 0;
 
   /// Acquire host services. Default requires "pj.widget_host.v1".
@@ -160,8 +200,9 @@ class WidgetPluginBase {
     return "{}";
   }
 
-  /// Apply the settings the user edited (the manifest's `settings` keys) and any state saveConfig
-  /// produced. Restoring a layout and editing a setting both arrive here.
+  /// Apply a configuration: every key of the manifest's `settings` (defaults filled in by the host)
+  /// with the state saveConfig produced laid over it (a colliding saveConfig key wins). Restoring a
+  /// layout and editing a setting both arrive here.
   virtual Status loadConfig(std::string_view config_json) {
     (void)config_json;
     return okStatus();
@@ -173,9 +214,10 @@ class WidgetPluginBase {
     return nullptr;
   }
 
-  using CreateFn = void* (*)(PJ_string_view_t type)PJ_NOEXCEPT;
-  using BuildInfoFn = const PJ_widget_build_info_t* (*)() PJ_NOEXCEPT;
-
+  /// The vtable for one plugin. Templated so that every (CreateFn, BuildInfoFn) pair gets its own
+  /// function-local static: the PJ_WIDGET_PLUGIN macros pass lambdas, whose types are unique per
+  /// expansion, so several widget plugins linked into one binary (PJ_STATIC_PLUGINS) never share one.
+  template <typename CreateFn, typename BuildInfoFn>
   static const PJ_widget_vtable_t* vtableWithCreate(
       CreateFn create_fn, const char* manifest, BuildInfoFn build_info_fn) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
@@ -198,6 +240,7 @@ class WidgetPluginBase {
         trampoline_load_config,
         trampoline_get_plugin_extension,
     };
+    PJ_ASSERT(vt.manifest_json == manifest, "vtableWithCreate instantiated twice with different manifests");
     return &vt;
   }
 
@@ -234,6 +277,7 @@ class WidgetPluginBase {
   std::string config_buf_;
   std::vector<WidgetInput> inputs_snapshot_;
   std::vector<PJ_widget_input_t> inputs_abi_;
+  bool on_update_failure_reported_ = false;
 
   static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {
     sdk::fillError(out_error, code, domain, message);
@@ -263,32 +307,40 @@ class WidgetPluginBase {
     }
   }
 
-  static uint32_t trampoline_inputs(void* ctx, const PJ_widget_input_t** out_inputs) noexcept {
+  static bool trampoline_inputs(
+      void* ctx, const PJ_widget_input_t** out_inputs, uint32_t* out_count, PJ_error_t* out_error) noexcept {
     auto* self = static_cast<WidgetPluginBase*>(ctx);
-    if (out_inputs == nullptr) {
-      return 0;
+    if (out_inputs == nullptr || out_count == nullptr) {
+      storeError(out_error, 2, "plugin", "inputs called with null out_inputs or out_count");
+      return false;
     }
-    *out_inputs = nullptr;
     try {
-      self->inputs_snapshot_ = self->inputs();
-      self->inputs_abi_.clear();
-      self->inputs_abi_.reserve(self->inputs_snapshot_.size());
-      for (const auto& input : self->inputs_snapshot_) {
-        PJ_widget_input_t abi{};
-        abi.struct_size = sizeof(PJ_widget_input_t);
-        abi.name = sdk::toAbiString(input.name);
-        abi.label = sdk::toAbiString(input.label);
-        abi.unit = sdk::toAbiString(input.unit);
-        abi.kind = static_cast<PJ_widget_input_kind_t>(input.kind);
-        abi.multiple = input.multiple;
-        self->inputs_abi_.push_back(abi);
+      // Built aside and committed with non-throwing moves, so a throw leaves the previous array (which
+      // the host may still be reading) intact. Moving a vector keeps its buffer, so the views in `abi`
+      // stay valid after the move.
+      std::vector<WidgetInput> snapshot = self->inputs();
+      std::vector<PJ_widget_input_t> abi;
+      abi.reserve(snapshot.size());
+      for (const auto& input : snapshot) {
+        PJ_widget_input_t entry{};
+        entry.name = sdk::toAbiString(input.name);
+        entry.label = sdk::toAbiString(input.label);
+        entry.unit = sdk::toAbiString(input.unit);
+        entry.kind = static_cast<PJ_widget_input_kind_t>(input.kind);
+        entry.flags = input.multiple ? static_cast<uint32_t>(PJ_WIDGET_INPUT_MULTIPLE) : 0u;
+        abi.push_back(entry);
       }
+      self->inputs_snapshot_ = std::move(snapshot);
+      self->inputs_abi_ = std::move(abi);
       *out_inputs = self->inputs_abi_.data();
-      return static_cast<uint32_t>(self->inputs_abi_.size());
+      *out_count = static_cast<uint32_t>(self->inputs_abi_.size());
+      return true;
+    } catch (const std::exception& e) {
+      storeError(out_error, 1, "plugin", std::string("inputs threw: ") + e.what());
+      return false;
     } catch (...) {
-      self->inputs_snapshot_.clear();
-      self->inputs_abi_.clear();
-      return 0;
+      storeError(out_error, 1, "plugin", "unknown exception in inputs");
+      return false;
     }
   }
 
@@ -313,6 +365,25 @@ class WidgetPluginBase {
     auto* self = static_cast<WidgetPluginBase*>(ctx);
     try {
       self->onUpdate(Span<const PJ_widget_value_t>(values, values == nullptr ? 0 : count), time);
+      self->on_update_failure_reported_ = false;
+    } catch (const std::exception& e) {
+      self->reportOnUpdateFailure(e.what());
+    } catch (...) {
+      self->reportOnUpdateFailure(nullptr);
+    }
+  }
+
+  // One message per run of failing onUpdate calls: on_update runs on every tracker tick, so a widget
+  // that throws each time would otherwise flood the host. The next successful call re-arms it.
+  void reportOnUpdateFailure(const char* what) noexcept {
+    if (on_update_failure_reported_) {
+      return;
+    }
+    on_update_failure_reported_ = true;
+    try {
+      const std::string message =
+          what != nullptr ? std::string("onUpdate threw: ") + what : std::string("unknown exception in onUpdate");
+      host_view_.reportWidgetMessage(WidgetMessageLevel::kError, message);
     } catch (...) {}
   }
 
@@ -339,7 +410,8 @@ class WidgetPluginBase {
   static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept {
     auto* self = static_cast<WidgetPluginBase*>(ctx);
     try {
-      // The inputs array from the previous inputs() call may describe settings that are about to change.
+      // The inputs array from the previous inputs() call may describe settings that are about to change;
+      // the contract ends its lifetime at load_config.
       self->inputs_abi_.clear();
       self->inputs_snapshot_.clear();
       auto status = self->loadConfig(sdk::toStringView(config_json));
@@ -388,12 +460,17 @@ inline Status WidgetPluginBase::bind(sdk::ServiceRegistry services) {
     return &info;                                                                                              \
   }
 
-#define PJ_WIDGET_PLUGIN(ClassName, manifest)                                                   \
-  PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_WIDGET_EXPORT)                                                \
-  extern "C" PJ_WIDGET_EXPORT const PJ_widget_vtable_t* PJ_get_widget_vtable() noexcept {       \
-    static const PJ_widget_vtable_t* vt = PJ::WidgetPluginBase::vtableWithCreate(               \
-        &PJ::WidgetPluginBase::instantiate<ClassName>, manifest, PJ_WIDGET_BUILD_INFO_GETTER_); \
-    return vt;                                                                                  \
+// A lambda, not &instantiate<ClassName>: its type is unique per expansion, which gives every plugin its
+// own vtableWithCreate instantiation (and so its own static vtable).
+#define PJ_WIDGET_CREATE_FN_(ClassName) \
+  [](PJ_string_view_t type) noexcept -> void* { return PJ::WidgetPluginBase::instantiate<ClassName>(type); }
+
+#define PJ_WIDGET_PLUGIN(ClassName, manifest)                                             \
+  PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_WIDGET_EXPORT)                                          \
+  extern "C" PJ_WIDGET_EXPORT const PJ_widget_vtable_t* PJ_get_widget_vtable() noexcept { \
+    static const PJ_widget_vtable_t* vt = PJ::WidgetPluginBase::vtableWithCreate(         \
+        PJ_WIDGET_CREATE_FN_(ClassName), manifest, PJ_WIDGET_BUILD_INFO_GETTER_);         \
+    return vt;                                                                            \
   }
 
 // Variant for namespaced plugin classes. SymbolName must be an unqualified
@@ -404,11 +481,11 @@ inline Status WidgetPluginBase::bind(sdk::ServiceRegistry services) {
 #ifdef PJ_STATIC_PLUGINS
 #undef PJ_WIDGET_PLUGIN
 #undef PJ_WIDGET_PLUGIN_NAMED
-#define PJ_WIDGET_PLUGIN_NAMED(ClassName, SymbolName, manifest)                                 \
-  const PJ_widget_vtable_t* pj_static_get_widget_vtable_##SymbolName() noexcept {               \
-    static const PJ_widget_vtable_t* vt = PJ::WidgetPluginBase::vtableWithCreate(               \
-        &PJ::WidgetPluginBase::instantiate<ClassName>, manifest, PJ_WIDGET_BUILD_INFO_GETTER_); \
-    return vt;                                                                                  \
+#define PJ_WIDGET_PLUGIN_NAMED(ClassName, SymbolName, manifest)                   \
+  const PJ_widget_vtable_t* pj_static_get_widget_vtable_##SymbolName() noexcept { \
+    static const PJ_widget_vtable_t* vt = PJ::WidgetPluginBase::vtableWithCreate( \
+        PJ_WIDGET_CREATE_FN_(ClassName), manifest, PJ_WIDGET_BUILD_INFO_GETTER_); \
+    return vt;                                                                    \
   }
 #define PJ_WIDGET_PLUGIN(ClassName, manifest) PJ_WIDGET_PLUGIN_NAMED(ClassName, ClassName, manifest)
 #endif

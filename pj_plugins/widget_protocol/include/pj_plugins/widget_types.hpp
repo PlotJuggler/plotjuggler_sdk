@@ -27,9 +27,11 @@ namespace PJ {
 #endif
 }
 
-/// True when this translation unit is compiled without NDEBUG (or with the MSVC debug runtime).
+/// True when this translation unit links the MSVC debug C/C++ runtime (`_DEBUG`, which loads the
+/// `Qt6*d.dll` libraries). Always false with GCC/Clang: there a debug build links the same Qt as a
+/// release build, so the flavour does not matter.
 [[nodiscard]] constexpr bool widgetBuiltAsDebug() {
-#if defined(_DEBUG) || !defined(NDEBUG)
+#if defined(_DEBUG)
   return true;
 #else
   return false;
@@ -60,14 +62,14 @@ struct WidgetInput {
   std::string label;  ///< display text; empty = the host shows `name`
   std::string unit;
   WidgetInputKind kind = WidgetInputKind::kNumber;
-  bool multiple = false;  ///< true: any number of series, one slot each; false: exactly one
+  bool multiple = false;  ///< true: any number of series, one slot each; false: exactly one (PJ_WIDGET_INPUT_MULTIPLE)
 };
 
-/// Severity of a message sent with WidgetHostView::reportWidgetMessage.
+/// Severity of a message sent with WidgetHostView::reportWidgetMessage. Mirrors PJ_widget_message_level_t.
 enum class WidgetMessageLevel : uint32_t {
-  kInfo = PJ_TOOLBOX_MESSAGE_INFO,
-  kWarning = PJ_TOOLBOX_MESSAGE_WARNING,
-  kError = PJ_TOOLBOX_MESSAGE_ERROR,
+  kInfo = PJ_WIDGET_MESSAGE_INFO,
+  kWarning = PJ_WIDGET_MESSAGE_WARNING,
+  kError = PJ_WIDGET_MESSAGE_ERROR,
 };
 
 }  // namespace PJ

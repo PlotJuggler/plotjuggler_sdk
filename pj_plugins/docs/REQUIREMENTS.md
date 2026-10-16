@@ -175,9 +175,15 @@ Dockable panel whose content is a toolkit widget created by the plugin.
   `pj.widget_host.v1`. It never sees topics, datasets or the store, and creates
   no series.
 - Settings are declared in the manifest per widget type; the host draws the
-  form and pushes the JSON through `load_config`.
-- Every call is on the GUI thread. The library is never unloaded while the
-  process runs; instance destruction is synchronous.
+  form and pushes the JSON through `load_config`: every declared key (manifest
+  defaults filled in by the host), with the widget's own `save_config` state
+  laid over it. The manifest is the single source of defaults.
+- `on_update` carries one value per wire and is also pushed after the widget is
+  created, after every accepted configuration and after any wiring change, so
+  the widget never shows stale state.
+- Every call is on the GUI thread, except the constant `build_info` and
+  `get_plugin_extension`. The library is never unloaded while the process runs;
+  instance destruction is synchronous.
 - Compatibility: the plugin records the Qt version it was built against
   (`build_info`); the host requires the same major.minor and refuses to create
   the widget otherwise. Qt private headers and QRhi are forbidden. Qt modules

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "detail/library_loader.hpp"
 #include "mock_widget_state.hpp"
 #include "pj_plugins/host/service_registry_builder.hpp"
 #include "pj_plugins/host/widget_host_bridge.hpp"
@@ -32,7 +33,6 @@ const pj_mock::WidgetState* stateOf(const PJ::WidgetHandle& handle) {
 
 PJ_widget_value_t numberValue(uint32_t input, uint32_t slot, double time, double number) {
   PJ_widget_value_t value{};
-  value.struct_size = sizeof(PJ_widget_value_t);
   value.input = input;
   value.slot = slot;
   value.kind = PJ_WIDGET_VALUE_NUMBER;
@@ -105,10 +105,10 @@ TEST(WidgetLibraryTest, BuildInfoIsReadableBeforeCreate) {
 #else
   EXPECT_EQ(compiler, "gcc");
 #endif
-#if defined(NDEBUG) && !defined(_DEBUG)
-  EXPECT_EQ(info->flags & PJ_WIDGET_BUILD_DEBUG, 0u);
-#else
+#if defined(_DEBUG)
   EXPECT_EQ(info->flags & PJ_WIDGET_BUILD_DEBUG, static_cast<uint32_t>(PJ_WIDGET_BUILD_DEBUG));
+#else
+  EXPECT_EQ(info->flags & PJ_WIDGET_BUILD_DEBUG, 0u) << "only the MSVC debug runtime sets the bit";
 #endif
 }
 
@@ -137,29 +137,38 @@ TEST(WidgetLibraryTest, InputsRoundTripPerType) {
   auto gauge = library->createHandle("gauge");
   ASSERT_TRUE(gauge) << gauge.error();
   auto gauge_inputs = gauge->inputs();
-  ASSERT_EQ(gauge_inputs.size(), 1u);
-  EXPECT_EQ(gauge_inputs[0].name, "value");
-  EXPECT_EQ(gauge_inputs[0].label, "Value");
-  EXPECT_EQ(gauge_inputs[0].unit, "V");
-  EXPECT_EQ(gauge_inputs[0].kind, PJ::WidgetInputKind::kNumber);
-  EXPECT_FALSE(gauge_inputs[0].multiple);
+  ASSERT_TRUE(gauge_inputs) << gauge_inputs.error();
+  ASSERT_EQ(gauge_inputs->size(), 1u);
+  EXPECT_EQ((*gauge_inputs)[0].name, "value");
+  EXPECT_EQ((*gauge_inputs)[0].label, "Value");
+  EXPECT_EQ((*gauge_inputs)[0].unit, "V");
+  EXPECT_EQ((*gauge_inputs)[0].kind, PJ::WidgetInputKind::kNumber);
+  EXPECT_FALSE((*gauge_inputs)[0].multiple);
 
   auto table = library->createHandle("table");
   ASSERT_TRUE(table) << table.error();
   auto table_inputs = table->inputs();
-  ASSERT_EQ(table_inputs.size(), 1u);
-  EXPECT_EQ(table_inputs[0].name, "series");
-  EXPECT_TRUE(table_inputs[0].multiple);
+  ASSERT_TRUE(table_inputs) << table_inputs.error();
+  ASSERT_EQ(table_inputs->size(), 1u);
+  EXPECT_EQ((*table_inputs)[0].name, "series");
+  EXPECT_TRUE((*table_inputs)[0].multiple);
 }
 
-TEST(WidgetLibraryTest, InputStructCarriesItsSize) {
+TEST(WidgetLibraryTest, InputArrayCarriesMultipleAsAFlagBit) {
   auto library = PJ::WidgetLibrary::load(PJ_MOCK_WIDGET_PLUGIN_PATH);
   ASSERT_TRUE(library) << library.error();
-  auto handle = library->createHandle("gauge");
-  ASSERT_TRUE(handle) << handle.error();
-  const PJ_widget_input_t* array = nullptr;
-  ASSERT_EQ(handle->vtable()->inputs(handle->context(), &array), 1u);
-  EXPECT_EQ(array[0].struct_size, sizeof(PJ_widget_input_t));
+  for (const auto& [type, flags] :
+       {std::pair<const char*, uint32_t>{"gauge", PJ_WIDGET_INPUT_FLAG_NONE},
+        std::pair<const char*, uint32_t>{"table", PJ_WIDGET_INPUT_MULTIPLE}}) {
+    auto handle = library->createHandle(type);
+    ASSERT_TRUE(handle) << handle.error();
+    const PJ_widget_input_t* array = nullptr;
+    uint32_t count = 0;
+    PJ_error_t err{};
+    ASSERT_TRUE(handle->vtable()->inputs(handle->context(), &array, &count, &err)) << err.message;
+    ASSERT_EQ(count, 1u);
+    EXPECT_EQ(array[0].flags, flags) << type;
+  }
 }
 
 TEST(WidgetLibraryTest, CreateQWidgetPassesParentAndReturnsPluginOwnedPointer) {
@@ -238,17 +247,20 @@ TEST(WidgetLibraryTest, SettingChangeReconcilesInputsThroughHostService) {
   registry.registerService<PJ::sdk::WidgetHostService>(bridge.host());
   ASSERT_TRUE(handle->bind(registry.view()));
 
-  ASSERT_EQ(handle->inputs().size(), 1u);
+  auto before = handle->inputs();
+  ASSERT_TRUE(before) << before.error();
+  ASSERT_EQ(before->size(), 1u);
   ASSERT_TRUE(handle->loadConfig(R"({"extra_input":true})"));
   EXPECT_EQ(inputs_changed_calls, 1);
   ASSERT_EQ(messages.size(), 1u);
   EXPECT_EQ(messages[0], "inputs changed");
 
   auto inputs = handle->inputs();
-  ASSERT_EQ(inputs.size(), 2u);
-  EXPECT_EQ(inputs[0].name, "value");  // a surviving name keeps its identity
-  EXPECT_EQ(inputs[1].name, "state");
-  EXPECT_EQ(inputs[1].kind, PJ::WidgetInputKind::kText);
+  ASSERT_TRUE(inputs) << inputs.error();
+  ASSERT_EQ(inputs->size(), 2u);
+  EXPECT_EQ((*inputs)[0].name, "value");  // a surviving name keeps its identity
+  EXPECT_EQ((*inputs)[1].name, "state");
+  EXPECT_EQ((*inputs)[1].kind, PJ::WidgetInputKind::kText);
 }
 
 TEST(WidgetLibraryTest, HistoryDeliversThroughSinkInsideTheCall) {
@@ -259,12 +271,14 @@ TEST(WidgetLibraryTest, HistoryDeliversThroughSinkInsideTheCall) {
 
   PJ::WidgetHistoryQuery seen;
   PJ::WidgetHostBridge bridge;
-  bridge.history = [&](const PJ::WidgetHistoryQuery& query, const PJ::WidgetValueSink& sink) -> PJ::Status {
+  bridge.history = [&](const PJ::WidgetHistoryQuery& query, const PJ::WidgetValueSink& sink) -> PJ::Expected<uint32_t> {
     seen = query;
     for (double t : {1.0, 2.0, 3.0}) {
-      sink(numberValue(query.input, query.slot, t, t * 10.0));
+      if (!sink(numberValue(query.input, query.slot, t, t * 10.0))) {
+        break;
+      }
     }
-    return PJ::okStatus();
+    return 3u;
   };
   PJ::ServiceRegistryBuilder registry;
   registry.registerService<PJ::sdk::WidgetHostService>(bridge.host());
@@ -276,10 +290,95 @@ TEST(WidgetLibraryTest, HistoryDeliversThroughSinkInsideTheCall) {
   const auto* state = stateOf(*handle);
   EXPECT_TRUE(state->history_ok);
   EXPECT_EQ(state->history_samples, 3u);
+  EXPECT_EQ(state->history_total, 3u);
   EXPECT_DOUBLE_EQ(state->history_last, 30.0);
   EXPECT_EQ(seen.input, 0u);
   EXPECT_DOUBLE_EQ(seen.to, 3.0);
   EXPECT_EQ(seen.max_samples, 100u);
+}
+
+TEST(WidgetLibraryTest, HistoryReportsTheTotalBeforeTheCap) {
+  auto library = PJ::WidgetLibrary::load(PJ_MOCK_WIDGET_PLUGIN_PATH);
+  ASSERT_TRUE(library) << library.error();
+  auto handle = library->createHandle("gauge");
+  ASSERT_TRUE(handle) << handle.error();
+
+  // The range holds 1000 samples; the host decimates to the plugin's cap of 100.
+  PJ::WidgetHostBridge bridge;
+  bridge.history = [&](const PJ::WidgetHistoryQuery& query, const PJ::WidgetValueSink& sink) -> PJ::Expected<uint32_t> {
+    for (uint32_t i = 0; i < query.max_samples; ++i) {
+      if (!sink(numberValue(query.input, query.slot, i * 10.0, i))) {
+        break;
+      }
+    }
+    return 1000u;
+  };
+  PJ::ServiceRegistryBuilder registry;
+  registry.registerService<PJ::sdk::WidgetHostService>(bridge.host());
+  ASSERT_TRUE(handle->bind(registry.view()));
+  ASSERT_TRUE(handle->loadConfig(R"({"history":true})"));
+
+  std::vector<PJ_widget_value_t> values = {numberValue(0, 0, 3.0, 30.0)};
+  handle->onUpdate(values, 3.0);
+  const auto* state = stateOf(*handle);
+  EXPECT_TRUE(state->history_ok);
+  EXPECT_EQ(state->history_samples, 100u);
+  EXPECT_EQ(state->history_total, 1000u);
+}
+
+TEST(WidgetLibraryTest, HistorySinkStopsTheDeliveryEvenIfTheHostKeepsGoing) {
+  auto library = PJ::WidgetLibrary::load(PJ_MOCK_WIDGET_PLUGIN_PATH);
+  ASSERT_TRUE(library) << library.error();
+  auto handle = library->createHandle("gauge");
+  ASSERT_TRUE(handle) << handle.error();
+
+  int sink_calls = 0;
+  int sink_continues = 0;
+  PJ::WidgetHostBridge bridge;
+  // A sloppy host that ignores the sink's false: the bridge must still stop calling the plugin.
+  bridge.history = [&](const PJ::WidgetHistoryQuery& query, const PJ::WidgetValueSink& sink) -> PJ::Expected<uint32_t> {
+    for (double t : {1.0, 2.0, 3.0, 4.0}) {
+      ++sink_calls;
+      sink_continues += sink(numberValue(query.input, query.slot, t, t)) ? 1 : 0;
+    }
+    return 4u;
+  };
+  PJ::ServiceRegistryBuilder registry;
+  registry.registerService<PJ::sdk::WidgetHostService>(bridge.host());
+  ASSERT_TRUE(handle->bind(registry.view()));
+  ASSERT_TRUE(handle->loadConfig(R"({"history":true,"history_stop":true})"));
+
+  std::vector<PJ_widget_value_t> values = {numberValue(0, 0, 4.0, 4.0)};
+  handle->onUpdate(values, 4.0);
+  const auto* state = stateOf(*handle);
+  EXPECT_TRUE(state->history_ok) << "stopping early is a success";
+  EXPECT_EQ(state->history_samples, 1u) << "the plugin callback ran after it asked to stop";
+  EXPECT_DOUBLE_EQ(state->history_last, 1.0);
+  EXPECT_EQ(state->history_total, 4u);
+  EXPECT_EQ(sink_calls, 4);
+  EXPECT_EQ(sink_continues, 0);
+}
+
+TEST(WidgetLibraryTest, HistoryOutTotalMayBeNullAndIsZeroOnFailure) {
+  PJ::WidgetHostBridge bridge;
+  bridge.history = [&](const PJ::WidgetHistoryQuery& query, const PJ::WidgetValueSink&) -> PJ::Expected<uint32_t> {
+    if (query.input != 0) {
+      return PJ::unexpected(std::string("input not wired"));
+    }
+    return 7u;
+  };
+  const PJ_widget_host_t host = bridge.host();
+  PJ_error_t err{};
+  EXPECT_TRUE(host.vtable->query_history(host.ctx, 0, 0, 0.0, 1.0, 0, nullptr, nullptr, nullptr, &err));
+
+  uint32_t total = 99;
+  EXPECT_TRUE(host.vtable->query_history(host.ctx, 0, 0, 0.0, 1.0, 0, nullptr, nullptr, &total, &err));
+  EXPECT_EQ(total, 7u);
+
+  total = 99;
+  EXPECT_FALSE(host.vtable->query_history(host.ctx, 1, 0, 0.0, 1.0, 0, nullptr, nullptr, &total, &err));
+  EXPECT_EQ(total, 0u);
+  EXPECT_NE(std::string(err.message).find("input not wired"), std::string::npos);
 }
 
 TEST(WidgetLibraryTest, HistoryFailureReachesThePlugin) {
@@ -297,6 +396,43 @@ TEST(WidgetLibraryTest, HistoryFailureReachesThePlugin) {
   std::vector<PJ_widget_value_t> values = {numberValue(0, 0, 3.0, 30.0)};
   handle->onUpdate(values, 3.0);
   EXPECT_FALSE(stateOf(*handle)->history_ok);
+}
+
+// loadFromHandle pins a handle only once it passed validation: a rejected library's handle is released
+// with the caller's last reference, an accepted one never is.
+std::shared_ptr<void> observedHandle(const char* path, const std::shared_ptr<bool>& released) {
+  auto raw = PJ::detail::loadLibraryHandle(path);
+  if (!raw) {
+    ADD_FAILURE() << raw.error();
+    return {};
+  }
+  return std::shared_ptr<void>(*raw, [released](void* handle) {
+    *released = true;
+    PJ::detail::closeLibraryHandle(handle);
+  });
+}
+
+TEST(WidgetLibraryTest, LibraryFailingValidationIsNotPinned) {
+  auto released = std::make_shared<bool>(false);
+  auto handle = observedHandle(PJ_MISSING_WIDGET_REQUIRED_SLOTS_PLUGIN_PATH, released);
+  ASSERT_NE(handle, nullptr);
+  auto library = PJ::WidgetLibrary::loadFromHandle(handle, PJ_MISSING_WIDGET_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(library);
+  EXPECT_NE(library.error().find("missing required slot: build_info"), std::string::npos) << library.error();
+  handle.reset();
+  EXPECT_TRUE(*released) << "a library that failed validation stayed pinned";
+}
+
+TEST(WidgetLibraryTest, LibraryPassingValidationIsPinned) {
+  auto released = std::make_shared<bool>(false);
+  auto handle = observedHandle(PJ_MOCK_WIDGET_PLUGIN_PATH, released);
+  ASSERT_NE(handle, nullptr);
+  {
+    auto library = PJ::WidgetLibrary::loadFromHandle(handle, PJ_MOCK_WIDGET_PLUGIN_PATH);
+    ASSERT_TRUE(library) << library.error();
+  }
+  handle.reset();
+  EXPECT_FALSE(*released) << "an accepted library was released";
 }
 
 TEST(WidgetLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {

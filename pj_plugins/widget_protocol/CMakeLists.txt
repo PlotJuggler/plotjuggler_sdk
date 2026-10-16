@@ -115,18 +115,20 @@ target_compile_definitions(widget_library_test PRIVATE
 )
 target_include_directories(widget_library_test PRIVATE examples)
 # pj_plugin_sdk supplies host/service_registry_builder.hpp, which lives in the parent module.
-target_link_libraries(widget_library_test PRIVATE pj_widget_host pj_plugin_sdk GTest::gtest_main)
+# pj_plugin_loader_detail supplies detail/library_loader.hpp (the pinning tests open the library themselves).
+target_link_libraries(widget_library_test PRIVATE pj_widget_host pj_plugin_sdk pj_plugin_loader_detail GTest::gtest_main)
 add_dependencies(widget_library_test mock_widget_plugin missing_widget_required_slots_plugin)
 add_test(NAME widget_library_test COMMAND widget_library_test)
 
-# Links mock_widget.cpp statically with PJ_STATIC_PLUGINS (no dlopen) to test loadStatic.
+# Links mock_widget.cpp statically with PJ_STATIC_PLUGINS (no dlopen) to test loadStatic; the test
+# defines a second static widget plugin, so two of them share the binary.
 add_executable(widget_static_library_test
   tests/widget_static_library_test.cpp
   examples/mock_widget.cpp
 )
 target_compile_definitions(widget_static_library_test PRIVATE PJ_STATIC_PLUGINS)
 target_include_directories(widget_static_library_test PRIVATE examples)
-target_link_libraries(widget_static_library_test PRIVATE pj_widget_host pj_widget_sdk GTest::gtest_main)
+target_link_libraries(widget_static_library_test PRIVATE pj_widget_host pj_widget_sdk pj_plugin_sdk GTest::gtest_main)
 pj_embed_file(widget_static_library_test
   FILE     "${_pj_mock_widget_manifest}"
   HEADER   mock_widget_static_generated/mock_widget_manifest.hpp

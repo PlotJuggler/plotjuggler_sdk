@@ -3,6 +3,7 @@
 
 #include "pj_plugins/host/widget_library.hpp"
 
+#include <cstddef>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -14,6 +15,31 @@ namespace PJ {
 
 namespace {
 
+// Size of PJ_widget_build_info_t as shipped in v1 (last field: qt_version_str). Like the vtable minimum,
+// this never grows: a newer plugin reports a larger struct_size, an older one cannot exist.
+constexpr size_t kMinBuildInfoSize = offsetof(PJ_widget_build_info_t, qt_version_str) + sizeof(PJ_string_view_t);
+constexpr size_t kMaxBuildInfoTextBytes = 4096;
+
+// build_info is constant plugin data, so it is validated once here and every later reader
+// (WidgetLibrary::buildInfo, WidgetHandle::buildInfo) can trust its size and views.
+Status checkBuildInfo(const PJ_widget_vtable_t* vtable) {
+  const PJ_widget_build_info_t* info = vtable->build_info();
+  if (info == nullptr) {
+    return unexpected("Widget build_info returned null");
+  }
+  if (info->struct_size < kMinBuildInfoSize) {
+    return unexpected("Widget build_info smaller than the v1 layout");
+  }
+  if (auto view = detail::checkedWidgetView(info->compiler, kMaxBuildInfoTextBytes, "build_info compiler"); !view) {
+    return unexpected(view.error());
+  }
+  if (auto view = detail::checkedWidgetView(info->qt_version_str, kMaxBuildInfoTextBytes, "build_info version");
+      !view) {
+    return unexpected(view.error());
+  }
+  return okStatus();
+}
+
 Status checkVtable(const PJ_widget_vtable_t* vtable) {
   if (vtable->protocol_version != PJ_WIDGET_PLUGIN_PROTOCOL_VERSION) {
     return unexpected("Widget protocol version mismatch");
@@ -21,12 +47,16 @@ Status checkVtable(const PJ_widget_vtable_t* vtable) {
   if (vtable->struct_size < PJ_WIDGET_MIN_VTABLE_SIZE) {
     return unexpected("Widget vtable smaller than v1.0 baseline");
   }
-  return detail::validateRequiredSlots(vtable);
+  if (auto slots = detail::validateRequiredSlots(vtable); !slots) {
+    return slots;
+  }
+  return checkBuildInfo(vtable);
 }
 
 // A Widget library is never unloaded: Qt calls into the widget (events, repaint, destruction) at
 // times the host does not control. Handles loaded by load() carry a no-op deleter; a handle supplied
-// by the caller is pinned here with a copy that is intentionally never released.
+// by the caller is pinned here with a copy that is intentionally never released, once it passed
+// validation (a rejected library is not pinned, so the caller may still close it).
 void pinForProcessLifetime(const std::shared_ptr<void>& handle) {
   static std::mutex mutex;
   static auto* pinned = new std::vector<std::shared_ptr<void>>();
@@ -86,7 +116,6 @@ Expected<WidgetLibrary> WidgetLibrary::loadFromHandleWithIdentity(
   if (handle == nullptr) {
     return unexpected("library not loaded");
   }
-  pinForProcessLifetime(handle);
   if (auto abi = detail::checkPluginAbiVersion(handle.get(), recorded_path); !abi) {
     return unexpected(abi.error());
   }
@@ -104,6 +133,7 @@ Expected<WidgetLibrary> WidgetLibrary::loadFromHandleWithIdentity(
   if (auto status = checkVtable(vtable); !status) {
     return unexpected(status.error());
   }
+  pinForProcessLifetime(handle);
   return WidgetLibrary(std::move(handle), vtable, detail::pathForLegacyAccessor(recorded_path.load_path));
 }
 

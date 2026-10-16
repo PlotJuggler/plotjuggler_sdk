@@ -21,7 +21,8 @@ validate `min_sdk_required` against.
    `pj_base/include/pj_base/plugin_abi_export.hpp`, which is transitively
    included by every family SDK base header
    (`data_source_plugin_base.hpp`, `dialog_plugin_base.hpp`,
-   `message_parser_plugin_base.hpp`, `toolbox_plugin_base.hpp`). Weak
+   `message_parser_plugin_base.hpp`, `toolbox_plugin_base.hpp`,
+   `widget_plugin_base.hpp`). Weak
    linkage (`__attribute__((weak))` / `__declspec(selectany)`) folds
    duplicate definitions across translation units in one DSO, so a single
    .so can host multiple plugin families (e.g. DataSource + Dialog) with
@@ -47,12 +48,20 @@ validate `min_sdk_required` against.
    struct carries a header comment declaring its policy:
    - **ABI-FROZEN**: `PJ_error_t`, `PJ_string_view_t`, `PJ_bytes_view_t`,
      `PJ_borrowed_dialog_t`, `PJ_service_t`, `PJ_service_registry_t`,
-     handle types, primitive-value unions. Layout permanent; any change
-     is an ABI break. `PJ_error_t` has `extended` + `extended_kind` slots
-     reserved as its one growth path — do not add further top-level
-     fields.
+     handle types, primitive-value unions, and the Widget array element
+     types `PJ_widget_input_t` and `PJ_widget_value_t` (with the
+     `PJ_widget_input_flags_t` bit set carried in `PJ_widget_input_t::flags`).
+     Layout permanent; any change is an ABI break. `PJ_error_t` has
+     `extended` + `extended_kind` slots reserved as its one growth path — do
+     not add further top-level fields. A struct that travels in an array
+     (like `PJ_available_topic_t` or the two Widget element types) carries no
+     `struct_size`: a reader compiled with a different `sizeof` would walk the
+     array at the wrong stride, so it grows only through a new tail slot
+     (`inputs_v2`), never by appending a field. Readers ignore unknown flag
+     bits.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
-     `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`, the
+     `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`,
+     `PJ_widget_build_info_t`, the
      `pj.parser_functional.v1`/v2 extension and sink tables, and
      `pj.parser_route_claims.v1`. New fields or slots go at the tail; readers
      honor the caller-provided size, and vtable slots are read with
@@ -61,7 +70,9 @@ validate `min_sdk_required` against.
 5. **Compile-time ABI layout sentinels.** `pj_base/tests/abi_layout_sentinels_test.cpp`
    consists entirely of `static_assert`s pinning `sizeof`, `alignof`,
    and `offsetof` for every ABI struct plus `sizeof(void*)` (64-bit
-   guard) and enum-size pins (defends against `-fshort-enums`). A
+   guard) and enum-size pins (defends against `-fshort-enums`). The Widget
+   family's pins live next to it, in
+   `pj_plugins/widget_protocol/tests/widget_abi_layout_sentinels_test.cpp`. A
    failed assertion at compile time is ALWAYS a serious signal:
    - Offset changes = field reorder = ABI break.
    - MIN-size increase = floor moved = forward-compat break.
@@ -635,7 +646,13 @@ that links Qt, and the host compares the Qt version recorded in
 `PJ_widget_vtable_t::build_info` with its own before `create_qwidget`. The
 host builds `pj.widget_host.v1` (history on demand, `inputs_changed`,
 diagnostics) with `WidgetHostBridge`, one service instance per open panel.
-Every vtable and service call is main-thread. A Widget
+Every vtable and service call is main-thread, except the constant
+`build_info` and `get_plugin_extension`. `inputs` has an error channel: a
+failure is reported as such and the previous array stays valid, so a host never
+mistakes it for "no inputs" and drops the wiring. `WidgetHandle::inputs()`
+refuses an array with an empty or duplicate name or an unknown kind (unknown
+flag bits are ignored), and `WidgetLibrary` validates `build_info` with the
+vtable before pinning the library. A Widget
 library is never unloaded: `WidgetLibrary` keeps the DSO mapped for the process
 lifetime, because Qt calls the widget at times the host does not control. See `widget-guide.md`.
 
