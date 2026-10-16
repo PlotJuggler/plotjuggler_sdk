@@ -18,6 +18,8 @@ PJ_widget_host_vtable_t::report_widget_message, pj.widget_host.v1 (floor 0.39.0)
 - Add the C++ authoring base `PJ::WidgetPluginBase` with `PJ_WIDGET_PLUGIN` / `PJ_WIDGET_PLUGIN_NAMED` (and the
   `PJ_STATIC_PLUGINS` variant emitting `pj_static_get_widget_vtable_<Symbol>`), linked through
   `plotjuggler_sdk::plugin_sdk`.
+- Widget manifests declare per-type `settings` (`number`, `integer`, `boolean`, `text`, `color`, `enum`); the SDK
+  keeps them as raw JSON (`settings_json`) and the host draws the form.
 - Add the host loader: `WidgetLibrary` (`load` / `loadFromHandle` / `loadStatic` / `createHandle(type)`),
   `WidgetHandle`, and `WidgetHostBridge` to build `pj.widget_host.v1` from `std::function` callbacks; linked through
   `plotjuggler_sdk::plugin_host`.
