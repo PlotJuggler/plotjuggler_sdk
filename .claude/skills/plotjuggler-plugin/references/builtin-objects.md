@@ -114,10 +114,8 @@ exactly once. Do not keep a raw pointer into anything the closure captured.
 - `ImageAnnotations.image_topic` explicitly names the base image topic; camera
   calibration correlates by **name convention** (`<ns>/camera_info` ↔
   `<ns>/image_raw`), not by a reference.
-- **Association fields ride *outside* the serialized bytes.** The annotations
-  codec deliberately does not encode `image_topic` (or a timestamp) into the
-  payload — the store keys entries by (topic, timestamp), and association is a
-  topic/metadata convention. Don't expect a codec round-trip to carry them.
+- The annotations codec carries the top-level `timestamp` (only when non-zero) and
+  `image_topic` (only when non-empty); see `docs/image_annotations_format.md`.
 
 ## Codec round-trips are not bit-exact
 
