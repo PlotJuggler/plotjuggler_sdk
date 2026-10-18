@@ -2,6 +2,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -96,6 +97,7 @@ class Writer {
     tag(field, WireType::kLengthDelimited);
     appendVarint(size);
     if (size != 0) {
+      reserveFor(size);
       out_.insert(out_.end(), data, data + size);
     }
   }
@@ -114,6 +116,16 @@ class Writer {
   }
 
  private:
+  /// Short fields usually follow a large payload (a frame id after the pixels): grow
+  /// with room for them, so the payload is not reallocated and copied a second time.
+  /// Still at least doubles, keeping appends amortized O(1).
+  void reserveFor(size_t size) {
+    constexpr size_t kTrailingSlack = 256;
+    if (out_.capacity() - out_.size() < size) {
+      out_.reserve(std::max(2 * out_.capacity(), out_.size() + size + kTrailingSlack));
+    }
+  }
+
   void tag(uint32_t field, WireType type) {
     appendVarint((static_cast<uint64_t>(field) << 3) | static_cast<uint32_t>(type));
   }

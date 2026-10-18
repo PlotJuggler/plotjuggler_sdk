@@ -203,6 +203,14 @@ class DialogPluginTyped : public DialogPluginBase {
     return onFileSelected(widget_name, result.paths.front());
   }
 
+  /// The host could not honour the frame's `scene_view` request (WidgetData::
+  /// setSceneView). Delivered after widget data was applied; the host does not retry
+  /// until the requested set changes. Default: ignored.
+  /// @since 0.38.0
+  virtual bool onSceneViewError(std::string_view /*widget_name*/, const SceneViewError& /*error*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
@@ -240,6 +248,12 @@ class DialogPluginTyped : public DialogPluginBase {
         return false;
       }
       return onFilePickerResult(widget_name, *result);
+    }
+
+    // A scene-view error claims the event next and fails closed when malformed.
+    if (event.has("scene_view_error")) {
+      auto error = event.sceneViewError();
+      return error.has_value() ? onSceneViewError(widget_name, *error) : false;
     }
 
     // After picker results, tree keys claim the payload before stacked and

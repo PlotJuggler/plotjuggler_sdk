@@ -40,5 +40,27 @@ class DeclaredVersionTest(unittest.TestCase):
             self.assertEqual(ffc.main(argv), 0)
 
 
+class SceneViewFloorTest(unittest.TestCase):
+    """Every spelling of the dialog scene-view surface needs the full-feature 0.38.0 floor."""
+
+    def run_cli(self, source: str) -> int:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"min_sdk_required": "0.37.0"}))
+            (root / "src").mkdir()
+            (root / "src/plugin.cpp").write_text(source)
+            argv = ["--table", str(TABLE), "--manifest", str(manifest), "--sources", str(root / "src")]
+            return ffc.main(argv)
+
+    def test_every_spelling_is_tracked(self):
+        for source in (
+            "bool f(PJ::DialogPluginBase& p) { return p.hostHas(PJ::DialogHostCapability::kEmbedsSceneViews); }",
+            "bool f(uint64_t caps) { return caps & PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS; }",
+            "void f(PJ::WidgetData& d) { d.setSceneView(\"view\", {}); }",
+        ):
+            self.assertEqual(self.run_cli(source), 1, msg=source)
+
+
 if __name__ == "__main__":
     unittest.main()

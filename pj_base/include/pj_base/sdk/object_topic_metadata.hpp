@@ -42,6 +42,30 @@ inline constexpr std::string_view kDerivedMetadataKey = "pj_derived";
 /// @since 0.36.0
 inline constexpr std::string_view kDerivedOnDemandValue = "on_demand";
 
+/// The `kDerivedMetadataKey` value of a plot-marker set a host publishes. A host
+/// recognises and routes a marker topic by this metadata, never by its name.
+/// @since 0.38.0
+inline constexpr std::string_view kDerivedMarkersValue = "markers";
+
+/// Which plots draw a marker set: `kMarkerScopeSeries` (the plots showing the series
+/// `kMarkerTargetMetadataKey` names), `kMarkerScopeDataset` (every plot of the topic's
+/// dataset) or `kMarkerScopeAll` (every plot of every dataset). A consumer treats an
+/// unknown value as a marker set it does not understand.
+/// @since 0.38.0
+inline constexpr std::string_view kMarkerScopeMetadataKey = "pj_marker_scope";
+/// The series key a "series"-scoped marker set annotates; absent for other scopes.
+/// @since 0.38.0
+inline constexpr std::string_view kMarkerTargetMetadataKey = "pj_marker_target";
+/// The id of the generator that publishes the set; absent for a direct write.
+/// @since 0.38.0
+inline constexpr std::string_view kMarkerOwnerMetadataKey = "pj_marker_owner";
+/// @since 0.38.0
+inline constexpr std::string_view kMarkerScopeSeries = "series";
+/// @since 0.38.0
+inline constexpr std::string_view kMarkerScopeDataset = "dataset";
+/// @since 0.38.0
+inline constexpr std::string_view kMarkerScopeAll = "all";
+
 /// Builds deterministic metadata JSON for an object topic.
 ///
 /// `builtinObjectType()` accepts only the SDK enum and serializes its canonical

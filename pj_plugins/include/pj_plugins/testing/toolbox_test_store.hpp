@@ -148,6 +148,8 @@ class ToolboxTestStore {
         .register_object_topic = nullptr,
         .push_owned_object = nullptr,
         .register_object_topic_on_dataset = nullptr,
+        .set_object_topic_retention = nullptr,
+        .acquire_catalog_snapshot_v2 = nullptr,
     };
     return PJ_toolbox_host_t{.ctx = this, .vtable = &vtable};
   }
@@ -160,6 +162,7 @@ class ToolboxTestStore {
         .notify_data_changed = &ToolboxTestStore::trampolineNotifyDataChanged,
         .create_parser_ingest = nullptr,
         .release_parser_ingest = nullptr,
+        .discard_parser_ingest = nullptr,
     };
     return PJ_toolbox_runtime_host_t{.ctx = this, .vtable = &vtable};
   }

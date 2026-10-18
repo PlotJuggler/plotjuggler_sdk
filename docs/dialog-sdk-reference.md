@@ -12,7 +12,8 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 with `sdk_version`, `plotjuggler_version`, and a capability mask. An empty
 optional means a pre-0.21 or non-conforming embedding host and is the signal to
 use a compatible fallback. Test capabilities with
-`hostInfo()->has(DialogHostCapability::...)`:
+`hostInfo()->has(DialogHostCapability::...)`, or `hostHas(DialogHostCapability::...)`
+(since 0.38.0; false when no host info was delivered):
 
 | Capability | Meaning |
 |---|---|
@@ -21,6 +22,7 @@ use a compatible fallback. Test capabilities with
 | `kCanSaveFilePath` | Save-to-path selection is available. |
 | `kCanSelectFolder` | Directory selection is available. |
 | `kStagesBrowserFile` | Browser selections are staged to host-readable paths. |
+| `kEmbedsSceneViews` | Panel QFrames honour `scene_view` (since 0.38.0). |
 
 Embedding hosts call `DialogHandle::setHostInfo()` after creating or borrowing
 the dialog and before querying its UI or widget data. The result is
@@ -275,6 +277,26 @@ table delta protocol's fresh sequence gate and all-or-nothing application rules.
 | `clearChart(name)` | Remove chart series and markers |
 | `setChartZoomEnabled(name, bool)` | Enable chart zoom/pan events |
 
+### QFrame Embedded Scene View (since 0.38.0)
+
+| Method | Description |
+|--------|-------------|
+| `setSceneView(name, SceneView{kind, topics})` | Show an embedded `"3d"` or `"2d"` object view with these `SceneTopic{topic, dataset}`s inside a QFrame |
+| `clearSceneView(name)` | Remove the view and its topics |
+
+Wire: one key, `"scene_view": {"kind":"3d","topics":[{"topic":"...","dataset":"..."}]}`
+(`null` clears). Every update carries the whole requested set; the host creates the
+view once, recreates it on a kind change and attaches/detaches by difference. Only
+panels of a host announcing `kEmbedsSceneViews` honour it. The host reads it with
+`WidgetDataView::sceneView()`: absent → leave the frame alone, an empty kind → clear,
+a malformed document → an error. Failure policy: attachment is best effort (every
+topic the host can attach stays attached), and each refused topic (or a malformed
+document or unservable kind, with an empty topic) yields one `scene_view_error` event
+(`WidgetEventBuilder::sceneViewError`), in request order, AFTER the whole widget-data
+update has been applied (never from inside it) and BEFORE a superseding update for that
+frame is applied. A refused topic is not retried until the requested set changes.
+The event's `topic`/`dataset` are the request entry as sent, never resolved.
+
 ### QPlainTextEdit
 
 | Method | Description |
@@ -383,11 +405,12 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onTreeExpansionChanged(name, id, expanded)` | QTreeWidget | Stable item ID and new expansion state |
 | `onTreeCheckStateChanged(name, id, state)` | QTreeWidget | Stable item ID and new column-0 `TreeCheckState` |
 | `onDateTimeChanged(name, iso8601)` | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | Edited datetime as ISO-8601 string (local wall-clock) |
+| `onSceneViewError(name, error)` | QFrame embedded scene view | `SceneViewError{kind, topic, dataset, reason}`; empty topic/dataset when the view itself failed. Since 0.38.0. |
 
 ### Event dispatch priority and validation (normative)
 
-`DialogPluginTyped` applies exactly this priority: **structured picker → tree →
-stacked → legacy channels**. A present higher-priority channel claims the event;
+`DialogPluginTyped` applies exactly this priority: **structured picker → scene-view
+error → tree → stacked → legacy channels**. A present higher-priority channel claims the event;
 if that channel is malformed, dispatch returns `false` without falling through.
 
 1. `file_picker_result` is authoritative. A Selected result may have no legacy
@@ -396,16 +419,19 @@ if that channel is malformed, dispatch returns `false` without falling through.
    mode. The wrong key, both keys, a mismatched value, an invalid mode, an empty
    path, or another malformed structured field fails closed. Other additive
    top-level keys are tolerated and do not receive callbacks.
-2. In the absence of a picker result, any tree event key claims the event.
+2. In the absence of a picker result, `scene_view_error` claims the event. It must be
+   an object with a non-empty string `reason` and string `kind`/`topic`/`dataset` when
+   present; otherwise dispatch fails closed. Unknown keys inside it are tolerated.
+3. In the absence of picker and scene-view-error keys, any tree event key claims the event.
    Exactly one of the four tree keys must be the sole top-level key and its
    payload must validate atomically. Multiple tree keys or any tree/other-key
    mixture fails closed.
-3. In the absence of picker and tree keys, either stacked key claims the event.
+4. In the absence of picker and tree keys, either stacked key claims the event.
    Both `stacked_index` and `stacked_page` are required; the index must decode
    losslessly in `0..INT_MAX` and the page name must be non-empty. Invalid or
    partial stacked data fails closed. A valid stacked pair takes priority over
    additional legacy scalar keys.
-4. Only when none of those channels is present does the established legacy
+5. Only when none of those channels is present does the established legacy
    typed-dispatch chain run.
 
 The default `onFilePickerResult` uses `result.mode` to forward the first

@@ -58,7 +58,8 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
 ## Host services
 
 - **`toolboxHost()`** — data plane: `catalogSnapshot()` (enumerate
-  sources/topics/fields), `readSeriesArrow(field, &schema, &array)` (read a series),
+  sources/topics/fields; `catalogSnapshotV2()` since 0.38.0 adds every object topic
+  with dataset, type, metadata, retained count and range), `readSeriesArrow(field, &schema, &array)` (read a series),
   `createDataSource()`, `ensureTopic()`, `appendRecord()` / `appendArrowStream()`
   (write), plus **object writes** (`registerObjectTopic()`, `pushOwnedObject()`).
 - **`objectReadHost()`** — **object reads** live on a separate, *optional* service:
@@ -67,7 +68,8 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
 - **`runtimeHost()`** — control plane: `notifyDataChanged()`, `reportMessage()`.
 - **SDK 0.28.0 optional services**, via `services().get<T>()` from
   `pj_base/sdk/service_traits.hpp`: `PlaybackHostService`, `ViewportHostService`,
-  and `PlotTabHostService`. Playback is global; viewport and tabs are scoped to
+  and `PlotTabHostService` (0.38.0: scene tabs via `createTabV2`/`attachTopic`/
+  `detachTopic`/`focusTab`, each slot gated on its own). Playback is global; viewport and tabs are scoped to
   the caller's own tabs. Tab IDs are independent of visible titles and indices.
   Prefer `playback->toDisplayTimeForSource(source_handle, absolute_ns)` for
   dataset-specific time conversion; get the handle from catalog `dataSources()`

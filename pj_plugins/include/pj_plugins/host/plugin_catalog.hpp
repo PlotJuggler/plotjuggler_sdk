@@ -14,6 +14,7 @@
  * valid descriptors and diagnostics for candidates that could not be used.
  */
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -61,7 +62,25 @@ struct PluginDescriptor {
   /// runs the plugin with some optional features inactive. Informational, for
   /// host degradation display — never an admission criterion.
   std::string suggested_sdk_version;
+  /// Optional short label (e.g. "AI") a host may show next to objects this plugin
+  /// creates; "" when undeclared. What a host shows instead (the plugin name,
+  /// nothing) is host policy. At most 8 characters are advised; a host may truncate.
+  /// @since 0.38.0
+  std::string badge;
+
+  /// True iff the manifest's `capabilities` array declares `tag`. Declarative: a
+  /// host that does not know a tag ignores it, and no tag is probed at runtime.
+  /// @since 0.38.0
+  [[nodiscard]] bool hasCapability(std::string_view tag) const {
+    return std::find(capabilities.begin(), capabilities.end(), tag) != capabilities.end();
+  }
 };
+
+/// Capability tag of the toolbox that edits the host's user-defined (Custom) topics:
+/// a host keys that editor's entry points and row ownership on this declaration
+/// instead of a plugin id.
+/// @since 0.38.0
+inline constexpr std::string_view kCustomTopicsEditorCapability = "custom_topics_editor";
 
 /// Diagnostic for a candidate DSO that could not produce a valid descriptor.
 struct PluginDiagnostic {

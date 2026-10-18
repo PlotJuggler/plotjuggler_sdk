@@ -179,6 +179,9 @@ incompatibility UI instead of emitting state that an older host cannot apply.
 It cannot make a non-dialog plugin feature self-reject on an already-shipped
 pre-0.21 loader; that requires a protocol/ABI bump.
 
+`hostHas(capability)` (0.38.0) tests one bit and is false when no host info was
+delivered, so a feature gated on it falls back on every older host.
+
 Available `DialogHostCapability` values are:
 
 | Capability | Meaning |
@@ -188,6 +191,7 @@ Available `DialogHostCapability` values are:
 | `kCanSaveFilePath` | The host can choose a destination file path. |
 | `kCanSelectFolder` | The host can select a folder. |
 | `kStagesBrowserFile` | A browser-selected file is staged to a host-accessible path before delivery. |
+| `kEmbedsSceneViews` (0.38.0) | A panel QFrame carrying `scene_view` becomes an embedded 3D/2D object view; failures arrive as `onSceneViewError`. |
 
 Delivery is last-writer-wins: a later successful host-info call replaces both
 stored strings and the complete capability mask. Plugin code should normally
@@ -498,6 +502,7 @@ work like polling a server for available topics.
 | QTableWidget | `setTableHeaders`, `setTableRows` (strings, or `TableItem` for sortable columns), `setTableSortIndicator`, `setSelectedRows`, `setVisibleRows`, `setRowColor`, `setCellTooltip` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
 | QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage`, `setCodeCursor`, `setCodeCaretTracking` | `onCodeChanged(name, code)`, or `onCodeChangedWithCursor(name, code, cursor)` when the editor opts into caret tracking |
 | QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
+| QFrame (embedded scene view, 0.38.0) | `setSceneView(name, SceneView{kind, topics})`, `clearSceneView`; gate on `kEmbedsSceneViews` | `onSceneViewError(name, SceneViewError)` |
 | QDateTimeEdit (incl. QDateEdit/QTimeEdit) | `setDateTime`, `setDateTimeRange` | `onDateTimeChanged(name, iso8601)` |
 | RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
 | DateRangePicker (date range) | `setDateRangePlaceholder` | `onDateRangeChanged(name, from_iso, to_iso)` |

@@ -349,5 +349,16 @@ TEST(ObjectTopicMetadataRegistrationTest, InvalidTypedRegistrationsNeverReachRaw
 #endif
 }
 
+// The marker-topic metadata vocabulary PlotJuggler hosts stamp on plot-marker topics.
+TEST(ObjectTopicMetadataTest, MarkerMetadataVocabularyIsPinned) {
+  EXPECT_EQ(kDerivedMarkersValue, "markers");
+  EXPECT_EQ(kMarkerScopeMetadataKey, "pj_marker_scope");
+  EXPECT_EQ(kMarkerTargetMetadataKey, "pj_marker_target");
+  EXPECT_EQ(kMarkerOwnerMetadataKey, "pj_marker_owner");
+  EXPECT_EQ(kMarkerScopeSeries, "series");
+  EXPECT_EQ(kMarkerScopeDataset, "dataset");
+  EXPECT_EQ(kMarkerScopeAll, "all");
+}
+
 }  // namespace
 }  // namespace PJ::sdk

@@ -5,6 +5,49 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [Unreleased]
 
+Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2,
+PJ_plot_tab_host_vtable_t::create_tab_v2, PJ_plot_tab_host_vtable_t::attach_topic,
+PJ_plot_tab_host_vtable_t::detach_topic, PJ_plot_tab_host_vtable_t::focus_tab,
+PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS (floor 0.38.0).
+
+Scene tabs, catalog v2 and dialog scene views:
+
+- Toolbox host: add `acquire_catalog_snapshot_v2` (`ToolboxHostView::catalogSnapshotV2`,
+  `hasCatalogSnapshotV2`): the scalar catalog plus every object topic
+  (`PJ_object_topic_info_t`, a fixed 96-byte stride: dataset, builtin type, metadata
+  JSON, and the entry count and raw time range the store physically retains). The caller
+  sets `struct_size`; the host refuses one below `PJ_CATALOG_SNAPSHOT_V2_MIN_SIZE`, writes
+  only the covered prefix and reports the size it wrote (`PJ::sdk::storeCatalogSnapshotV2`
+  is the host half). The client wrapper rejects an undersized snapshot without reading its
+  release fields, so the host must clean up an undersized reply it wrote; it releases and
+  rejects a complete but malformed one (a NULL array with a count, a count that cannot be an
+  object, checked before any span so a 32-bit `size_t` cannot wrap).
+- `pj.plot_tabs.v1`: add the tail slots `create_tab_v2` (kinds `plot`, `3d`, `2d`; one id
+  namespace per plugin), `attach_topic`, `detach_topic` and `focus_tab`
+  (`PlotTabHostView::createTabV2/attachTopic/detachTopic/focusTab`). Each slot is gated on
+  its own; a kind the host knows but cannot serve is refused with an error naming it.
+  `PJ_PLOT_TAB_HOST_MIN_VTABLE_SIZE` names the v1 prefix. A plot tab's `tab_config` is
+  unchanged; a scene tab's carries `kind` and its topics.
+- Dialog protocol (announced by a bit; negotiated 0.38.0 feature, so a plugin using it
+  declares `suggested_sdk_version` 0.38.0): `PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS`
+  (`DialogHostCapability::kEmbedsSceneViews`, tested with the new
+  `DialogPluginBase::hostHas`). One widget-data key, `scene_view`
+  (`WidgetData::setSceneView` / `clearSceneView`, `WidgetDataView::sceneView`, which
+  reports a malformed document as an error). A request the host cannot honour arrives
+  after widget data was applied as the `scene_view_error` widget event (kind, topic,
+  dataset, reason: `WidgetEventBuilder::sceneViewError`, `WidgetEvent::sceneViewError`,
+  `DialogPluginTyped::onSceneViewError`) and is not retried until the requested set
+  changes.
+- Manifest (declarative, no floor): optional `badge` (`PluginDescriptor::badge`, "" when
+  absent) and `PluginDescriptor::hasCapability`; the Custom-topics editor declares the
+  `capabilities` tag `custom_topics_editor` (`kCustomTopicsEditorCapability`).
+- Export the marker-topic metadata vocabulary PlotJuggler stamps: `kDerivedMarkersValue`
+  (`"markers"`), `kMarkerScopeMetadataKey` / `kMarkerTargetMetadataKey` /
+  `kMarkerOwnerMetadataKey` and the scope values `series` / `dataset` / `all`.
+- Codecs: the wire writer grows with room for the short fields that follow a large
+  payload, so `serializeBuiltinObject` (and every `serialize*`) avoids an extra copy of the
+  payload when the following fields fit the spare capacity.
+
 ## [0.37.0]
 
 Host contract: extended: PJ_data_processors_host_vtable_t::create_data_processor_v2,

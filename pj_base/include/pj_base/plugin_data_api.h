@@ -363,6 +363,61 @@ typedef struct {
   void (*release)(void* release_ctx);
 } PJ_catalog_snapshot_t;
 
+/* One object topic of catalog snapshot v2. ARRAY ELEMENT with a FIXED STRIDE: 96
+ * bytes on the supported ABIs (64-bit GCC/Clang/MSVC and wasm32, where uint64_t is
+ * 8-byte aligned; 32-bit x86 is not supported, PJ_string_view_t itself differs there),
+ * and it never changes. Every string view is valid: NULL only when empty, its size
+ * fitting an object. The host writes `reserved` as 0; a later release may give it a
+ * zero-defaultable meaning, so a client ignores it.
+ * entry_count and the time range describe what the store PHYSICALLY RETAINS now
+ * (after retention eviction), not a declared or nominal range: for a derived topic
+ * they are its result ring's. Raw dataset-domain ns; 0/0 when entry_count == 0.
+ * @since 0.38.0 */
+typedef struct {
+  PJ_object_topic_handle_t handle;
+  PJ_data_source_handle_t source; /* the dataset the topic lives on */
+  PJ_string_view_t name;
+  PJ_string_view_t builtin_object_type; /* PJ::sdk::name() value, "" when unknown */
+  PJ_string_view_t metadata_json;       /* the topic's whole metadata document */
+  uint64_t entry_count;
+  int64_t time_min_ns;
+  int64_t time_max_ns;
+  uint64_t reserved[2];
+} PJ_object_topic_info_t;
+
+/* Catalog snapshot v2: the scalar arrays of PJ_catalog_snapshot_t plus every object
+ * topic, derived and marker topics included (tell them apart by metadata_json, e.g.
+ * the "pj_derived" key, never by name).
+ *
+ * struct_size RULE (caller-size, read-prefix): the CALLER zero-initialises the
+ * struct and sets struct_size to the size it allocated. The host rejects a size below
+ * PJ_CATALOG_SNAPSHOT_V2_MIN_SIZE without writing anything, writes only the prefix
+ * covered by min(caller size, its own sizeof) and sets struct_size to the bytes it
+ * wrote. A client reads a field only when struct_size covers it; a field appended
+ * later must be zero-defaultable, so an older host leaving it out means "absent".
+ * A host never succeeds with struct_size below the minimum: a reply that short does
+ * not cover its own release fields, so the client neither reads nor calls them and
+ * cleaning it up is the host's job. A complete but malformed reply (a count its
+ * pointer cannot hold, an invalid string view) is released by the client.
+ * PJ::sdk::storeCatalogSnapshotV2 implements the host half. `reserved` is 0.
+ * @since 0.38.0 */
+typedef struct {
+  uint32_t struct_size;
+  uint32_t reserved;
+  const PJ_data_source_info_t* data_sources;
+  uint64_t data_source_count;
+  const PJ_topic_info_t* topics;
+  uint64_t topic_count;
+  const PJ_field_info_t* fields;
+  uint64_t field_count;
+  const PJ_object_topic_info_t* object_topics;
+  uint64_t object_topic_count;
+  void* release_ctx;
+  void (*release)(void* release_ctx);
+} PJ_catalog_snapshot_v2_t;
+
+#define PJ_CATALOG_SNAPSHOT_V2_MIN_SIZE (offsetof(PJ_catalog_snapshot_v2_t, release) + sizeof(void (*)(void*)))
+
 /* ==========================================================================
  * Three distinct write-host vtables (protocol v4).
  *
@@ -654,6 +709,18 @@ typedef struct PJ_toolbox_host_vtable_t {
    * ABI-APPENDED slot: gate via struct_size before calling. */
   bool (*set_object_topic_retention)(
       void* ctx, PJ_object_topic_handle_t topic, uint64_t max_entries, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Catalog snapshot v2 (see PJ_catalog_snapshot_v2_t for the
+   * struct_size rule): the scalar catalog of acquire_catalog_snapshot PLUS every
+   * object topic, in one deep copy that needs no live host to release. Release with
+   * out_snapshot->release(out_snapshot->release_ctx). The two halves are NOT atomic:
+   * each is consistent on its own, but a topic created between the two reads may
+   * show in one half only. On failure the caller's struct is left as it was and
+   * there is nothing to release.
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 0.38.0 */
+  bool (*acquire_catalog_snapshot_v2)(void* ctx, PJ_catalog_snapshot_v2_t* out_snapshot, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
@@ -1496,6 +1563,23 @@ typedef struct {
  * it. Whether such a tab is saved with the workspace is likewise the host's
  * policy, not this service's contract.
  *
+ * Tab kinds (0.38.0): "plot" (curves), "3d" and "2d" (scene tabs holding object
+ * topics), served by the tail slots create_tab_v2 / attach_topic / detach_topic /
+ * focus_tab. Each tail slot is gated ON ITS OWN with PJ_HAS_TAIL_SLOT: a host may
+ * serve some and not others. A kind the host knows but cannot serve in this build
+ * (e.g. "3d" without a 3D view) and an unknown kind are both refused by
+ * create_tab_v2 with an error naming the kind; that refusal is how a plugin learns
+ * which kinds exist. The v1 slots on a scene tab: add_curve and remove_curve are
+ * errors "tab '<id>' is a <3d|2d> scene tab: use attach_topic/detach_topic";
+ * clear_tab detaches every topic and keeps the tab; close_tab, list_tab_ids (all
+ * kinds) and tab_config work.
+ *
+ * tab_config JSON: for a plot tab, unchanged from v1 ({"title","curves"}, NO "kind"
+ * key). For a scene tab,
+ * {"kind":"3d","title":"...","topics":[{"topic":"...","dataset":"...","type":"kPointCloud","visible":true}]}
+ * ("kind" is "3d" or "2d"): what the tab ACTUALLY holds, datasets resolved, read
+ * from the live view.
+ *
  * All slots are [main-thread]. ABI-APPENDABLE: new slots may be added at the
  * tail; struct_size gates read.
  */
@@ -1555,7 +1639,52 @@ typedef struct PJ_plot_tab_host_vtable_t {
 
   /* [main-thread] Remove every curve from a tab, keeping the tab itself. */
   bool (*clear_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Create (or update) a tab of `kind`: "plot", "3d" or "2d". One id
+   * namespace per plugin across kinds. The same id with the same kind: a plot tab's
+   * curves are cleared (v1 create_tab "create or replace"; a host may keep the tab's
+   * split layout, so read tab_config rather than assume one plot), a scene tab only
+   * gets its title updated. The same id with a DIFFERENT kind closes the old tab and
+   * creates a new empty one. The id and kind are validated before anything is
+   * replaced: a refused create leaves an existing tab with that id as it was. An empty
+   * `id`, or one containing '/', is an error here (v1 keeps its released id rules). An
+   * empty `title` lets the host name the tab.
+   * ABI-APPENDED slot: gate with PJ_HAS_TAIL_SLOT.
+   * @since 0.38.0 */
+  bool (*create_tab_v2)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t title, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Attach an object topic to a scene tab. `dataset_source` follows
+   * add_curve's rule: empty means the topic must be unique across loaded datasets,
+   * and an ambiguous one is refused with the qualified candidates. IDEMPOTENT:
+   * attaching an attached topic succeeds and changes nothing, judged on the RESOLVED
+   * (dataset, topic): a bare name and its dataset-qualified form are the same topic. A "3d" tab accepts
+   * every object type the 3D view renders; a "2d" tab accepts Image / DepthImage /
+   * VideoFrame (replacing the background) and ImageAnnotations (an overlay); another
+   * type is refused naming it. On a plot tab: "tab '<id>' is a plot tab: use
+   * add_curve". ABI-APPENDED slot: gate with PJ_HAS_TAIL_SLOT.
+   * @since 0.38.0 */
+  bool (*attach_topic)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Take one topic back out of a scene tab (same `dataset_source`
+   * rule). A topic that is not attached is an error. On a plot tab: "tab '<id>' is a
+   * plot tab: use remove_curve". ABI-APPENDED slot: gate with PJ_HAS_TAIL_SLOT.
+   * @since 0.38.0 */
+  bool (*detach_topic)(
+      void* ctx, PJ_string_view_t id, PJ_string_view_t topic, PJ_string_view_t dataset_source,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Bring one of this plugin's tabs (any kind) to the front.
+   * ABI-APPENDED slot: gate with PJ_HAS_TAIL_SLOT.
+   * @since 0.38.0 */
+  bool (*focus_tab)(void* ctx, PJ_string_view_t id, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_plot_tab_host_vtable_t;
+
+/* The seven v1 slots: every "pj.plot_tabs.v1" host serves at least these. Slots from
+ * create_tab_v2 on are tail slots, each gated on its own with PJ_HAS_TAIL_SLOT. */
+#define PJ_PLOT_TAB_HOST_MIN_VTABLE_SIZE (offsetof(PJ_plot_tab_host_vtable_t, create_tab_v2))
 
 typedef struct {
   void* ctx;

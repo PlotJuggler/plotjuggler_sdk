@@ -56,6 +56,12 @@ typedef enum PJ_dialog_host_capability_t {
   PJ_DIALOG_HOST_CAN_SAVE_FILE_PATH = 1ull << 2,
   PJ_DIALOG_HOST_CAN_SELECT_FOLDER = 1ull << 3,
   PJ_DIALOG_HOST_STAGES_BROWSER_FILE = 1ull << 4,
+  /* The host turns a QFrame carrying the `scene_view` widget-data key into an
+   * embedded 3D/2D object view (panels only, never a modal dialog) and reports a
+   * failed attachment through the `scene_view_error` widget event. A host without the
+   * bit leaves the frame empty: gate scene UI on this bit. See WidgetData::setSceneView.
+   * @since 0.38.0 */
+  PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS = 1ull << 5,
   /* Forces a stable 4-byte width across compilers. Not a real capability.
    * New enum members are therefore limited to bits 0-30. Future capabilities
    * using bits 31 or higher must be UINT64_C(...) #define constants instead. */

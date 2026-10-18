@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <nlohmann/json.hpp>
-#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState, SceneViewError
 #include <string>
 #include <string_view>
 #include <vector>
@@ -101,6 +101,16 @@ struct WidgetEventBuilder {
     if (auto legacy = detail::filePickerLegacySelection(result)) {
       j[std::string(legacy->key)] = legacy->path;
     }
+    return j.dump();
+  }
+
+  /// Embedded scene view: a request the host could not honour. Deliver it to the
+  /// frame's on_widget_event after widget data has been applied, never during it.
+  /// @since 0.38.0
+  [[nodiscard]] static std::string sceneViewError(const SceneViewError& error) {
+    nlohmann::json j;
+    j["scene_view_error"] = {
+        {"kind", error.kind}, {"topic", error.topic}, {"dataset", error.dataset}, {"reason", error.reason}};
     return j.dump();
   }
 

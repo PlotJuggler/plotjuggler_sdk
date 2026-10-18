@@ -198,6 +198,14 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
   PJ::FilePickerResult last_file_picker_result;
   std::vector<std::string> last_strings;
 
+  bool onSceneViewError(std::string_view widget_name, const PJ::SceneViewError& error) override {
+    last_handler = "scene_view_error";
+    last_widget = std::string(widget_name);
+    last_text = error.reason;
+    last_strings = {error.kind, error.topic, error.dataset};
+    return true;
+  }
+
   void reset() {
     last_handler.clear();
     last_widget.clear();
@@ -777,4 +785,26 @@ TEST_F(TypedDispatchTest, ItemDeleteRequestedReachesTypedHandler) {
   EXPECT_EQ(plugin_.last_handler, "item_delete_requested");
   EXPECT_EQ(plugin_.last_widget, "lst");
   EXPECT_EQ(plugin_.last_int, 2);
+}
+
+TEST_F(TypedDispatchTest, SceneViewErrorDispatchesToItsHandler) {
+  EXPECT_TRUE(dispatch(
+      plugin_, "preview",
+      R"({"scene_view_error":{"kind":"3d","topic":"lidar/points","dataset":"bag1",)"
+      R"("reason":"topic 'lidar/points' not found"}})"));
+  EXPECT_EQ(plugin_.last_handler, "scene_view_error");
+  EXPECT_EQ(plugin_.last_widget, "preview");
+  EXPECT_EQ(plugin_.last_text, "topic 'lidar/points' not found");
+  EXPECT_EQ(plugin_.last_strings, (std::vector<std::string>{"3d", "lidar/points", "bag1"}));
+}
+
+TEST_F(TypedDispatchTest, MalformedSceneViewErrorFailsClosedWithoutFallthrough) {
+  EXPECT_FALSE(dispatch(plugin_, "preview", R"({"scene_view_error":{"kind":"3d"},"text":"x"})"));
+  EXPECT_TRUE(plugin_.last_handler.empty());
+}
+
+TEST(TypedDispatchSceneViewErrorTest, DefaultHandlerIgnoresTheEvent) {
+  LegacyHandlerRecordingPlugin plugin;
+  EXPECT_FALSE(dispatch(plugin, "preview", R"({"scene_view_error":{"kind":"3d","topic":"t","reason":"r"}})"));
+  EXPECT_EQ(plugin.legacy_calls, 0);
 }
