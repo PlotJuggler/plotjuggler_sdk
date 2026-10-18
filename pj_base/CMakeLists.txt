@@ -164,7 +164,6 @@ if(PJ_BUILD_TESTS)
     tests/plugin_data_api_test.cpp
     tests/parser_module_abi_test.cpp
     tests/parser_module_manifest_test.cpp
-    tests/data_processors_api_test.cpp
     tests/playback_viewport_api_test.cpp
     tests/plot_tabs_api_test.cpp
     tests/dataset_qualified_name_api_test.cpp

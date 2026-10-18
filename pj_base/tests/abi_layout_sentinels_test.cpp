@@ -318,6 +318,101 @@ static_assert(
     "toolbox host object-retention tail slot pinned");
 static_assert(sizeof(PJ_toolbox_host_vtable_t) == 104, "Toolbox host size (update deliberately on append)");
 
+// --- Data processors host vtable ("pj.data_processors.v1", ABI-APPENDABLE) --
+static_assert(offsetof(PJ_data_processors_host_vtable_t, protocol_version) == 0, "data processors host prefix pinned");
+static_assert(offsetof(PJ_data_processors_host_vtable_t, struct_size) == 4, "data processors host prefix pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, create_data_processor) == 8, "data processors host create slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, remove_data_processor) == 16, "data processors host remove slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, list_data_processor_ids) == 24, "data processors host list slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, data_processor_config) == 32, "data processors host config slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, validate_data_processor_script) == 40,
+    "data processors host validate tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, create_data_processor_v2) == 48,
+    "data processors host typed-create tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, submit_evaluation) == 56,
+    "data processors host submit-evaluation tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, poll_evaluation) == 64,
+    "data processors host poll-evaluation tail slot pinned");
+static_assert(
+    offsetof(PJ_data_processors_host_vtable_t, release_evaluation) == 72,
+    "data processors host release-evaluation tail slot pinned");
+static_assert(
+    sizeof(PJ_data_processors_host_vtable_t) == 80, "Data processors host size (update deliberately on append)");
+static_assert(alignof(PJ_data_processors_host_vtable_t) == 8, "Data processors host alignment pinned");
+static_assert(sizeof(PJ_data_processors_host_t) == 16, "Data processors host fat pointer pinned");
+
+// --- Data-processor typed request vocabulary (introduced 0.37.0) ------------
+// Every member is pinned: the output is a fixed-stride array element, the request
+// and budget grow only by appending under the read-prefix rule.
+static_assert(offsetof(PJ_data_processor_output_t, name) == 0, "PJ_data_processor_output_t.name offset pinned");
+static_assert(offsetof(PJ_data_processor_output_t, type) == 16, "PJ_data_processor_output_t.type offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_output_t, reserved) == 32, "PJ_data_processor_output_t.reserved offset pinned");
+static_assert(
+    sizeof(PJ_data_processor_output_t) == 48, "PJ_data_processor_output_t size pinned at introduction (0.37.0)");
+static_assert(alignof(PJ_data_processor_output_t) == 8, "PJ_data_processor_output_t alignment pinned");
+
+static_assert(
+    offsetof(PJ_data_processor_request_t, struct_size) == 0, "PJ_data_processor_request_t.struct_size offset pinned");
+static_assert(offsetof(PJ_data_processor_request_t, flags) == 4, "PJ_data_processor_request_t.flags offset pinned");
+static_assert(offsetof(PJ_data_processor_request_t, id) == 8, "PJ_data_processor_request_t.id offset pinned");
+static_assert(offsetof(PJ_data_processor_request_t, kind) == 24, "PJ_data_processor_request_t.kind offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, language) == 40, "PJ_data_processor_request_t.language offset pinned");
+static_assert(offsetof(PJ_data_processor_request_t, script) == 56, "PJ_data_processor_request_t.script offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, params_json) == 72, "PJ_data_processor_request_t.params_json offset pinned");
+static_assert(offsetof(PJ_data_processor_request_t, inputs) == 88, "PJ_data_processor_request_t.inputs offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, input_count) == 96, "PJ_data_processor_request_t.input_count offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, outputs) == 104, "PJ_data_processor_request_t.outputs offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, output_count) == 112,
+    "PJ_data_processor_request_t.output_count offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, time_flags) == 120, "PJ_data_processor_request_t.time_flags offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, dataset_id) == 124, "PJ_data_processor_request_t.dataset_id offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, window_start_ns) == 128,
+    "PJ_data_processor_request_t.window_start_ns offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, window_end_ns) == 136,
+    "PJ_data_processor_request_t.window_end_ns offset pinned");
+static_assert(
+    offsetof(PJ_data_processor_request_t, time_ns) == 144, "PJ_data_processor_request_t.time_ns offset pinned");
+static_assert(
+    sizeof(PJ_data_processor_request_t) == 152, "PJ_data_processor_request_t size pinned at introduction (0.37.0)");
+static_assert(alignof(PJ_data_processor_request_t) == 8, "PJ_data_processor_request_t alignment pinned");
+static_assert(PJ_DATA_PROCESSOR_REQUEST_V1_MIN_SIZE == 152, "request v1 minimum size pinned");
+
+static_assert(offsetof(PJ_evaluation_budget_t, struct_size) == 0, "PJ_evaluation_budget_t.struct_size offset pinned");
+static_assert(offsetof(PJ_evaluation_budget_t, reserved) == 4, "PJ_evaluation_budget_t.reserved offset pinned");
+static_assert(offsetof(PJ_evaluation_budget_t, max_millis) == 8, "PJ_evaluation_budget_t.max_millis offset pinned");
+static_assert(offsetof(PJ_evaluation_budget_t, max_bytes) == 16, "PJ_evaluation_budget_t.max_bytes offset pinned");
+static_assert(
+    offsetof(PJ_evaluation_budget_t, max_evaluations) == 24, "PJ_evaluation_budget_t.max_evaluations offset pinned");
+static_assert(
+    offsetof(PJ_evaluation_budget_t, max_report_bytes) == 32, "PJ_evaluation_budget_t.max_report_bytes offset pinned");
+static_assert(sizeof(PJ_evaluation_budget_t) == 40, "PJ_evaluation_budget_t size pinned at introduction (0.37.0)");
+static_assert(alignof(PJ_evaluation_budget_t) == 8, "PJ_evaluation_budget_t alignment pinned");
+static_assert(PJ_EVALUATION_BUDGET_V1_MIN_SIZE == 40, "evaluation budget v1 minimum size pinned");
+
+static_assert(PJ_EVALUATION_STATE_PENDING == 0u, "evaluation states pinned");
+static_assert(PJ_EVALUATION_STATE_COMPLETED == 1u, "evaluation states pinned");
+static_assert(PJ_EVALUATION_STATE_FAILED == 2u, "evaluation states pinned");
+static_assert(PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW == 1u, "time flags pinned");
+static_assert(PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT == 2u, "time flags pinned");
+
 // --- Toolbox runtime host vtable (ABI-APPENDABLE within v4) ------------------
 // The vtable the host exposes to plugins under "pj.toolbox_runtime.v1".
 // Offsets of existing slots are pinned; size grows deliberately as tail slots append.

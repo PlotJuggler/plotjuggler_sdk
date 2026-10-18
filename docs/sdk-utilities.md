@@ -60,6 +60,8 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::sdk::MediaMetadataBuilder, ObjectTopicMetadataBuilder` | Build media hints and canonical renderer metadata | `pj_base/sdk/media_metadata.hpp; pj_base/sdk/object_topic_metadata.hpp` |
 | `PJ::sdk::ObjectBytes` | Own object-read bytes through move-only RAII | `pj_base/sdk/object_bytes.hpp` |
 | `PJ::sdk::ArrowSchemaHolder, ArrowArrayHolder, ArrowStreamHolder` | Own Arrow out-params; successful writes transfer ownership, failed writes retain it | `pj_base/sdk/arrow.hpp` |
+| `PJ::sdk::parseEvaluationReport` | Parse a data-processor poll report (COMPLETED or FAILED) and derive each bundle's stamp | `pj_plugins/sdk/evaluation_report.hpp` |
+| `PJ::sdk::readDataProcessorRequest, readEvaluationBudget` | Host side: decode a typed data-processor request or budget (read-prefix rule, structural rejections) | `pj_base/sdk/data_processors_host.hpp` |
 | `PJ::sdk::FieldTable<T>, field<&T::member>, describe` | Read/write builtin struct members by name in a generic binder; lists are element-addressable | `pj_base/builtin/field_table.hpp; pj_base/builtin/field_table_registry.hpp` |
 | `PJ::sdk::PinholeIntrinsics, unprojectPixel` | Unproject rectified metric depth pixels; validate K once per image | `pj_base/builtin/depth_image_utils.hpp` |
 | `pj_embed_file, pj_configure_plugin` | Embed UI/manifest assets and configure plugin exports/build rules | `cmake/PjPlugin.cmake` |

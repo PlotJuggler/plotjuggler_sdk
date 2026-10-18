@@ -78,6 +78,12 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
   `dataset_source:topic/field` lookup rules are in
   `pj_plugins/docs/toolbox-guide.md` → "Playback, viewport, and owned tabs".
 
+## On-demand data processors (SDK 0.37.0)
+
+Gate on `DataProcessorsHostView::hasTypedRequests()`; the flow (createV2, submit/poll/release,
+`parseEvaluationReport`) is in `pj_plugins/docs/toolbox-guide.md` → "Typed requests and
+on-demand evaluation", the contract in the `pj.data_processors.v1` comment of `plugin_data_api.h`.
+
 ## Reading a series (Arrow)
 
 ```cpp

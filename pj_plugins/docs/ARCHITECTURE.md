@@ -248,9 +248,19 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   a materialized artifact to the host for promotion to a stock file-backed
   source — see "Plugin extension query" above and
   `pj_base/descriptor_import_protocol.h`. `"pj.data_processors.v1"` (optional) lets a toolbox create
-  catalog-resident transform nodes in the host by data — a script plus
-  input/output names and a params JSON blob; nothing executable crosses the
-  boundary (the host owns execution). Input names may carry the dataset
+  nodes in the host by data — a script plus input/output names and a params
+  JSON blob; nothing executable crosses the boundary (the host owns execution).
+  One polymorphic surface serves three `kind`s: `"transform"` (catalog-resident
+  numeric series), `"markers"` (a PlotMarkers set) and `"on_demand"` (objects or
+  numbers evaluated at a consumer-requested time). The typed request
+  (`create_data_processor_v2`, `submit_evaluation`/`poll_evaluation`/
+  `release_evaluation`, tail slots detected by
+  `DataProcessorsHostView::hasTypedRequests()`) carries typed outputs, a dataset
+  id and an instant or window; on_demand exists only there. Its
+  `struct_size` follows a read-prefix rule that hosts apply through
+  `sdk::readDataProcessorRequest` (`pj_base/sdk/data_processors_host.hpp`), and
+  clients parse the poll report with `sdk::parseEvaluationReport`
+  (`pj_plugins/sdk/evaluation_report.hpp`). Input names may carry the dataset
   qualifier `dataset_source:topic/field`, so a name several loaded datasets
   share is addressed rather than guessed — rules are normative in
   `plugin_data_api.h` (DATASET-QUALIFIED NAMES), shared parser/composer in
@@ -259,7 +269,7 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   this same data-only surface (a future host-owned WASM/Python backend is purely
   additive and survives plugin unload) — deliberately *not* a C++ kernel vtable
   that would dangle on unload. The plugin sees a Qt-free
-  `sdk::DataProcessorsHostView` (`createTransform`/`remove`/`list`/`recipeOf`).
+  `sdk::DataProcessorsHostView`.
   `"pj.settings.v1"` (optional) is a QSettings-like key/value store any plugin
   family can use for persistent state — the plugin sees a Qt-free
   `sdk::SettingsView` (`setValue(key, v)` returns a `Status`; reads return an

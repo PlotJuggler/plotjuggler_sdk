@@ -23,7 +23,8 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
   is **host policy**. It lives in the app (`pj_runtime`, `PluginRuntimeCatalog`).
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:
   `MessageParserPluginBase`, ingest/timestamp/array policies, streaming source
-  and dialog helpers, endpoint composition, and parser trampolines.
+  and dialog helpers, endpoint composition, parser trampolines, and the
+  data-processor evaluation-report parser.
 - `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host) and `DelegatedIngestFixture`
   (toolbox/data-source hosts recording attachment, payload ownership, completion, Stop and discard).
 - `dialog_protocol/` — **nested module** (own CMake): the Dialog C ABI, C++

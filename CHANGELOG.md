@@ -3,9 +3,34 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [Unreleased]
+## [0.37.0]
 
-Host contract: unchanged (no floor impact) — release tooling and version stamping only.
+Host contract: extended: PJ_data_processors_host_vtable_t::create_data_processor_v2,
+PJ_data_processors_host_vtable_t::submit_evaluation,
+PJ_data_processors_host_vtable_t::poll_evaluation,
+PJ_data_processors_host_vtable_t::release_evaluation, PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW,
+PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.37.0).
+
+Data processors (`pj.data_processors.v1`):
+
+- Add `kind="on_demand"` (objects or numbers evaluated at a requested time), created only
+  through the new `create_data_processor_v2` (`DataProcessorsHostView::createV2`); the v1
+  create rejects it. The typed request `PJ_data_processor_request_t` carries typed outputs
+  and a `dataset_id` (0 = resolve inputs by name); `struct_size` is read-prefix.
+  `PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW` and `_INSTANT` are mutually exclusive.
+- Add `submit_evaluation` / `poll_evaluation` / `release_evaluation` (detected together by
+  `hasTypedRequests()`). A submit evaluates an installed node or its own script, is
+  ephemeral without the flag, and rejects HISTORY_EXEMPT; a NULL budget means every host
+  default. COMPLETED and FAILED share one report shape, parsed by the new
+  `PJ::sdk::parseEvaluationReport` (`pj_plugins/sdk/evaluation_report.hpp`), which also
+  derives each bundle's stamp.
+- Add the host-side decoders `PJ::sdk::readDataProcessorRequest` / `readEvaluationBudget`
+  (`pj_base/sdk/data_processors_host.hpp`): the read-prefix rule and every structural
+  rejection in one place.
+- `data_processor_config` reports `history_exempt` for every kind, not only transforms and
+  markers.
+
+Release tooling (no floor impact):
 
 - Support development pre-release versions (`X.Y.Z-dev.N`; see `CLAUDE.md` ->
   "Development pre-releases"): a `-` tag runs the Conan matrix and JFrog upload,
