@@ -1497,15 +1497,142 @@ class ColorMapRegistryView {
 // DataProcessorsHostView — typed C++ view over PJ_data_processors_host_t
 // ---------------------------------------------------------------------------
 
+/// A declared output of a typed request. Mirrors PJ_data_processor_output_t: `type` is
+/// "number", "string", a builtin object type name ("kPointCloud"), or "" (untyped,
+/// transform/markers output).
+/// @since 0.37.0
+struct DataProcessorOutput {
+  std::string name;
+  std::string type;
+};
+
+/// Typed request for DataProcessorsHostView::createV2/submitEvaluation. Mirrors
+/// PJ_data_processor_request_t (see its doc-comment in plugin_data_api.h for the full
+/// contract). Set at most one of `window` (PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW) and
+/// `instant_ns` (PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT): the host rejects both.
+/// @since 0.37.0
+struct DataProcessorRequest {
+  std::string id;
+  std::string kind;
+  std::string language;
+  std::string script;
+  std::string params_json;
+  std::vector<std::string> inputs;
+  std::vector<DataProcessorOutput> outputs;
+  uint32_t flags = 0;
+  /// The catalog id (PJ_data_source_handle_t.id) of the dataset every input resolves
+  /// on; 0 resolves inputs by name.
+  uint32_t dataset_id = 0;
+  std::optional<std::pair<int64_t, int64_t>> window;  ///< raw ns, both ends inclusive
+  std::optional<int64_t> instant_ns;
+};
+
+/// Cooperative computation budget of one submitEvaluation(). Mirrors
+/// PJ_evaluation_budget_t; a 0 field takes the host default. `max_bytes` bounds the
+/// run's whole memory (interpreter plus native objects), not the interpreter alone.
+/// @since 0.37.0
+struct EvaluationBudget {
+  uint64_t max_millis = 0;
+  uint64_t max_bytes = 0;
+  uint64_t max_evaluations = 0;
+  uint64_t max_report_bytes = 0;
+};
+
+/// The poll_evaluation states this SDK knows (PJ_EVALUATION_STATE_*).
+/// @since 0.37.0
+enum class EvaluationState { kPending, kCompleted, kFailed };
+
+/// Result of DataProcessorsHostView::pollEvaluation(): the state plus the report JSON
+/// (owned copy; empty while pending). Parse the report with parseEvaluationReport
+/// (pj_plugins/sdk/evaluation_report.hpp).
+/// @since 0.37.0
+struct EvaluationPoll {
+  EvaluationState state = EvaluationState::kPending;
+  std::string json;
+};
+
+namespace detail {
+
+/// Builds the ABI request for `request`, filling `in_abi`/`out_abi` with views into
+/// `request`'s strings: keep all three alive for the duration of the ABI call.
+/// `struct_size` is the sizeof of the compiled header, correct on any host that knows
+/// the v1 prefix (read-prefix rule).
+[[nodiscard]] inline PJ_data_processor_request_t toAbiRequest(
+    const DataProcessorRequest& request, std::vector<PJ_string_view_t>& in_abi,
+    std::vector<PJ_data_processor_output_t>& out_abi) {
+  in_abi.clear();
+  in_abi.reserve(request.inputs.size());
+  for (const auto& name : request.inputs) {
+    in_abi.push_back(toAbiString(name));
+  }
+  out_abi.clear();
+  out_abi.reserve(request.outputs.size());
+  for (const auto& output : request.outputs) {
+    out_abi.push_back(PJ_data_processor_output_t{toAbiString(output.name), toAbiString(output.type), {0, 0}});
+  }
+  PJ_data_processor_request_t raw{};
+  raw.struct_size = sizeof(PJ_data_processor_request_t);
+  raw.flags = request.flags;
+  raw.id = toAbiString(request.id);
+  raw.kind = toAbiString(request.kind);
+  raw.language = toAbiString(request.language);
+  raw.script = toAbiString(request.script);
+  raw.params_json = toAbiString(request.params_json);
+  raw.inputs = in_abi.data();
+  raw.input_count = in_abi.size();
+  raw.outputs = out_abi.data();
+  raw.output_count = out_abi.size();
+  raw.dataset_id = request.dataset_id;
+  if (request.window.has_value()) {
+    raw.time_flags |= PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW;
+    raw.window_start_ns = request.window->first;
+    raw.window_end_ns = request.window->second;
+  }
+  if (request.instant_ns.has_value()) {
+    raw.time_flags |= PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT;
+    raw.time_ns = *request.instant_ns;
+  }
+  return raw;
+}
+
+/// Count-then-fill of the resolved topic names an upsert returns. Pre-sizes to the
+/// declared outputs (8 when none, e.g. an auto-named ephemeral preview) and re-issues
+/// `call(out, capacity, &count, &err)` once when the host resolved more: a re-upsert
+/// with identical args is idempotent.
+template <typename Call>
+[[nodiscard]] Expected<std::vector<std::string>> collectResolvedTopics(std::size_t declared_outputs, Call&& call) {
+  const uint64_t capacity = declared_outputs == 0 ? 8 : declared_outputs;
+  std::vector<PJ_string_view_t> resolved(capacity);
+  uint64_t count = 0;
+  PJ_error_t err{};
+  if (!call(resolved.data(), resolved.size(), &count, &err)) {
+    return unexpected(errorToString(err));
+  }
+  if (count > capacity) {
+    resolved.assign(count, PJ_string_view_t{});
+    if (!call(resolved.data(), resolved.size(), &count, &err)) {
+      return unexpected(errorToString(err));
+    }
+  }
+  std::vector<std::string> topics;
+  topics.reserve(count);
+  for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
+    topics.emplace_back(toStringView(resolved[i]));
+  }
+  return topics;
+}
+
+}  // namespace detail
+
 /// C++ wrapper around PJ_data_processors_host_t for plugins that submit WHOLE-SERIES
 /// data processors to the host by data (see the C ABI doc-comment on
 /// PJ_data_processors_host_vtable_t). Empty-constructible; `valid()` tells whether the
 /// host exposed the service. Strings returned by `list()`/`recipeOf()`/`create()` are
 /// copied into owned values, so they stay valid past the next vtable call. One
-/// polymorphic surface serves every `kind` ("transform", "markers"); preview is
-/// `create(..., flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL)` and teardown is `remove(id)`.
-/// `createTransform`/`createEphemeralTransform`/`createMarkers` are thin convenience
-/// shims over `create`.
+/// polymorphic surface serves every `kind` ("transform", "markers", "on_demand");
+/// preview is `create(..., flags=PJ_DATA_PROCESSOR_FLAG_EPHEMERAL)` and teardown is
+/// `remove(id)`. `createTransform`/`createEphemeralTransform`/`createMarkers` are thin
+/// convenience shims over `create`; "on_demand" is created only by `createV2`.
 class DataProcessorsHostView {
  public:
   DataProcessorsHostView() = default;
@@ -1515,9 +1642,21 @@ class DataProcessorsHostView {
     return host_.vtable != nullptr && host_.ctx != nullptr;
   }
 
+  /// True iff the host serves the typed-request surface: createV2() and the
+  /// submitEvaluation()/pollEvaluation()/releaseEvaluation() trio (four tail slots, all
+  /// covered by the vtable's struct_size). Cheap capability check; no host call is made.
+  /// @since 0.37.0
+  [[nodiscard]] bool hasTypedRequests() const noexcept {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_v2) &&
+           PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, submit_evaluation) &&
+           PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, poll_evaluation) &&
+           PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, release_evaluation);
+  }
+
   /// Create or replace (upsert by id) a data processor of `kind` ("transform" or
-  /// "markers"). `outputs` may be empty for an ephemeral preview (flags &
-  /// PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host names the sink(s);
+  /// "markers"; the host rejects "on_demand", use createV2()). `outputs` may be empty
+  /// for an ephemeral preview (flags & PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case
+  /// the host names the sink(s);
   /// flags & PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT instead marks a persisted node the
   /// host's undo/redo history has no authority over.
   /// Returns the resolved physical output topic name(s) (owned copies) so the caller
@@ -1543,40 +1682,14 @@ class DataProcessorsHostView {
     for (const auto& name : outputs) {
       out_abi.push_back(toAbiString(name));
     }
-    PJ_error_t err{};
-    // Convert the immutable scalar args once — they are identical across the (rare)
-    // count-then-fill retry below.
-    const PJ_string_view_t id_abi = toAbiString(id);
-    const PJ_string_view_t kind_abi = toAbiString(kind);
-    const PJ_string_view_t language_abi = toAbiString(language);
-    const PJ_string_view_t script_abi = toAbiString(script);
-    const PJ_string_view_t params_abi = toAbiString(params_json);
-    // The resolved sink name(s) are filled on the SAME upsert call. Pre-size to the
-    // caller's output count (the host resolves exactly that many for non-empty
-    // outputs); for an auto-named ephemeral preview reserve headroom and grow once if
-    // the host resolved more than fit — a re-upsert with identical args is idempotent.
-    uint64_t capacity = out_abi.empty() ? 8 : out_abi.size();
-    std::vector<PJ_string_view_t> resolved(capacity);
-    uint64_t count = 0;
-    if (!host_.vtable->create_data_processor(
-            host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
-            script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
-      return unexpected(errorToString(err));
-    }
-    if (count > capacity) {
-      resolved.assign(count, PJ_string_view_t{});
-      if (!host_.vtable->create_data_processor(
-              host_.ctx, id_abi, kind_abi, language_abi, in_abi.data(), in_abi.size(), out_abi.data(), out_abi.size(),
-              script_abi, params_abi, flags, resolved.data(), resolved.size(), &count, &err)) {
-        return unexpected(errorToString(err));
-      }
-    }
-    std::vector<std::string> topics;
-    topics.reserve(count);
-    for (uint64_t i = 0; i < count && i < resolved.size(); ++i) {
-      topics.emplace_back(toStringView(resolved[i]));
-    }
-    return topics;
+    // The resolved sink name(s) are filled on the SAME upsert call.
+    return detail::collectResolvedTopics(
+        out_abi.size(), [&](PJ_string_view_t* out, uint64_t capacity, uint64_t* count, PJ_error_t* err) {
+          return host_.vtable->create_data_processor(
+              host_.ctx, toAbiString(id), toAbiString(kind), toAbiString(language), in_abi.data(), in_abi.size(),
+              out_abi.data(), out_abi.size(), toAbiString(script), toAbiString(params_json), flags, out, capacity,
+              count, err);
+        });
   }
 
   /// Convenience: create a kind="transform" node (DerivedEngine timeseries). `outputs`
@@ -1681,6 +1794,98 @@ class DataProcessorsHostView {
     PJ_error_t err{};
     if (!host_.vtable->validate_data_processor_script(
             host_.ctx, toAbiString(kind), toAbiString(language), toAbiString(script), toAbiString(params_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// create() with a typed request: typed outputs, a dataset id and (with
+  /// `request.instant_ns`, kind "on_demand") a pinned evaluation time. Same upsert,
+  /// transactional and resolved-topic-names contract as create(); for "on_demand" the
+  /// names are 1:1 with `request.outputs` (the out_topics contract in
+  /// plugin_data_api.h). Errors if the host predates this slot.
+  /// @since 0.37.0
+  [[nodiscard]] Expected<std::vector<std::string>> createV2(const DataProcessorRequest& request) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, create_data_processor_v2)) {
+      return unexpected("data processors host does not support create_data_processor_v2");
+    }
+    std::vector<PJ_string_view_t> in_abi;
+    std::vector<PJ_data_processor_output_t> out_abi;
+    const PJ_data_processor_request_t raw = detail::toAbiRequest(request, in_abi, out_abi);
+    return detail::collectResolvedTopics(
+        out_abi.size(), [&](PJ_string_view_t* out, uint64_t capacity, uint64_t* count, PJ_error_t* err) {
+          return host_.vtable->create_data_processor_v2(host_.ctx, &raw, out, capacity, count, err);
+        });
+  }
+
+  /// Start an on_demand evaluation and return its handle; see submit_evaluation in
+  /// plugin_data_api.h for the two modes, the time fields and handle release.
+  /// @since 0.37.0
+  [[nodiscard]] Expected<uint64_t> submitEvaluation(
+      const DataProcessorRequest& request, const EvaluationBudget& budget = {}) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, submit_evaluation)) {
+      return unexpected("data processors host does not support submit_evaluation");
+    }
+    std::vector<PJ_string_view_t> in_abi;
+    std::vector<PJ_data_processor_output_t> out_abi;
+    const PJ_data_processor_request_t raw = detail::toAbiRequest(request, in_abi, out_abi);
+    PJ_evaluation_budget_t raw_budget{};
+    raw_budget.struct_size = sizeof(PJ_evaluation_budget_t);
+    raw_budget.max_millis = budget.max_millis;
+    raw_budget.max_bytes = budget.max_bytes;
+    raw_budget.max_evaluations = budget.max_evaluations;
+    raw_budget.max_report_bytes = budget.max_report_bytes;
+    PJ_error_t err{};
+    uint64_t handle = 0;
+    if (!host_.vtable->submit_evaluation(host_.ctx, &raw, &raw_budget, &handle, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return handle;
+  }
+
+  /// Read an evaluation's state and report (see poll_evaluation in plugin_data_api.h;
+  /// parse the report with parseEvaluationReport). Errors if the host predates this
+  /// slot, `handle` is unknown, or the host reports a state this SDK does not know
+  /// ("unknown evaluation state N", including the reserved 3): never read as pending.
+  /// @since 0.37.0
+  [[nodiscard]] Expected<EvaluationPoll> pollEvaluation(uint64_t handle) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, poll_evaluation)) {
+      return unexpected("data processors host does not support poll_evaluation");
+    }
+    PJ_error_t err{};
+    uint32_t state = PJ_EVALUATION_STATE_PENDING;
+    PJ_string_view_t json{};
+    if (!host_.vtable->poll_evaluation(host_.ctx, handle, &state, &json, &err)) {
+      return unexpected(errorToString(err));
+    }
+    EvaluationPoll result;
+    switch (state) {
+      case PJ_EVALUATION_STATE_PENDING:
+        result.state = EvaluationState::kPending;
+        break;
+      case PJ_EVALUATION_STATE_COMPLETED:
+        result.state = EvaluationState::kCompleted;
+        break;
+      case PJ_EVALUATION_STATE_FAILED:
+        result.state = EvaluationState::kFailed;
+        break;
+      default:
+        return unexpected("unknown evaluation state " + std::to_string(state));
+    }
+    result.json = std::string(toStringView(json));
+    return result;
+  }
+
+  /// Release a handle: cancel its evaluation if still pending (cooperative) and free
+  /// its result. Errors if the host predates this slot, or `handle` is unknown or
+  /// already released.
+  /// @since 0.37.0
+  [[nodiscard]] Status releaseEvaluation(uint64_t handle) const {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, release_evaluation)) {
+      return unexpected("data processors host does not support release_evaluation");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->release_evaluation(host_.ctx, handle, &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();

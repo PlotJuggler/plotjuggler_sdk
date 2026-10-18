@@ -5,7 +5,53 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [Unreleased]
 
-Host contract: unchanged (no floor impact) — release tooling and version stamping only.
+Host contract: extended: PJ_data_processors_host_vtable_t::create_data_processor_v2,
+PJ_data_processors_host_vtable_t::submit_evaluation,
+PJ_data_processors_host_vtable_t::poll_evaluation,
+PJ_data_processors_host_vtable_t::release_evaluation, PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW,
+PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT (floor 0.37.0).
+
+Data processors (`pj.data_processors.v1`):
+
+- Add `kind="on_demand"` (objects or numbers evaluated at a requested time), created only
+  through the new `create_data_processor_v2` (`DataProcessorsHostView::createV2`); the v1
+  create rejects it. The typed request `PJ_data_processor_request_t` carries typed outputs
+  and a `dataset_id` (0 = resolve inputs by name); `struct_size` is read-prefix.
+  `PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW` and `_INSTANT` are mutually exclusive.
+- Add `submit_evaluation` / `poll_evaluation` / `release_evaluation` (detected together by
+  `hasTypedRequests()`). A submit evaluates an installed node or its own script, is
+  ephemeral without the flag, and rejects HISTORY_EXEMPT; a NULL budget means every host
+  default. COMPLETED and FAILED share one report shape, parsed by the new
+  `PJ::sdk::parseEvaluationReport` (`pj_plugins/sdk/evaluation_report.hpp`), which also
+  derives each bundle's stamp.
+- Add the host-side decoders `PJ::sdk::readDataProcessorRequest` / `readEvaluationBudget`
+  (`pj_base/sdk/data_processors_host.hpp`): the read-prefix rule and every structural
+  rejection in one place.
+- `data_processor_config` reports `history_exempt` for every kind, not only transforms and
+  markers.
+- Time flags by kind: `markers` accepts WINDOW on `create_data_processor_v2` (the host clips
+  the generator to the window and echoes the staged coverage as `coverage_ns`; start > end is
+  rejected), rejects INSTANT and has no `submit_evaluation`; `transform` accepts no time flag.
+- Document the keys a host adds to `data_processor_config`: `state`, `detail`, `requested_ns`,
+  `lag_ns`, `upstream` and `findings` for `on_demand`; `computing`, `error` and `coverage_ns`
+  for `markers`. A plugin ignores keys it does not know.
+- A create returns the failures the host detects within its first budget; later failures are
+  reported through the config (`error` / `state`).
+- Declared outputs: a script returns a single value, positional values bound in order, or a
+  table keyed by output name; a missing or extra output is an error.
+- `PJ_evaluation_budget_t::max_bytes` bounds the run's whole memory (interpreter plus native
+  objects), not the interpreter alone.
+- `create_data_processor_v2` rejects EPHEMERAL with INSTANT (an instant create is a persisted
+  finding; preview an instant with `submit_evaluation`), enforced by `readDataProcessorRequest`.
+- Input resolution: `transform` exact-joins co-timestamped inputs; `on_demand` resolves each
+  input to its newest sample at or before the requested time.
+- `parseEvaluationReport` rejects `evaluated` differing from the bundle count (the instant that
+  failed is not counted), a bundle input later than its `requested_ns`, and a root output type
+  outside `number`, `string`, `unknown` or a builtin object type name.
+- `readDataProcessorRequest` rejects a count or string size that cannot be an object (its byte
+  count overflowing `size_t`) before reading the array or string.
+
+Release tooling (no floor impact):
 
 - Support development pre-release versions (`X.Y.Z-dev.N`; see `CLAUDE.md` ->
   "Development pre-releases"): a `-` tag runs the Conan matrix and JFrog upload,

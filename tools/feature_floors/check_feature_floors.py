@@ -49,7 +49,7 @@ def main() -> int:
 
     inventory = extract(repo)
     snapshot_path = repo / "tools/feature_floors/host_surfaces.snapshot"
-    snapshot = snapshot_path.read_text().split()
+    snapshot = snapshot_path.read_text(encoding="utf-8").split()
     if inventory != snapshot:
         added = sorted(set(inventory) - set(snapshot))
         removed = sorted(set(snapshot) - set(inventory))
@@ -66,7 +66,7 @@ def main() -> int:
             errors.append("snapshot is stale (ordering): refresh with extract_host_surfaces.py --write")
 
     table_path = repo / "pj_base/feature_floors.json"
-    sdk_version, is_prerelease = parse_declared_version((repo / "VERSION").read_text().strip(), "VERSION file")
+    sdk_version, is_prerelease = parse_declared_version((repo / "VERSION").read_text(encoding="utf-8").strip(), "VERSION file")
     try:
         table = load_surface_table(table_path)
     except CheckError as exc:
@@ -97,7 +97,7 @@ def main() -> int:
         if surface.since > sdk_version or (is_prerelease and surface.since == sdk_version)
     )
     if unreleased:
-        section = _unreleased_changelog_section((repo / "CHANGELOG.md").read_text())
+        section = _unreleased_changelog_section((repo / "CHANGELOG.md").read_text(encoding="utf-8"))
         if "Host contract: extended" not in section:
             errors.append(
                 "surfaces newer than VERSION exist (" + ", ".join(unreleased) + ") but the "

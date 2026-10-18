@@ -290,6 +290,28 @@ and with both sources loaded the parser chooses `a:b`. Composition round-trips
 only when the intended source is the longest matching prefix. Do not treat this
 string as a persistent dataset identity. Hosts still validate the split result.
 
+### Typed requests and on-demand evaluation (SDK 0.37.0)
+
+The contract (lifetime, time flags, report schema, errors) is the
+`pj.data_processors.v1` comment in `pj_base/plugin_data_api.h`; this is the flow.
+
+1. **Detect** with `DataProcessorsHostView::hasTypedRequests()`, never a version
+   string. Probe the optional Python backend with
+   `validateScript("on_demand", "python", "return {}")`.
+2. **Create** with `createV2(DataProcessorRequest)`: typed `DataProcessorOutput{name,
+   type}` outputs and an optional `dataset_id` (a catalog `PJ_data_source_handle_t.id`;
+   0 resolves inputs by name). `kind="on_demand"` exists only here. The result holds,
+   1:1 with `outputs`, the object topic of each object output and the bare name of a
+   number or string output; read an object output by exactly that string.
+3. **Submit, poll, release.** `submitEvaluation(request, budget)` evaluates either an
+   installed node (empty `script`, no recipe fields) or the request's own script, at
+   `instant_ns` or over `window` (exactly one). `pollEvaluation(handle)` from a timer
+   until the state is terminal, then `releaseEvaluation(handle)`: every handle must be
+   released.
+4. **Parse** the terminal report with `PJ::sdk::parseEvaluationReport`
+   (`pj_plugins/sdk/evaluation_report.hpp`); COMPLETED and FAILED share its shape.
+   Read `stopped` and `error`: an empty `bundles` list alone is not "no sample".
+
 ### Reading a series via Arrow
 
 `readSeriesArrow()` is the only read path in v4 — it returns

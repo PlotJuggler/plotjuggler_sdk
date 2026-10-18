@@ -176,8 +176,9 @@ struct ColorMapRegistryService {
 /// by data (kind + language + script + input/output names + params JSON + flags).
 /// Nothing executable crosses the boundary; the host compiles, runs, and routes the
 /// output by `kind`: "transform" materializes DerivedEngine timeseries, "markers"
-/// publishes a PlotMarkers set to the ObjectStore. See the C ABI doc-comment on
-/// PJ_data_processors_host_vtable_t.
+/// publishes a PlotMarkers set to the ObjectStore, "on_demand" evaluates at a
+/// consumer-requested time (typed requests, `hasTypedRequests()`). See the C ABI
+/// doc-comment on PJ_data_processors_host_vtable_t.
 struct DataProcessorsHostService {
   static constexpr const char* kName = "pj.data_processors.v1";
   static constexpr uint32_t kMinVersion = 1;

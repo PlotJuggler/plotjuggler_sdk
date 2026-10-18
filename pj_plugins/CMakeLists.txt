@@ -547,6 +547,12 @@ target_link_libraries(plugin_sdk_helpers_test PRIVATE
 )
 add_test(NAME plugin_sdk_helpers_test COMMAND plugin_sdk_helpers_test)
 
+# Unit test: the data-processor view, host decoders and report parser against a fake host.
+add_executable(data_processors_api_test tests/data_processors_api_test.cpp)
+target_compile_options(data_processors_api_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(data_processors_api_test PRIVATE pj_plugin_sdk GTest::gtest_main)
+add_test(NAME data_processors_api_test COMMAND data_processors_api_test)
+
 # Unit test: additions-only pure-functional parser C extension.
 add_executable(message_parser_functional_extension_test tests/message_parser_functional_extension_test.cpp)
 target_compile_options(message_parser_functional_extension_test PRIVATE ${PJ_WARNING_FLAGS})
