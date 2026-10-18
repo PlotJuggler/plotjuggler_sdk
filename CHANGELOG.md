@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.37.0]
+## [Unreleased]
 
 Host contract: extended: PJ_data_processors_host_vtable_t::create_data_processor_v2,
 PJ_data_processors_host_vtable_t::submit_evaluation,
