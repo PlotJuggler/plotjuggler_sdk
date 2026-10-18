@@ -75,7 +75,11 @@ Manifest rules for `min_sdk_required`:
 The SDK exposes its configured contract identity in
 `pj_base/sdk/version.hpp` (`PJ_SDK_VERSION_*`,
 `PJ_SDK_VERSION_AT_LEAST()`, and `PJ::sdkVersion()`) and provides the shared
-Qt-free `PJ::SemVer` parser/comparator in `pj_base/sdk/semver.hpp`.
+Qt-free `PJ::SemVer` parser/comparator in `pj_base/sdk/semver.hpp`. For a
+development pre-release (`0.37.0-dev.1`) the `PJ_SDK_VERSION_*` macros carry
+only the numeric core `0.37.0` and `sdkVersion()` the full string, so a host
+must compare `SemVer::parse(sdkVersion())` against `min_sdk_required` to
+reject a plugin that requires `0.37.0`.
 
 ## 3. Plugin Families and Their Roles
 

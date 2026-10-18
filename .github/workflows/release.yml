@@ -26,6 +26,11 @@ name: Release
 #   JFROG_USER   - Artifactory user with deploy permission on plotjuggler-conan
 #   JFROG_TOKEN  - its identity token / API key
 #
+# Development pre-releases: a tag whose version contains '-' (v0.37.0-dev.1) runs
+# the same matrix and JFrog upload, so PJ4 CI can pin it reproducibly, but the
+# GitHub Release is marked pre-release and conda-release.yml skips it. See
+# CLAUDE.md -> "Development pre-releases".
+#
 # Manual trigger: workflow_dispatch lets you re-run for an existing tag if the
 # first attempt failed (e.g. flaky upload on one platform). Set `tag` input to
 # e.g. v0.1.0. NOTE: do not *move* an already-released tag to a new commit —
@@ -70,6 +75,7 @@ jobs:
       ref: ${{ steps.ref.outputs.ref }}
       tag: ${{ steps.ref.outputs.tag }}
       version: ${{ steps.ref.outputs.version }}
+      prerelease: ${{ steps.ref.outputs.prerelease }}
     steps:
       - name: Resolve ref
         id: ref
@@ -90,6 +96,12 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           # Strip leading 'v' for the Conan version (v0.1.0 -> 0.1.0).
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          # A '-' in the version is a SemVer pre-release (v0.37.0-dev.1).
+          if [[ "${tag}" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/checkout@v4
         with:
@@ -264,6 +276,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: plotjuggler_sdk ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           body: |
             ## Install via Conan
 

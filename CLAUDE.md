@@ -103,6 +103,28 @@ Pre-1.0 has the same no-breaks guarantee: `[>=0.Y.Z <1.0.0]`.
 theirs from it. Release tags must agree. Tagging or pushing a release requires
 explicit user authorization.
 
+### Development pre-releases
+
+In-progress SDK work that PJ4 needs before its contract is complete ships as
+`X.Y.Z-dev.N` (`VERSION` and the tag `vX.Y.Z-dev.N` agree), not as a public
+release. The real `X.Y.Z` is cut once, when the feature's contract is complete.
+
+- **Publishes:** the tag runs `release.yml` like any release (same matrix, JFrog
+  upload) and creates a GitHub release marked pre-release; `conda-release.yml`
+  skips it. PJ4 pins it exactly (`plotjuggler_sdk/0.37.0-dev.1`): Conan version
+  ranges skip pre-releases unless told to resolve them.
+- **No ABI promise between two dev builds.** The MINOR/MAJOR rules above bind
+  only the final `X.Y.Z`.
+- **Names the final version:** `@since`, `feature_floors.json` and the changelog
+  `Host contract:` floor say `X.Y.Z`, never `X.Y.Z-dev.N`.
+- **Ordering is SemVer:** `0.37.0-dev.1 < 0.37.0-dev.2 < 0.37.0`, so a host built
+  from `0.37.0-dev.1` rejects a plugin whose `min_sdk_required` is `0.37.0`; a
+  plugin made for a dev host declares `0.37.0-dev.N`. `PJ_SDK_VERSION_*` and the
+  CMake package version carry `X.Y.Z`; `PJ::sdkVersion()` keeps the full string,
+  so gate admission with `PJ::SemVer`, not the macros.
+- Changelog entries go under `## [Unreleased]`, renamed to `## [X.Y.Z]` at the
+  final release.
+
 ## Coding conventions
 
 - Google clang-format style: two spaces, 120-column limit.

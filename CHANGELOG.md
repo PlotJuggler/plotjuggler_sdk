@@ -3,6 +3,17 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [Unreleased]
+
+Host contract: unchanged (no floor impact) — release tooling and version stamping only.
+
+- Support development pre-release versions (`X.Y.Z-dev.N`; see `CLAUDE.md` ->
+  "Development pre-releases"): a `-` tag runs the Conan matrix and JFrog upload,
+  creates a pre-release GitHub release and skips conda. `PJ_SDK_VERSION_*` and the
+  CMake package version carry the numeric `X.Y.Z`; `PJ::sdkVersion()` carries the
+  full string. The feature-floor tooling accepts a pre-release `VERSION` and
+  `min_sdk_required`.
+
 ## [0.36.0]
 
 Host contract: unchanged (no floor impact) — client-side helpers and an additive codec

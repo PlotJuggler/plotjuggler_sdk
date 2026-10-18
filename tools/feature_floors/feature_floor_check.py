@@ -58,6 +58,9 @@ SOURCE_SUFFIXES = {
     ".tpp",
 }
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+# A development pre-release (X.Y.Z-dev.N) is a version a host or plugin may declare.
+# Floors, surfaces and suggested_sdk_version still name the final X.Y.Z.
+DECLARED_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$")
 RAW_STRING_START_RE = re.compile(r'(?:u8|u|U|L)?R"([^ ()\\\t\r\n]{0,16})\(')
 
 
@@ -71,6 +74,18 @@ def parse_version(value: object, context: str) -> tuple[int, int, int]:
         raise CheckError(f"{context} must name a stable release as X.Y.Z, got {value!r}")
     parts = value.split(".")
     return int(parts[0]), int(parts[1]), int(parts[2])
+
+
+def parse_declared_version(value: object, context: str) -> tuple[tuple[int, int, int], bool]:
+    """Parse X.Y.Z[-pre-release] into (numeric core, has pre-release suffix).
+
+    A host or plugin declares 0.37.0-dev.1 while the surfaces it uses name the
+    final 0.37.0, so floor comparisons use the numeric core.
+    """
+    match = DECLARED_VERSION_RE.fullmatch(value) if isinstance(value, str) else None
+    if match is None:
+        raise CheckError(f"{context} must be X.Y.Z or X.Y.Z-<pre-release>, got {value!r}")
+    return (int(match[1]), int(match[2]), int(match[3])), match[4] is not None
 
 
 def format_version(version: tuple[int, int, int]) -> str:
@@ -384,8 +399,8 @@ def validate_manifest_shape(manifest: dict) -> list[str]:
             )
         else:
             minimum = manifest.get("min_sdk_required")
-            if isinstance(minimum, str) and VERSION_RE.fullmatch(minimum):
-                if tuple(map(int, suggested.split("."))) < tuple(map(int, minimum.split("."))):
+            if isinstance(minimum, str) and DECLARED_VERSION_RE.fullmatch(minimum):
+                if tuple(map(int, suggested.split("."))) < parse_declared_version(minimum, "min_sdk_required")[0]:
                     errors.append(
                         f"suggested_sdk_version {suggested} is below min_sdk_required {minimum}"
                     )
@@ -532,7 +547,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
             raise CheckError(f"{args.manifest} must contain a JSON object")
-        declared = parse_version(manifest.get("min_sdk_required"), "min_sdk_required")
+        declared, _ = parse_declared_version(manifest.get("min_sdk_required"), "min_sdk_required")
 
         matched: dict[str, str] = {}
         for directory in args.sources:

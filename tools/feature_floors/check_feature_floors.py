@@ -18,7 +18,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from extract_host_surfaces import extract  # noqa: E402
-from feature_floor_check import CheckError, format_version, load_surface_table, parse_version  # noqa: E402
+from feature_floor_check import (  # noqa: E402
+    CheckError,
+    format_version,
+    load_surface_table,
+    parse_declared_version,
+)
 
 
 def _unreleased_changelog_section(changelog: str) -> str:
@@ -61,7 +66,7 @@ def main() -> int:
             errors.append("snapshot is stale (ordering): refresh with extract_host_surfaces.py --write")
 
     table_path = repo / "pj_base/feature_floors.json"
-    sdk_version = parse_version((repo / "VERSION").read_text().strip(), "VERSION file")
+    sdk_version, is_prerelease = parse_declared_version((repo / "VERSION").read_text().strip(), "VERSION file")
     try:
         table = load_surface_table(table_path)
     except CheckError as exc:
@@ -83,9 +88,13 @@ def main() -> int:
 
     # since may exceed VERSION during development: a surface added for the
     # next, not-yet-released version. That requires the changelog's unreleased
-    # section to declare the host-contract extension.
+    # section to declare the host-contract extension. A pre-release VERSION
+    # (X.Y.Z-dev.N) precedes the final X.Y.Z that its surfaces name, so those
+    # are still unreleased.
     unreleased = sorted(
-        surface.identifier for surface in above_floor if surface.since > sdk_version
+        surface.identifier
+        for surface in above_floor
+        if surface.since > sdk_version or (is_prerelease and surface.since == sdk_version)
     )
     if unreleased:
         section = _unreleased_changelog_section((repo / "CHANGELOG.md").read_text())

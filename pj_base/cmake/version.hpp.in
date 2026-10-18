@@ -2,7 +2,11 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
-// Generated from the plotjuggler_sdk project version. Do not edit.
+// Generated from the plotjuggler_sdk VERSION file. Do not edit.
+//
+// A development pre-release (X.Y.Z-dev.N) exposes the numeric core X.Y.Z through
+// PJ_SDK_VERSION_*, so PJ_SDK_VERSION_AT_LEAST(X, Y, Z) is already true for it;
+// sdkVersion() keeps the full string, and PJ::SemVer orders it below X.Y.Z.
 
 #include <string_view>
 
@@ -16,9 +20,10 @@
 
 namespace PJ {
 
-/// Return the plotjuggler_sdk version used to configure this header.
+/// Return the full plotjuggler_sdk version used to configure this header,
+/// including any pre-release suffix (the PJ_SDK_VERSION_* macros omit it).
 [[nodiscard]] inline constexpr std::string_view sdkVersion() noexcept {
-  return "@PROJECT_VERSION@";
+  return "@PJ_SDK_VERSION@";
 }
 
 }  // namespace PJ

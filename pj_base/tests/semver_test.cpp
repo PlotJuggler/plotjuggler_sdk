@@ -64,6 +64,25 @@ TEST(SemVerTest, ReleaseHasHigherPrecedenceThanPrerelease) {
   EXPECT_LT(parseOrDie("0.21.0-pre"), parseOrDie("0.21.0"));
 }
 
+TEST(SemVerTest, DevelopmentPrereleasesPrecedeTheirRelease) {
+  const std::vector<std::string_view> ordered = {"0.36.0",        "0.37.0-dev.1", "0.37.0-dev.2",
+                                                 "0.37.0-dev.10", "0.37.0",       "0.37.1-dev.1"};
+
+  for (size_t index = 1; index < ordered.size(); ++index) {
+    EXPECT_LT(parseOrDie(ordered[index - 1]), parseOrDie(ordered[index]))
+        << ordered[index - 1] << " vs " << ordered[index];
+  }
+}
+
+TEST(SemVerTest, HostAtDevelopmentPrereleaseAdmitsOnlyFloorsAtOrBelowIt) {
+  const auto host = parseOrDie("0.37.0-dev.1");
+
+  EXPECT_FALSE(parseOrDie("0.37.0") <= host);
+  EXPECT_FALSE(parseOrDie("0.37.0-dev.2") <= host);
+  EXPECT_TRUE(parseOrDie("0.37.0-dev.1") <= host);
+  EXPECT_TRUE(parseOrDie("0.36.0") <= host);
+}
+
 TEST(SemVerTest, NumericPrereleaseIdentifiersCompareNumerically) {
   EXPECT_LT(parseOrDie("1.0.0-alpha.2"), parseOrDie("1.0.0-alpha.11"));
   EXPECT_LT(parseOrDie("1.0.0-999999999999999999999999999999"), parseOrDie("1.0.0-1000000000000000000000000000000"));
