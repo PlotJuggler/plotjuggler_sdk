@@ -939,9 +939,11 @@ typedef struct {
  *                   Python note in the on_demand paragraph above). The host rejects any
  *                   other value.
  *   - inputs      : topic OR topic-field names ("pose/orientation" or
- *                   "pose/orientation/x") the script reads; the host resolves them
- *                   and exact-joins co-timestamped inputs. A name MAY carry the
- *                   dataset qualifier, see DATASET-QUALIFIED NAMES below.
+ *                   "pose/orientation/x") the script reads; the host resolves them.
+ *                   transform exact-joins co-timestamped inputs; on_demand resolves
+ *                   each input independently to its newest sample at or before the
+ *                   requested time. A name MAY carry the dataset qualifier, see
+ *                   DATASET-QUALIFIED NAMES below.
  *   - outputs     : target topic key(s). MAY be empty for an ephemeral preview
  *                   (flags & PJ_DATA_PROCESSOR_FLAG_EPHEMERAL), in which case the host
  *                   names the sink(s) and returns the resolved names in out_topics.
@@ -973,11 +975,16 @@ typedef struct {
  *   - HISTORY_EXEMPT: persisted, but the host's history never restores, recreates or
  *     removes it. Meaningless on an EPHEMERAL node.
  *   - PINNED (kind "on_demand" only, INSTANT on create_data_processor_v2): a persisted
- *     finding fixed at one evaluation time.
+ *     finding fixed at one evaluation time. Never EPHEMERAL: see the rejections of
+ *     PJ_data_processor_request_t.
  *
  * TIME FLAGS (PJ_data_processor_request_t.time_flags), by kind; a flag a kind does not
  * accept is REJECTED with an error naming the kind, never ignored:
- *   - transform, markers: none, on either slot.
+ *   - transform: none, on either slot.
+ *   - markers: create_data_processor_v2 accepts WINDOW (the host installs a generator
+ *     clipped to the window and echoes the staged coverage as `coverage_ns` in the
+ *     node's config; start > end is rejected) and rejects INSTANT. A markers node has
+ *     no submit_evaluation.
  *   - on_demand: create_data_processor_v2 accepts INSTANT (a pinned node) and rejects
  *     WINDOW ("use submit_evaluation"); submit_evaluation needs exactly one of INSTANT
  *     and WINDOW.
@@ -1069,19 +1076,23 @@ typedef struct {
  * rule and every structural rejection below in one place.
  *
  * A host REJECTS (never ignores) a request it cannot honour: unknown flags or
- * time_flags bits, WINDOW together with INSTANT, nonzero reserved in any output, a
+ * time_flags bits, WINDOW together with INSTANT, EPHEMERAL together with INSTANT on
+ * create_data_processor_v2 (an instant is a persisted finding; preview it with
+ * submit_evaluation), nonzero reserved in any output, a
  * count > 0 with a NULL pointer, a string (request, input or output) with data NULL
- * and size > 0, or struct_size below the v1 minimum. A valid string needs no NUL
- * terminator: it is read by size. Inputs use the same grammar as create_data_processor
+ * and size > 0, a count or string size too large for any object (rejected before the
+ * array or string is read), or struct_size below the v1 minimum. A valid string needs
+ * no NUL terminator: it is read by size. Inputs use the same grammar as create_data_processor
  * (topic names, optionally dataset-qualified); the script reads each input under its
  * literal name. All strings are borrowed for the duration of the call.
  *
  * Without declared outputs (a scripted submit_evaluation), the host infers each
  * output's name and type from what the script returns and lists them in the report's
  * root "outputs"; the names are the host's choice, so read them, never assume them.
- * With declared outputs, the script returns a table keyed by output name: an
- * undeclared key or a missing declared output is an error, and each value's type is
- * checked against its declaration when the script runs.
+ * With declared outputs, the script returns a single value, positional values bound to
+ * the declared outputs in order, or a table keyed by output name; a missing or extra
+ * output is an error, and each value's type is checked against its declaration when
+ * the script runs.
  * @since 0.37.0 */
 typedef struct {
   uint32_t struct_size; /* = sizeof(PJ_data_processor_request_t) */
@@ -1119,13 +1130,14 @@ typedef struct {
  * struct_size follows the read-prefix rule of PJ_data_processor_request_t (minimum
  * PJ_EVALUATION_BUDGET_V1_MIN_SIZE), and a nonzero `reserved` is rejected; a host
  * decodes it with PJ::sdk::readEvaluationBudget. A budget field added later must be
- * zero-defaultable (0 = host default).
+ * zero-defaultable (0 = host default). `max_bytes` bounds the run's whole memory: the
+ * interpreter plus the native objects the run holds, not the interpreter alone.
  * @since 0.37.0 */
 typedef struct {
   uint32_t struct_size;      /* = sizeof(PJ_evaluation_budget_t) */
   uint32_t reserved;         /* 0 */
   uint64_t max_millis;       /* cooperative time budget, ms */
-  uint64_t max_bytes;        /* per-evaluation VM + native ceiling */
+  uint64_t max_bytes;        /* the run's whole memory: interpreter + native objects */
   uint64_t max_evaluations;  /* WINDOW: instants evaluated */
   uint64_t max_report_bytes; /* whole report */
 } PJ_evaluation_budget_t;
@@ -1153,7 +1165,9 @@ typedef struct PJ_data_processors_host_vtable_t {
    * min(capacity,*out_topics_count) entries (borrowed, valid only until the next call
    * on this vtable); pass out_topics_count=NULL to ignore them. Transactional: on
    * failure no partial state is left AND any previously published output for this id
-   * is preserved. All string arguments are borrowed for the duration of the call.
+   * is preserved. A failure the host detects within the create's first budget is
+   * returned here; a later failure is reported through data_processor_config (`error`
+   * / `state`). All string arguments are borrowed for the duration of the call.
    * kind "on_demand" is rejected here: create it with create_data_processor_v2. */
   bool (*create_data_processor)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t kind, PJ_string_view_t language, const PJ_string_view_t* inputs,
@@ -1178,7 +1192,16 @@ typedef struct PJ_data_processors_host_vtable_t {
    * until the next call on this vtable. An unknown id is an error.
    * Hosts supporting PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT include the boolean
    * "history_exempt" for every kind, reflecting the node's actual property. Callers
-   * must not infer support from a successful create alone. */
+   * must not infer support from a successful create alone.
+   * The host adds keys by kind; a plugin ignores keys it does not know.
+   *   - on_demand: `state` ("idle"|"pending"|"ready"|"missing_input"|"error"), `detail`
+   *     (string), `requested_ns` (the instant last requested), `lag_ns` (number or
+   *     null), `upstream` (array: the other on_demand nodes this one reads) and, for a
+   *     pinned node, `findings` {`pinned`, `bytes`} (the owning plugin's pinned nodes
+   *     and their materialized bytes).
+   *   - markers: `computing` (bool: a run is in progress), `error` (string, present
+   *     only after a failed run) and, for a windowed rule, `coverage_ns`
+   *     {`first_ns`,`last_ns`}, the window the latest successful run staged. */
   bool (*data_processor_config)(
       void* ctx, PJ_string_view_t id, PJ_string_view_t* out_recipe_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
@@ -1196,9 +1219,9 @@ typedef struct PJ_data_processors_host_vtable_t {
   /* [main-thread] create_data_processor with a typed request (PJ_data_processor_request_t):
    * typed outputs, a dataset id and (INSTANT, on_demand) a pinned evaluation
    * time. Serves every kind. Same upsert, transactional and out_topics (count-then-fill,
-   * borrowed until the next call on this vtable) contract as create_data_processor,
-   * including the on_demand out_topics contract of the service comment. The time flags
-   * a kind accepts are in TIME FLAGS above.
+   * borrowed until the next call on this vtable) and failure-reporting contract as
+   * create_data_processor, including the on_demand out_topics contract of the service
+   * comment. The time flags a kind accepts are in TIME FLAGS above.
    * ABI-APPENDED slot.
    * @since 0.37.0 */
   bool (*create_data_processor_v2)(
@@ -1241,8 +1264,9 @@ typedef struct PJ_data_processors_host_vtable_t {
    *                "outputs":{"<name>":{"status":"ok"|"unavailable"|"empty"|"error",
    *                                     "value"?,"summary"?,"reason"?}...}}...],
    *    "outputs"?:[{"name":"...","type":"..."}...]}
-   *   - coverage: `candidates` instants were found, `evaluated` were evaluated. S is
-   *     why the evaluation ended: "complete" | "budget_time" | "budget_evaluations" |
+   *   - coverage: `candidates` instants were found, `evaluated` were evaluated: it
+   *     equals the number of bundles, and the instant that failed is not counted (its
+   *     error is coverage.error). S is why the evaluation ended: "complete" | "budget_time" | "budget_evaluations" |
    *     "budget_bytes" | "budget_report" | "cancelled" (the host ended it, e.g. its
    *     node was removed) | "error". A FAILED report always says "error"; a COMPLETED
    *     one may too (an error ended the run after some bundles), so read

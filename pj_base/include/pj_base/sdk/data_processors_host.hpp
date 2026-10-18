@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <limits>
 
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
@@ -44,9 +45,17 @@ template <typename T>
   return out;
 }
 
-/// A view may be NULL only when empty; a valid one needs no terminator.
+/// Whether `count` elements of `element_size` bytes can be one object: the byte count
+/// must fit std::ptrdiff_t, so count * element_size cannot overflow std::size_t even
+/// where it is 32 bits. A caller's count is untrusted until this holds.
+[[nodiscard]] constexpr bool fitsObject(uint64_t count, std::size_t element_size) noexcept {
+  return count <= static_cast<uint64_t>(std::numeric_limits<std::ptrdiff_t>::max()) / element_size;
+}
+
+/// A view may be NULL only when empty, and its size must fit an object; a valid one
+/// needs no terminator.
 [[nodiscard]] constexpr bool validView(PJ_string_view_t view) noexcept {
-  return view.data != nullptr || view.size == 0;
+  return (view.data != nullptr || view.size == 0) && fitsObject(view.size, 1);
 }
 
 }  // namespace detail
@@ -55,10 +64,13 @@ template <typename T>
 /// Its string and array pointers still borrow the plugin's request: use them only
 /// during the call. Rejects a null request, a struct_size below the v1 minimum,
 /// unknown flags or time_flags bits, WINDOW with INSTANT, a NULL array with a nonzero
-/// count, a NULL string with a nonzero size, and a nonzero output `reserved`. On
+/// count, a NULL string with a nonzero size, a count or string size that cannot be an
+/// object (rejected before any traversal), and a nonzero output `reserved`. On
 /// kSubmitEvaluation it also rejects HISTORY_EXEMPT, a request with neither INSTANT nor
 /// WINDOW, and, for an installed node (empty script), any recipe field: language,
-/// params_json, inputs, outputs or dataset_id. EPHEMERAL is never required.
+/// params_json, inputs, outputs or dataset_id; EPHEMERAL is never required there. On
+/// kCreateV2 it rejects EPHEMERAL with INSTANT: a create at an instant is a persisted
+/// finding, and previewing an instant is submit_evaluation's job.
 /// @since 0.37.0
 [[nodiscard]] inline Expected<PJ_data_processor_request_t> readDataProcessorRequest(
     const PJ_data_processor_request_t* request, DataProcessorSlot slot) {
@@ -81,7 +93,7 @@ template <typename T>
   }
   for (const PJ_string_view_t view : {out.id, out.kind, out.language, out.script, out.params_json}) {
     if (!detail::validView(view)) {
-      return unexpected("a request string is NULL with a nonzero size");
+      return unexpected("a request string is NULL with a nonzero size, or oversized");
     }
   }
   if (out.input_count > 0 && out.inputs == nullptr) {
@@ -90,15 +102,19 @@ template <typename T>
   if (out.output_count > 0 && out.outputs == nullptr) {
     return unexpected("outputs is NULL with output_count > 0");
   }
+  if (!detail::fitsObject(out.input_count, sizeof(PJ_string_view_t)) ||
+      !detail::fitsObject(out.output_count, sizeof(PJ_data_processor_output_t))) {
+    return unexpected("input_count or output_count is oversized");
+  }
   for (uint64_t i = 0; i < out.input_count; ++i) {
     if (!detail::validView(out.inputs[i])) {
-      return unexpected("an input name is NULL with a nonzero size");
+      return unexpected("an input name is NULL with a nonzero size, or oversized");
     }
   }
   for (uint64_t i = 0; i < out.output_count; ++i) {
     const PJ_data_processor_output_t& output = out.outputs[i];
     if (!detail::validView(output.name) || !detail::validView(output.type)) {
-      return unexpected("an output name or type is NULL with a nonzero size");
+      return unexpected("an output name or type is NULL with a nonzero size, or oversized");
     }
     if (output.reserved[0] != 0 || output.reserved[1] != 0) {
       return unexpected("output reserved fields must be 0");
@@ -117,6 +133,11 @@ template <typename T>
           "submit_evaluation of an installed node uses its stored recipe: language, params_json, inputs, outputs "
           "and dataset_id must be empty");
     }
+  } else if (
+      (out.flags & PJ_DATA_PROCESSOR_FLAG_EPHEMERAL) != 0 &&
+      (out.time_flags & PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT) != 0) {
+    return unexpected(
+        "a create at an INSTANT is a persisted finding: EPHEMERAL is rejected (preview with submit_evaluation)");
   }
   return decoded;
 }

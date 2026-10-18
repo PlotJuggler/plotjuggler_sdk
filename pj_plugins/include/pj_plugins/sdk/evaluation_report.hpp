@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "pj_base/builtin/builtin_object.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/time_math.hpp"
@@ -119,13 +120,19 @@ template <typename Enum, std::size_t N>
   return std::nullopt;
 }
 
+/// The root outputs[].type values: "number", "string", "unknown" or a builtin object type name.
+[[nodiscard]] inline bool isReportOutputType(std::string_view type) {
+  return type == "number" || type == "string" || type == "unknown" || parseBuiltinObjectType(type).has_value();
+}
+
 }  // namespace detail
 
 /// Parse a poll_evaluation report (COMPLETED or FAILED). Fails on a raw NUL byte,
 /// malformed JSON, a missing required key, any present key of the wrong type, an
 /// unrecognised coverage.stopped or outputs[].status, a *_ns outside int64,
-/// `evaluated > candidates`, and coverage.error present without stopped "error" or
-/// missing with it.
+/// `evaluated > candidates`, `evaluated` differing from the bundle count, a bundle input
+/// later than its requested_ns, a root output type outside the documented values, and
+/// coverage.error present without stopped "error" or missing with it.
 /// @since 0.37.0
 [[nodiscard]] inline Expected<EvaluationReport> parseEvaluationReport(std::string_view json) {
   static constexpr std::pair<std::string_view, EvaluationStop> kStops[] = {
@@ -215,6 +222,9 @@ template <typename Enum, std::size_t N>
       if (!resolved.has_value()) {
         return unexpected("bundle input '" + input.key() + "' must be an int64 timestamp");
       }
+      if (*resolved > bundle.requested_ns) {
+        return unexpected("bundle input '" + input.key() + "' resolves after requested_ns");
+      }
       bundle.inputs.emplace(input.key(), *resolved);
       newest = newest.has_value() ? std::max(*newest, *resolved) : *resolved;
     }
@@ -250,6 +260,9 @@ template <typename Enum, std::size_t N>
     }
     report.bundles.push_back(std::move(bundle));
   }
+  if (report.bundles.size() != report.evaluated) {
+    return unexpected("coverage.evaluated must equal the number of bundles");
+  }
 
   if (const auto inferred = doc.find("outputs"); inferred != doc.end()) {
     if (!inferred->is_array()) {
@@ -260,6 +273,9 @@ template <typename Enum, std::size_t N>
       auto type = detail::reportString(entry, "type");
       if (!name.has_value() || !type.has_value()) {
         return unexpected("report outputs entries need a string name and type");
+      }
+      if (!detail::isReportOutputType(*type)) {
+        return unexpected("report output '" + *name + "' has unknown type '" + *type + "'");
       }
       report.inferred_outputs.push_back(DataProcessorOutput{std::move(*name), std::move(*type)});
     }

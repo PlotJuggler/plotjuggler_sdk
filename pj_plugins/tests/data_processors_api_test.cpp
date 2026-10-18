@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -631,6 +632,17 @@ TEST(DataProcessorsApiTest, HasTypedRequestsReflectsTailSlots) {
   EXPECT_TRUE(full.hasTypedRequests());
   EXPECT_FALSE(sdk::DataProcessorsHostView{}.hasTypedRequests());
 
+  // A full-sized vtable with any one of the four tail slots NULL is not a typed-request host.
+  const auto with_null = [&](auto PJ_data_processors_host_vtable_t::* slot) {
+    auto holey = vtable;
+    holey.*slot = nullptr;
+    return sdk::DataProcessorsHostView(PJ_data_processors_host_t{.ctx = &host, .vtable = &holey}).hasTypedRequests();
+  };
+  EXPECT_FALSE(with_null(&PJ_data_processors_host_vtable_t::create_data_processor_v2));
+  EXPECT_FALSE(with_null(&PJ_data_processors_host_vtable_t::submit_evaluation));
+  EXPECT_FALSE(with_null(&PJ_data_processors_host_vtable_t::poll_evaluation));
+  EXPECT_FALSE(with_null(&PJ_data_processors_host_vtable_t::release_evaluation));
+
   // A host whose struct_size ends before the typed-request tail.
   vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, create_data_processor_v2);
   sdk::DataProcessorsHostView old_host(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
@@ -876,6 +888,40 @@ TEST(DataProcessorsHostDecoderTest, RejectsAMalformedRequest) {
   EXPECT_FALSE(rejected([](RawRequest& r) { r.raw.params_json = PJ_string_view_t{nullptr, 0}; }));
 }
 
+// A count (or size) whose byte size overflows size_t -- the largest values the uint64 fields
+// allow, which overflow a 32-bit size_t just as these overflow a 64-bit one -- is rejected
+// before any array or string is read. The arrays hold one element, so a traversal would
+// run past them.
+TEST(DataProcessorsHostDecoderTest, RejectsAnUnrepresentableCountOrSizeBeforeReadingAnything) {
+  constexpr uint64_t kMax = std::numeric_limits<uint64_t>::max();
+  constexpr uint64_t kMaxObject = std::numeric_limits<std::ptrdiff_t>::max();
+  const auto rejected = [](void (*mutate)(RawRequest&)) {
+    RawRequest request;
+    mutate(request);
+    return !sdk::readDataProcessorRequest(&request.raw, sdk::DataProcessorSlot::kCreateV2).has_value();
+  };
+  EXPECT_TRUE(rejected([](RawRequest& r) { r.raw.input_count = kMax; }));
+  EXPECT_TRUE(rejected([](RawRequest& r) { r.raw.output_count = kMax; }));
+  EXPECT_TRUE(rejected([](RawRequest& r) { r.raw.input_count = kMaxObject / sizeof(PJ_string_view_t) + 1; }));
+  EXPECT_TRUE(
+      rejected([](RawRequest& r) { r.raw.output_count = kMaxObject / sizeof(PJ_data_processor_output_t) + 1; }));
+  // A string size no object can have, with a non-NULL pointer, in every string.
+  EXPECT_TRUE(rejected([](RawRequest& r) { r.raw.id.size = kMax; }));
+  EXPECT_TRUE(rejected([](RawRequest& r) { r.raw.script.size = kMaxObject + 1; }));
+  EXPECT_TRUE(rejected([](RawRequest& r) { r.input.size = kMax; }));
+  EXPECT_TRUE(rejected([](RawRequest& r) { r.output.type.size = kMax; }));
+
+  // A budget carries no count or size to trust: struct_size is clamped to sizeof, and an
+  // enormous max_* is a request the host clamps, never a rejection.
+  PJ_evaluation_budget_t raw{};
+  raw.struct_size = std::numeric_limits<uint32_t>::max();
+  raw.max_millis = raw.max_bytes = raw.max_evaluations = raw.max_report_bytes = kMax;
+  auto budget = sdk::readEvaluationBudget(&raw);
+  ASSERT_TRUE(budget) << budget.error();
+  EXPECT_EQ(budget->struct_size, sizeof(PJ_evaluation_budget_t));
+  EXPECT_EQ(budget->max_bytes, kMax);
+}
+
 TEST(DataProcessorsHostDecoderTest, SubmitRules) {
   const auto accepts = [](const RawRequest& request, sdk::DataProcessorSlot slot) {
     return sdk::readDataProcessorRequest(&request.raw, slot).has_value();
@@ -888,6 +934,12 @@ TEST(DataProcessorsHostDecoderTest, SubmitRules) {
   scripted.raw.flags = PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT;
   EXPECT_TRUE(accepts(scripted, kCreate));
   EXPECT_FALSE(accepts(scripted, kSubmit));
+  // EPHEMERAL is optional on a submit, but a create at an instant is a persisted finding.
+  scripted.raw.flags = PJ_DATA_PROCESSOR_FLAG_EPHEMERAL;
+  EXPECT_FALSE(accepts(scripted, kCreate));
+  EXPECT_TRUE(accepts(scripted, kSubmit));
+  scripted.raw.time_flags = PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW;
+  EXPECT_TRUE(accepts(scripted, kCreate));
   scripted.raw.flags = 0;
   scripted.raw.time_flags = 0;
   EXPECT_TRUE(accepts(scripted, kCreate));
@@ -1007,9 +1059,10 @@ std::string reportWith(
 // an error, never success.
 TEST(EvaluationReportTest, RejectsUnknownValuesWrongTypesAndInconsistentCoverage) {
   ASSERT_TRUE(sdk::parseEvaluationReport(reportWith()));
+  // The instant that failed is not counted: one bundle, evaluated 1, the next instant's error.
   ASSERT_TRUE(
       sdk::parseEvaluationReport(reportWith(
-          R"("candidates":1,"evaluated":0,"stopped":"error",)"
+          R"("candidates":2,"evaluated":1,"stopped":"error",)"
           R"("error":"boom","gaps":[])")));
   for (const std::string_view coverage : {
            R"("candidates":1,"evaluated":1,"stopped":"paused","gaps":[])",
@@ -1017,6 +1070,7 @@ TEST(EvaluationReportTest, RejectsUnknownValuesWrongTypesAndInconsistentCoverage
            R"("candidates":1,"evaluated":1,"stopped":"complete","error":"boom","gaps":[])",
            R"("candidates":1,"evaluated":1,"stopped":"error","error":7,"gaps":[])",
            R"("candidates":1,"evaluated":2,"stopped":"complete","gaps":[])",
+           R"("candidates":2,"evaluated":0,"stopped":"budget_time","gaps":[])",
            R"("candidates":-1,"evaluated":0,"stopped":"complete","gaps":[])",
            R"("candidates":1,"evaluated":1,"stopped":"complete","gaps":{})",
            R"("candidates":1,"evaluated":1,"stopped":"complete","gaps":[{"from_ns":1}])",
@@ -1045,6 +1099,45 @@ TEST(EvaluationReportTest, RejectsUnknownValuesWrongTypesAndInconsistentCoverage
   EXPECT_FALSE(sdk::parseEvaluationReport(R"({"bundles":[]})"));
 }
 
+// `evaluated` is the bundle count, an input resolves at or before its bundle's instant,
+// and an inferred output type is one of the documented values.
+TEST(EvaluationReportTest, RejectsABundleCountMismatchAFutureInputAndAnUnknownOutputType) {
+  const std::string_view valid_coverage = R"("candidates":1,"evaluated":1,"stopped":"complete","gaps":[])";
+  const auto with_bundles = [](std::string_view coverage, std::string_view bundles) {
+    return R"({"coverage":{)" + std::string(coverage) + R"(},"bundles":[)" + std::string(bundles) + "]}";
+  };
+  constexpr std::string_view kBundle = R"({"requested_ns":10,"inputs":{"lidar":8},"outputs":{}})";
+
+  EXPECT_TRUE(sdk::parseEvaluationReport(with_bundles(valid_coverage, kBundle)));
+  EXPECT_FALSE(sdk::parseEvaluationReport(with_bundles(valid_coverage, "")));  // evaluated 1, no bundle
+  EXPECT_FALSE(
+      sdk::parseEvaluationReport(
+          with_bundles(R"("candidates":2,"evaluated":2,"stopped":"complete","gaps":[])", kBundle)));
+  EXPECT_FALSE(
+      sdk::parseEvaluationReport(
+          with_bundles(R"("candidates":1,"evaluated":0,"stopped":"complete","gaps":[])", kBundle)));
+
+  // The newest sample at or before requested_ns: equal is fine, later is not.
+  EXPECT_TRUE(
+      sdk::parseEvaluationReport(
+          with_bundles(valid_coverage, R"({"requested_ns":10,"inputs":{"lidar":10},"outputs":{}})")));
+  auto future = sdk::parseEvaluationReport(
+      with_bundles(valid_coverage, R"({"requested_ns":10,"inputs":{"lidar":11},"outputs":{}})"));
+  ASSERT_FALSE(future);
+  EXPECT_NE(future.error().find("lidar"), std::string::npos) << future.error();
+
+  for (const std::string_view type : {"number", "string", "unknown", "kPointCloud"}) {
+    const std::string root = R"(,"outputs":[{"name":"x","type":")" + std::string(type) + R"("}])";
+    EXPECT_TRUE(sdk::parseEvaluationReport(reportWith(valid_coverage, R"("status":"ok","value":1)", "1", root)))
+        << type;
+  }
+  for (const std::string_view type : {"banana", "", "Number", "kNotAType"}) {
+    const std::string root = R"(,"outputs":[{"name":"x","type":")" + std::string(type) + R"("}])";
+    EXPECT_FALSE(sdk::parseEvaluationReport(reportWith(valid_coverage, R"("status":"ok","value":1)", "1", root)))
+        << type;
+  }
+}
+
 // A raw NUL byte is refused wherever it sits; an escaped \u0000 inside a string is JSON.
 TEST(EvaluationReportTest, RejectsARawNulButKeepsAnEscapedOne) {
   const std::string valid = reportWith();
@@ -1055,7 +1148,7 @@ TEST(EvaluationReportTest, RejectsARawNulButKeepsAnEscapedOne) {
   EXPECT_FALSE(sdk::parseEvaluationReport(with_nul));
 
   auto escaped = sdk::parseEvaluationReport(reportWith(
-      R"("candidates":1,"evaluated":0,"stopped":"error",)"
+      R"("candidates":2,"evaluated":1,"stopped":"error",)"
       R"("error":"a\u0000b","gaps":[])"));
   ASSERT_TRUE(escaped) << escaped.error();
   EXPECT_EQ(escaped->error, std::string("a\0b", 3));

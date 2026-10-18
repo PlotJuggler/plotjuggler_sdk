@@ -1528,7 +1528,8 @@ struct DataProcessorRequest {
 };
 
 /// Cooperative computation budget of one submitEvaluation(). Mirrors
-/// PJ_evaluation_budget_t; a 0 field takes the host default.
+/// PJ_evaluation_budget_t; a 0 field takes the host default. `max_bytes` bounds the
+/// run's whole memory (interpreter plus native objects), not the interpreter alone.
 /// @since 0.37.0
 struct EvaluationBudget {
   uint64_t max_millis = 0;

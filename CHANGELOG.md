@@ -29,6 +29,27 @@ Data processors (`pj.data_processors.v1`):
   rejection in one place.
 - `data_processor_config` reports `history_exempt` for every kind, not only transforms and
   markers.
+- Time flags by kind: `markers` accepts WINDOW on `create_data_processor_v2` (the host clips
+  the generator to the window and echoes the staged coverage as `coverage_ns`; start > end is
+  rejected), rejects INSTANT and has no `submit_evaluation`; `transform` accepts no time flag.
+- Document the keys a host adds to `data_processor_config`: `state`, `detail`, `requested_ns`,
+  `lag_ns`, `upstream` and `findings` for `on_demand`; `computing`, `error` and `coverage_ns`
+  for `markers`. A plugin ignores keys it does not know.
+- A create returns the failures the host detects within its first budget; later failures are
+  reported through the config (`error` / `state`).
+- Declared outputs: a script returns a single value, positional values bound in order, or a
+  table keyed by output name; a missing or extra output is an error.
+- `PJ_evaluation_budget_t::max_bytes` bounds the run's whole memory (interpreter plus native
+  objects), not the interpreter alone.
+- `create_data_processor_v2` rejects EPHEMERAL with INSTANT (an instant create is a persisted
+  finding; preview an instant with `submit_evaluation`), enforced by `readDataProcessorRequest`.
+- Input resolution: `transform` exact-joins co-timestamped inputs; `on_demand` resolves each
+  input to its newest sample at or before the requested time.
+- `parseEvaluationReport` rejects `evaluated` differing from the bundle count (the instant that
+  failed is not counted), a bundle input later than its `requested_ns`, and a root output type
+  outside `number`, `string`, `unknown` or a builtin object type name.
+- `readDataProcessorRequest` rejects a count or string size that cannot be an object (its byte
+  count overflowing `size_t`) before reading the array or string.
 
 Release tooling (no floor impact):
 
