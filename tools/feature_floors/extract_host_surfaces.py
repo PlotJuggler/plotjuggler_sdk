@@ -156,7 +156,7 @@ def extract(repo: Path) -> list[str]:
     header_texts: list[tuple[Path, str]] = []
     for rel, glob in PROTOCOL_HEADER_GLOBS:
         for header in sorted((repo / rel).glob(glob)):
-            header_texts.append((header, strip_comments(header.read_text())))
+            header_texts.append((header, strip_comments(header.read_text(encoding="utf-8"))))
 
     fn_ptr_typedefs: set[str] = set()
     for _, text in header_texts:
@@ -184,7 +184,7 @@ def extract(repo: Path) -> list[str]:
 
     for rel, glob in SERVICE_ID_GLOBS:
         for header in sorted((repo / rel).glob(glob)):
-            for service_id in SERVICE_ID_RE.findall(strip_comments(header.read_text())):
+            for service_id in SERVICE_ID_RE.findall(strip_comments(header.read_text(encoding="utf-8"))):
                 if service_id in PLUGIN_EXTENSION_IDS:
                     continue
                 if service_id not in HOST_SERVICE_IDS:
