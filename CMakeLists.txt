@@ -6,7 +6,14 @@ string(STRIP "${PJ_SDK_VERSION}" PJ_SDK_VERSION)
 # min_sdk_required gating then compares against a version the SDK never shipped.
 set_property(
   DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/VERSION")
-project(plotjuggler_sdk VERSION "${PJ_SDK_VERSION}" LANGUAGES CXX)
+# VERSION is X.Y.Z or a development pre-release X.Y.Z-<identifiers> (e.g. 0.37.0-dev.1).
+# project() accepts only the numeric core, so PROJECT_VERSION* (the version.hpp
+# macros and the CMake package version file) carry X.Y.Z while PJ_SDK_VERSION
+# keeps the full string for sdkVersion().
+if(NOT PJ_SDK_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$")
+  message(FATAL_ERROR "VERSION must be X.Y.Z or X.Y.Z-<pre-release>, got '${PJ_SDK_VERSION}'")
+endif()
+project(plotjuggler_sdk VERSION "${CMAKE_MATCH_1}" LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -119,6 +126,8 @@ if(PJ_BUILD_TESTS)
   if(Python3_Interpreter_FOUND)
     add_test(NAME feature_floors_check
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/feature_floors/check_feature_floors.py)
+    add_test(NAME feature_floors_declared_versions
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/feature_floors/test_declared_versions.py)
   endif()
 endif()
 
