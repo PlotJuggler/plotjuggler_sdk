@@ -299,7 +299,9 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   They are independent of titles (which may repeat or be renamed) and tab order;
   every slot is scoped to the caller's own tabs: a tab the plugin did not create
   is rejected exactly as an unknown id, so the user's tabs are never disclosed
-  or touched. `"pj.viewport.v1"` (optional) zooms to a display-seconds X window
+  or touched. Since 0.38.0 `createTabV2` also opens `3d`/`2d` scene tabs
+  (`attachTopic`/`detachTopic`/`focusTab` place object topics and raise the tab).
+  `"pj.viewport.v1"` (optional) zooms to a display-seconds X window
   or resets to fit (`sdk::ViewportHostView`), **bounded to those same owned
   tabs** — the boundary is the view, not the transport, which is why
   `"pj.playback.v1"` stays global. Hosts without plots (headless) simply do not
@@ -674,6 +676,8 @@ All three share a common internal `WriteCore` that handles:
 
 `DatastoreToolboxHost` additionally provides:
 - `CatalogSnapshot` — read-only view of all data sources, topics, fields.
+- `CatalogSnapshotV2` (since 0.38.0) — the same plus every object topic, via the
+  `acquire_catalog_snapshot_v2` tail slot.
 - `MaterializedSeries` — host-internal decompressed time-series type
   used by the toolbox host's C++ implementation. **Not part of the v4
   plugin ABI** — at the boundary, `read_series_arrow` returns

@@ -222,6 +222,8 @@ if(PJ_BUILD_TESTS)
     target_link_libraries(${test_name} PRIVATE pj_base GTest::gtest_main)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
+  # Parses the fake host's tab_config JSON.
+  target_link_libraries(plot_tabs_api_test PRIVATE nlohmann_json::nlohmann_json)
 
   set(PJ_SOURCE_TESTS
     tests/source_helpers_test.cpp

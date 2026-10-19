@@ -78,6 +78,36 @@ struct ChartSeries {
   bool dashed = false;  // draw with a dashed line (e.g. a faded "before" ghost curve)
 };
 
+/// One object topic of an embedded scene view. An empty `dataset` resolves the topic
+/// by name (it must then be unique across loaded datasets).
+/// @since 0.38.0
+struct SceneTopic {
+  std::string topic;
+  std::string dataset;
+};
+
+/// The `scene_view` document of a QFrame (see WidgetData::setSceneView): the view's
+/// `kind` ("3d" or "2d") and the topics it shows. An empty `kind` is how
+/// WidgetDataView::sceneView() reports a cleared view.
+/// @since 0.38.0
+struct SceneView {
+  std::string kind;
+  std::vector<SceneTopic> topics;
+};
+
+/// A `scene_view` request the host could not honour, delivered to the frame's
+/// on_widget_event as {"scene_view_error":{"kind","topic","dataset","reason"}}.
+/// `topic`/`dataset` are empty when the failure concerns the view itself (an
+/// unservable kind, a malformed document); `reason` is never empty. `topic`/`dataset`
+/// are the request entry as sent, never resolved.
+/// @since 0.38.0
+struct SceneViewError {
+  std::string kind;
+  std::string topic;
+  std::string dataset;
+  std::string reason;
+};
+
 /// One marker overlaid on a chart preview (used by setChartMarkers). Interpret by
 /// `kind`, mirroring the PlotMarkers vocabulary:
 ///   "event"      → a point at (x0, y0) when `has_value`, else a vertical line at x0;
@@ -624,6 +654,37 @@ class WidgetData {
   /// hides it automatically once the chart receives data.
   WidgetData& setChartPlaceholder(std::string_view name, std::string_view text) {
     entry(name)["chart_placeholder"] = std::string(text);
+    return *this;
+  }
+
+  // --- QFrame embedded scene view ---
+
+  /// Turn the named QFrame into an embedded object view showing `view.topics`. One
+  /// document, {"kind":"3d"|"2d","topics":[{"topic","dataset"}]}, always carrying the
+  /// whole requested set: the host creates the view once, recreates it on a kind
+  /// change and reconciles topics by difference. Only a host announcing
+  /// DialogHostCapability::kEmbedsSceneViews honours it, and only in a panel; others
+  /// leave the frame empty. Failure policy: attachment is best effort, so every topic
+  /// the host can attach stays attached; each refused topic (and a malformed document
+  /// or an unservable kind, with an empty topic) yields one SceneViewError, in request
+  /// order, through the frame's on_widget_event. They are delivered AFTER the host has
+  /// applied the whole widget-data update (never from inside it) and BEFORE it applies
+  /// a superseding update for that frame. A refused topic is not retried until the
+  /// requested set changes.
+  /// @since 0.38.0
+  WidgetData& setSceneView(std::string_view name, const SceneView& view) {
+    nlohmann::json topics = nlohmann::json::array();
+    for (const auto& topic : view.topics) {
+      topics.push_back({{"topic", topic.topic}, {"dataset", topic.dataset}});
+    }
+    entry(name)["scene_view"] = {{"kind", view.kind}, {"topics", std::move(topics)}};
+    return *this;
+  }
+
+  /// Remove the embedded view (and its topics) from the named QFrame.
+  /// @since 0.38.0
+  WidgetData& clearSceneView(std::string_view name) {
+    entry(name)["scene_view"] = nullptr;
     return *this;
   }
 

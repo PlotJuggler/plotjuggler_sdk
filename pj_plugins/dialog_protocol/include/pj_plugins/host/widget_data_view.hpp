@@ -16,8 +16,9 @@
 #include <utility>
 #include <vector>
 
+#include "pj_base/expected.hpp"
 #include "pj_base/number_parse.hpp"
-#include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark
+#include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark, SceneView
 
 namespace PJ {
 
@@ -655,6 +656,54 @@ class WidgetDataView {
       result.push_back(std::move(sv));
     }
     return result;
+  }
+
+  /// The named QFrame's `scene_view` request (WidgetData::setSceneView). nullopt:
+  /// the key is absent, leave the frame alone. A SceneView with an empty `kind`: the
+  /// key is null, remove the view. An error: the document is malformed (not an object,
+  /// a missing or empty kind, topics not an array, an entry that is not an object
+  /// with a non-empty string `topic` and an optional string `dataset`); one bad entry
+  /// rejects the whole document. Unknown keys are ignored; absent `topics` is empty.
+  /// @since 0.38.0
+  [[nodiscard]] std::optional<Expected<SceneView>> sceneView(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("scene_view");
+    if (it == w->end()) {
+      return std::nullopt;
+    }
+    if (it->is_null()) {
+      return SceneView{};
+    }
+    auto kind = it->is_object() ? it->find("kind") : it->end();
+    if (!it->is_object() || kind == it->end() || !kind->is_string() || kind->get_ref<const std::string&>().empty()) {
+      return unexpected("scene_view must be an object with a non-empty string kind");
+    }
+    SceneView view{kind->get<std::string>(), {}};
+    auto topics = it->find("topics");
+    if (topics == it->end()) {
+      return view;
+    }
+    if (!topics->is_array()) {
+      return unexpected("scene_view topics must be an array");
+    }
+    view.topics.reserve(topics->size());
+    for (const auto& entry : *topics) {
+      auto topic = entry.is_object() ? entry.find("topic") : entry.end();
+      if (!entry.is_object() || topic == entry.end() || !topic->is_string() ||
+          topic->get_ref<const std::string&>().empty()) {
+        return unexpected("scene_view topic entries need a non-empty string topic");
+      }
+      auto dataset = entry.find("dataset");
+      if (dataset != entry.end() && !dataset->is_string()) {
+        return unexpected("scene_view topic dataset must be a string");
+      }
+      view.topics.push_back(
+          {topic->get<std::string>(), dataset == entry.end() ? std::string() : dataset->get<std::string>()});
+    }
+    return view;
   }
 
   /// A marker overlaid on the chart (see PJ::ChartMarker / setChartMarkers).

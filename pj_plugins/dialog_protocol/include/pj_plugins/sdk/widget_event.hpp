@@ -4,10 +4,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <optional>
-#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState
+#include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState, SceneViewError
 #include <string>
 #include <string_view>
 #include <utility>
@@ -95,6 +96,35 @@ class WidgetEvent {
   /// atomically validated. Optional display names, selected filter ID, and
   /// error default to empty when absent. Array members must be strings, and
   /// Selected requires at least one non-empty path.
+  /// Embedded scene view: a request the host could not honour (see
+  /// WidgetData::setSceneView). nullopt unless `scene_view_error` is an object whose
+  /// `reason` is a non-empty string and whose `kind`/`topic`/`dataset`, when present,
+  /// are strings; unknown keys are ignored.
+  /// @since 0.38.0
+  std::optional<SceneViewError> sceneViewError() const {
+    auto it = data_.find("scene_view_error");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    SceneViewError error;
+    for (auto [key, field] :
+         {std::pair{"kind", &error.kind}, std::pair{"topic", &error.topic}, std::pair{"dataset", &error.dataset},
+          std::pair{"reason", &error.reason}}) {
+      auto value = it->find(key);
+      if (value == it->end()) {
+        continue;
+      }
+      if (!value->is_string()) {
+        return std::nullopt;
+      }
+      *field = value->get<std::string>();
+    }
+    if (error.reason.empty()) {
+      return std::nullopt;
+    }
+    return error;
+  }
+
   /// @since 0.21.0
   std::optional<FilePickerResult> filePickerResult() const {
     auto result_it = data_.find("file_picker_result");

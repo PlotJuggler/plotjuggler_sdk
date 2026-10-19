@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -120,6 +121,22 @@ TEST(BuiltinObjectCodec, RobotDescriptionHasCanonicalWireRoundTrip) {
   auto output = PJ::deserializeRobotDescription(encoded.data(), encoded.size());
   ASSERT_TRUE(output) << output.error();
   EXPECT_EQ(*output, input);
+}
+
+// A large payload followed by short fields (here a frame id) must not make the writer
+// reallocate and copy the payload a second time: at most one growth past the payload.
+TEST(BuiltinObjectCodec, LargePayloadIsNotCopiedTwice) {
+  const std::vector<uint8_t> points(std::size_t{1} << 20, 0x5A);
+  PJ::sdk::PointCloud cloud;
+  cloud.width = 1;
+  cloud.height = 1;
+  cloud.data = PJ::Span<const uint8_t>(points.data(), points.size());
+  cloud.frame_id = "base_link";
+
+  const auto encoded = PJ::serializeBuiltinObject(PJ::sdk::BuiltinObject(cloud));
+  ASSERT_TRUE(encoded) << encoded.error();
+  EXPECT_GT(encoded->size(), points.size());
+  EXPECT_LT(encoded->capacity(), points.size() + 4096);
 }
 
 }  // namespace

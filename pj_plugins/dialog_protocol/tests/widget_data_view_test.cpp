@@ -937,3 +937,78 @@ TEST(WidgetDataViewTest, TreeStringArrayChannelsRejectEveryMalformedArrayAtomica
   EXPECT_FALSE(view.treeExpandedIds("tree").has_value());
   EXPECT_FALSE(view.treeVisibilityUpdate("tree").has_value());
 }
+
+// --- Embedded scene view (`scene_view`) ---------------------------------------
+
+TEST(WidgetDataViewSceneViewTest, DocumentRoundTrips) {
+  PJ::WidgetData data;
+  data.setSceneView("preview", PJ::SceneView{"3d", {{"lidar/points", "bag1"}, {"tf", ""}}});
+  const PJ::WidgetDataView view(data.toJson());
+  const auto scene = view.sceneView("preview");
+  ASSERT_TRUE(scene.has_value());
+  ASSERT_TRUE(scene->has_value()) << scene->error();
+  EXPECT_EQ((*scene)->kind, "3d");
+  ASSERT_EQ((*scene)->topics.size(), 2u);
+  EXPECT_EQ((*scene)->topics[0].topic, "lidar/points");
+  EXPECT_EQ((*scene)->topics[0].dataset, "bag1");
+  EXPECT_EQ((*scene)->topics[1].topic, "tf");
+  EXPECT_TRUE((*scene)->topics[1].dataset.empty());
+}
+
+TEST(WidgetDataViewSceneViewTest, ClearIsAnEmptyKind) {
+  PJ::WidgetData data;
+  data.clearSceneView("preview");
+  const auto scene = PJ::WidgetDataView(data.toJson()).sceneView("preview");
+  ASSERT_TRUE(scene.has_value());
+  ASSERT_TRUE(scene->has_value()) << scene->error();
+  EXPECT_TRUE((*scene)->kind.empty());
+  EXPECT_TRUE((*scene)->topics.empty());
+}
+
+TEST(WidgetDataViewSceneViewTest, AbsentKeyLeavesTheFrameAlone) {
+  PJ::WidgetData data;
+  data.setChartZoomEnabled("preview", true);
+  EXPECT_FALSE(PJ::WidgetDataView(data.toJson()).sceneView("preview").has_value());
+  EXPECT_FALSE(PJ::WidgetDataView(data.toJson()).sceneView("other").has_value());
+}
+
+TEST(WidgetDataViewSceneViewTest, MissingTopicsIsAnEmptyViewAndUnknownKeysAreIgnored) {
+  const PJ::WidgetDataView view(
+      R"({"a":{"scene_view":{"kind":"2d","future":1}},)"
+      R"("b":{"scene_view":{"kind":"3d","topics":[{"topic":"t","dataset":"d","visible":false}],"camera":{}}}})");
+  const auto empty = view.sceneView("a");
+  ASSERT_TRUE(empty.has_value() && empty->has_value());
+  EXPECT_EQ((*empty)->kind, "2d");
+  EXPECT_TRUE((*empty)->topics.empty());
+  const auto one = view.sceneView("b");
+  ASSERT_TRUE(one.has_value() && one->has_value());
+  ASSERT_EQ((*one)->topics.size(), 1u);
+  EXPECT_EQ((*one)->topics[0].dataset, "d");
+}
+
+TEST(WidgetDataViewSceneViewTest, MalformedDocumentsAreErrorsNotAbsent) {
+  for (const char* scene_view : {
+           R"("3d")",                                                // the pre-0.38 draft string shape
+           R"(["3d"])",                                              // not an object
+           R"({})",                                                  // no kind
+           R"({"kind":""})",                                         // empty kind
+           R"({"kind":3})",                                          // kind not a string
+           R"({"kind":"3d","topics":{}})",                           // topics not an array
+           R"({"kind":"3d","topics":["t"]})",                        // entry not an object
+           R"({"kind":"3d","topics":[{"dataset":"d"}]})",            // entry without a topic
+           R"({"kind":"3d","topics":[{"topic":""}]})",               // empty topic
+           R"({"kind":"3d","topics":[{"topic":"t","dataset":1}]})",  // dataset not a string
+           R"({"kind":"3d","topics":[{"topic":"t"},5]})",            // one bad entry rejects the document
+       }) {
+    SCOPED_TRACE(scene_view);
+    const std::string json = std::string(R"({"preview":{"scene_view":)") + scene_view + "}}";
+    const auto scene = PJ::WidgetDataView(json).sceneView("preview");
+    ASSERT_TRUE(scene.has_value());
+    EXPECT_FALSE(scene->has_value());
+  }
+}
+
+TEST(WidgetDataViewSceneViewTest, TrailingJunkAfterTheDocumentIsNotAWidgetUpdate) {
+  const PJ::WidgetDataView view(R"({"preview":{"scene_view":{"kind":"3d","topics":[]}}} trailing)");
+  EXPECT_FALSE(view.sceneView("preview").has_value());
+}

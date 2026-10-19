@@ -17,6 +17,9 @@ plugin can require from the HOST at runtime. Three kinds are extracted:
      lists below — an unknown id fails the extraction.
   3. PJ_*_FLAG* macros in the protocol headers (wire-contract flags a host
      must understand).
+  4. Members of the dialog host capability enum, emitted as
+     "PJ_dialog_host_capability_t::<member>": a bit the host announces and a
+     dialog plugin gates on.
 
 Plugin-side vtables (PJ_data_source_vtable_t, ...) are deliberately absent:
 the HOST calls those, so an old host not calling a new plugin slot degrades
@@ -85,6 +88,10 @@ FLAG_RE = re.compile(r"#\s*define\s+(PJ_\w*_FLAG\w*)[\s(]")
 PROTOCOL_HEADER_GLOBS = [
     ("pj_base/include/pj_base", "*.h"),
 ]
+DIALOG_PROTOCOL_HEADER = "pj_plugins/dialog_protocol/include/pj_plugins/dialog_protocol.h"
+DIALOG_CAPABILITY_ENUM = "PJ_dialog_host_capability_t"
+# Pads the enum to a stable width; not a capability.
+DIALOG_CAPABILITY_PADDING = "PJ_DIALOG_HOST_CAPABILITY_FORCE_INT32"
 SERVICE_ID_GLOBS = [
     ("pj_base/include/pj_base", "**/*.h*"),
     ("pj_plugins/include", "**/*.h*"),
@@ -151,8 +158,20 @@ def _callable_member_name(declaration: str, fn_ptr_typedefs: set[str]) -> str | 
     return None
 
 
+def _dialog_capabilities(repo: Path) -> set[str]:
+    header = repo / DIALOG_PROTOCOL_HEADER
+    text = strip_comments(header.read_text(encoding="utf-8"))
+    match = re.search(r"typedef\s+enum\s+" + DIALOG_CAPABILITY_ENUM + r"\s*\{(.*?)\}", text, flags=re.S)
+    if match is None:
+        raise SystemExit(f"{DIALOG_CAPABILITY_ENUM} not found in {header}")
+    members = re.findall(r"^\s*(PJ_DIALOG_HOST_\w+)\s*=", match.group(1), flags=re.M)
+    return {
+        f"{DIALOG_CAPABILITY_ENUM}::{member}" for member in members if member != DIALOG_CAPABILITY_PADDING
+    }
+
+
 def extract(repo: Path) -> list[str]:
-    surfaces: set[str] = set()
+    surfaces: set[str] = _dialog_capabilities(repo)
     header_texts: list[tuple[Path, str]] = []
     for rel, glob in PROTOCOL_HEADER_GLOBS:
         for header in sorted((repo / rel).glob(glob)):

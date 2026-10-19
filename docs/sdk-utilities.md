@@ -61,6 +61,7 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::sdk::ObjectBytes` | Own object-read bytes through move-only RAII | `pj_base/sdk/object_bytes.hpp` |
 | `PJ::sdk::ArrowSchemaHolder, ArrowArrayHolder, ArrowStreamHolder` | Own Arrow out-params; successful writes transfer ownership, failed writes retain it | `pj_base/sdk/arrow.hpp` |
 | `PJ::sdk::parseEvaluationReport` | Parse a data-processor poll report (COMPLETED or FAILED) and derive each bundle's stamp | `pj_plugins/sdk/evaluation_report.hpp` |
+| `PJ::sdk::storeCatalogSnapshotV2` | Host side: write a catalog snapshot v2 under the caller-size rule, releasing it on refusal | `pj_base/sdk/plugin_data_api.hpp` |
 | `PJ::sdk::readDataProcessorRequest, readEvaluationBudget` | Host side: decode a typed data-processor request or budget (read-prefix rule, structural rejections) | `pj_base/sdk/data_processors_host.hpp` |
 | `PJ::sdk::FieldTable<T>, field<&T::member>, describe` | Read/write builtin struct members by name in a generic binder; lists are element-addressable | `pj_base/builtin/field_table.hpp; pj_base/builtin/field_table_registry.hpp` |
 | `PJ::sdk::PinholeIntrinsics, unprojectPixel` | Unproject rectified metric depth pixels; validate K once per image | `pj_base/builtin/depth_image_utils.hpp` |

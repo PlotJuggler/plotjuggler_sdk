@@ -16,10 +16,10 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
-#include <limits>
 
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
+#include "pj_base/sdk/abi_bounds.hpp"
 
 namespace PJ::sdk {
 
@@ -43,19 +43,6 @@ template <typename T>
   std::memcpy(&out, caller, std::min<std::size_t>(caller->struct_size, sizeof(T)));
   out.struct_size = sizeof(T);
   return out;
-}
-
-/// Whether `count` elements of `element_size` bytes can be one object: the byte count
-/// must fit std::ptrdiff_t, so count * element_size cannot overflow std::size_t even
-/// where it is 32 bits. A caller's count is untrusted until this holds.
-[[nodiscard]] constexpr bool fitsObject(uint64_t count, std::size_t element_size) noexcept {
-  return count <= static_cast<uint64_t>(std::numeric_limits<std::ptrdiff_t>::max()) / element_size;
-}
-
-/// A view may be NULL only when empty, and its size must fit an object; a valid one
-/// needs no terminator.
-[[nodiscard]] constexpr bool validView(PJ_string_view_t view) noexcept {
-  return (view.data != nullptr || view.size == 0) && fitsObject(view.size, 1);
 }
 
 }  // namespace detail

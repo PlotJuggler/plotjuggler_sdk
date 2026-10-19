@@ -159,7 +159,9 @@ def load_surface_table(path: Path) -> SurfaceTable:
     "since": {"X.Y.Z": {identifier: entry}}, "baseline": [identifier]}``
     where entry is a declaration string (``""`` = the declaration IS the
     identifier, as with flag macros) or ``{"declaration": ...,
-    "negotiated": false}`` for a hard surface. ``negotiated`` defaults true.
+    "negotiated": false, "aliases": [token, ...]}``. ``negotiated: false`` marks a
+    hard surface (default true); ``aliases`` are further spellings of the same
+    surface that count as usage (e.g. the setter that fills a capability-gated key).
     """
     try:
         raw = path.read_text(encoding="utf-8")
@@ -207,10 +209,11 @@ def load_surface_table(path: Path) -> SurfaceTable:
                     f"surface {identifier!r} appears in more than one since group in {path}"
                 )
             negotiated = True
+            aliases: list[str] = []
             if isinstance(value, str):
                 declaration = value or identifier
             elif isinstance(value, dict):
-                unknown = set(value) - {"declaration", "negotiated"}
+                unknown = set(value) - {"declaration", "negotiated", "aliases"}
                 if unknown:
                     raise CheckError(
                         f"surface {identifier!r} in {path} has unknown keys: {', '.join(sorted(unknown))}"
@@ -222,11 +225,16 @@ def load_surface_table(path: Path) -> SurfaceTable:
                 negotiated = value.get("negotiated", True)
                 if not isinstance(negotiated, bool):
                     raise CheckError(f"surface {identifier!r} in {path} needs a boolean 'negotiated'")
+                aliases = value.get("aliases", [])
+                if not isinstance(aliases, list) or not all(
+                    isinstance(alias, str) and alias and alias == alias.strip() for alias in aliases
+                ):
+                    raise CheckError(f"surface {identifier!r} in {path} needs 'aliases' as trimmed strings")
             else:
                 raise CheckError(
                     f"surface {identifier!r} in {path} must map to a declaration string or an object"
                 )
-            tokens = _surface_tokens(identifier, declaration)
+            tokens = _surface_tokens(identifier, declaration) + tuple(aliases)
             surfaces[identifier] = Surface(
                 identifier, since, negotiated, declaration, tokens, surface_matcher(tokens)
             )

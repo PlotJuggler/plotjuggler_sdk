@@ -27,6 +27,10 @@ static_assert(
 static_assert(
     static_cast<uint64_t>(PJ::DialogHostCapability::kStagesBrowserFile) == PJ_DIALOG_HOST_STAGES_BROWSER_FILE,
     "C++ capability mirrors the C ABI");
+static_assert(
+    static_cast<uint64_t>(PJ::DialogHostCapability::kEmbedsSceneViews) == PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS,
+    "C++ capability mirrors the C ABI");
+static_assert(PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS == (1ull << 5), "scene-view capability bit frozen (0.38.0)");
 
 class HostInfoDialog final : public PJ::DialogPluginBase {
  public:
@@ -48,6 +52,9 @@ class HostInfoDialog final : public PJ::DialogPluginBase {
 
   [[nodiscard]] const std::optional<PJ::DialogHostInfo>& observedHostInfo() const noexcept {
     return hostInfo();
+  }
+  [[nodiscard]] bool observedHostHas(PJ::DialogHostCapability capability) const noexcept {
+    return hostHas(capability);
   }
 };
 
@@ -114,6 +121,17 @@ TEST_F(DialogPluginBaseHostInfoTest, CopiesStringsAndCapabilitiesDuringDelivery)
   EXPECT_FALSE(info->has(PJ::DialogHostCapability::kCanOpenFiles));
   EXPECT_FALSE(info->has(PJ::DialogHostCapability::kCanSaveFilePath));
   EXPECT_FALSE(info->has(PJ::DialogHostCapability::kCanSelectFolder));
+}
+
+TEST_F(DialogPluginBaseHostInfoTest, SceneViewCapabilityIsReportedOnlyWhenAnnounced) {
+  EXPECT_FALSE(plugin().observedHostHas(PJ::DialogHostCapability::kEmbedsSceneViews));  // no host info yet
+
+  ASSERT_TRUE(deliver("0.38.0", "4.1.0", PJ_DIALOG_HOST_CAN_OPEN_FILE));
+  EXPECT_FALSE(plugin().observedHostHas(PJ::DialogHostCapability::kEmbedsSceneViews));
+
+  ASSERT_TRUE(deliver("0.38.0", "4.1.0", PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS));
+  EXPECT_TRUE(plugin().observedHostHas(PJ::DialogHostCapability::kEmbedsSceneViews));
+  EXPECT_FALSE(plugin().observedHostHas(PJ::DialogHostCapability::kCanOpenFile));
 }
 
 TEST_F(DialogPluginBaseHostInfoTest, AcceptsOnlyFieldsCoveredByStructSize) {

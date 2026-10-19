@@ -316,7 +316,70 @@ static_assert(
 static_assert(
     offsetof(PJ_toolbox_host_vtable_t, set_object_topic_retention) == 96,
     "toolbox host object-retention tail slot pinned");
-static_assert(sizeof(PJ_toolbox_host_vtable_t) == 104, "Toolbox host size (update deliberately on append)");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, acquire_catalog_snapshot_v2) == 104,
+    "toolbox host catalog-snapshot-v2 tail slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 112, "Toolbox host size (update deliberately on append)");
+
+// --- Catalog snapshot v2 (introduced 0.38.0) ----------------------------------
+// The object-topic info is a fixed-stride array element; the snapshot grows only by
+// appending under the caller-size rule.
+static_assert(offsetof(PJ_object_topic_info_t, handle) == 0, "PJ_object_topic_info_t.handle offset pinned");
+static_assert(offsetof(PJ_object_topic_info_t, source) == 4, "PJ_object_topic_info_t.source offset pinned");
+static_assert(offsetof(PJ_object_topic_info_t, name) == 8, "PJ_object_topic_info_t.name offset pinned");
+static_assert(
+    offsetof(PJ_object_topic_info_t, builtin_object_type) == 24,
+    "PJ_object_topic_info_t.builtin_object_type offset pinned");
+static_assert(
+    offsetof(PJ_object_topic_info_t, metadata_json) == 40, "PJ_object_topic_info_t.metadata_json offset pinned");
+static_assert(offsetof(PJ_object_topic_info_t, entry_count) == 56, "PJ_object_topic_info_t.entry_count offset pinned");
+static_assert(offsetof(PJ_object_topic_info_t, time_min_ns) == 64, "PJ_object_topic_info_t.time_min_ns offset pinned");
+static_assert(offsetof(PJ_object_topic_info_t, time_max_ns) == 72, "PJ_object_topic_info_t.time_max_ns offset pinned");
+static_assert(offsetof(PJ_object_topic_info_t, reserved) == 80, "PJ_object_topic_info_t.reserved offset pinned");
+static_assert(sizeof(PJ_object_topic_info_t) == 96, "PJ_object_topic_info_t stride pinned at introduction (0.38.0)");
+static_assert(alignof(PJ_object_topic_info_t) == 8, "PJ_object_topic_info_t alignment pinned");
+
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, struct_size) == 0, "PJ_catalog_snapshot_v2_t.struct_size offset pinned");
+static_assert(offsetof(PJ_catalog_snapshot_v2_t, reserved) == 4, "PJ_catalog_snapshot_v2_t.reserved offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, data_sources) == 8, "PJ_catalog_snapshot_v2_t.data_sources offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, data_source_count) == 16,
+    "PJ_catalog_snapshot_v2_t.data_source_count offset pinned");
+static_assert(offsetof(PJ_catalog_snapshot_v2_t, topics) == 24, "PJ_catalog_snapshot_v2_t.topics offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, topic_count) == 32, "PJ_catalog_snapshot_v2_t.topic_count offset pinned");
+static_assert(offsetof(PJ_catalog_snapshot_v2_t, fields) == 40, "PJ_catalog_snapshot_v2_t.fields offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, field_count) == 48, "PJ_catalog_snapshot_v2_t.field_count offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, object_topics) == 56, "PJ_catalog_snapshot_v2_t.object_topics offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, object_topic_count) == 64,
+    "PJ_catalog_snapshot_v2_t.object_topic_count offset pinned");
+static_assert(
+    offsetof(PJ_catalog_snapshot_v2_t, release_ctx) == 72, "PJ_catalog_snapshot_v2_t.release_ctx offset pinned");
+static_assert(offsetof(PJ_catalog_snapshot_v2_t, release) == 80, "PJ_catalog_snapshot_v2_t.release offset pinned");
+static_assert(sizeof(PJ_catalog_snapshot_v2_t) == 88, "PJ_catalog_snapshot_v2_t size pinned at introduction (0.38.0)");
+static_assert(PJ_CATALOG_SNAPSHOT_V2_MIN_SIZE == 88, "catalog snapshot v2 minimum size pinned");
+
+// --- Plot-tab host vtable ("pj.plot_tabs.v1", ABI-APPENDABLE) ------------------
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, protocol_version) == 0, "plot tab host prefix pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, struct_size) == 4, "plot tab host prefix pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, create_tab) == 8, "plot tab host create slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, close_tab) == 16, "plot tab host close slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, list_tab_ids) == 24, "plot tab host list slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, tab_config) == 32, "plot tab host config slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, add_curve) == 40, "plot tab host add-curve slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, remove_curve) == 48, "plot tab host remove-curve slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, clear_tab) == 56, "plot tab host v1 last slot pinned");
+static_assert(PJ_PLOT_TAB_HOST_MIN_VTABLE_SIZE == 64, "plot tab host v1 minimum size pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, create_tab_v2) == 64, "plot tab host create-v2 tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, attach_topic) == 72, "plot tab host attach tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, detach_topic) == 80, "plot tab host detach tail slot pinned");
+static_assert(offsetof(PJ_plot_tab_host_vtable_t, focus_tab) == 88, "plot tab host focus tail slot pinned");
+static_assert(sizeof(PJ_plot_tab_host_vtable_t) == 96, "Plot tab host size (update deliberately on append)");
 
 // --- Data processors host vtable ("pj.data_processors.v1", ABI-APPENDABLE) --
 static_assert(offsetof(PJ_data_processors_host_vtable_t, protocol_version) == 0, "data processors host prefix pinned");

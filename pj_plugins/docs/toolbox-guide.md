@@ -200,6 +200,7 @@ data store.
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
+| `hasCatalogSnapshotV2()`, `catalogSnapshotV2()` (0.38.0) | Like `catalogSnapshot()`, plus every object topic (`objectTopics()`: dataset, builtin type, metadata JSON, and the entry count and raw time range the store retains now). The two halves are not read atomically: a topic created between the reads may appear in one half only. Derived and marker topics are included; tell them apart by metadata (`kDerivedMetadataKey`, the marker keys in `object_topic_metadata.hpp`), never by name. |
 | `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
 | `registerObjectTopic(source, name, type[, extra_metadata])` | Register a built-in media/object topic under a data source. The typed overload emits the canonical `builtin_object_type` renderer metadata and returns an `ObjectTopicHandle`. |
 | `registerObjectTopic(source, name, metadata_json)` | Raw-metadata overload for custom or untyped object topics. The store retains the JSON verbatim. |
@@ -221,7 +222,7 @@ Include `pj_base/sdk/service_traits.hpp` and acquire the services you need:
 | Service trait | Methods and scope |
 |---|---|
 | `PJ::sdk::PlaybackHostService` | `play`, `pause`, `seek`, `setPlaybackRate`, `state`: the global playback cursor. `toDisplayTime` and `toDisplayTimeForSource` convert absolute nanoseconds to display-axis seconds. |
-| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. |
+| `PJ::sdk::PlotTabHostService` | `create`, `close`, `list`, `configOf`, `addCurve`, `removeCurve`, `clear`: only the calling plugin's tabs. Scene tabs (0.38.0): `createTabV2(id, kind, title)` with `kind` `"plot"`, `"3d"` or `"2d"` (one id namespace across kinds; a different kind replaces the tab with an empty one), `attachTopic(id, topic, dataset_source)` (idempotent), `detachTopic`, `focusTab(id)`. Each is a tail slot gated on its own: without it the call returns "plot tab host does not support <slot>"; a kind the host cannot serve is refused naming the kind. On a scene tab `addCurve`/`removeCurve` are errors, `clear` detaches every topic, and `configOf` reports `kind` and the topics actually attached (a plot tab's JSON is unchanged). |
 | `PJ::sdk::ViewportHostService` | `zoomToTimeRange`, `zoomReset`: all eligible plots in the calling plugin's tabs. |
 
 All calls run on the main thread. Services are optional. Check acquisition
@@ -427,6 +428,8 @@ it without instantiating the plugin.
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
+| `badge` | string | no | Short label (e.g. `"AI"`, at most 8 characters advised) a host may show next to objects the plugin creates (0.38.0). Absent: host policy (e.g. the plugin name). Read as `PluginDescriptor::badge`. |
+| `capabilities` | string[] | no | Declarative tags; a host ignores tags it does not know. `"custom_topics_editor"` (`kCustomTopicsEditorCapability`, 0.38.0) marks the editor of the host's Custom topics. Read with `PluginDescriptor::hasCapability`. |
 
 Example:
 ```json

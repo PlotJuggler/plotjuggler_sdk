@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <pj_plugins/host/widget_data_view.hpp>
 #include <pj_plugins/host/widget_event_builder.hpp>
 #include <pj_plugins/sdk/widget_event.hpp>
 #include <string>
@@ -365,4 +366,79 @@ TEST(WidgetEventBuilderTest, ItemDeleteRequestedAbsentOnOtherEvents) {
   std::string json = PJ::WidgetEventBuilder::textChanged("x");
   PJ::WidgetEvent ev(json);
   EXPECT_FALSE(ev.itemDeleteRequestedIndex().has_value());
+}
+
+TEST(WidgetEventBuilderTest, SceneViewErrorRoundTrips) {
+  const PJ::SceneViewError error{"3d", "lidar/points", "bag1", "topic 'lidar/points' is ambiguous"};
+  const PJ::WidgetEvent event(PJ::WidgetEventBuilder::sceneViewError(error));
+  const auto parsed = event.sceneViewError();
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_EQ(parsed->kind, "3d");
+  EXPECT_EQ(parsed->topic, "lidar/points");
+  EXPECT_EQ(parsed->dataset, "bag1");
+  EXPECT_EQ(parsed->reason, "topic 'lidar/points' is ambiguous");
+}
+
+TEST(WidgetEventBuilderTest, SceneViewErrorOfTheViewItselfHasNoTopic) {
+  const PJ::WidgetEvent event(PJ::WidgetEventBuilder::sceneViewError({"2d", "", "", "kind '2d' is not available"}));
+  const auto parsed = event.sceneViewError();
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_TRUE(parsed->topic.empty());
+  EXPECT_TRUE(parsed->dataset.empty());
+}
+
+TEST(WidgetEventBuilderTest, SceneViewErrorParsingIsStrict) {
+  EXPECT_FALSE(PJ::WidgetEvent(R"({"text":"x"})").sceneViewError().has_value());
+  EXPECT_FALSE(PJ::WidgetEvent(R"({"scene_view_error":"boom"})").sceneViewError().has_value());
+  EXPECT_FALSE(
+      PJ::WidgetEvent(R"({"scene_view_error":{"kind":"3d","topic":"t","dataset":""}})")
+          .sceneViewError()
+          .has_value());  // no reason
+  EXPECT_FALSE(PJ::WidgetEvent(R"({"scene_view_error":{"kind":"3d","reason":""}})").sceneViewError().has_value());
+  EXPECT_FALSE(PJ::WidgetEvent(R"({"scene_view_error":{"kind":1,"reason":"r"}})").sceneViewError().has_value());
+  EXPECT_FALSE(
+      PJ::WidgetEvent(R"({"scene_view_error":{"kind":"3d","topic":2,"reason":"r"}})").sceneViewError().has_value());
+  const auto tolerant =
+      PJ::WidgetEvent(R"({"scene_view_error":{"kind":"3d","reason":"r","future":true}})").sceneViewError();
+  ASSERT_TRUE(tolerant.has_value());
+  EXPECT_EQ(tolerant->reason, "r");
+}
+
+// The scene_view failure policy (WidgetData::setSceneView) as a fake host applies it:
+// best-effort attach keeps every valid topic, one scene_view_error per refused topic in
+// request order, delivered after the whole update and before a superseding update for
+// the same frame is applied.
+TEST(SceneViewFailurePolicyTest, FakeHostAttachesBestEffortAndReportsEachRefusalInOrder) {
+  std::vector<std::string> log;
+  std::vector<std::string> attached;
+  auto apply_then_deliver = [&](const PJ::WidgetData& data) {
+    const auto scene = PJ::WidgetDataView(data.toJson()).sceneView("preview");
+    ASSERT_TRUE(scene.has_value() && scene->has_value());
+    std::vector<std::string> pending;
+    attached.clear();
+    for (const auto& topic : (*scene)->topics) {
+      if (topic.topic.rfind("missing", 0) == 0) {
+        pending.push_back(
+            PJ::WidgetEventBuilder::sceneViewError({(*scene)->kind, topic.topic, topic.dataset, "topic not found"}));
+      } else {
+        attached.push_back(topic.topic);
+      }
+    }
+    log.push_back("applied");
+    for (const auto& event : pending) {
+      const auto error = PJ::WidgetEvent(event).sceneViewError();
+      ASSERT_TRUE(error.has_value());
+      log.push_back("error " + error->topic);
+    }
+  };
+
+  PJ::WidgetData first;
+  first.setSceneView("preview", PJ::SceneView{"3d", {{"cloud", ""}, {"missing_a", ""}, {"tf", ""}, {"missing_b", ""}}});
+  apply_then_deliver(first);
+  EXPECT_EQ(attached, (std::vector<std::string>{"cloud", "tf"}));
+
+  PJ::WidgetData superseding;
+  superseding.setSceneView("preview", PJ::SceneView{"3d", {{"cloud", ""}}});
+  apply_then_deliver(superseding);
+  EXPECT_EQ(log, (std::vector<std::string>{"applied", "error missing_a", "error missing_b", "applied"}));
 }

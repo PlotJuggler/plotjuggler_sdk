@@ -22,6 +22,17 @@
       "pollEvaluation": "PJ_data_processors_host_vtable_t::poll_evaluation",
       "releaseEvaluation": "PJ_data_processors_host_vtable_t::release_evaluation",
       "submitEvaluation": "PJ_data_processors_host_vtable_t::submit_evaluation"
+    },
+    "0.38.0": {
+      "attachTopic": "PJ_plot_tab_host_vtable_t::attach_topic",
+      "catalogSnapshotV2": "PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2",
+      "createTabV2": "PJ_plot_tab_host_vtable_t::create_tab_v2",
+      "detachTopic": "PJ_plot_tab_host_vtable_t::detach_topic",
+      "focusTab": "PJ_plot_tab_host_vtable_t::focus_tab",
+      "kEmbedsSceneViews": {
+        "declaration": "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS",
+        "aliases": ["setSceneView"]
+      }
     }
   },
   "baseline": [
@@ -51,6 +62,11 @@
     "PJ_data_source_runtime_host_vtable_t::report_message",
     "PJ_data_source_runtime_host_vtable_t::request_stop",
     "PJ_data_source_runtime_host_vtable_t::show_message_box",
+    "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_CAN_OPEN_FILE",
+    "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_CAN_OPEN_FILES",
+    "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_CAN_SAVE_FILE_PATH",
+    "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_CAN_SELECT_FOLDER",
+    "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_STAGES_BROWSER_FILE",
     "PJ_object_read_host_vtable_t::entry_count",
     "PJ_object_read_host_vtable_t::get_bytes",
     "PJ_object_read_host_vtable_t::list_topics",

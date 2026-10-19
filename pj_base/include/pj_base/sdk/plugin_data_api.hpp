@@ -2,9 +2,11 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -24,6 +26,7 @@
 #include "pj_base/expected.hpp"
 #include "pj_base/number_parse.hpp"
 #include "pj_base/plugin_data_api.h"
+#include "pj_base/sdk/abi_bounds.hpp"
 #include "pj_base/sdk/arrow.hpp"
 #include "pj_base/sdk/object_bytes.hpp"
 #include "pj_base/sdk/object_topic_metadata.hpp"
@@ -173,6 +176,149 @@ class CatalogSnapshot {
     }
   }
 };
+
+// The fixed stride of PJ_object_topic_info_t on the supported ABIs (64-bit, wasm32).
+#if UINTPTR_MAX == UINT64_MAX || defined(__wasm32__)
+static_assert(sizeof(PJ_object_topic_info_t) == 96, "PJ_object_topic_info_t stride is 96 bytes");
+#endif
+
+/// RAII wrapper around PJ_catalog_snapshot_v2_t: the scalar catalog plus every
+/// object topic. Obtain it from ToolboxHostView::catalogSnapshotV2(), which has
+/// already checked every count against its pointer; releases exactly once.
+/// @since 0.38.0
+class CatalogSnapshotV2 {
+ public:
+  CatalogSnapshotV2() = default;
+  explicit CatalogSnapshotV2(PJ_catalog_snapshot_v2_t raw) : raw_(raw) {}
+  ~CatalogSnapshotV2() {
+    reset();
+  }
+
+  CatalogSnapshotV2(const CatalogSnapshotV2&) = delete;
+  CatalogSnapshotV2& operator=(const CatalogSnapshotV2&) = delete;
+
+  CatalogSnapshotV2(CatalogSnapshotV2&& other) noexcept : raw_(other.release()) {}
+
+  CatalogSnapshotV2& operator=(CatalogSnapshotV2&& other) noexcept {
+    if (this != &other) {
+      reset();
+      raw_ = other.release();
+    }
+    return *this;
+  }
+
+  [[nodiscard]] Span<const PJ_data_source_info_t> dataSources() const {
+    return Span<const PJ_data_source_info_t>(raw_.data_sources, raw_.data_source_count);
+  }
+
+  [[nodiscard]] Span<const PJ_topic_info_t> topics() const {
+    return Span<const PJ_topic_info_t>(raw_.topics, raw_.topic_count);
+  }
+
+  [[nodiscard]] Span<const PJ_field_info_t> fields() const {
+    return Span<const PJ_field_info_t>(raw_.fields, raw_.field_count);
+  }
+
+  /// Object topics, derived and marker topics included: tell them apart by
+  /// metadata_json (e.g. kDerivedMetadataKey), never by name.
+  [[nodiscard]] Span<const PJ_object_topic_info_t> objectTopics() const {
+    return Span<const PJ_object_topic_info_t>(raw_.object_topics, raw_.object_topic_count);
+  }
+
+ private:
+  PJ_catalog_snapshot_v2_t raw_{};
+
+  [[nodiscard]] PJ_catalog_snapshot_v2_t release() noexcept {
+    auto raw = raw_;
+    raw_ = {};
+    return raw;
+  }
+
+  void reset() {
+    if (raw_.release != nullptr) {
+      raw_.release(raw_.release_ctx);
+      raw_ = {};
+    }
+  }
+};
+
+/// Host half of the PJ_catalog_snapshot_v2_t struct_size rule: refuses a NULL or
+/// undersized caller struct without writing to it, otherwise copies the prefix of
+/// `filled` covered by min(caller size, sizeof) and sets struct_size to that. On a
+/// refusal it releases `filled`, so the host never leaks a snapshot it built.
+/// @since 0.38.0
+[[nodiscard]] inline Status storeCatalogSnapshotV2(PJ_catalog_snapshot_v2_t* out, PJ_catalog_snapshot_v2_t filled) {
+  if (out == nullptr || out->struct_size < PJ_CATALOG_SNAPSHOT_V2_MIN_SIZE) {
+    if (filled.release != nullptr) {
+      filled.release(filled.release_ctx);
+    }
+    return unexpected(
+        out == nullptr ? "catalog snapshot v2: null out_snapshot"
+                       : "catalog snapshot v2: struct_size is below PJ_CATALOG_SNAPSHOT_V2_MIN_SIZE");
+  }
+  filled.struct_size = static_cast<uint32_t>(std::min<std::size_t>(out->struct_size, sizeof(filled)));
+  filled.reserved = 0;
+  std::memcpy(out, &filled, filled.struct_size);
+  return okStatus();
+}
+
+namespace detail {
+
+/// Why a complete host snapshot v2 cannot be read, or "" when it can. Each count is
+/// checked against its pointer and the object-size bound (32-bit size_t included)
+/// before any array is read, then every string view of every entry is checked.
+[[nodiscard]] inline std::string catalogSnapshotV2Defect(const PJ_catalog_snapshot_v2_t& raw) {
+  struct Array {
+    const char* name;
+    const void* data;
+    uint64_t count;
+    std::size_t element_size;
+  };
+  const Array arrays[] = {
+      {"data_sources", raw.data_sources, raw.data_source_count, sizeof(PJ_data_source_info_t)},
+      {"topics", raw.topics, raw.topic_count, sizeof(PJ_topic_info_t)},
+      {"fields", raw.fields, raw.field_count, sizeof(PJ_field_info_t)},
+      {"object_topics", raw.object_topics, raw.object_topic_count, sizeof(PJ_object_topic_info_t)},
+  };
+  for (const auto& array : arrays) {
+    if (!fitsObject(array.count, array.element_size)) {
+      return std::string("toolbox host returned an impossible ") + array.name + " count";
+    }
+    if (array.count != 0 && array.data == nullptr) {
+      return std::string("toolbox host returned NULL ") + array.name + " with a nonzero count";
+    }
+  }
+  auto invalid = [](const char* what) { return std::string("toolbox host returned an invalid ") + what; };
+  for (const auto& source : Span<const PJ_data_source_info_t>(raw.data_sources, raw.data_source_count)) {
+    if (!validView(source.name)) {
+      return invalid("data source name");
+    }
+  }
+  for (const auto& topic : Span<const PJ_topic_info_t>(raw.topics, raw.topic_count)) {
+    if (!validView(topic.name)) {
+      return invalid("topic name");
+    }
+  }
+  for (const auto& field : Span<const PJ_field_info_t>(raw.fields, raw.field_count)) {
+    if (!validView(field.name)) {
+      return invalid("field name");
+    }
+  }
+  for (const auto& topic : Span<const PJ_object_topic_info_t>(raw.object_topics, raw.object_topic_count)) {
+    if (!validView(topic.name)) {
+      return invalid("object topic name");
+    }
+    if (!validView(topic.builtin_object_type)) {
+      return invalid("object topic type");
+    }
+    if (!validView(topic.metadata_json)) {
+      return invalid("object topic metadata");
+    }
+  }
+  return {};
+}
+
+}  // namespace detail
 
 [[nodiscard]] inline std::string_view toStringView(PJ_string_view_t view) {
   return std::string_view(view.data == nullptr ? "" : view.data, view.size);
@@ -1261,6 +1407,43 @@ class ToolboxHostView {
     return CatalogSnapshot(raw);
   }
 
+  /// True iff the host serves catalog snapshot v2 (the acquire_catalog_snapshot_v2
+  /// tail slot). No host call. Without it object topics are not enumerable.
+  /// @since 0.38.0
+  [[nodiscard]] bool hasCatalogSnapshotV2() const noexcept {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, acquire_catalog_snapshot_v2);
+  }
+
+  /// Snapshot v2: catalogSnapshot()'s scalar catalog plus every object topic, in one
+  /// deep copy (the two halves are not read atomically, see the C slot). A complete but
+  /// malformed reply (a count its pointer cannot hold, an invalid string view) is
+  /// released and reported as an error; an undersized one is reported without touching
+  /// its uncovered release fields.
+  /// @since 0.38.0
+  [[nodiscard]] Expected<CatalogSnapshotV2> catalogSnapshotV2() const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!hasCatalogSnapshotV2()) {
+      return unexpected("toolbox host does not support acquire_catalog_snapshot_v2");
+    }
+    PJ_catalog_snapshot_v2_t raw{};
+    raw.struct_size = sizeof(PJ_catalog_snapshot_v2_t);
+    PJ_error_t err{};
+    if (!host_.vtable->acquire_catalog_snapshot_v2(host_.ctx, &raw, &err)) {
+      return unexpected(errorToString(err));
+    }
+    if (raw.struct_size < PJ_CATALOG_SNAPSHOT_V2_MIN_SIZE) {
+      // Its release fields are outside what the host wrote: never read them.
+      return unexpected("toolbox host returned an undersized PJ_catalog_snapshot_v2_t");
+    }
+    CatalogSnapshotV2 snapshot(raw);  // owns raw from here: every exit below releases it
+    if (auto defect = detail::catalogSnapshotV2Defect(raw); !defect.empty()) {
+      return unexpected(std::move(defect));
+    }
+    return snapshot;
+  }
+
   /// Read one field's time series into host-owned Arrow structs.
   ///
   /// The caller passes in zero-initialised @p out_schema and @p out_array;
@@ -2182,8 +2365,75 @@ class PlotTabHostView {
     return okStatus();
   }
 
+  // Scene tabs: each wrapper below needs only its own tail slot and reports
+  // "plot tab host does not support <slot>" without it.
+
+  /// Create (or update) a tab of `kind` ("plot", "3d" or "2d"). Same id and kind: a
+  /// plot tab's curves are cleared, a scene tab only gets its title; a different kind
+  /// replaces the tab with an empty one. A kind this host cannot serve is refused with
+  /// an error naming it.
+  /// @since 0.38.0
+  [[nodiscard]] Status createTabV2(std::string_view id, std::string_view kind, std::string_view title = {}) const {
+    return callTail(
+        "create_tab_v2", valid() && PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, create_tab_v2),
+        [&](PJ_error_t* err) {
+          return host_.vtable->create_tab_v2(host_.ctx, toAbiString(id), toAbiString(kind), toAbiString(title), err);
+        });
+  }
+
+  /// Attach an object topic to a scene tab; an empty `dataset_source` requires the
+  /// topic to be unique across loaded datasets. Attaching an attached topic succeeds.
+  /// @since 0.38.0
+  [[nodiscard]] Status attachTopic(
+      std::string_view id, std::string_view topic, std::string_view dataset_source = {}) const {
+    return callTail(
+        "attach_topic", valid() && PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, attach_topic),
+        [&](PJ_error_t* err) {
+          return host_.vtable->attach_topic(
+              host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(dataset_source), err);
+        });
+  }
+
+  /// Take a topic back out of a scene tab (attachTopic's resolution rule). A topic
+  /// that is not attached is an error.
+  /// @since 0.38.0
+  [[nodiscard]] Status detachTopic(
+      std::string_view id, std::string_view topic, std::string_view dataset_source = {}) const {
+    return callTail(
+        "detach_topic", valid() && PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, detach_topic),
+        [&](PJ_error_t* err) {
+          return host_.vtable->detach_topic(
+              host_.ctx, toAbiString(id), toAbiString(topic), toAbiString(dataset_source), err);
+        });
+  }
+
+  /// Bring one of this plugin's tabs (any kind) to the front.
+  /// @since 0.38.0
+  [[nodiscard]] Status focusTab(std::string_view id) const {
+    return callTail(
+        "focus_tab", valid() && PJ_HAS_TAIL_SLOT(PJ_plot_tab_host_vtable_t, host_.vtable, focus_tab),
+        [&](PJ_error_t* err) { return host_.vtable->focus_tab(host_.ctx, toAbiString(id), err); });
+  }
+
  private:
   PJ_plot_tab_host_t host_{};
+
+  // Shared body of the tail-slot wrappers. `present` must already include valid():
+  // PJ_HAS_TAIL_SLOT dereferences the vtable.
+  template <typename Call>
+  [[nodiscard]] Status callTail(const char* slot, bool present, Call&& call) const {
+    if (!valid()) {
+      return unexpected("plot tab host is not bound");
+    }
+    if (!present) {
+      return unexpected(std::string("plot tab host does not support ") + slot);
+    }
+    PJ_error_t err{};
+    if (!call(&err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
 };
 
 // ---------------------------------------------------------------------------

@@ -295,6 +295,49 @@ TEST_F(PluginCatalogTest, SuggestedSdkVersionRoundTripsAndDefaultsEmpty) {
   EXPECT_TRUE(without_field->suggested_sdk_version.empty());
 }
 
+TEST_F(PluginCatalogTest, BadgeRoundTripsAndFallsBackToEmpty) {
+  auto with_badge = decodeManifest(
+      "static:badge-test", PluginFamily::kToolbox,
+      R"({"id":"badge-test","name":"Badge Test","version":"1.0.0","badge":"AI"})");
+  ASSERT_TRUE(with_badge.has_value()) << with_badge.error();
+  EXPECT_EQ(with_badge->badge, "AI");
+
+  auto without_badge = decodeManifest(
+      "static:badge-test", PluginFamily::kToolbox, R"({"id":"badge-test","name":"Badge Test","version":"1.0.0"})");
+  ASSERT_TRUE(without_badge.has_value()) << without_badge.error();
+  EXPECT_TRUE(without_badge->badge.empty()) << "an absent badge leaves the label to host policy";
+}
+
+TEST_F(PluginCatalogTest, BadgeRejectsNonString) {
+  auto descriptor = decodeManifest(
+      "static:badge-test", PluginFamily::kToolbox,
+      R"({"id":"badge-test","name":"Badge Test","version":"1.0.0","badge":true})");
+  ASSERT_FALSE(descriptor.has_value());
+  EXPECT_NE(descriptor.error().find("badge"), std::string::npos);
+}
+
+TEST_F(PluginCatalogTest, CapabilityTagsAreDeclarativeWithEmptyFallback) {
+  auto editor = decodeManifest(
+      "static:editor", PluginFamily::kToolbox,
+      R"({"id":"editor","name":"Editor","version":"1.0.0","capabilities":["custom_topics_editor","future_tag"]})");
+  ASSERT_TRUE(editor.has_value()) << editor.error();
+  EXPECT_TRUE(editor->hasCapability(kCustomTopicsEditorCapability));
+  EXPECT_TRUE(editor->hasCapability("future_tag"));
+  EXPECT_FALSE(editor->hasCapability("custom_topics"));
+
+  auto plain =
+      decodeManifest("static:plain", PluginFamily::kToolbox, R"({"id":"plain","name":"Plain","version":"1.0.0"})");
+  ASSERT_TRUE(plain.has_value()) << plain.error();
+  EXPECT_FALSE(plain->hasCapability(kCustomTopicsEditorCapability));
+
+  // Only the capabilities tag declares it; the draft's top-level boolean is an unknown key.
+  auto top_level = decodeManifest(
+      "static:legacy", PluginFamily::kToolbox,
+      R"({"id":"legacy","name":"Legacy","version":"1.0.0","custom_topics_editor":true})");
+  ASSERT_TRUE(top_level.has_value()) << top_level.error();
+  EXPECT_FALSE(top_level->hasCapability(kCustomTopicsEditorCapability));
+}
+
 TEST_F(PluginCatalogTest, MinSdkRequiredAcceptsEmptyString) {
   auto descriptor = decodeManifest(
       "static:sdk-test", PluginFamily::kDataSource,
