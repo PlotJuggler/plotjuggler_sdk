@@ -5,6 +5,8 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [Unreleased]
 
+## [0.37.0]
+
 Host contract: extended: PJ_data_processors_host_vtable_t::create_data_processor_v2,
 PJ_data_processors_host_vtable_t::submit_evaluation,
 PJ_data_processors_host_vtable_t::poll_evaluation,
