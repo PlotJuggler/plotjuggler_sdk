@@ -460,4 +460,27 @@ TEST(WidgetLibraryTest, GetPluginExtensionReturnsNullForUnknownId) {
   EXPECT_EQ(handle->getPluginExtension("pj.nonexistent.v1"), nullptr);
 }
 
+// A message view no valid plugin produces is never read: the host gets its own warning instead.
+TEST(WidgetLibraryTest, ReportMessageRefusesAnInvalidView) {
+  std::vector<std::pair<PJ::WidgetMessageLevel, std::string>> messages;
+  PJ::WidgetHostBridge bridge;
+  bridge.report_message = [&](PJ::WidgetMessageLevel level, std::string_view message) {
+    messages.emplace_back(level, std::string(message));
+  };
+  const PJ_widget_host_t host = bridge.host();
+  const std::string text = "fine";
+
+  host.vtable->report_widget_message(host.ctx, PJ_WIDGET_MESSAGE_INFO, PJ_string_view_t{text.data(), text.size()});
+  host.vtable->report_widget_message(host.ctx, PJ_WIDGET_MESSAGE_ERROR, PJ_string_view_t{nullptr, 5});
+  host.vtable->report_widget_message(
+      host.ctx, PJ_WIDGET_MESSAGE_INFO, PJ_string_view_t{text.data(), PJ::WidgetHandle::kMaxInputTextBytes + 1});
+
+  ASSERT_EQ(messages.size(), 3u);
+  EXPECT_EQ(messages[0], std::make_pair(PJ::WidgetMessageLevel::kInfo, std::string("fine")));
+  for (size_t i = 1; i < messages.size(); ++i) {
+    EXPECT_EQ(messages[i].first, PJ::WidgetMessageLevel::kWarning);
+    EXPECT_EQ(messages[i].second, "widget plugin produced an invalid message string view");
+  }
+}
+
 }  // namespace

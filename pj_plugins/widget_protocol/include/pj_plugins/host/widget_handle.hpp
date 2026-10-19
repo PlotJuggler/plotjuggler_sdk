@@ -40,7 +40,7 @@ namespace detail {
     return std::string_view{};
   }
   if (!sdk::detail::validView(view) || view.size > max_bytes) {
-    return unexpected(std::string("widget plugin returned an invalid ") + what + " string view");
+    return unexpected(std::string("widget plugin produced an invalid ") + what + " string view");
   }
   return std::string_view(view.data, view.size);
 }

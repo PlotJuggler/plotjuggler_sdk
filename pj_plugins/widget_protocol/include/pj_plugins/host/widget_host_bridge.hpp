@@ -18,6 +18,7 @@
 #include <functional>
 #include <pj_base/expected.hpp>
 #include <pj_base/sdk/plugin_data_api.hpp>
+#include <pj_plugins/host/widget_handle.hpp>
 #include <pj_plugins/widget_types.hpp>
 #include <string>
 #include <string_view>
@@ -50,7 +51,8 @@ class WidgetHostBridge {
   std::function<Expected<uint32_t>(const WidgetHistoryQuery& query, const WidgetValueSink& sink)> history;
   /// Unset = ignored.
   std::function<void()> inputs_changed;
-  /// Unset = dropped.
+  /// Unset = dropped. A message view no valid plugin produces (null data with a size, or longer than
+  /// WidgetHandle::kMaxInputTextBytes) arrives as a warning naming it, never read.
   std::function<void(WidgetMessageLevel level, std::string_view message)> report_message;
 
   WidgetHostBridge() = default;
@@ -129,7 +131,12 @@ class WidgetHostBridge {
     auto* self = static_cast<WidgetHostBridge*>(ctx);
     try {
       if (self->report_message) {
-        self->report_message(static_cast<WidgetMessageLevel>(level), sdk::toStringView(message));
+        auto text = detail::checkedWidgetView(message, WidgetHandle::kMaxInputTextBytes, "message");
+        if (text) {
+          self->report_message(static_cast<WidgetMessageLevel>(level), *text);
+        } else {
+          self->report_message(WidgetMessageLevel::kWarning, text.error());
+        }
       }
     } catch (...) {}
   }
