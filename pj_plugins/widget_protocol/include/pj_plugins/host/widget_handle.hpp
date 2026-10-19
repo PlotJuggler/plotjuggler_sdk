@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <memory>
 #include <pj_base/expected.hpp>
+#include <pj_base/sdk/abi_bounds.hpp>
 #include <pj_base/sdk/plugin_data_api.hpp>
 #include <pj_base/span.hpp>
 #include <pj_plugins/widget_types.hpp>
@@ -30,15 +31,15 @@ namespace PJ {
 
 namespace detail {
 
-/// @p view as a string_view, or an error for the shapes no valid plugin produces (null data with a
-/// size, or longer than @p max_bytes). Checked before any pointer arithmetic, so a corrupt size is
-/// reported instead of being added to the pointer.
+/// @p view as a string_view, or an error for the shapes no valid plugin produces: one that fails
+/// sdk::detail::validView (null data with a size), or longer than @p max_bytes. Checked before any
+/// pointer arithmetic, so a corrupt size is reported instead of being added to the pointer.
 [[nodiscard]] inline Expected<std::string_view> checkedWidgetView(
     PJ_string_view_t view, size_t max_bytes, const char* what) {
   if (view.size == 0) {
     return std::string_view{};
   }
-  if (view.data == nullptr || view.size > max_bytes) {
+  if (!sdk::detail::validView(view) || view.size > max_bytes) {
     return unexpected(std::string("widget plugin returned an invalid ") + what + " string view");
   }
   return std::string_view(view.data, view.size);

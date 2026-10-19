@@ -18,6 +18,8 @@
  *   - A Widget plugin links the GUI toolkit; the SDK does not. The host
  *     compares the toolkit version recorded in build_info() against its own
  *     before calling create_qwidget().
+ *
+ * @since 0.39.0 (the whole header: the Widget family first ships in this release)
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0

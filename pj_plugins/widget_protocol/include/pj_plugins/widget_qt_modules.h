@@ -21,14 +21,14 @@
 
 /* X(module_name_without_Qt_prefix, "SDK version that admitted it") */
 #define PJ_WIDGET_QT_MODULES(X) \
-  X(Core, "0.37.0")             \
-  X(Gui, "0.37.0")              \
-  X(Widgets, "0.37.0")          \
-  X(Svg, "0.37.0")              \
-  X(Xml, "0.37.0")              \
-  X(Network, "0.37.0")          \
-  X(OpenGL, "0.37.0")           \
-  X(OpenGLWidgets, "0.37.0")    \
-  X(UiTools, "0.37.0")
+  X(Core, "0.39.0")             \
+  X(Gui, "0.39.0")              \
+  X(Widgets, "0.39.0")          \
+  X(Svg, "0.39.0")              \
+  X(Xml, "0.39.0")              \
+  X(Network, "0.39.0")          \
+  X(OpenGL, "0.39.0")           \
+  X(OpenGLWidgets, "0.39.0")    \
+  X(UiTools, "0.39.0")
 
 #endif /* PJ_WIDGET_QT_MODULES_H */

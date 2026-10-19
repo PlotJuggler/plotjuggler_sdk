@@ -2,7 +2,7 @@
   "id": "mock-widget",
   "name": "Mock Widget",
   "version": "1.0.0",
-  "min_sdk_required": "0.37.0",
+  "min_sdk_required": "0.39.0",
   "qt_modules": ["Core", "Gui", "Widgets"],
   "widgets": [
     {

@@ -74,7 +74,7 @@ default-constructed. Each open panel is its own instance.
 ```json
 {
   "id": "basic-widgets", "name": "Basic Widgets", "version": "1.0.0",
-  "min_sdk_required": "0.37.0",
+  "min_sdk_required": "0.39.0",
   "qt_modules": ["Core", "Gui", "Widgets", "Svg"],
   "widgets": [
     { "type": "gauge", "name": "Gauge", "icon": "<svg ...>...</svg>",
@@ -289,5 +289,5 @@ different `sizeof` would walk them at the wrong stride, so they never change and
 growth goes through a new tail slot (an `inputs_v2`, say). Inside them, an
 unknown input `kind` is an error on the host side; unknown `flags` bits are
 ignored. A manifest
-`min_sdk_required` of `0.37.0` is the floor for a Widget plugin, since the
-family and `pj.widget_host.v1` first shipped in 0.37.0.
+`min_sdk_required` of `0.39.0` is the floor for a Widget plugin, since the
+family and `pj.widget_host.v1` first shipped in 0.39.0.

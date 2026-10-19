@@ -449,7 +449,7 @@ TEST_F(PluginCatalogTest, InspectWidgetDsoDecodesWidgetsAndQtModules) {
   ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
   EXPECT_EQ(descriptor->id, "mock-widget");
   EXPECT_EQ(descriptor->family, PluginFamily::kWidget);
-  EXPECT_EQ(descriptor->min_sdk_required, "0.37.0");
+  EXPECT_EQ(descriptor->min_sdk_required, "0.39.0");
   EXPECT_EQ(descriptor->qt_modules, (std::vector<std::string>{"Core", "Gui", "Widgets"}));
   ASSERT_EQ(descriptor->widgets.size(), 2U);
   EXPECT_EQ(descriptor->widgets[0].type, "gauge");
