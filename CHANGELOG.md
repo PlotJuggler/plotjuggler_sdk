@@ -8,7 +8,17 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2,
 PJ_plot_tab_host_vtable_t::create_tab_v2, PJ_plot_tab_host_vtable_t::attach_topic,
 PJ_plot_tab_host_vtable_t::detach_topic, PJ_plot_tab_host_vtable_t::focus_tab,
-PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS (floor 0.38.0).
+PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS,
+pj.feature_catalog.v1, PJ_feature_catalog_vtable_t::get_feature_catalog (floor 0.38.0).
+
+Feature catalog service:
+
+- `pj.feature_catalog.v1`: an optional, read-only host service with one slot
+  (`get_feature_catalog`) returning a UTF-8 JSON document that describes what the host
+  offers (built-in features, plugins, limitations). The host application owns the schema;
+  the SDK only transports it. `FeatureCatalogView::json()`, `FeatureCatalogService`, and the
+  host adapter `FeatureCatalogHost` (`pj_base/sdk/feature_catalog_host.hpp`). A plugin that
+  treats the service as optional keeps its floor.
 
 Scene tabs, catalog v2 and dialog scene views:
 
