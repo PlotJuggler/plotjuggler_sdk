@@ -694,7 +694,9 @@ Each tabled builtin has a `<type>_fields.hpp` header; `describe()` in
 bitstream bytes through a `kBuffer` descriptor the same way `PointCloud::data`
 does, with the per-record layout derived from the encoding/format string
 rather than a channel list (see each header's doc comment for how a raw vs.
-compressed encoding differs). `CameraInfo`'s `K`/`R`/`P` (and `DepthImage`'s
+compressed encoding differs). `VoxelGrid::data` reports `cell_stride` as the
+record step and `row_stride` as the row step; a voxel's slice offset comes from
+the sibling `slice_stride` field. `CameraInfo`'s `K`/`R`/`P` (and `DepthImage`'s
 `K`) are `std::array<double, N>` members, described as a fixed-size `kList`
 written through `list_replace` rather than `list_emplace`/`list_clear` (the
 element count never changes); `Image::compressed_depth_min`/

@@ -24,6 +24,7 @@
 #include "pj_base/builtin/point_cloud_fields.hpp"
 #include "pj_base/builtin/scene_entities_fields.hpp"
 #include "pj_base/builtin/video_frame_fields.hpp"
+#include "pj_base/builtin/voxel_grid_fields.hpp"
 
 namespace {
 
@@ -63,6 +64,7 @@ using PJ::sdk::TextPrimitive;
 using PJ::sdk::TrianglePrimitive;
 using PJ::sdk::Vector2;
 using PJ::sdk::VideoFrame;
+using PJ::sdk::VoxelGrid;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -456,6 +458,36 @@ VideoFrame makeSampleVideoFrame() {
   return frame;
 }
 
+// A 3x2x2 grid of 8-byte voxels (uint8 "occupancy" + float32 "cost") with
+// padding at every level: rows are 28 bytes (24 + 4) and slices 60 (56 + 4),
+// so data holds slice_count * slice_stride = 120 bytes.
+VoxelGrid makeSampleVoxelGrid() {
+  VoxelGrid grid;
+  grid.timestamp_ns = 9'007'199'254'740'993;  // > 2^53: would lose precision as a double.
+  grid.frame_id = "map";
+  grid.origin =
+      Pose{.position = {.x = 1.0, .y = 2.0, .z = 3.0}, .orientation = {.x = 0.0, .y = 0.0, .z = 0.6, .w = 0.8}};
+  grid.cell_size = {.x = 0.1, .y = 0.2, .z = 0.3};
+  grid.column_count = 3;
+  grid.row_count = 2;
+  grid.slice_count = 2;
+  grid.cell_stride = 8;
+  grid.row_stride = 28;
+  grid.slice_stride = 60;
+  grid.fields = {
+      PointField{.name = "occupancy", .offset = 0, .datatype = PointField::Datatype::kUint8, .count = 1},
+      PointField{.name = "cost", .offset = 4, .datatype = PointField::Datatype::kFloat32, .count = 1},
+  };
+
+  std::vector<uint8_t> bytes(static_cast<size_t>(grid.slice_count) * grid.slice_stride);
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(i + 1);
+  }
+  const FieldDescriptor* data_field = findField(FieldTable<VoxelGrid>::view, "data");
+  data_field->buffer_assign(&grid, std::move(bytes));
+  return grid;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -463,12 +495,13 @@ VideoFrame makeSampleVideoFrame() {
 TEST(FieldTableTest, NamesUniqueAndKindsConsistent) {
   // Explicit roots so every specialization is exercised even when a struct
   // (Vector2, Pose) is not reachable from any other root.
-  const std::array<const FieldTableView*, 10> roots{
+  const std::array<const FieldTableView*, 11> roots{
       &FieldTable<FrameTransforms>::view, &FieldTable<ImageAnnotations>::view,
       &FieldTable<Vector2>::view,         &FieldTable<Pose>::view,
       &FieldTable<PointCloud>::view,      &FieldTable<SceneEntities>::view,
       &FieldTable<Image>::view,           &FieldTable<DepthImage>::view,
       &FieldTable<CameraInfo>::view,      &FieldTable<VideoFrame>::view,
+      &FieldTable<VoxelGrid>::view,
   };
 
   std::set<std::string_view> visited;
@@ -476,7 +509,7 @@ TEST(FieldTableTest, NamesUniqueAndKindsConsistent) {
   for (const auto* root : roots) {
     collectTables(*root, visited, tables);
   }
-  ASSERT_EQ(tables.size(), 32u) << "expected all 32 field_table specializations added through SDK block 5.1";
+  ASSERT_EQ(tables.size(), 33u) << "expected all 33 field_table specializations";
 
   for (const auto* table : tables) {
     SCOPED_TRACE(table->type_name);
@@ -936,6 +969,195 @@ TEST(FieldTableTest, DepthImageBufferLayoutClampsToBytes) {
   EXPECT_EQ(data_field->buffer(&consistent).record_count, 4u);
 }
 
+// VoxelGrid has no operator== (payload bytes only compare meaningfully through
+// the canonical wire codec), so compare serialized bytes. Exercises the nested
+// Pose/Vector3 tables, the PointField list and the kBuffer.
+TEST(FieldTableTest, VoxelGridCopyMatchesCodecRoundTrip) {
+  const VoxelGrid src = makeSampleVoxelGrid();
+  ASSERT_FALSE(src.data.empty());
+  ASSERT_FALSE(src.fields.empty());
+
+  VoxelGrid dst;
+  copyThroughTable(FieldTable<VoxelGrid>::view, &src, &dst);
+
+  expectSameWireBytes(src, dst);
+  EXPECT_EQ(dst.origin, src.origin);
+  EXPECT_EQ(dst.fields.size(), src.fields.size());
+}
+
+// Every VoxelGrid member reads back through its descriptor, as a script binder
+// would: scalars, int64 timestamp, the Pose/Vector3 structs, the PointField list.
+TEST(FieldTableTest, VoxelGridFieldsReadBack) {
+  const VoxelGrid grid = makeSampleVoxelGrid();
+  const FieldTableView& table = FieldTable<VoxelGrid>::view;
+  EXPECT_EQ(table.type_name, "VoxelGrid");
+  EXPECT_EQ(table.fields.size(), 12u);
+
+  const auto number = [&](std::string_view name) {
+    const FieldDescriptor* f = findField(table, name);
+    EXPECT_NE(f, nullptr) << name;
+    EXPECT_EQ(f->kind, FieldKind::kNumber) << name;
+    return f->get_number(&grid);
+  };
+  const auto nestedNumber = [&](std::string_view name, std::string_view member) {
+    const FieldDescriptor* f = findField(table, name);
+    EXPECT_NE(f, nullptr) << name;
+    EXPECT_EQ(f->kind, FieldKind::kStruct) << name;
+    const FieldDescriptor* m = findField(*f->nested, member);
+    EXPECT_NE(m, nullptr) << member;
+    return m->get_number(f->struct_ptr(&grid));
+  };
+
+  const FieldDescriptor* timestamp = findField(table, "timestamp_ns");
+  ASSERT_NE(timestamp, nullptr);
+  EXPECT_EQ(timestamp->kind, FieldKind::kInt64);
+  EXPECT_EQ(timestamp->get_int64(&grid), 9'007'199'254'740'993);
+
+  const FieldDescriptor* frame_id = findField(table, "frame_id");
+  ASSERT_NE(frame_id, nullptr);
+  EXPECT_EQ(frame_id->kind, FieldKind::kString);
+  EXPECT_EQ(frame_id->get_string(&grid), "map");
+
+  const FieldDescriptor* origin = findField(table, "origin");
+  ASSERT_NE(origin, nullptr);
+  EXPECT_EQ(origin->nested, &FieldTable<Pose>::view);
+  const FieldDescriptor* position = findField(*origin->nested, "position");
+  ASSERT_NE(position, nullptr);
+  const FieldDescriptor* position_z = findField(*position->nested, "z");
+  ASSERT_NE(position_z, nullptr);
+  EXPECT_DOUBLE_EQ(position_z->get_number(position->struct_ptr(origin->struct_ptr(&grid))), 3.0);
+  const FieldDescriptor* orientation = findField(*origin->nested, "orientation");
+  ASSERT_NE(orientation, nullptr);
+  const FieldDescriptor* orientation_w = findField(*orientation->nested, "w");
+  ASSERT_NE(orientation_w, nullptr);
+  EXPECT_DOUBLE_EQ(orientation_w->get_number(orientation->struct_ptr(origin->struct_ptr(&grid))), 0.8);
+
+  EXPECT_DOUBLE_EQ(nestedNumber("cell_size", "x"), 0.1);
+  EXPECT_DOUBLE_EQ(nestedNumber("cell_size", "y"), 0.2);
+  EXPECT_DOUBLE_EQ(nestedNumber("cell_size", "z"), 0.3);
+
+  EXPECT_EQ(number("column_count"), 3.0);
+  EXPECT_EQ(number("row_count"), 2.0);
+  EXPECT_EQ(number("slice_count"), 2.0);
+  EXPECT_EQ(number("cell_stride"), 8.0);
+  EXPECT_EQ(number("row_stride"), 28.0);
+  EXPECT_EQ(number("slice_stride"), 60.0);
+
+  const FieldDescriptor* fields = findField(table, "fields");
+  ASSERT_NE(fields, nullptr);
+  ASSERT_EQ(fields->kind, FieldKind::kList);
+  EXPECT_EQ(fields->element_kind, FieldKind::kStruct);
+  EXPECT_EQ(fields->nested, &FieldTable<PointField>::view);
+  ASSERT_EQ(fields->list_size(&grid), 2u);
+  const void* cost = fields->list_at(&grid, 1);
+  EXPECT_EQ(findField(*fields->nested, "name")->get_string(cost), "cost");
+  EXPECT_EQ(findField(*fields->nested, "offset")->get_number(cost), 4.0);
+  EXPECT_EQ(
+      findField(*fields->nested, "datatype")->get_number(cost),
+      static_cast<double>(static_cast<uint8_t>(PointField::Datatype::kFloat32)));
+  EXPECT_EQ(findField(*fields->nested, "count")->get_number(cost), 1.0);
+
+  const FieldDescriptor* data_field = findField(table, "data");
+  ASSERT_NE(data_field, nullptr);
+  EXPECT_EQ(data_field->kind, FieldKind::kBuffer);
+  EXPECT_EQ(data_field->buffer(&grid).bytes.size(), 120u);
+}
+
+TEST(FieldTableTest, VoxelGridBufferLayout) {
+  const VoxelGrid grid = makeSampleVoxelGrid();
+  const FieldDescriptor* data_field = findField(FieldTable<VoxelGrid>::view, "data");
+  ASSERT_NE(data_field, nullptr);
+  ASSERT_NE(data_field->buffer, nullptr);
+  ASSERT_NE(data_field->buffer_assign, nullptr);
+
+  const BufferLayout layout = data_field->buffer(&grid);
+  EXPECT_EQ(layout.record_step, 8u);
+  EXPECT_EQ(layout.record_count, 12u);  // 3 * 2 * 2.
+  EXPECT_EQ(layout.row_step, 28u);
+  EXPECT_FALSE(layout.is_bigendian);
+  ASSERT_EQ(layout.channels.size(), 2u);
+  EXPECT_EQ(layout.channels[0].name, "occupancy");
+  EXPECT_EQ(layout.channels[0].offset, 0u);
+  EXPECT_EQ(layout.channels[0].datatype, static_cast<uint8_t>(PointField::Datatype::kUint8));
+  EXPECT_EQ(layout.channels[0].count, 1u);
+  EXPECT_EQ(layout.channels[1].name, "cost");
+  EXPECT_EQ(layout.channels[1].offset, 4u);
+  EXPECT_EQ(layout.channels[1].datatype, static_cast<uint8_t>(PointField::Datatype::kFloat32));
+
+  // Voxel (cx=2, ry=1, sz=1) sits at 1*60 + 1*28 + 2*8 = 104 (stored bytes are index + 1).
+  ASSERT_EQ(layout.bytes.size(), 120u);
+  EXPECT_EQ(layout.bytes[104], 105u);
+}
+
+// Size fields that declare more voxels than `data` holds must not be promised
+// (record_count 0), while a buffer that only lacks the last row's and slice's
+// trailing padding is complete.
+TEST(FieldTableTest, VoxelGridBufferLayoutClampsToBytes) {
+  const FieldDescriptor* data_field = findField(FieldTable<VoxelGrid>::view, "data");
+  ASSERT_NE(data_field, nullptr);
+  const VoxelGrid full = makeSampleVoxelGrid();  // 120 bytes; last voxel ends at 1*60 + 1*28 + 24 = 112.
+  const auto withBytes = [&](size_t size) {
+    VoxelGrid grid = full;
+    data_field->buffer_assign(&grid, std::vector<uint8_t>(size));
+    return data_field->buffer(&grid).record_count;
+  };
+  EXPECT_EQ(withBytes(120), 12u);
+  EXPECT_EQ(withBytes(112), 12u);
+  EXPECT_EQ(withBytes(111), 0u);
+  EXPECT_EQ(withBytes(0), 0u);
+
+  VoxelGrid deeper = full;
+  deeper.slice_count = 3;
+  EXPECT_EQ(data_field->buffer(&deeper).record_count, 0u);
+
+  for (uint32_t VoxelGrid::* count : {&VoxelGrid::column_count, &VoxelGrid::row_count, &VoxelGrid::slice_count}) {
+    VoxelGrid empty = full;
+    empty.*count = 0;
+    EXPECT_EQ(data_field->buffer(&empty).record_count, 0u);
+  }
+  VoxelGrid no_stride = full;
+  no_stride.cell_stride = 0;
+  EXPECT_EQ(data_field->buffer(&no_stride).record_count, 0u);
+
+  // Hostile size fields must neither overflow nor be believed.
+  VoxelGrid huge = full;
+  huge.column_count = huge.row_count = huge.slice_count = UINT32_MAX;
+  huge.cell_stride = huge.row_stride = huge.slice_stride = UINT32_MAX;
+  EXPECT_EQ(data_field->buffer(&huge).record_count, 0u);
+}
+
+// Strides shorter than what they step over break VoxelGrid's documented layout: a zero
+// row stride must not read as tightly packed, and overlapping rows/slices must not let
+// the count product wrap past an extent check.
+TEST(FieldTableTest, VoxelGridBufferLayoutRejectsUndersizedStrides) {
+  const FieldDescriptor* data_field = findField(FieldTable<VoxelGrid>::view, "data");
+  ASSERT_NE(data_field, nullptr);
+  const auto recordsOf = [&](VoxelGrid grid, size_t size) {
+    data_field->buffer_assign(&grid, std::vector<uint8_t>(size));
+    return data_field->buffer(&grid).record_count;
+  };
+  VoxelGrid zero_row;
+  zero_row.column_count = 1;
+  zero_row.row_count = 2;
+  zero_row.slice_count = 2;
+  zero_row.cell_stride = 1;
+  zero_row.row_stride = 0;
+  zero_row.slice_stride = 2;
+  EXPECT_EQ(recordsOf(zero_row, 3), 0u);
+  EXPECT_EQ(recordsOf(zero_row, 4), 0u);
+
+  VoxelGrid overlapping;
+  overlapping.column_count = 4194304;
+  overlapping.row_count = 4194304;
+  overlapping.slice_count = 1048577;
+  overlapping.cell_stride = overlapping.row_stride = overlapping.slice_stride = 1;
+  EXPECT_EQ(recordsOf(overlapping, 9437183), 0u);
+
+  VoxelGrid short_slice = makeSampleVoxelGrid();  // rows span 2 * 28 = 56 bytes
+  short_slice.slice_stride = 55;
+  EXPECT_EQ(recordsOf(short_slice, 120), 0u);
+}
+
 // set_number never performs an undefined float-to-integer conversion: NaN
 // reads back 0 and out-of-range values clamp to the target type's limits.
 TEST(FieldTableTest, SetNumberSaturatesIntegerTargets) {
@@ -993,10 +1215,11 @@ TEST(FieldTableTest, DescribeCoversExactlyTheTabledTypes) {
   EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kDepthImage), nullptr);
   EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kCameraInfo), nullptr);
   EXPECT_NE(PJ::sdk::describe(BuiltinObjectType::kVideoFrame), nullptr);
+  EXPECT_EQ(PJ::sdk::describe(BuiltinObjectType::kVoxelGrid), &FieldTable<VoxelGrid>::view);
 
   // Every other stable BuiltinObjectType value (mirrors the array in
   // builtin_object_codec_test.cpp) must resolve to nullptr.
-  const std::array<BuiltinObjectType, 10> other_types{
+  const std::array<BuiltinObjectType, 9> other_types{
       BuiltinObjectType::kOccupancyGrid,
       BuiltinObjectType::kCompressedPointCloud,
       BuiltinObjectType::kMesh3D,
@@ -1004,7 +1227,6 @@ TEST(FieldTableTest, DescribeCoversExactlyTheTabledTypes) {
       BuiltinObjectType::kOccupancyGridUpdate,
       BuiltinObjectType::kLog,
       BuiltinObjectType::kPosesInFrame,
-      BuiltinObjectType::kVoxelGrid,
       BuiltinObjectType::kGridMap,
       BuiltinObjectType::kPlotMarkers,
   };
