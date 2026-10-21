@@ -22,6 +22,7 @@
 #include "pj_base/builtin/point_cloud_fields.hpp"
 #include "pj_base/builtin/scene_entities_fields.hpp"
 #include "pj_base/builtin/video_frame_fields.hpp"
+#include "pj_base/builtin/voxel_grid_fields.hpp"
 
 namespace PJ::sdk {
 
@@ -47,6 +48,8 @@ namespace PJ::sdk {
       return &FieldTable<CameraInfo>::view;
     case BuiltinObjectType::kVideoFrame:
       return &FieldTable<VideoFrame>::view;
+    case BuiltinObjectType::kVoxelGrid:
+      return &FieldTable<VoxelGrid>::view;
     case BuiltinObjectType::kNone:
     case BuiltinObjectType::kOccupancyGrid:
     case BuiltinObjectType::kCompressedPointCloud:
@@ -55,7 +58,6 @@ namespace PJ::sdk {
     case BuiltinObjectType::kOccupancyGridUpdate:
     case BuiltinObjectType::kLog:
     case BuiltinObjectType::kPosesInFrame:
-    case BuiltinObjectType::kVoxelGrid:
     case BuiltinObjectType::kPlotMarkers:
     case BuiltinObjectType::kGridMap:
       return nullptr;

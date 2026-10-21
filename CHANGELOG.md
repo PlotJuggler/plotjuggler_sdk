@@ -48,6 +48,16 @@ Scene tabs, catalog v2 and dialog scene views:
   payload, so `serializeBuiltinObject` (and every `serialize*`) avoids an extra copy of the
   payload when the following fields fit the spare capacity.
 
+Builtin objects (client-side, no floor impact):
+
+- Add the `VoxelGrid` field table (`pj_base/builtin/voxel_grid_fields.hpp`), registered under
+  `describe(BuiltinObjectType::kVoxelGrid)`: a generic binder reads and writes every member
+  (`origin` and `cell_size` link to the `Pose` / `Vector3` tables, `fields` to `PointField`).
+  `data` is a `kBuffer` (`voxelGridDataField`): `record_step` is `cell_stride`, `row_step` is
+  `row_stride`, and `record_count` is `column_count * row_count * slice_count`, or 0 when the
+  declared extent exceeds the bytes held. `slice_stride` has no `BufferLayout` slot; read it
+  from its own field.
+
 ## [0.37.0]
 
 Host contract: extended: PJ_data_processors_host_vtable_t::create_data_processor_v2,
