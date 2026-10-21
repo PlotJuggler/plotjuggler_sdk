@@ -113,6 +113,9 @@ PJ_toolbox_runtime_host_vtable_t::release_parser_ingest
 PJ_toolbox_runtime_host_vtable_t::report_message
 PJ_viewport_host_vtable_t::zoom_reset
 PJ_viewport_host_vtable_t::zoom_to_time_range
+PJ_widget_host_vtable_t::notify_inputs_changed
+PJ_widget_host_vtable_t::query_history
+PJ_widget_host_vtable_t::report_widget_message
 pj.colormap.v1
 pj.data_processors.v1
 pj.parser_object_write.v1
@@ -129,3 +132,4 @@ pj.toolbox_object_read.v1
 pj.toolbox_runtime.v1
 pj.toolbox_write.v1
 pj.viewport.v1
+pj.widget_host.v1

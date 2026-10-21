@@ -3,6 +3,55 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.39.0] — Unreleased
+
+Host contract: extended: PJ_widget_host_vtable_t::query_history, PJ_widget_host_vtable_t::notify_inputs_changed,
+PJ_widget_host_vtable_t::report_widget_message, pj.widget_host.v1 (floor 0.39.0). All four are classified
+non-negotiated: no older host serves the Widget family, so a plugin using any of them needs `min_sdk_required`
+0.39.0. The plugin-side `PJ_widget_vtable_t` is not a host surface and carries no floor.
+
+- Add the Widget plugin family (`pj_plugins/widget_protocol/`): a library contributes dockable panels whose content is
+  a widget object the plugin creates with its own GUI toolkit. The SDK stays toolkit-free; the object crosses the ABI
+  as an opaque `PJ_qwidget_t` (`void*`). New C ABI in `pj_plugins/widget_protocol.h`
+  (`PJ_get_widget_vtable`, `PJ_widget_vtable_t`, `PJ_WIDGET_MIN_VTABLE_SIZE`, `PJ_widget_input_t`,
+  `PJ_widget_input_flags_t`, `PJ_widget_value_t`, `PJ_widget_build_info_t`, `PJ_widget_message_level_t`) and the
+  host service `pj.widget_host.v1`, named by `PJ_WIDGET_HOST_SERVICE_V1` (`PJ_widget_host_vtable_t`:
+  on-demand `query_history`, `notify_inputs_changed`, `report_widget_message`). The header is self-contained: it no
+  longer includes `toolbox_protocol.h`, and messages use their own `PJ_widget_message_level_t`.
+- The array element types `PJ_widget_input_t` and `PJ_widget_value_t` are ABI-FROZEN (no `struct_size`; growth goes
+  through a new tail slot such as `inputs_v2`), because a reader with a different `sizeof` would walk the array at
+  the wrong stride. An input's cardinality is the `PJ_WIDGET_INPUT_MULTIPLE` bit of `PJ_widget_input_t::flags`
+  (unknown bits are ignored); an unknown input `kind` is an error on the host side.
+- `inputs` has an error channel (`bool inputs(ctx, &array, &count, &error)`): a failure is reported, the previous
+  array stays valid, and the host keeps its wiring instead of reading the failure as "no inputs".
+- `query_history` reports the number of samples the range held before the host's cap or decimation (`out_total`),
+  its sink returns `bool` (`false` stops the delivery early), and the comment defines where the call is allowed (any
+  plugin-side slot or the widget's own toolkit slots, main thread, never a paint handler).
+- `on_update` carries one value per wire (an unwired input has none; readers dispatch on `input`) and is also pushed
+  after `create_qwidget`, after every accepted `load_config` and after any wiring change. `load_config` receives
+  every key declared in the widget's `settings`, manifest defaults filled in, with the widget's `save_config` state
+  laid over it.
+- Add the C++ authoring base `PJ::WidgetPluginBase` with `PJ_WIDGET_PLUGIN` / `PJ_WIDGET_PLUGIN_NAMED` (and the
+  `PJ_STATIC_PLUGINS` variant emitting `pj_static_get_widget_vtable_<Symbol>`; every static plugin in one binary gets
+  its own vtable), linked through `plotjuggler_sdk::plugin_sdk`. An exception thrown from `inputs()` reaches the
+  host as an error, one thrown from `onUpdate()` is reported once through `reportWidgetMessage` until a call
+  succeeds again, and `WidgetHostView::queryHistory` returns the total (`Expected<uint32_t>`), accepts a `void` or
+  `bool` callback and fails when the callback threw.
+- Widget manifests declare per-type `settings` (`number`, `integer`, `boolean`, `text`, `color`, `enum`); the SDK
+  keeps them as raw JSON (`settings_json`) and the host draws the form.
+- Add the host loader: `WidgetLibrary` (`load` / `loadFromHandle` / `loadStatic` / `createHandle(type)`),
+  `WidgetHandle`, and `WidgetHostBridge` to build `pj.widget_host.v1` from `std::function` callbacks; linked through
+  `plotjuggler_sdk::plugin_host`. The loader validates `build_info` (non-null, v1 size, bounded string views) with
+  the vtable and pins a library only after it passed; `WidgetHandle::inputs()` returns
+  `Expected<std::vector<WidgetInput>>` and refuses empty or duplicate names and unknown kinds.
+- Add `PluginFamily::kWidget`. The manifest decoder reads `widgets: [{type, name, icon, settings}]` into
+  `PluginDescriptor::widgets` and `qt_modules` into `PluginDescriptor::qt_modules`; a widget manifest without a
+  non-empty `widgets` array is invalid.
+- Add `pj_plugins/widget_qt_modules.h`, the canonical Qt module list a widget may declare, installed as
+  `share/plotjuggler_sdk/widget_qt_modules.json`.
+- `pj_configure_plugin` / `pj_harden_plugin_exports` accept `widget` and keep `PJ_get_widget_vtable` exported.
+- Add the widget plugin guide (`pj_plugins/docs/widget-guide.md`).
+
 ## [Unreleased]
 
 Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2,

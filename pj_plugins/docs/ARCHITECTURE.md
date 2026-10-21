@@ -21,7 +21,8 @@ validate `min_sdk_required` against.
    `pj_base/include/pj_base/plugin_abi_export.hpp`, which is transitively
    included by every family SDK base header
    (`data_source_plugin_base.hpp`, `dialog_plugin_base.hpp`,
-   `message_parser_plugin_base.hpp`, `toolbox_plugin_base.hpp`). Weak
+   `message_parser_plugin_base.hpp`, `toolbox_plugin_base.hpp`,
+   `widget_plugin_base.hpp`). Weak
    linkage (`__attribute__((weak))` / `__declspec(selectany)`) folds
    duplicate definitions across translation units in one DSO, so a single
    .so can host multiple plugin families (e.g. DataSource + Dialog) with
@@ -47,12 +48,20 @@ validate `min_sdk_required` against.
    struct carries a header comment declaring its policy:
    - **ABI-FROZEN**: `PJ_error_t`, `PJ_string_view_t`, `PJ_bytes_view_t`,
      `PJ_borrowed_dialog_t`, `PJ_service_t`, `PJ_service_registry_t`,
-     handle types, primitive-value unions. Layout permanent; any change
-     is an ABI break. `PJ_error_t` has `extended` + `extended_kind` slots
-     reserved as its one growth path — do not add further top-level
-     fields.
+     handle types, primitive-value unions, and the Widget array element
+     types `PJ_widget_input_t` and `PJ_widget_value_t` (with the
+     `PJ_widget_input_flags_t` bit set carried in `PJ_widget_input_t::flags`).
+     Layout permanent; any change is an ABI break. `PJ_error_t` has
+     `extended` + `extended_kind` slots reserved as its one growth path — do
+     not add further top-level fields. A struct that travels in an array
+     (like `PJ_available_topic_t` or the two Widget element types) carries no
+     `struct_size`: a reader compiled with a different `sizeof` would walk the
+     array at the wrong stride, so it grows only through a new tail slot
+     (`inputs_v2`), never by appending a field. Readers ignore unknown flag
+     bits.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
-     `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`, the
+     `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`,
+     `PJ_widget_build_info_t`, the
      `pj.parser_functional.v1`/v2 extension and sink tables, and
      `pj.parser_route_claims.v1`. New fields or slots go at the tail; readers
      honor the caller-provided size, and vtable slots are read with
@@ -61,7 +70,9 @@ validate `min_sdk_required` against.
 5. **Compile-time ABI layout sentinels.** `pj_base/tests/abi_layout_sentinels_test.cpp`
    consists entirely of `static_assert`s pinning `sizeof`, `alignof`,
    and `offsetof` for every ABI struct plus `sizeof(void*)` (64-bit
-   guard) and enum-size pins (defends against `-fshort-enums`). A
+   guard) and enum-size pins (defends against `-fshort-enums`). The Widget
+   family's pins live next to it, in
+   `pj_plugins/widget_protocol/tests/widget_abi_layout_sentinels_test.cpp`. A
    failed assertion at compile time is ALWAYS a serious signal:
    - Offset changes = field reorder = ABI break.
    - MIN-size increase = floor moved = forward-compat break.
@@ -408,6 +419,21 @@ pj_plugins/
         dialog_handle.hpp           ← RAII handle (owned + borrowed)
     src/
       dialog_library.cpp
+  widget_protocol/
+    include/pj_plugins/
+      widget_protocol.h            ← C ABI for widgets (Qt-free; widget crosses as void*)
+      widget_qt_modules.h          ← canonical Qt module list (X-macro)
+      widget_types.hpp             ← WidgetInput, WidgetMessageLevel
+      sdk/
+        widget_plugin_base.hpp      ← C++ SDK (header-only, no Qt)
+      host/
+        widget_library.hpp          ← host-side loader
+        widget_handle.hpp           ← RAII handle (one panel instance)
+        widget_host_bridge.hpp      ← builds pj.widget_host.v1 from std::function callbacks
+    src/
+      widget_library.cpp
+    examples/
+      mock_widget.cpp               ← Qt-free mock widget library
   include/pj_plugins/host/
     data_source_library.hpp         ← host-side loader
     data_source_handle.hpp          ← RAII handle
@@ -450,8 +476,8 @@ pj_datastore/
 ```
 
 **Dependency direction:** Installed plugin authors consume
-`plotjuggler_sdk::plugin_sdk`, which combines `pj_base` with the MessageParser
-and dialog authoring headers from `pj_plugins`. Functional parser modules depend
+`plotjuggler_sdk::plugin_sdk`, which combines `pj_base` with the MessageParser,
+dialog and widget authoring headers from `pj_plugins`. Functional parser modules depend
 only on the zero-linkage `plotjuggler_sdk::parser_module` header target. Host
 libraries in `pj_plugins` depend on `pj_base`. `pj_datastore` — now a module in
 the PlotJuggler application repo, not part of this SDK — provides the concrete
@@ -475,6 +501,7 @@ Each protocol header defines:
 | MessageParser | `message_parser_protocol.h` | `PJ_get_message_parser_vtable` | 4 |
 | Toolbox | `toolbox_protocol.h` | `PJ_get_toolbox_vtable` | 4 |
 | Dialog | `dialog_protocol.h` | `PJ_get_dialog_vtable` | 4 |
+| Widget | `widget_protocol.h` | `PJ_get_widget_vtable` | 1 |
 
 **String ownership:** Plugin-returned `const char*` pointers remain valid
 until the next call to the same function on the same context. The host copies
@@ -493,6 +520,7 @@ at load time. Mismatches produce a clear error.
 | MessageParser | `MessageParserPluginBase` | Register `SchemaHandler`s; `parse()` is the legacy scalar path | `PJ_MESSAGE_PARSER_PLUGIN(Class, manifest)` |
 | Toolbox | `ToolboxPluginBase` | `capabilities()` | `PJ_TOOLBOX_PLUGIN(Class, manifest)` |
 | Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class, manifest)` (or legacy `PJ_DIALOG_PLUGIN(Class)`; works standalone or co-resident with another family) |
+| Widget | `WidgetPluginBase` | `inputs()`, `createWidget(parent)`, `onUpdate(values, time)`, `saveConfig()`, `loadConfig()` | `PJ_WIDGET_PLUGIN(Class, manifest)` |
 
 All SDK base classes:
 - Generate the C vtable via `vtableWithCreate()` at static init.
@@ -504,7 +532,9 @@ All SDK base classes:
 trampoline functions (e.g. `trampoline_start`) that cast the `void* ctx` to
 the concrete class, call the virtual, and wrap the result for C ABI return.
 MessageParser and Dialog implementations live in `sdk/detail/*_trampolines.hpp`;
-DataSource and Toolbox implementations live in `pj_base/src/*_trampolines.cpp`.
+DataSource and Toolbox implementations live in `pj_base/src/*_trampolines.cpp`;
+`WidgetPluginBase` defines its trampolines in its header (the Widget SDK is
+header-only).
 
 ## 5. Host Loaders
 
@@ -530,6 +560,7 @@ Each family has a loader that:
 | MessageParser | `MessageParserLibrary` | `load(path) → Expected<MessageParserLibrary>` |
 | Toolbox | `ToolboxLibrary` | `load(path) → Expected<ToolboxLibrary>` |
 | Dialog | `DialogLibrary` | `load(path) → Expected<DialogLibrary>` |
+| Widget | `WidgetLibrary` | `load(path) → Expected<WidgetLibrary>`, then `createHandle(type)` |
 
 Loaders also provide `resolveDialogVtable()` to find the dialog vtable in a
 plugin `.so` that exports both a family vtable and a dialog vtable (e.g. a
@@ -599,6 +630,31 @@ pre-existing context pointer obtained via `getDialog()` (which plugin
 authors implement with the SDK helper `PJ::borrowDialog(dialog_member_)`).
 The owning plugin handle must outlive the borrowed dialog because it owns both
 the dialog object storage and the shared DSO lifetime token.
+
+### 6.1 Widget handle and the Qt boundary
+
+`WidgetHandle` differs from the other handles in two ways. It is created per
+widget type (`WidgetLibrary::createHandle(type)`, `create(type)` returns null
+for an unknown type), and its destructor is the synchronous point where the
+plugin deletes the widget object it created. The host detaches that object
+from its parent (`setParent(nullptr)`) before destroying the handle, so no Qt
+parent frees it behind the plugin.
+
+The widget object crosses the ABI as `PJ_qwidget_t` (`void*`). No SDK header
+includes Qt and no SDK library links it; a Widget plugin is the one library
+that links Qt, and the host compares the Qt version recorded in
+`PJ_widget_vtable_t::build_info` with its own before `create_qwidget`. The
+host builds `pj.widget_host.v1` (history on demand, `inputs_changed`,
+diagnostics) with `WidgetHostBridge`, one service instance per open panel.
+Every vtable and service call is main-thread, except the constant
+`build_info` and `get_plugin_extension`. `inputs` has an error channel: a
+failure is reported as such and the previous array stays valid, so a host never
+mistakes it for "no inputs" and drops the wiring. `WidgetHandle::inputs()`
+refuses an array with an empty or duplicate name or an unknown kind (unknown
+flag bits are ignored), and `WidgetLibrary` validates `build_info` with the
+vtable before pinning the library. A Widget
+library is never unloaded: `WidgetLibrary` keeps the DSO mapped for the process
+lifetime, because Qt calls the widget at times the host does not control. See `widget-guide.md`.
 
 ## 7. Dialog Host Runtime
 
@@ -747,6 +803,7 @@ out_array, err)`:
 | `mock_schema_parser.cpp` | Schema binding, bound writes, config persistence |
 | `mock_toolbox.cpp` | ToolboxPluginBase: read→transform→write, notifyDataChanged |
 | `mock_dialog.cpp` (in `dialog_protocol/examples/`, not `pj_plugins/examples/`) | Standalone dialog: QLineEdit, QSpinBox, QCheckBox, config persistence |
+| `mock_widget.cpp` (in `widget_protocol/examples/`) | Qt-free widget library: two types, inputs, `on_update`, history, config, fake widget pointer |
 
 ### Test files (`pj_plugins/tests/`)
 
