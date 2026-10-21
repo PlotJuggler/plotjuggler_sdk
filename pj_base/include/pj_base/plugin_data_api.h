@@ -988,8 +988,9 @@ typedef struct {
  *     the path from the output name (a different topic may share the leaf).
  *     `language` is "luau" on every host; "python" is OPTIONAL and per host (a
  *     host built without it, e.g. WASM, rejects it): never assume it, probe it by
- *     calling validate_data_processor_script("on_demand","python","return {}") and
- *     keep the UI honest when that fails. A host that predates on_demand rejects it
+ *     calling check_data_processor_script("on_demand","python","return {}") (or
+ *     validate_data_processor_script on a host without it) and keep the UI honest when
+ *     that fails or answers UNCHECKED. A host that predates on_demand rejects it
  *     like any unknown kind.
  * Future kinds (e.g. a host-owned engine backend) are added the same way — a new
  * `kind` string plus host routing, no ABI change.
@@ -1218,6 +1219,18 @@ typedef struct {
 #define PJ_EVALUATION_STATE_COMPLETED 1u
 #define PJ_EVALUATION_STATE_FAILED 2u
 
+/* Outcome of check_data_processor_script. The slot stores it as a uint32_t, so the
+ * value is independent of the enum width a compiler picks. A client treats a value it
+ * does not know as an error, never as VALID.
+ * @since 0.38.0 */
+typedef enum {
+  PJ_SCRIPT_CHECK_VALID = 0,     /* the script compiled */
+  PJ_SCRIPT_CHECK_INVALID = 1,   /* the script did not compile; out_error carries the reason */
+  PJ_SCRIPT_CHECK_UNCHECKED = 2, /* the host could not decide in time: neither valid nor invalid */
+  /* Forces a stable 4-byte width across compilers. Not a real outcome. */
+  PJ_SCRIPT_CHECK_FORCE_INT32 = 0x7FFFFFFF,
+} PJ_script_check_t;
+
 typedef struct PJ_data_processors_host_vtable_t {
   uint32_t protocol_version;  // = 1
   uint32_t struct_size;       // = sizeof(PJ_data_processors_host_vtable_t)
@@ -1278,7 +1291,8 @@ typedef struct PJ_data_processors_host_vtable_t {
    * for a UI semaphore / error box). Compilation-only: it does NOT run the script
    * over data, so a runtime error or empty output is not detected here (use an
    * ephemeral create for that). No node, topic or catalog entry is created. An
-   * unknown language or kind is an error. */
+   * unknown language or kind is an error. check_data_processor_script is the same
+   * check with a third answer for "could not decide in time". */
   bool (*validate_data_processor_script)(
       void* ctx, PJ_string_view_t kind, PJ_string_view_t language, PJ_string_view_t script,
       PJ_string_view_t params_json, PJ_error_t* out_error) PJ_NOEXCEPT;
@@ -1369,6 +1383,25 @@ typedef struct PJ_data_processors_host_vtable_t {
    * ABI-APPENDED slot.
    * @since 0.37.0 */
   bool (*release_evaluation)(void* ctx, uint64_t handle, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] validate_data_processor_script with a three-way answer: same
+   * compile-only contract (nothing is run or installed) and same arguments, but a host
+   * that cannot decide within the call (e.g. a backend whose compile runs on a helper
+   * thread the host waits on for a bounded time) says so instead of passing the script.
+   * Returns false only when the call could not be made (unknown language or kind, a
+   * NULL argument): *out_error carries the reason and *out_status is not written.
+   * Otherwise returns true and writes a PJ_script_check_t into *out_status:
+   *   - PJ_SCRIPT_CHECK_VALID:     compiled. *out_error is not written.
+   *   - PJ_SCRIPT_CHECK_INVALID:   did not compile; *out_error carries the compile
+   *                                reason, as validate_data_processor_script's false does.
+   *   - PJ_SCRIPT_CHECK_UNCHECKED: not decided yet. NOT a pass: ask again later and do
+   *                                not report the script as valid. *out_error MAY say why.
+   * Read *out_error on true only for INVALID and UNCHECKED, and clear it first.
+   * ABI-APPENDED slot.
+   * @since 0.38.0 */
+  bool (*check_data_processor_script)(
+      void* ctx, PJ_string_view_t kind, PJ_string_view_t language, PJ_string_view_t script,
+      PJ_string_view_t params_json, uint32_t* out_status, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_processors_host_vtable_t;
 
 typedef struct {

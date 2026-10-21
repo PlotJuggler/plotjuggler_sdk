@@ -298,7 +298,10 @@ The contract (lifetime, time flags, report schema, errors) is the
 
 1. **Detect** with `DataProcessorsHostView::hasTypedRequests()`, never a version
    string. Probe the optional Python backend with
-   `validateScript("on_demand", "python", "return {}")`.
+   `checkScript("on_demand", "python", "return {}")` (SDK 0.38.0): an Error or `kInvalid`
+   means the backend is not offered, `kUnchecked` means the host could not tell yet, so
+   ask again rather than treat it as available or absent. A host without the new slot is
+   asked `validate_data_processor_script`, which cannot say `kUnchecked`.
 2. **Create** with `createV2(DataProcessorRequest)`: typed `DataProcessorOutput{name,
    type}` outputs and an optional `dataset_id` (a catalog `PJ_data_source_handle_t.id`;
    0 resolves inputs by name). `kind="on_demand"` exists only here. The result holds,
