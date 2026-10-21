@@ -277,6 +277,9 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   backend fault surfaces instead of silently masquerading as a missing key); the
   host backs it (QSettings in the GUI app, JSON in a headless host) and
   namespaces keys per plugin.
+  `"pj.feature_catalog.v1"` (optional) returns a host-owned JSON document that
+  describes what the host offers (built-in features, plugins, limitations);
+  the SDK transports it without parsing (`sdk::FeatureCatalogView::json()`).
   `"pj.parser_runtime.v1"` (optional) gives message parsers a non-fatal,
   non-blocking diagnostics channel. Parsers report severity, a machine-stable
   code, representative text, and an occurrence count; the host aggregates by

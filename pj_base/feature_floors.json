@@ -28,7 +28,12 @@
       "catalogSnapshotV2": "PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2",
       "createTabV2": "PJ_plot_tab_host_vtable_t::create_tab_v2",
       "detachTopic": "PJ_plot_tab_host_vtable_t::detach_topic",
+      "FeatureCatalogService": {
+        "declaration": "pj.feature_catalog.v1",
+        "aliases": ["FeatureCatalogView"]
+      },
       "focusTab": "PJ_plot_tab_host_vtable_t::focus_tab",
+      "getFeatureCatalog": "PJ_feature_catalog_vtable_t::get_feature_catalog",
       "kEmbedsSceneViews": {
         "declaration": "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS",
         "aliases": ["setSceneView"]

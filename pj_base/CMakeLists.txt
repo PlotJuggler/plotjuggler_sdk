@@ -168,6 +168,7 @@ if(PJ_BUILD_TESTS)
     tests/plot_tabs_api_test.cpp
     tests/dataset_qualified_name_api_test.cpp
     tests/settings_store_host_test.cpp
+    tests/feature_catalog_host_test.cpp
     tests/parser_runtime_host_test.cpp
     tests/data_source_protocol_test.cpp
     # TODO: data_source_plugin_base_test.cpp and
