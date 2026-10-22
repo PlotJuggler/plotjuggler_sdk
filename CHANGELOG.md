@@ -5,6 +5,8 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [Unreleased]
 
+## [0.38.0]
+
 Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2,
 PJ_plot_tab_host_vtable_t::create_tab_v2, PJ_plot_tab_host_vtable_t::attach_topic,
 PJ_plot_tab_host_vtable_t::detach_topic, PJ_plot_tab_host_vtable_t::focus_tab,
