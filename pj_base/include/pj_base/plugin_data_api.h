@@ -1455,6 +1455,41 @@ typedef struct {
 } PJ_settings_store_t;
 
 /**
+ * Feature catalog service ("pj.feature_catalog.v1", protocol_version 1).
+ *
+ * Optional, read-only host service describing what the host application
+ * offers its users: built-in features, the plugins loaded, installed or
+ * installable, and the known limitations. It is absent on older hosts, so a
+ * plugin must treat it as optional. The single slot is [main-thread].
+ *
+ * The returned view is a UTF-8 JSON document, valid until the next call on
+ * this service instance. Its schema belongs to the host application; the SDK
+ * only transports it and never parses or validates it. The extensibility
+ * rules every consumer relies on:
+ *   1. Consumers ignore unknown fields.
+ *   2. A missing optional field means "unknown", never "false" or "empty".
+ *   3. Existing fields never change meaning; new information gets new fields.
+ *   4. `schema` is a major version: a consumer that sees a higher major than
+ *      it supports does not interpret the document and degrades explicitly.
+ *   5. The document is bounded by the host (no unbounded strings); a
+ *      consumer still applies its own size budget.
+ *
+ * @since 0.39.0
+ */
+typedef struct PJ_feature_catalog_vtable_t {
+  uint32_t protocol_version;
+  uint32_t struct_size;
+
+  /* Fetch the catalog document into *out_json. */
+  bool (*get_feature_catalog)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_feature_catalog_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_feature_catalog_vtable_t* vtable;
+} PJ_feature_catalog_t;
+
+/**
  * Playback host service ("pj.playback.v1", protocol_version 1).
  *
  * Optional programmatic control of the host's playback cursor (the vertical

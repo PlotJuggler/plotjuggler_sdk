@@ -34,6 +34,13 @@
         "declaration": "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS",
         "aliases": ["setSceneView"]
       }
+    },
+    "0.39.0": {
+      "FeatureCatalogService": {
+        "declaration": "pj.feature_catalog.v1",
+        "aliases": ["FeatureCatalogView"]
+      },
+      "getFeatureCatalog": "PJ_feature_catalog_vtable_t::get_feature_catalog"
     }
   },
   "baseline": [

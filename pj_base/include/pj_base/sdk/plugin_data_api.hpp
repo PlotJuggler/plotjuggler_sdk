@@ -2705,4 +2705,39 @@ class SettingsView {
   PJ_settings_store_t store_{};
 };
 
+// ---------------------------------------------------------------------------
+// FeatureCatalogView — typed C++ view over PJ_feature_catalog_t
+// ---------------------------------------------------------------------------
+
+/// C++ wrapper around PJ_feature_catalog_t — an optional, read-only host
+/// service (service "pj.feature_catalog.v1") returning a JSON document that
+/// describes what the host offers. Empty-constructible; `valid()` tells whether
+/// the host bound it. The schema is owned by the host application; the SDK
+/// only transports the text (see the rules in plugin_data_api.h). Main-thread.
+class FeatureCatalogView {
+ public:
+  FeatureCatalogView() = default;
+  explicit FeatureCatalogView(PJ_feature_catalog_t catalog) : catalog_(catalog) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return catalog_.vtable != nullptr && catalog_.ctx != nullptr && catalog_.vtable->get_feature_catalog != nullptr;
+  }
+
+  /// Copy of the catalog document, or an error if unbound or the host failed.
+  [[nodiscard]] Expected<std::string> json() const {
+    if (!valid()) {
+      return unexpected("feature catalog is not bound");
+    }
+    PJ_string_view_t out{};
+    PJ_error_t err{};
+    if (!catalog_.vtable->get_feature_catalog(catalog_.ctx, &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(out));
+  }
+
+ private:
+  PJ_feature_catalog_t catalog_{};
+};
+
 }  // namespace PJ::sdk
