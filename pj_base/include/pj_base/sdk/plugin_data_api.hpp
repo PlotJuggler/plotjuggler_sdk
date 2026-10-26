@@ -1734,6 +1734,22 @@ struct EvaluationPoll {
   std::string json;
 };
 
+/// C++ mirror of PJ_script_check_t. kUnchecked is "not decided yet", never a pass.
+/// @since 0.38.0
+enum class ScriptCheckStatus : uint32_t {
+  kValid = PJ_SCRIPT_CHECK_VALID,
+  kInvalid = PJ_SCRIPT_CHECK_INVALID,
+  kUnchecked = PJ_SCRIPT_CHECK_UNCHECKED,
+};
+
+/// Result of DataProcessorsHostView::checkScript(). `message` is the compile reason
+/// for kInvalid and, optionally, why the script is kUnchecked; empty for kValid.
+/// @since 0.38.0
+struct ScriptCheck {
+  ScriptCheckStatus status = ScriptCheckStatus::kValid;
+  std::string message;
+};
+
 namespace detail {
 
 /// Builds the ABI request for `request`, filling `in_abi`/`out_abi` with views into
@@ -1980,6 +1996,44 @@ class DataProcessorsHostView {
       return unexpected(errorToString(err));
     }
     return okStatus();
+  }
+
+  /// validateScript() with a three-way answer: a host that cannot compile within the
+  /// call reports kUnchecked (not decided yet, never a pass: ask again later) instead of
+  /// passing the script. Same compile-only contract as validateScript. An Error means
+  /// the call could not be made (unknown language/kind, no validation slot at all).
+  /// A host that predates check_data_processor_script is asked
+  /// validate_data_processor_script instead, which cannot tell "invalid" from "could
+  /// not be asked": its failure reads as kInvalid, and kUnchecked never comes back.
+  /// @since 0.38.0
+  [[nodiscard]] Expected<ScriptCheck> checkScript(
+      std::string_view kind, std::string_view language, std::string_view script,
+      std::string_view params_json = "{}") const {
+    PJ_error_t err{};
+    if (valid() && PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, check_data_processor_script)) {
+      uint32_t status = PJ_SCRIPT_CHECK_VALID;
+      if (!host_.vtable->check_data_processor_script(
+              host_.ctx, toAbiString(kind), toAbiString(language), toAbiString(script), toAbiString(params_json),
+              &status, &err)) {
+        return unexpected(errorToString(err));
+      }
+      if (status > PJ_SCRIPT_CHECK_UNCHECKED) {
+        return unexpected("unknown script check status " + std::to_string(status));
+      }
+      ScriptCheck check{static_cast<ScriptCheckStatus>(status), {}};
+      if (check.status != ScriptCheckStatus::kValid && err.message[0] != '\0') {
+        check.message = errorToString(err);
+      }
+      return check;
+    }
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_data_processors_host_vtable_t, host_.vtable, validate_data_processor_script)) {
+      return unexpected("host does not support script validation");
+    }
+    auto validated = validateScript(kind, language, script, params_json);
+    if (validated) {
+      return ScriptCheck{};
+    }
+    return ScriptCheck{ScriptCheckStatus::kInvalid, validated.error()};
   }
 
   /// create() with a typed request: typed outputs, a dataset id and (with

@@ -26,6 +26,7 @@
     "0.38.0": {
       "attachTopic": "PJ_plot_tab_host_vtable_t::attach_topic",
       "catalogSnapshotV2": "PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2",
+      "checkScript": "PJ_data_processors_host_vtable_t::check_data_processor_script",
       "createTabV2": "PJ_plot_tab_host_vtable_t::create_tab_v2",
       "detachTopic": "PJ_plot_tab_host_vtable_t::detach_topic",
       "focusTab": "PJ_plot_tab_host_vtable_t::focus_tab",

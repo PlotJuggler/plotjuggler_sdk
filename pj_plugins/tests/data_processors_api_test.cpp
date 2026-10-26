@@ -54,6 +54,15 @@ struct FakeDataProcessorsHost {
   std::string last_validate_kind;
   std::string last_validate_script;
 
+  bool check_called = false;
+  bool check_should_fail = false;                 // the call itself cannot be made
+  uint32_t check_status = PJ_SCRIPT_CHECK_VALID;  // what the fake reports, as the raw ABI value
+  std::string check_reason;                       // written to out_error for INVALID / UNCHECKED
+  std::string last_check_kind;
+  std::string last_check_language;
+  std::string last_check_script;
+  std::string last_check_params;
+
   // --- create_data_processor_v2 / submit_evaluation / poll_evaluation / release_evaluation ---
   // Both request slots decode through sdk::readDataProcessorRequest, like a real host,
   // and the fake enforces the few per-kind rules a client must be able to rely on.
@@ -161,6 +170,26 @@ bool dpValidate(
       sdk::fillError(out_error, 1, "data_processors", "syntax boom");
     }
     return false;
+  }
+  return true;
+}
+
+bool dpCheck(
+    void* ctx, PJ_string_view_t kind, PJ_string_view_t language, PJ_string_view_t script, PJ_string_view_t params_json,
+    uint32_t* out_status, PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<FakeDataProcessorsHost*>(ctx);
+  self->check_called = true;
+  self->last_check_kind = std::string(sdk::toStringView(kind));
+  self->last_check_language = std::string(sdk::toStringView(language));
+  self->last_check_script = std::string(sdk::toStringView(script));
+  self->last_check_params = std::string(sdk::toStringView(params_json));
+  if (self->check_should_fail) {
+    sdk::fillError(out_error, 1, "data_processors", "unknown language");
+    return false;
+  }
+  *out_status = self->check_status;
+  if (!self->check_reason.empty()) {
+    sdk::fillError(out_error, 1, "data_processors", self->check_reason);
   }
   return true;
 }
@@ -290,6 +319,7 @@ PJ_data_processors_host_vtable_t makeVtable() {
       .submit_evaluation = dpSubmitEvaluation,
       .poll_evaluation = dpPollEvaluation,
       .release_evaluation = dpReleaseEvaluation,
+      .check_data_processor_script = dpCheck,
   };
 }
 
@@ -573,6 +603,137 @@ TEST(DataProcessorsApiTest, ValidateFailureSurfacesError) {
   auto status = view.validateScript("markers", "luau", "this is not lua");
   EXPECT_FALSE(status);
   EXPECT_NE(status.error().find("syntax boom"), std::string::npos);
+}
+
+// --- checkScript ------------------------------------------------------------------
+
+// check_data_processor_script forwards its arguments and reports all three outcomes;
+// the reason travels with INVALID and UNCHECKED, and a VALID script has none.
+TEST(DataProcessorsApiTest, CheckScriptForwardsAllThreeStates) {
+  FakeDataProcessorsHost host;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  struct Case {
+    uint32_t raw;
+    sdk::ScriptCheckStatus expected;
+    const char* reason;
+  };
+  const Case cases[] = {
+      {PJ_SCRIPT_CHECK_VALID, sdk::ScriptCheckStatus::kValid, ""},
+      {PJ_SCRIPT_CHECK_INVALID, sdk::ScriptCheckStatus::kInvalid, "syntax boom"},
+      {PJ_SCRIPT_CHECK_UNCHECKED, sdk::ScriptCheckStatus::kUnchecked, "helper still starting"},
+  };
+  for (const Case& test_case : cases) {
+    host.check_status = test_case.raw;
+    host.check_reason = test_case.reason;
+    auto check = view.checkScript("on_demand", "python", "return {}", R"({"k":1})");
+    ASSERT_TRUE(check) << check.error();
+    EXPECT_EQ(check->status, test_case.expected);
+    if (test_case.expected == sdk::ScriptCheckStatus::kValid) {
+      EXPECT_TRUE(check->message.empty());
+    } else {
+      EXPECT_NE(check->message.find(test_case.reason), std::string::npos) << check->message;
+    }
+  }
+  EXPECT_TRUE(host.check_called);
+  EXPECT_FALSE(host.validate_called);  // a host with the slot is never asked the two-way question
+  EXPECT_EQ(host.last_check_kind, "on_demand");
+  EXPECT_EQ(host.last_check_language, "python");
+  EXPECT_EQ(host.last_check_script, "return {}");
+  EXPECT_EQ(host.last_check_params, R"({"k":1})");
+}
+
+// A call the host could not make (e.g. an unknown language) is an error, not a status.
+TEST(DataProcessorsApiTest, CheckScriptCallFailureIsAnError) {
+  FakeDataProcessorsHost host;
+  host.check_should_fail = true;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  auto check = view.checkScript("on_demand", "cobol", "x");
+  ASSERT_FALSE(check);
+  EXPECT_NE(check.error().find("unknown language"), std::string::npos);
+}
+
+// A status this SDK does not know is an error, never read as VALID.
+TEST(DataProcessorsApiTest, CheckScriptUnknownStatusIsAnError) {
+  FakeDataProcessorsHost host;
+  host.check_status = 3;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  auto check = view.checkScript("on_demand", "luau", "return {}");
+  ASSERT_FALSE(check);
+  EXPECT_NE(check.error().find("unknown script check status 3"), std::string::npos);
+}
+
+// A host that predates the slot is asked validate_data_processor_script instead: the
+// answer is VALID or INVALID, never UNCHECKED.
+TEST(DataProcessorsApiTest, CheckScriptFallsBackToValidateOnOldHost) {
+  FakeDataProcessorsHost host;
+  auto vtable = makeVtable();
+  vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, check_data_processor_script);
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  auto valid = view.checkScript("markers", "luau", "createPointMarker(0.0)");
+  ASSERT_TRUE(valid) << valid.error();
+  EXPECT_EQ(valid->status, sdk::ScriptCheckStatus::kValid);
+  EXPECT_TRUE(valid->message.empty());
+  EXPECT_TRUE(host.validate_called);
+  EXPECT_EQ(host.last_validate_kind, "markers");
+  EXPECT_EQ(host.last_validate_script, "createPointMarker(0.0)");
+
+  host.validate_should_fail = true;
+  auto invalid = view.checkScript("markers", "luau", "this is not lua");
+  ASSERT_TRUE(invalid) << invalid.error();
+  EXPECT_EQ(invalid->status, sdk::ScriptCheckStatus::kInvalid);
+  EXPECT_NE(invalid->message.find("syntax boom"), std::string::npos);
+  EXPECT_FALSE(host.check_called);
+}
+
+// A host whose vtable is large enough for the slot but leaves it NULL is treated like
+// one that predates it.
+TEST(DataProcessorsApiTest, CheckScriptWithNullSlotFallsBackToValidate) {
+  FakeDataProcessorsHost host;
+  auto vtable = makeVtable();
+  vtable.check_data_processor_script = nullptr;
+  ASSERT_EQ(vtable.struct_size, sizeof(PJ_data_processors_host_vtable_t));
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  auto valid = view.checkScript("markers", "luau", "createPointMarker(0.0)");
+  ASSERT_TRUE(valid) << valid.error();
+  EXPECT_EQ(valid->status, sdk::ScriptCheckStatus::kValid);
+
+  host.validate_should_fail = true;
+  auto invalid = view.checkScript("markers", "luau", "this is not lua");
+  ASSERT_TRUE(invalid) << invalid.error();
+  EXPECT_EQ(invalid->status, sdk::ScriptCheckStatus::kInvalid);
+  EXPECT_NE(invalid->message.find("syntax boom"), std::string::npos);
+  EXPECT_FALSE(host.check_called);
+}
+
+// A host that leaves out_error untouched for UNCHECKED gives no reason: the message is
+// empty, not the "unspecified error" placeholder of an error with nothing in it.
+TEST(DataProcessorsApiTest, CheckScriptUncheckedWithoutReasonHasEmptyMessage) {
+  FakeDataProcessorsHost host;
+  host.check_status = PJ_SCRIPT_CHECK_UNCHECKED;
+  const auto vtable = makeVtable();
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  auto check = view.checkScript("on_demand", "python", "return {}");
+  ASSERT_TRUE(check) << check.error();
+  EXPECT_EQ(check->status, sdk::ScriptCheckStatus::kUnchecked);
+  EXPECT_TRUE(check->message.empty()) << check->message;
+}
+
+TEST(DataProcessorsApiTest, CheckScriptWithoutAnyValidationSlotIsAnError) {
+  FakeDataProcessorsHost host;
+  auto vtable = makeVtable();
+  vtable.struct_size = offsetof(PJ_data_processors_host_vtable_t, validate_data_processor_script);
+  sdk::DataProcessorsHostView view(PJ_data_processors_host_t{.ctx = &host, .vtable = &vtable});
+
+  EXPECT_FALSE(view.checkScript("markers", "luau", "x"));
 }
 
 // --- createV2 / submitEvaluation / pollEvaluation / releaseEvaluation ------------
