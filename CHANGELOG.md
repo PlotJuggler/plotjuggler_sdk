@@ -3,13 +3,9 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [Unreleased]
+## [0.39.0] — Unreleased
 
-Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2,
-PJ_plot_tab_host_vtable_t::create_tab_v2, PJ_plot_tab_host_vtable_t::attach_topic,
-PJ_plot_tab_host_vtable_t::detach_topic, PJ_plot_tab_host_vtable_t::focus_tab,
-PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS,
-pj.feature_catalog.v1, PJ_feature_catalog_vtable_t::get_feature_catalog (floor 0.38.0).
+Host contract: extended: pj.feature_catalog.v1, PJ_feature_catalog_vtable_t::get_feature_catalog (floor 0.39.0).
 
 Feature catalog service:
 
@@ -19,6 +15,16 @@ Feature catalog service:
   the SDK only transports it. `FeatureCatalogView::json()`, `FeatureCatalogService`, and the
   host adapter `FeatureCatalogHost` (`pj_base/sdk/feature_catalog_host.hpp`). A plugin that
   treats the service as optional keeps its floor.
+
+## [Unreleased]
+
+## [0.38.0]
+
+Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2,
+PJ_plot_tab_host_vtable_t::create_tab_v2, PJ_plot_tab_host_vtable_t::attach_topic,
+PJ_plot_tab_host_vtable_t::detach_topic, PJ_plot_tab_host_vtable_t::focus_tab,
+PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS,
+PJ_data_processors_host_vtable_t::check_data_processor_script (floor 0.38.0).
 
 Scene tabs, catalog v2 and dialog scene views:
 
@@ -57,6 +63,26 @@ Scene tabs, catalog v2 and dialog scene views:
 - Codecs: the wire writer grows with room for the short fields that follow a large
   payload, so `serializeBuiltinObject` (and every `serialize*`) avoids an extra copy of the
   payload when the following fields fit the spare capacity.
+
+Data processors (`pj.data_processors.v1`):
+
+- Add the tail slot `check_data_processor_script` (`DataProcessorsHostView::checkScript`):
+  `validate_data_processor_script` with a third answer. `PJ_script_check_t` is
+  `PJ_SCRIPT_CHECK_VALID`, `_INVALID` (the compile reason in `out_error`) or `_UNCHECKED`
+  (the host could not decide within the call: not a pass, ask again later), stored as a
+  `uint32_t`. The wrapper returns `ScriptCheck{ScriptCheckStatus, message}` and, on a host
+  without the slot, falls back to `validate_data_processor_script`, whose failure reads as
+  `kInvalid` and which never yields `kUnchecked`.
+
+Builtin objects (client-side, no floor impact):
+
+- Add the `VoxelGrid` field table (`pj_base/builtin/voxel_grid_fields.hpp`), registered under
+  `describe(BuiltinObjectType::kVoxelGrid)`: a generic binder reads and writes every member
+  (`origin` and `cell_size` link to the `Pose` / `Vector3` tables, `fields` to `PointField`).
+  `data` is a `kBuffer` (`voxelGridDataField`): `record_step` is `cell_stride`, `row_step` is
+  `row_stride`, and `record_count` is `column_count * row_count * slice_count`, or 0 when the
+  declared extent exceeds the bytes held. `slice_stride` has no `BufferLayout` slot; read it
+  from its own field.
 
 ## [0.37.0]
 

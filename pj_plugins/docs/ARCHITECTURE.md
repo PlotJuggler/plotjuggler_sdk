@@ -260,7 +260,9 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   `struct_size` follows a read-prefix rule that hosts apply through
   `sdk::readDataProcessorRequest` (`pj_base/sdk/data_processors_host.hpp`), and
   clients parse the poll report with `sdk::parseEvaluationReport`
-  (`pj_plugins/sdk/evaluation_report.hpp`). Input names may carry the dataset
+  (`pj_plugins/sdk/evaluation_report.hpp`). `checkScript`
+  (`check_data_processor_script`, 0.38.0) is `validateScript` with a third answer,
+  `kUnchecked` (the host could not decide in time; not a pass). Input names may carry the dataset
   qualifier `dataset_source:topic/field`, so a name several loaded datasets
   share is addressed rather than guessed — rules are normative in
   `plugin_data_api.h` (DATASET-QUALIFIED NAMES), shared parser/composer in

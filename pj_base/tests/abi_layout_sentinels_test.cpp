@@ -56,6 +56,7 @@ static_assert(sizeof(PJ_message_box_type_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_message_box_buttons_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_toolbox_message_level_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_parser_diagnostic_level_t) == 4, "parser diagnostic enum layout pinned");
+static_assert(sizeof(PJ_script_check_t) == 4, "script check enum layout pinned");
 
 // --- PJ_error_t (ABI-FROZEN) -------------------------------------------------
 static_assert(sizeof(PJ_error_t) == 304, "PJ_error_t size pinned at v4.0 release");
@@ -408,7 +409,10 @@ static_assert(
     offsetof(PJ_data_processors_host_vtable_t, release_evaluation) == 72,
     "data processors host release-evaluation tail slot pinned");
 static_assert(
-    sizeof(PJ_data_processors_host_vtable_t) == 80, "Data processors host size (update deliberately on append)");
+    offsetof(PJ_data_processors_host_vtable_t, check_data_processor_script) == 80,
+    "data processors host check-script tail slot pinned");
+static_assert(
+    sizeof(PJ_data_processors_host_vtable_t) == 88, "Data processors host size (update deliberately on append)");
 static_assert(alignof(PJ_data_processors_host_vtable_t) == 8, "Data processors host alignment pinned");
 static_assert(sizeof(PJ_data_processors_host_t) == 16, "Data processors host fat pointer pinned");
 
@@ -473,6 +477,9 @@ static_assert(PJ_EVALUATION_BUDGET_V1_MIN_SIZE == 40, "evaluation budget v1 mini
 static_assert(PJ_EVALUATION_STATE_PENDING == 0u, "evaluation states pinned");
 static_assert(PJ_EVALUATION_STATE_COMPLETED == 1u, "evaluation states pinned");
 static_assert(PJ_EVALUATION_STATE_FAILED == 2u, "evaluation states pinned");
+static_assert(PJ_SCRIPT_CHECK_VALID == 0, "script check values pinned");
+static_assert(PJ_SCRIPT_CHECK_INVALID == 1, "script check values pinned");
+static_assert(PJ_SCRIPT_CHECK_UNCHECKED == 2, "script check values pinned");
 static_assert(PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW == 1u, "time flags pinned");
 static_assert(PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT == 2u, "time flags pinned");
 
