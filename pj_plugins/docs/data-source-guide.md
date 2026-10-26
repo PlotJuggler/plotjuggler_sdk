@@ -274,6 +274,13 @@ Key traits of `FileSourceBase`:
   plugins should NOT call it themselves.
 - **Filepath contract**: the host passes `{"filepath":"/path/to/file", ...}`
   via `loadConfig()`. Extract and preserve the `"filepath"` key.
+- **Layout replay**: when PlotJuggler replays a saved layout it rewrites `"filepath"` (and the
+  `"filepath"` of each `__pj_fanout` child config) to the file it actually opens, so a moved or
+  copied layout folder loads the data beside it. When that replaces a different absolute path, the
+  host also passes the replaced path as `"__pj_saved_filepath"` (on the outer config and on each
+  fan-out child) so the plugin can rebase auxiliary files, such as a DBC, that lived beside the old
+  data file. The key is absent on ordinary opens. `__pj_*` keys are host-private: read them in
+  `loadConfig()`, never write them from `saveConfig()`.
 
 ### Continuous streamer — UDP receiver (delegated ingest)
 
