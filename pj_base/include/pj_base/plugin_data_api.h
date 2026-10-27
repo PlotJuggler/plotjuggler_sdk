@@ -981,9 +981,11 @@ typedef struct {
  *     materialize for the whole series. Its outputs are TYPED, so it is created only
  *     through create_data_processor_v2 (PJ_data_processor_output_t); the v1
  *     create_data_processor REJECTS kind "on_demand" with an error naming
- *     create_data_processor_v2. A result is read only through submit_evaluation /
- *     poll_evaluation. out_topics returns, 1:1 with outputs, the object topic the host
- *     publishes for an object output and the bare name for a number or string output.
+ *     create_data_processor_v2. A result is read through submit_evaluation /
+ *     poll_evaluation; a number output the host also plots as a series is read at the
+ *     path data_processor_config's `series` block names. out_topics returns, 1:1 with
+ *     outputs, the object topic the host publishes for an object output and the bare
+ *     name for a number or string output.
  *     A consumer reads an object output by exactly this string; it must not rebuild
  *     the path from the output name (a different topic may share the leaf).
  *     `language` is "luau" on every host; "python" is OPTIONAL and per host (a
@@ -1278,7 +1280,14 @@ typedef struct PJ_data_processors_host_vtable_t {
    *     (string), `requested_ns` (the instant last requested), `lag_ns` (number or
    *     null), `upstream` (array: the other on_demand nodes this one reads) and, for a
    *     pinned node, `findings` {`pinned`, `bytes`} (the owning plugin's pinned nodes
-   *     and their materialized bytes).
+   *     and their materialized bytes). A host that plots the number outputs of a node
+   *     reading an object adds `series` {`topic`, `rows`, `failed`, `first_error`,
+   *     `complete`, `done`, `total`, `stopped`}: the series' samples are read as the
+   *     catalog path `<topic>/<output name>` (out_topics holds only the bare output
+   *     name); `rows` are written so far, `failed` the instants with no row, `done` the
+   *     instants evaluated and `total` an upper bound of all of them, `complete` once
+   *     every instant is evaluated, `stopped` when nothing wants it computed. Absent:
+   *     no series (a pinned node, no object input, or no number output).
    *   - markers: `computing` (bool: a run is in progress), `error` (string, present
    *     only after a failed run) and, for a windowed rule, `coverage_ns`
    *     {`first_ns`,`last_ns`}, the window the latest successful run staged. */
