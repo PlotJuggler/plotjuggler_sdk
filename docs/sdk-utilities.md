@@ -10,7 +10,8 @@ plotjuggler_sdk::source. PJ utilities require plotjuggler_sdk::base,
 also supplied by plugin_sdk.
 
 A namespace prefix applies to every symbol in its cell. Dialog headers come
-from `pj_plugins/dialog_protocol/include/`. Packaged guides are installed in
+from `pj_plugins/dialog_protocol/include/`; Widget headers from
+`pj_plugins/widget_protocol/include/`. Packaged guides are installed in
 `share/plotjuggler_sdk/docs/`; resolve header paths against the package's `include/`.
 
 | Symbol | Use it for | Header |
@@ -65,6 +66,9 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::sdk::readDataProcessorRequest, readEvaluationBudget` | Host side: decode a typed data-processor request or budget (read-prefix rule, structural rejections) | `pj_base/sdk/data_processors_host.hpp` |
 | `PJ::sdk::FieldTable<T>, field<&T::member>, describe` | Read/write builtin struct members by name in a generic binder; lists are element-addressable | `pj_base/builtin/field_table.hpp; pj_base/builtin/field_table_registry.hpp` |
 | `PJ::sdk::PinholeIntrinsics, unprojectPixel` | Unproject rectified metric depth pixels; validate K once per image | `pj_base/builtin/depth_image_utils.hpp` |
+| `PJ::WidgetPluginBase, PJ_WIDGET_PLUGIN, PJ::WidgetHostView` | Author a Widget plugin (inputs, `onUpdate`, history, config); Qt-free header | `pj_plugins/sdk/widget_plugin_base.hpp` |
+| `PJ::WidgetLibrary, WidgetHandle, WidgetHostBridge` | Host side of the Widget family: load, instantiate per type, serve `pj.widget_host.v1` from callbacks | `pj_plugins/host/widget_library.hpp; widget_handle.hpp; widget_host_bridge.hpp` |
+| `PJ_WIDGET_QT_MODULES` | Canonical Qt module list a widget may declare in `qt_modules` | `pj_plugins/widget_qt_modules.h` |
 | `pj_embed_file, pj_configure_plugin` | Embed UI/manifest assets and configure plugin exports/build rules | `cmake/PjPlugin.cmake` |
 
 Outside this SDK, reuse pj-official-plugins common/:

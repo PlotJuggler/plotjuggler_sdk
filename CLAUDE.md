@@ -30,6 +30,7 @@ ownership or storage formats change. Read only the relevant reference sections.
 | Canonical object types and codecs | [docs/builtin_type.md](docs/builtin_type.md) |
 | ObjectStore services and ownership | [V4_STORE.md](V4_STORE.md) |
 | Dialog setters/events | [docs/dialog-sdk-reference.md](docs/dialog-sdk-reference.md) |
+| Widget plugins (panels with a plugin-created Qt widget) | [pj_plugins/docs/widget-guide.md](pj_plugins/docs/widget-guide.md), [pj_plugins/widget_protocol/CLAUDE.md](pj_plugins/widget_protocol/CLAUDE.md) |
 | Image annotation / plot marker wire formats | [image_annotations_format.md](docs/image_annotations_format.md), [plot_markers_format.md](docs/plot_markers_format.md) |
 | C++ style and error handling | [docs/cpp_design_recommendations.md](docs/cpp_design_recommendations.md) |
 | Release planning and consumer migration gates | [docs/BACKLOG.md](docs/BACKLOG.md) |
@@ -40,7 +41,8 @@ depend on `pj_base`; both use nlohmann/json. Provider headers live under
 include directory forward to `source` for one release; new code uses `source`.
 
 DataSource/MessageParser/Toolbox C protocols live in `pj_base`; the Dialog
-protocol lives in `pj_plugins/dialog_protocol/`. The datastore and duplicate
+protocol lives in `pj_plugins/dialog_protocol/` and the Widget protocol in
+`pj_plugins/widget_protocol/`. A Widget plugin links Qt; the SDK never does. The datastore and duplicate
 plugin-resolution catalog belong to the application, not this SDK.
 
 The installed `cmake/` helpers (`pj_configure_plugin`, `pj_embed_file`,

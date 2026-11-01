@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -23,6 +24,7 @@
 #include "pj_base/sdk/semver.hpp"
 #include "pj_base/toolbox_protocol.h"
 #include "pj_plugins/dialog_protocol.h"
+#include "pj_plugins/widget_protocol.h"
 
 namespace PJ {
 
@@ -61,7 +63,7 @@ bool nativeSymbolPresent(void* handle, const char* symbol) noexcept {
 template <typename Vtable, typename EntryFn>
 Expected<ManifestCandidate> probeDirectVtable(
     void* handle, const detail::LibraryPathIdentity& origin, const char* symbol, const char* family_name,
-    uint32_t expected_protocol, size_t min_vtable_size, PluginFamily family) {
+    uint32_t expected_protocol, size_t min_vtable_size, PluginFamily family, std::string_view baseline = "v4.0") {
   auto sym = detail::resolveSymbol(handle, symbol, origin);
   if (!sym) {
     return unexpected(sym.error());
@@ -74,7 +76,7 @@ Expected<ManifestCandidate> probeDirectVtable(
     return unexpected(fmt::format("{} protocol version mismatch", family_name));
   }
   if (vt->struct_size < min_vtable_size) {
-    return unexpected(fmt::format("{} vtable smaller than v4.0 baseline", family_name));
+    return unexpected(fmt::format("{} vtable smaller than {} baseline", family_name, baseline));
   }
   if (auto status = detail::validateRequiredSlots(vt); !status) {
     return unexpected(status.error());
@@ -133,6 +135,12 @@ Expected<ManifestCandidate> tryDialog(void* handle, const detail::LibraryPathIde
   return ManifestCandidate{PluginFamily::kDialog, std::move(manifest_json)};
 }
 
+Expected<ManifestCandidate> tryWidget(void* handle, const detail::LibraryPathIdentity& origin) {
+  return probeDirectVtable<PJ_widget_vtable_t, PJ_get_widget_vtable_fn>(
+      handle, origin, "PJ_get_widget_vtable", "Widget", PJ_WIDGET_PLUGIN_PROTOCOL_VERSION, PJ_WIDGET_MIN_VTABLE_SIZE,
+      PluginFamily::kWidget, "v1.0");
+}
+
 Expected<ManifestCandidate> findEmbeddedManifest(void* handle, const detail::LibraryPathIdentity& origin) {
   std::vector<std::string> errors;
 
@@ -158,6 +166,12 @@ Expected<ManifestCandidate> findEmbeddedManifest(void* handle, const detail::Lib
     return *candidate;
   } else {
     errors.push_back(fmt::format("dialog: {}", candidate.error()));
+  }
+
+  if (auto candidate = tryWidget(handle, origin)) {
+    return *candidate;
+  } else {
+    errors.push_back(fmt::format("widget: {}", candidate.error()));
   }
 
   std::ostringstream out;
@@ -186,6 +200,68 @@ Expected<std::vector<std::string>> readStringArray(const nlohmann::json& j, std:
   return values;
 }
 
+// Reads the string member `key` of @p j. A missing optional member yields an empty string; a required
+// member must be a non-empty string.
+Expected<std::string> readString(const nlohmann::json& j, const char* key, bool required) {
+  const auto it = j.find(key);
+  if (required) {
+    if (it == j.end() || !it->is_string() || it->get<std::string>().empty()) {
+      return unexpected(fmt::format("plugin embedded manifest missing required string key: {}", key));
+    }
+    return it->get<std::string>();
+  }
+  if (it == j.end()) {
+    return std::string{};
+  }
+  if (!it->is_string()) {
+    return unexpected(fmt::format("plugin embedded manifest key must be a string: {}", key));
+  }
+  return it->get<std::string>();
+}
+
+// `widgets` of a Widget plugin: non-empty, each entry an object with a unique non-empty `type` (no '/',
+// which joins the plugin id and the type into the panel id) and a non-empty `name`; `icon` is an optional
+// string and `settings` an optional array, kept as raw JSON text for the host's settings form.
+Expected<std::vector<WidgetTypeDescriptor>> readWidgetTypes(const nlohmann::json& j) {
+  std::vector<WidgetTypeDescriptor> widgets;
+  std::set<std::string> seen_types;
+  const auto it = j.find("widgets");
+  if (it == j.end() || !it->is_array() || it->empty()) {
+    return unexpected("plugin embedded manifest missing required widgets array");
+  }
+  for (const auto& entry : *it) {
+    if (!entry.is_object()) {
+      return unexpected("plugin embedded manifest widgets entries must be objects");
+    }
+    WidgetTypeDescriptor widget;
+    auto type = readString(entry, "type", true);
+    auto name = readString(entry, "name", true);
+    auto icon = readString(entry, "icon", false);
+    if (!type || !name || !icon) {
+      return unexpected(!type ? type.error() : !name ? name.error() : icon.error());
+    }
+    if (type->find('/') != std::string::npos) {
+      return unexpected(fmt::format("plugin embedded manifest widget type must not contain '/': {}", *type));
+    }
+    if (!seen_types.insert(*type).second) {
+      return unexpected(fmt::format("plugin embedded manifest declares widget type twice: {}", *type));
+    }
+    widget.type = std::move(*type);
+    widget.name = std::move(*name);
+    widget.icon = std::move(*icon);
+    const auto settings = entry.find("settings");
+    if (settings == entry.end()) {
+      widget.settings_json = "[]";
+    } else if (!settings->is_array()) {
+      return unexpected(fmt::format("plugin embedded manifest widget settings must be an array: {}", widget.type));
+    } else {
+      widget.settings_json = settings->dump();
+    }
+    widgets.push_back(std::move(widget));
+  }
+  return widgets;
+}
+
 }  // namespace
 
 Expected<PluginDescriptor> decodeManifest(
@@ -205,23 +281,8 @@ Expected<PluginDescriptor> decodeManifest(
     return unexpected("plugin embedded manifest must be a JSON object");
   }
 
-  auto required_string = [&](std::string_view key) -> Expected<std::string> {
-    const auto it = j.find(std::string(key));
-    if (it == j.end() || !it->is_string() || it->get<std::string>().empty()) {
-      return unexpected(fmt::format("plugin embedded manifest missing required string key: {}", key));
-    }
-    return it->get<std::string>();
-  };
-  auto optional_string = [&](std::string_view key) -> Expected<std::string> {
-    const auto it = j.find(std::string(key));
-    if (it == j.end()) {
-      return std::string{};
-    }
-    if (!it->is_string()) {
-      return unexpected(fmt::format("plugin embedded manifest key must be a string: {}", key));
-    }
-    return it->get<std::string>();
-  };
+  auto required_string = [&](const char* key) { return readString(j, key, true); };
+  auto optional_string = [&](const char* key) { return readString(j, key, false); };
 
   PluginDescriptor d;
   d.dso_path = source_path;
@@ -305,6 +366,19 @@ Expected<PluginDescriptor> decodeManifest(
   }
   d.encoding = std::move(*encoding);
 
+  if (family == PluginFamily::kWidget) {
+    auto qt_modules = readStringArray(j, "qt_modules");
+    if (!qt_modules) {
+      return unexpected(qt_modules.error());
+    }
+    d.qt_modules = std::move(*qt_modules);
+    auto widgets = readWidgetTypes(j);
+    if (!widgets) {
+      return unexpected(widgets.error());
+    }
+    d.widgets = std::move(*widgets);
+  }
+
   return d;
 }
 
@@ -318,6 +392,8 @@ std::string_view toString(PluginFamily family) noexcept {
       return "toolbox";
     case PluginFamily::kDialog:
       return "dialog";
+    case PluginFamily::kWidget:
+      return "widget";
     case PluginFamily::kUnknown:
       return "unknown";
   }
@@ -392,11 +468,12 @@ Expected<std::vector<PluginFamily>> exportedPluginFamilies(
     families.push_back(family);
     return {};
   };
-  for (const auto& [symbol, family] : std::array<std::pair<const char*, PluginFamily>, 4>{
+  for (const auto& [symbol, family] : std::array<std::pair<const char*, PluginFamily>, 5>{
            std::pair{"PJ_get_data_source_vtable", PluginFamily::kDataSource},
            {"PJ_get_message_parser_vtable", PluginFamily::kMessageParser},
            {"PJ_get_toolbox_vtable", PluginFamily::kToolbox},
            {"PJ_get_dialog_vtable", PluginFamily::kDialog},
+           {"PJ_get_widget_vtable", PluginFamily::kWidget},
        }) {
     if (auto status = append_if_owned(symbol, family); !status) {
       return unexpected(status.error());

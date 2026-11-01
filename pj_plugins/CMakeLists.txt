@@ -6,6 +6,7 @@ add_library(pj_plugin_loader_detail STATIC
 target_include_directories(pj_plugin_loader_detail PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/dialog_protocol/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/widget_protocol/include>
 )
 target_compile_features(pj_plugin_loader_detail PUBLIC cxx_std_20)
 target_compile_options(pj_plugin_loader_detail PRIVATE ${PJ_WARNING_FLAGS})
@@ -16,11 +17,13 @@ set_target_properties(pj_plugin_loader_detail PROPERTIES
 target_link_libraries(pj_plugin_loader_detail PUBLIC pj_base)
 
 add_subdirectory(dialog_protocol)
+add_subdirectory(widget_protocol)
 
 # ---------------------------------------------------------------------------
 # pj_plugin_sdk — umbrella INTERFACE library that exposes the full plugin-author
 # SDK surface: C++ SDK headers (MessageParserPluginBase, ObjectIngestPolicy,
-# parser trampolines, ...) PLUS the dialog SDK (widget_data, widget_event) so
+# parser trampolines, ...) PLUS the dialog SDK (widget_data, widget_event) and the
+# Widget SDK (WidgetPluginBase) so
 # plugin authors can link one target and get everything they need.
 # ---------------------------------------------------------------------------
 
@@ -29,7 +32,7 @@ target_include_directories(pj_plugin_sdk INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(pj_plugin_sdk INTERFACE pj_base pj_dialog_sdk)
+target_link_libraries(pj_plugin_sdk INTERFACE pj_base pj_dialog_sdk pj_widget_sdk)
 set_target_properties(pj_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
 add_library(plotjuggler_sdk::plugin_sdk ALIAS pj_plugin_sdk)
 
@@ -56,6 +59,7 @@ target_link_libraries(pj_plugin_catalog
   PRIVATE
     pj_plugin_loader_detail
     pj_dialog_protocol
+    pj_widget_protocol
     $<BUILD_INTERFACE:pj_internal_fmt>
     ${CMAKE_DL_LIBS}
     nlohmann_json::nlohmann_json
@@ -276,7 +280,7 @@ target_link_libraries(pj_toolbox_host
 # ---------------------------------------------------------------------------
 # pj_plugin_host — umbrella INTERFACE that bundles every host-side loader.
 # Hosts (the PlotJuggler app, test rigs) link this single target to get
-# discovery, all four plugin-family loaders, and functional parser-module
+# discovery, all five plugin-family loaders, and functional parser-module
 # execution. The duplicate-resolution catalog is host policy and lives in the
 # app (pj_runtime), built on these primitives.
 # ---------------------------------------------------------------------------
@@ -287,6 +291,7 @@ target_link_libraries(pj_plugin_host INTERFACE
   pj_message_parser_host
   pj_toolbox_host
   pj_dialog_library
+  pj_widget_host
   pj_plugin_catalog
   pj_parser_claim_catalog
   pj_parser_module_host
@@ -753,6 +758,7 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MOCK_JSON_PARSER_PLUGIN_PATH="$<TARGET_FILE:mock_json_parser_plugin>"
   PJ_MOCK_TOOLBOX_PLUGIN_PATH="$<TARGET_FILE:mock_toolbox_plugin>"
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
+  PJ_MOCK_WIDGET_PLUGIN_PATH="$<TARGET_FILE:mock_widget_plugin>"
   PJ_STATIC_MANIFEST_DIALOG_PLUGIN_PATH="$<TARGET_FILE:static_manifest_dialog_plugin>"
   PJ_LEGACY_MACRO_DIALOG_PLUGIN_PATH="$<TARGET_FILE:legacy_macro_dialog_plugin>"
   PJ_OLD_DIALOG_VTABLE_PLUGIN_PATH="$<TARGET_FILE:old_dialog_vtable_plugin>"
@@ -778,7 +784,7 @@ target_link_libraries(plugin_catalog_test PRIVATE
 )
 add_dependencies(plugin_catalog_test mock_data_source_plugin
                  mock_json_parser_plugin
-                 mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
+                 mock_toolbox_plugin mock_dialog_plugin mock_widget_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
                  static_manifest_dialog_plugin legacy_macro_dialog_plugin
                  old_dialog_vtable_plugin missing_dialog_required_slots_plugin

@@ -202,6 +202,7 @@ class PlotjugglerSdkConan(ConanFile):
                 "pj_message_parser_host",
                 "pj_toolbox_host",
                 "pj_dialog_library",
+                "pj_widget_host",
                 "pj_plugin_catalog",
                 "pj_parser_module_host",
                 "pj_parser_claim_catalog",

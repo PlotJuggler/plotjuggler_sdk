@@ -40,7 +40,11 @@
         "declaration": "pj.feature_catalog.v1",
         "aliases": ["FeatureCatalogView"]
       },
-      "getFeatureCatalog": "PJ_feature_catalog_vtable_t::get_feature_catalog"
+      "getFeatureCatalog": "PJ_feature_catalog_vtable_t::get_feature_catalog",
+      "WidgetHostService": {"declaration": "pj.widget_host.v1", "negotiated": false},
+      "queryHistory": {"declaration": "PJ_widget_host_vtable_t::query_history", "negotiated": false},
+      "notifyInputsChanged": {"declaration": "PJ_widget_host_vtable_t::notify_inputs_changed", "negotiated": false},
+      "reportWidgetMessage": {"declaration": "PJ_widget_host_vtable_t::report_widget_message", "negotiated": false}
     }
   },
   "baseline": [

@@ -167,5 +167,40 @@ table = module.load_surface_table(pathlib.Path(sys.argv[2]))
 assert table.surfaces, 'empty feature_floors.json'
 " "$FLOOR_CHECK" "$FLOORS"
 
+# ---------------------------------------------------------------------------
+# 8. Verify the Widget family ships and the SDK stays Qt-free
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "--- Step 8: Verify Widget headers and widget_qt_modules.json install ---"
+
+for f in \
+  "$STAGING_DIR/include/pj_plugins/widget_protocol.h" \
+  "$STAGING_DIR/include/pj_plugins/widget_qt_modules.h" \
+  "$STAGING_DIR/include/pj_plugins/sdk/widget_plugin_base.hpp" \
+  "$STAGING_DIR/include/pj_plugins/host/widget_library.hpp" \
+  "$STAGING_DIR/share/plotjuggler_sdk/widget_qt_modules.json"; do
+  if [[ ! -f "$f" ]]; then
+    echo "ERROR: $f not installed"
+    exit 1
+  fi
+done
+python3 -c "
+import json, sys
+modules = json.load(open(sys.argv[1]))['modules']
+assert modules and all(m['name'] and m['since'] for m in modules), 'bad widget_qt_modules.json'
+" "$STAGING_DIR/share/plotjuggler_sdk/widget_qt_modules.json"
+# The SDK links and includes no Qt; the widget object crosses as void*.
+if grep -rnE '#[[:space:]]*include[[:space:]]*[<"]Qt' \
+     "$STAGING_DIR/include/pj_plugins/widget_protocol.h" \
+     "$STAGING_DIR/include/pj_plugins/widget_types.hpp" \
+     "$STAGING_DIR/include/pj_plugins/sdk/widget_plugin_base.hpp" \
+     "$STAGING_DIR/include/pj_plugins/host/widget_handle.hpp" \
+     "$STAGING_DIR/include/pj_plugins/host/widget_library.hpp" \
+     "$STAGING_DIR/include/pj_plugins/host/widget_host_bridge.hpp"; then
+  echo "ERROR: an installed Widget header includes Qt"
+  exit 1
+fi
+
 echo ""
 echo "=== plotjuggler_sdk install test PASSED ==="
