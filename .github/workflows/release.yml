@@ -16,8 +16,8 @@ name: Release
 #
 # Why THESE runners: they are exactly the images pj-official-plugins resolves
 # the SDK on (its CI + release matrix), so the published package_ids match
-# what `conan install` computes there -- ubuntu-22.04 (gcc 11), macos-14
-# (apple-clang 15, arm64), windows-2022 (msvc 194). A binary built on another
+# what `conan install` computes there -- ubuntu-22.04 (gcc 11), macos-15
+# (arm64), windows-2022 (msvc 194). A binary built on another
 # image (e.g. a newer apple-clang) would be silently ignored downstream.
 #
 # Remote: https://plotjuggler.jfrog.io/artifactory/api/conan/plotjuggler-conan
@@ -196,7 +196,7 @@ jobs:
         os:
           - ubuntu-22.04        # Linux x86_64, gcc 11
           - ubuntu-22.04-arm    # Linux aarch64, gcc 11
-          - macos-14            # macOS arm64, apple-clang 15
+          - macos-15            # macOS arm64
           - windows-2022        # Windows x64, msvc 194
           - windows-11-arm      # Windows arm64, msvc 194
     runs-on: ${{ matrix.os }}
