@@ -388,6 +388,22 @@ class WidgetEvent {
     return result;
   }
 
+  /// The catalog data source of each dropped item, parallel to itemsDropped(). Empty when the host did not say; an
+  /// entry that is not a valid id reads 0 (unknown), so the list stays aligned.
+  std::vector<uint32_t> itemsDroppedDataSources() const {
+    auto it = data_.find("items_dropped_data_sources");
+    if (it == data_.end() || !it->is_array()) {
+      return {};
+    }
+    std::vector<uint32_t> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      const bool valid = item.is_number_unsigned() && item.get<uint64_t>() <= std::numeric_limits<uint32_t>::max();
+      result.push_back(valid ? item.get<uint32_t>() : 0);
+    }
+    return result;
+  }
+
   /// DateRangePicker: date/time range filter (ISO datetime strings, empty =
   /// unbounded on that side).
   struct DateRangeFilter {

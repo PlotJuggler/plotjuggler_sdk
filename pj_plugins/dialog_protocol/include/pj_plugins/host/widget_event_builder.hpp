@@ -2,6 +2,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>  // TimelineMark, TreeCheckState, SceneViewError
 #include <string>
@@ -219,6 +220,16 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string itemsDropped(const std::vector<std::string>& labels) {
     nlohmann::json j;
     j["items_dropped"] = labels;
+    return j.dump();
+  }
+
+  /// Same, with the catalog data source of each label (parallel to `labels`, 0 = unknown). The labels stay bare names,
+  /// so a plugin reading only them behaves as before, and only this list tells two datasets' same-named series apart.
+  [[nodiscard]] static std::string itemsDropped(
+      const std::vector<std::string>& labels, const std::vector<uint32_t>& data_source_ids) {
+    nlohmann::json j;
+    j["items_dropped"] = labels;
+    j["items_dropped_data_sources"] = data_source_ids;
     return j.dump();
   }
 

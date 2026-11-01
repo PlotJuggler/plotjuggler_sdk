@@ -117,6 +117,23 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  /// A dropped item. `data_source_id` is the id of its data source in the catalog snapshot, or 0 when unknown: an older
+  /// host does not send it. Guessing a dataset for a name several of them carry reads the wrong recording.
+  struct DroppedItem {
+    std::string name;
+    uint32_t data_source_id = 0;
+  };
+
+  /// Override instead of onItemsDropped to tell two datasets' same-named series apart.
+  virtual bool onDroppedItems(std::string_view widget_name, const std::vector<DroppedItem>& items) {
+    std::vector<std::string> names;
+    names.reserve(items.size());
+    for (const DroppedItem& item : items) {
+      names.push_back(item.name);
+    }
+    return onItemsDropped(widget_name, names);
+  }
+
   /// ChartPreviewWidget: zoom or pan changed the visible range.
   /// Only called when the plugin has declared setChartZoomEnabled for this widget.
   virtual bool onChartViewChanged(
@@ -321,7 +338,13 @@ class DialogPluginTyped : public DialogPluginBase {
       return onDateTimeChanged(widget_name, *v);
     }
     if (auto v = event.itemsDropped()) {
-      return onItemsDropped(widget_name, *v);
+      const std::vector<uint32_t> data_sources = event.itemsDroppedDataSources();
+      std::vector<DroppedItem> items;
+      items.reserve(v->size());
+      for (std::size_t index = 0; index < v->size(); ++index) {
+        items.push_back({std::move((*v)[index]), index < data_sources.size() ? data_sources[index] : 0});
+      }
+      return onDroppedItems(widget_name, items);
     }
     if (auto v = event.codeChanged()) {
       return onCodeChangedWithCursor(widget_name, *v, event.codeCursor().value_or(-1));
