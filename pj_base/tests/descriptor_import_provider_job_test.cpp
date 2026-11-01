@@ -181,15 +181,24 @@ TEST_F(ProviderJobTest, BodyExceptionBecomesFailedTerminal) {
   EXPECT_NE(rec_.last_message.find("internal error"), std::string::npos);
 }
 
+// How long a body keeps running after the first firing, so a wrongful second one would be counted.
+constexpr auto kSecondFiringGrace = 30ms;
+
+// Blocks a job body until the watchdog fired. A fixed sleep cannot do this: on a CPU-starved runner the watchdog can
+// fire long past its deadline, and a body that returned first stops it before it fires.
+void waitForExpiry(const std::atomic<int>& expired) {
+  const auto deadline = std::chrono::steady_clock::now() + 30s;
+  while (expired.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(1ms);
+  }
+}
+
 TEST_F(ProviderJobTest, WatchdogFiresOnceWhenTheBodyOverruns) {
   std::atomic<int> expired{0};
   const auto body = [&](JobControl& control) {
     control.armWatchdog(20ms, [&expired] { expired.fetch_add(1); });
-    // The body overruns the watchdog by a wide margin: on a CPU-starved CI
-    // runner (macOS especially) the watchdog thread's start-up can be
-    // delayed well past the deadline, so give it hundreds of milliseconds
-    // of headroom rather than 120ms. Fire-once semantics are unaffected.
-    std::this_thread::sleep_for(400ms);
+    waitForExpiry(expired);
+    std::this_thread::sleep_for(kSecondFiringGrace);
     return ImportOutcome{PJ_DESCRIPTOR_IMPORT_FAILED, "ceiling"};
   };
   ASSERT_TRUE(ProviderJob::start(body, &callbacks_, &rec_, &job_, nullptr));
@@ -300,7 +309,8 @@ TEST_F(ProviderJobTest, RearmingTheWatchdogFromOnExpireIsANoOp) {
       expired.fetch_add(1);
       control.armWatchdog(1ms, [&expired] { expired.fetch_add(1); });  // ignored
     });
-    std::this_thread::sleep_for(60ms);
+    waitForExpiry(expired);
+    std::this_thread::sleep_for(kSecondFiringGrace);
     return ImportOutcome{PJ_DESCRIPTOR_IMPORT_FAILED, "ceiling"};
   };
   ASSERT_TRUE(ProviderJob::start(body, &callbacks_, &rec_, &job_, nullptr));
