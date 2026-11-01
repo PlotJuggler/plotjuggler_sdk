@@ -5,10 +5,23 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [0.39.0] — Unreleased
 
-Host contract: extended: PJ_widget_host_vtable_t::query_history, PJ_widget_host_vtable_t::notify_inputs_changed,
-PJ_widget_host_vtable_t::report_widget_message, pj.widget_host.v1 (floor 0.39.0). All four are classified
-non-negotiated: no older host serves the Widget family, so a plugin using any of them needs `min_sdk_required`
-0.39.0. The plugin-side `PJ_widget_vtable_t` is not a host surface and carries no floor.
+Host contract: extended: pj.feature_catalog.v1, PJ_feature_catalog_vtable_t::get_feature_catalog,
+PJ_widget_host_vtable_t::query_history, PJ_widget_host_vtable_t::notify_inputs_changed,
+PJ_widget_host_vtable_t::report_widget_message, pj.widget_host.v1 (floor 0.39.0). The four
+widget-host surfaces are classified non-negotiated: no older host serves the Widget family, so a
+plugin using any of them needs `min_sdk_required` 0.39.0. The plugin-side `PJ_widget_vtable_t` is
+not a host surface and carries no floor.
+
+Feature catalog service:
+
+- `pj.feature_catalog.v1`: an optional, read-only host service with one slot
+  (`get_feature_catalog`) returning a UTF-8 JSON document that describes what the host
+  offers (built-in features, plugins, limitations). The host application owns the schema;
+  the SDK only transports it. `FeatureCatalogView::json()`, `FeatureCatalogService`, and the
+  host adapter `FeatureCatalogHost` (`pj_base/sdk/feature_catalog_host.hpp`). A plugin that
+  treats the service as optional keeps its floor.
+
+Widget plugin family:
 
 - Add the Widget plugin family (`pj_plugins/widget_protocol/`): a library contributes dockable panels whose content is
   a widget object the plugin creates with its own GUI toolkit. The SDK stays toolkit-free; the object crosses the ABI
@@ -52,7 +65,9 @@ non-negotiated: no older host serves the Widget family, so a plugin using any of
 - `pj_configure_plugin` / `pj_harden_plugin_exports` accept `widget` and keep `PJ_get_widget_vtable` exported.
 - Add the widget plugin guide (`pj_plugins/docs/widget-guide.md`).
 
-## [Unreleased]
+Docs:
+
+- the on-demand `series` block of `data_processor_config`.
 
 ## [0.38.0]
 

@@ -981,9 +981,11 @@ typedef struct {
  *     materialize for the whole series. Its outputs are TYPED, so it is created only
  *     through create_data_processor_v2 (PJ_data_processor_output_t); the v1
  *     create_data_processor REJECTS kind "on_demand" with an error naming
- *     create_data_processor_v2. A result is read only through submit_evaluation /
- *     poll_evaluation. out_topics returns, 1:1 with outputs, the object topic the host
- *     publishes for an object output and the bare name for a number or string output.
+ *     create_data_processor_v2. A result is read through submit_evaluation /
+ *     poll_evaluation; a number output the host also plots as a series is read at the
+ *     path data_processor_config's `series` block names. out_topics returns, 1:1 with
+ *     outputs, the object topic the host publishes for an object output and the bare
+ *     name for a number or string output.
  *     A consumer reads an object output by exactly this string; it must not rebuild
  *     the path from the output name (a different topic may share the leaf).
  *     `language` is "luau" on every host; "python" is OPTIONAL and per host (a
@@ -1278,7 +1280,14 @@ typedef struct PJ_data_processors_host_vtable_t {
    *     (string), `requested_ns` (the instant last requested), `lag_ns` (number or
    *     null), `upstream` (array: the other on_demand nodes this one reads) and, for a
    *     pinned node, `findings` {`pinned`, `bytes`} (the owning plugin's pinned nodes
-   *     and their materialized bytes).
+   *     and their materialized bytes). A host that plots the number outputs of a node
+   *     reading an object adds `series` {`topic`, `rows`, `failed`, `first_error`,
+   *     `complete`, `done`, `total`, `stopped`}: the series' samples are read as the
+   *     catalog path `<topic>/<output name>` (out_topics holds only the bare output
+   *     name); `rows` are written so far, `failed` the instants with no row, `done` the
+   *     instants evaluated and `total` an upper bound of all of them, `complete` once
+   *     every instant is evaluated, `stopped` when nothing wants it computed. Absent:
+   *     no series (a pinned node, no object input, or no number output).
    *   - markers: `computing` (bool: a run is in progress), `error` (string, present
    *     only after a failed run) and, for a windowed rule, `coverage_ns`
    *     {`first_ns`,`last_ns`}, the window the latest successful run staged. */
@@ -1453,6 +1462,42 @@ typedef struct {
   void* ctx;
   const PJ_settings_store_vtable_t* vtable;
 } PJ_settings_store_t;
+
+/**
+ * Feature catalog service ("pj.feature_catalog.v1", protocol_version 1).
+ *
+ * Optional, read-only host service describing what the host application
+ * offers its users: built-in features, the plugins loaded, installed or
+ * installable, and the known limitations. It is absent on older hosts, so a
+ * plugin must treat it as optional. The single slot is [main-thread].
+ *
+ * The returned view is a UTF-8 JSON document, valid until the next call on
+ * this service by ANY plugin: a host may share one instance across plugins, so
+ * copy it before returning to the event loop. Its schema belongs to the host
+ * application; the SDK only transports it and never parses or validates it.
+ * The extensibility rules every consumer relies on:
+ *   1. Consumers ignore unknown fields.
+ *   2. A missing optional field means "unknown", never "false" or "empty".
+ *   3. Existing fields never change meaning; new information gets new fields.
+ *   4. `schema` is a major version: a consumer that sees a higher major than
+ *      it supports does not interpret the document and degrades explicitly.
+ *   5. The document is bounded by the host (no unbounded strings); a
+ *      consumer still applies its own size budget.
+ *
+ * @since 0.39.0
+ */
+typedef struct PJ_feature_catalog_vtable_t {
+  uint32_t protocol_version;
+  uint32_t struct_size;
+
+  /* Fetch the catalog document into *out_json. */
+  bool (*get_feature_catalog)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_feature_catalog_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_feature_catalog_vtable_t* vtable;
+} PJ_feature_catalog_t;
 
 /**
  * Playback host service ("pj.playback.v1", protocol_version 1).
