@@ -240,6 +240,17 @@ struct SettingsStoreService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Optional read-only JSON description of what the host offers (built-in
+/// features, plugins, limitations). Schema owned by the host application.
+struct FeatureCatalogService {
+  static constexpr const char* kName = "pj.feature_catalog.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_feature_catalog_t;
+  using Vtable = PJ_feature_catalog_vtable_t;
+  using View = FeatureCatalogView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Runtime host exposed to DataSource plugins — progress, diagnostics,
 /// state notification, parser binding, modal message boxes.
 struct DataSourceRuntimeHostService {

@@ -42,6 +42,7 @@ EXTRA_HOST_VTABLES = {
     "PJ_service_registry_vtable_t",
     "PJ_colormap_registry_vtable_t",
     "PJ_settings_store_vtable_t",
+    "PJ_feature_catalog_vtable_t",
 }
 # Plugin-implemented vtables: the host calls these, they never constrain floors.
 PLUGIN_SIDE_VTABLES = {
@@ -54,6 +55,7 @@ PLUGIN_SIDE_VTABLES = {
 HOST_SERVICE_IDS = {
     "pj.colormap.v1",
     "pj.data_processors.v1",
+    "pj.feature_catalog.v1",
     "pj.parser_object_write.v1",
     "pj.parser_runtime.v1",
     "pj.parser_write.v1",
