@@ -12,6 +12,13 @@ widget-host surfaces are classified non-negotiated: no older host serves the Wid
 plugin using any of them needs `min_sdk_required` 0.39.0. The plugin-side `PJ_widget_vtable_t` is
 not a host surface and carries no floor.
 
+Plugin drops:
+
+- `DialogPluginTyped::onDroppedItems` receives each dropped item's name and data source id, from the new optional
+  `items_dropped_data_sources` event key (`WidgetEventBuilder::itemsDropped(labels, data_source_ids)`,
+  `WidgetEvent::itemsDroppedDataSources()`). Names stay bare and `onItemsDropped` keeps working. No floor: an older
+  host omits the key and the id reads 0.
+
 Feature catalog service:
 
 - `pj.feature_catalog.v1`: an optional, read-only host service with one slot

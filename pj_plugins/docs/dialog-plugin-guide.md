@@ -514,7 +514,10 @@ work like polling a server for available topics.
 All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
 `setDropTarget(name, bool)`, and `setFieldValid(name, ok, tooltip)` (a generic
 inline valid/invalid indicator the plugin drives). Drop targets receive
-`onItemsDropped(name, items)`.
+`onItemsDropped(name, items)`, or `onDroppedItems(name, items)` to also get each
+item's data source: names stay bare, so that is what tells two datasets'
+same-named series apart. Its id is 0 when an older host did not send it; refuse a
+name several sources carry rather than guess.
 
 The `QTableWidget` styling setters layer over the row data: `setVisibleRows`
 live-filters by index (an empty set hides every row; to re-show all rows pass the

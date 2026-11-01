@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <pj_plugins/host/widget_event_builder.hpp>
 #include <pj_plugins/sdk/dialog_plugin_typed.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
 #include <string>
@@ -807,4 +808,51 @@ TEST(TypedDispatchSceneViewErrorTest, DefaultHandlerIgnoresTheEvent) {
   LegacyHandlerRecordingPlugin plugin;
   EXPECT_FALSE(dispatch(plugin, "preview", R"({"scene_view_error":{"kind":"3d","topic":"t","reason":"r"}})"));
   EXPECT_EQ(plugin.legacy_calls, 0);
+}
+
+class DroppedItemsRecordingPlugin : public LegacyHandlerRecordingPlugin {
+ public:
+  bool onDroppedItems(std::string_view /*widget_name*/, const std::vector<DroppedItem>& items) override {
+    dropped = items;
+    return true;
+  }
+
+  std::vector<DroppedItem> dropped;
+};
+
+TEST(TypedDispatchDroppedItemsTest, EachItemCarriesItsDataSource) {
+  DroppedItemsRecordingPlugin plugin;
+  const std::string event = PJ::WidgetEventBuilder::itemsDropped({"/imu/value", "/imu/value"}, {2, 3});
+  ASSERT_TRUE(dispatch(plugin, "input", event));
+  ASSERT_EQ(plugin.dropped.size(), 2U);
+  EXPECT_EQ(plugin.dropped[0].name, "/imu/value");
+  EXPECT_EQ(plugin.dropped[0].data_source_id, 2U);
+  EXPECT_EQ(plugin.dropped[1].data_source_id, 3U);
+  EXPECT_EQ(plugin.legacy_calls, 0);
+}
+
+TEST(TypedDispatchDroppedItemsTest, AHostThatDoesNotSayLeavesTheDataSourceUnknown) {
+  DroppedItemsRecordingPlugin plugin;
+  ASSERT_TRUE(dispatch(plugin, "input", PJ::WidgetEventBuilder::itemsDropped({"/a"})));
+  ASSERT_EQ(plugin.dropped.size(), 1U);
+  EXPECT_EQ(plugin.dropped[0].data_source_id, 0U);
+}
+
+TEST(TypedDispatchDroppedItemsTest, AMalformedDataSourceListNeverDropsAnItem) {
+  for (const std::string_view event : {
+           R"({"items_dropped":["/a","/b"],"items_dropped_data_sources":[7]})",
+           R"({"items_dropped":["/a","/b"],"items_dropped_data_sources":"x"})",
+           R"({"items_dropped":["/a","/b"],"items_dropped_data_sources":[-1,4294967296]})",
+       }) {
+    DroppedItemsRecordingPlugin plugin;
+    ASSERT_TRUE(dispatch(plugin, "input", event)) << event;
+    ASSERT_EQ(plugin.dropped.size(), 2U) << event;
+    EXPECT_EQ(plugin.dropped[1].data_source_id, 0U) << event;
+  }
+}
+
+TEST(TypedDispatchDroppedItemsTest, APluginOverridingOnlyTheNamesKeepsWorking) {
+  LegacyHandlerRecordingPlugin plugin;
+  EXPECT_TRUE(dispatch(plugin, "input", PJ::WidgetEventBuilder::itemsDropped({"/a"}, {2})));
+  EXPECT_EQ(plugin.legacy_calls, 1);
 }
