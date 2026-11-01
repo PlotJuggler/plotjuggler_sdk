@@ -5,6 +5,8 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [Unreleased]
 
+- Docs: the on-demand `series` block of `data_processor_config`.
+
 ## [0.38.0]
 
 Host contract: extended: PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2,
