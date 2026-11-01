@@ -28,6 +28,10 @@ class FeatureCatalogHost {
 
   explicit FeatureCatalogHost(Provider provider) : provider_(std::move(provider)) {}
 
+  // view() hands out `this` as the service ctx.
+  FeatureCatalogHost(const FeatureCatalogHost&) = delete;
+  FeatureCatalogHost& operator=(const FeatureCatalogHost&) = delete;
+
   [[nodiscard]] PJ_feature_catalog_t view() noexcept {
     static constexpr PJ_feature_catalog_vtable_t kVtable = {
         PJ_PLUGIN_DATA_API_VERSION,

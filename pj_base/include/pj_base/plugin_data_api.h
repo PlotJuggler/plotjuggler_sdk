@@ -1463,9 +1463,10 @@ typedef struct {
  * plugin must treat it as optional. The single slot is [main-thread].
  *
  * The returned view is a UTF-8 JSON document, valid until the next call on
- * this service instance. Its schema belongs to the host application; the SDK
- * only transports it and never parses or validates it. The extensibility
- * rules every consumer relies on:
+ * this service by ANY plugin: a host may share one instance across plugins, so
+ * copy it before returning to the event loop. Its schema belongs to the host
+ * application; the SDK only transports it and never parses or validates it.
+ * The extensibility rules every consumer relies on:
  *   1. Consumers ignore unknown fields.
  *   2. A missing optional field means "unknown", never "false" or "empty".
  *   3. Existing fields never change meaning; new information gets new fields.
