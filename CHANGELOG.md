@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.39.0] — Unreleased
+## [0.39.0]
 
 Host contract: extended: pj.feature_catalog.v1, PJ_feature_catalog_vtable_t::get_feature_catalog,
 PJ_widget_host_vtable_t::query_history, PJ_widget_host_vtable_t::notify_inputs_changed,
