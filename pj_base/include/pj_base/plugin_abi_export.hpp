@@ -31,7 +31,7 @@
 // The block form `extern "C" { ... }` (rather than the single-decl form
 // `extern "C" T x = val;`) is required so that GCC does not treat the
 // declaration as `extern` with initializer and trip -Wextern-initializer.
-#if defined(_MSC_VER)
+#if defined(_WIN32)
 #define PJ_PLUGIN_ABI_LINK __declspec(dllexport) __declspec(selectany)
 #else
 #define PJ_PLUGIN_ABI_LINK __attribute__((visibility("default"))) __attribute__((weak)) __attribute__((used))
