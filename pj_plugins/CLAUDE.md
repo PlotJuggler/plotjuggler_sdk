@@ -27,6 +27,8 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
   data-processor evaluation-report parser.
 - `include/pj_plugins/testing/` — `ToolboxTestStore` (fake Arrow host) and `DelegatedIngestFixture`
   (toolbox/data-source hosts recording attachment, payload ownership, completion, Stop and discard).
+  The MIT `fake_*.hpp` / `recording_dp_host.hpp` fakes (`PJ::testing`) back the `agent_tools` tests
+  and the plugins' tool/recipe tests.
 - `dialog_protocol/` — **nested module** (own CMake): the Dialog C ABI, C++
   dialog SDK, and host dialog loader/handle. See `dialog_protocol/CLAUDE.md`.
 - `widget_protocol/` — **nested module** (own CMake): the Widget C ABI, C++
