@@ -17,15 +17,16 @@ package PJ;
 // Each frame's `data` must contain enough bitstream to decode exactly one frame given prior stream state.
 // Format-specific packaging requirements:
 //
-//   "h264": Annex B byte stream. IDR (instantaneous decoder refresh) frames must carry SPS and PPS. B-frames are not
-//   supported (the encoder must be configured for low-latency / no-B-frame output).
+//   "h264": Annex B byte stream. IDR (instantaneous decoder refresh) frames must carry SPS and PPS.
 //
-//   "h265": Annex B byte stream. IRAP (intra random access point) frames must carry VPS, SPS, and PPS. B-frames are not
-//   supported.
+//   "h265": Annex B byte stream. IRAP (intra random access point) frames must carry VPS, SPS, and PPS.
 //
 //   "vp9": a single VP9 frame.
 //
 //   "av1": Low Overhead Bitstream Format (LOBF), a single temporal unit.
+//
+// B-frames are supported. Frames are stored in decode order: the producer stores each frame at its decode time (DTS)
+// and sets `timestamp` to its presentation time (PTS). Without B-frames the two times are equal.
 //
 // On the SDK side, `data` is exposed as `Span<const uint8_t>` plus a `BufferAnchor` that keeps the underlying
 // allocation alive (same byte-backed view pattern as Image, DepthImage, and PointCloud). The anchor is a C++ lifetime
@@ -34,7 +35,8 @@ package PJ;
 // The field layout is wire-identical to `foxglove.CompressedVideo` (timestamp=1, frame_id=2, data=3, format=4), so a
 // single decoder parses both this canonical schema and the Foxglove one.
 message VideoFrame {
-  // Timestamp of the frame
+  // Presentation timestamp (PTS) of the frame. It differs from the decode time the frame is stored at only when the
+  // stream has B-frames.
   google.protobuf.Timestamp timestamp = 1;
 
   // Frame of reference for the camera. The video plane is centered on the optical axis: +x right, +y down, +z away from

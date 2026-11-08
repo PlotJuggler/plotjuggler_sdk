@@ -18,8 +18,12 @@ namespace PJ {
 namespace sdk {
 
 /// Single frame of a compressed video stream. Unlike Image, a video frame
-/// may have inter-frame dependencies (P-frames, etc.); consumers must
+/// may have inter-frame dependencies (P-frames, B-frames); consumers must
 /// maintain decoder state across frames within a stream.
+///
+/// B-frames are supported. `timestamp_ns` is the presentation time (PTS);
+/// the producer stores each frame at its decode time (DTS), so frames
+/// arrive in decode order. Without B-frames the two times are equal.
 ///
 /// `data` must contain enough bitstream to decode exactly one frame given
 /// prior stream state. Format-specific packaging requirements live in the
