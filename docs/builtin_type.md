@@ -446,7 +446,7 @@ frames within a stream.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `timestamp_ns` | `Timestamp` | Frame presentation timestamp. |
+| `timestamp_ns` | `Timestamp` | Presentation timestamp (PTS). B-frames are supported: the frame is stored at its decode time (DTS), which differs from the PTS only when the stream has B-frames. |
 | `frame_id` | `std::string` | Camera frame. Optical axis: `+x` right, `+y` down, `+z` into scene. |
 | `format` | `std::string` | Codec identifier, lowercase. `"h264"`, `"h265"`, `"vp9"`, `"av1"`. |
 | `data` | `Span<const uint8_t>` | Bitstream bytes for this frame. |
