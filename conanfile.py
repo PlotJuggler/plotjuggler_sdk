@@ -8,6 +8,7 @@ Exposes CMake components under the `plotjuggler_sdk::` namespace:
   parser_module — standalone functional parser-module authoring headers
   source       — compiled source-provider support
   descriptor_import_support — compatibility alias for source
+  agent_tools  — agent tool layer and derived-recipe helpers (MIT, see LICENSE)
 
 A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
 
@@ -36,8 +37,9 @@ from pathlib import Path
 
 class PlotjugglerSdkConan(ConanFile):
     name = "plotjuggler_sdk"
-    # Apache-2.0 covers the whole SDK (pj_base + pj_plugins). See LICENSE.
-    license = "Apache-2.0"
+    # Apache-2.0 covers the SDK; the agent_tools component and its test fakes are
+    # MIT. See LICENSE for the per-file map.
+    license = ("Apache-2.0", "MIT")
     url = "https://github.com/PlotJuggler/plotjuggler_sdk"
     description = "C++20 foundation libraries for PlotJuggler: plugin SDK and plugin host loaders."
     topics = ("plotjuggler", "plugin-sdk", "telemetry", "data-visualization")
@@ -65,6 +67,7 @@ class PlotjugglerSdkConan(ConanFile):
         "CMakeLists.txt",
         "LICENSE",
         "LICENSE-APACHE",
+        "LICENSE-MIT",
         "cmake/*",
         "docs/*.md",
         "pj_base/*",
@@ -133,8 +136,8 @@ class PlotjugglerSdkConan(ConanFile):
     def package(self):
         cmake = CMake(self)
         cmake.install()
-        # Ships LICENSE (the per-module map) plus the full Apache-2.0 text
-        # (LICENSE-APACHE).
+        # Ships LICENSE (the per-module map) plus the full Apache-2.0 and MIT
+        # texts (LICENSE-APACHE, LICENSE-MIT).
         copy(
             self,
             "LICENSE*",
@@ -191,6 +194,12 @@ class PlotjugglerSdkConan(ConanFile):
         support.libs = []
         support.requires = ["source"]
 
+        # --- agent_tools (agent tool layer + derived recipes; MIT-licensed) ---
+        agent_tools = self.cpp_info.components["agent_tools"]
+        agent_tools.set_property("cmake_target_name", "plotjuggler_sdk::agent_tools")
+        agent_tools.libs = ["pj_agent_tools"]
+        agent_tools.includedirs = ["include"]
+        agent_tools.requires = ["base", "nlohmann_json::nlohmann_json"]
 
         # --- plugin_host (umbrella linking every host-side loader) ---
         if self.options.with_host:

@@ -80,4 +80,19 @@ Outside this SDK, reuse pj-official-plugins common/:
   common/query/include/pj_query/; namespace PJ::query;
   target pj_common_query. Do not create a second tokenizer.
 
+## Agent tools
+
+These need `plotjuggler_sdk::agent_tools` (MIT-licensed); namespaces are explicit.
+The fakes are test-only and come with `plugin_sdk`.
+
+| Symbol | Use it for | Header |
+|---|---|---|
+| `PJ::sdk::agent_tools::ToolRegistry, ToolSpec, ToolResult, ToolInvoker` | The agent tool catalog and executors (list/describe/read topics, evaluate, create derived series/objects/markers, plot tabs, playback); MCP and function-spec serialization | `pj_base/agent_tools/tool_registry.hpp` |
+| `PJ::sdk::agent_tools::ToolContext` | The host views an executor reaches; executors run on the host-callback thread | `pj_base/agent_tools/tool_context.hpp` |
+| `PJ::sdk::agent_tools::catalogDigest` | Budgeted plain-text listing of the loaded topics and fields for a model prompt | `pj_base/agent_tools/tool_registry.hpp` |
+| `PJ::sdk::agent_tools::computeStats, bucketize, flatRunSummary` | Series statistics, min/max-preserving bucket decimation and flat-run summaries | `pj_base/agent_tools/series_stats.hpp` |
+| `PJ::sdk::agent_tools::objectOperationsFor` | The Luau operations a script may call on a builtin object type | `pj_base/agent_tools/object_ops_catalog.hpp` |
+| `PJ::sdk::agent_tools::resolveSeriesPath, resolveEvalInputs, parseTypedOutputs, buildTransformScript, buildResolvedOnDemandChunk, toRawNs` | Persisted derived recipes over pj.data_processors.v1: dataset-qualified path/input resolution, typed outputs, generated Luau/Python chunks, display-to-raw time | `pj_base/agent_tools/derived_recipes.hpp` |
+| `PJ::testing::FakeCatalogHost, FakePlaybackHost, FakeViewportHost, FakePlotTabsHost, RecordingDpHost, FakeMultiDatasetHost, FakeObjectReadHost` | Fake toolbox-side hosts for tool/recipe tests (catalog, playback, viewport, plot tabs, recording data processors, multi-dataset, object reads) | `pj_plugins/testing/fake_*.hpp; pj_plugins/testing/recording_dp_host.hpp` |
+
 For provider implementation, follow [the provider contract](provider-guide.md).

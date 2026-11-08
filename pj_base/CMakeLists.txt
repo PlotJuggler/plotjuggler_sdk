@@ -133,11 +133,39 @@ set_target_properties(pj_descriptor_import_support PROPERTIES EXPORT_NAME descri
 add_library(plotjuggler_sdk::descriptor_import_support ALIAS pj_descriptor_import_support)
 
 # ---------------------------------------------------------------------------
+# pj_agent_tools — the agent tool layer (tool registry and executors over the
+# toolbox host views) and the derived-recipe helpers. MIT (see LICENSE); its own
+# component so plugins that do not need it never link it.
+# ---------------------------------------------------------------------------
+add_library(pj_agent_tools STATIC
+  src/agent_tools/tools.cpp
+  src/agent_tools/derived_recipes.cpp
+)
+target_include_directories(pj_agent_tools PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_compile_features(pj_agent_tools PUBLIC cxx_std_20)
+target_compile_options(pj_agent_tools PRIVATE
+  ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
+)
+target_link_libraries(pj_agent_tools PUBLIC
+  pj_base
+  nlohmann_json::nlohmann_json
+)
+set_target_properties(pj_agent_tools PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME agent_tools
+)
+add_library(plotjuggler_sdk::agent_tools ALIAS pj_agent_tools)
+
+# ---------------------------------------------------------------------------
 # Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt)
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_base pj_parser_module pj_source pj_descriptor_import_support EXPORT plotjuggler_sdkTargets
+  install(TARGETS pj_base pj_parser_module pj_source pj_descriptor_import_support pj_agent_tools
+    EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
@@ -240,6 +268,18 @@ if(PJ_BUILD_TESTS)
     add_executable(${test_name} ${test_src})
     target_compile_options(${test_name} PRIVATE ${PJ_WARNING_FLAGS})
     target_link_libraries(${test_name} PRIVATE pj_source GTest::gtest_main)
+    add_test(NAME ${test_name} COMMAND ${test_name})
+  endforeach()
+
+  set(PJ_AGENT_TOOLS_TESTS
+    tests/agent_tools_series_stats_test.cpp
+    tests/derived_recipes_test.cpp
+  )
+  foreach(test_src ${PJ_AGENT_TOOLS_TESTS})
+    get_filename_component(test_name ${test_src} NAME_WE)
+    add_executable(${test_name} ${test_src})
+    target_compile_options(${test_name} PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(${test_name} PRIVATE pj_agent_tools GTest::gtest_main)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
 
