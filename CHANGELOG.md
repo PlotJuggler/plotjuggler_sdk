@@ -12,11 +12,13 @@ Agent tools (client-side, MIT-licensed, see `LICENSE`):
 
 - Add the `plotjuggler_sdk::agent_tools` component (`pj_agent_tools`, static, PIC; depends on `base`
   and nlohmann_json): the agent tool layer moved unchanged from the pj-official-plugins Assistant, so
-  the Assistant, the Transform Editor and the app's MCP server share one copy. Namespace
+  the Assistant, the Transform Editor and other consumers share one copy. Namespace
   `PJ::sdk::agent_tools` (`pj_base/agent_tools/`): `ToolRegistry` / `ToolSpec` / `ToolResult` /
   `ToolContext`, `catalogDigest`, the series statistics and decimation helpers, the object-operation
   catalog, and the derived-recipe helpers in `derived_recipes.hpp` (path and input resolution, typed
   outputs, Luau/Python chunk builders, display/raw time conversion).
+- `pj_base/feature_floors.json`: the host surfaces `agent_tools` calls carry the `ToolRegistry`
+  alias, so a plugin's floor check sees them; the SDK's feature-floors check fails when one lacks it.
 - Add the test-only fake hosts the agent tool tests use under `pj_plugins/testing/` (namespace
   `PJ::testing`, via `plugin_sdk`; listed in `docs/sdk-utilities.md`).
 

@@ -11,7 +11,10 @@ wire-contract flag — must be classified in `pj_base/feature_floors.json` in
 the same PR.** CI enforces it (`tools/feature_floors/check_feature_floors.py`
 diffs the extracted host-surface inventory against the checked-in snapshot),
 and the installed copy of the table is what downstream plugin repositories
-validate `min_sdk_required` against.
+validate `min_sdk_required` against. A surface the static `agent_tools`
+library calls (`pj_base/src/agent_tools/`) also carries the `ToolRegistry`
+alias, because a plugin's check scans only the plugin's own sources; the same
+check fails when one lacks it.
 
 1. **Boot-level ABI symbol.** Every plugin .so exports
    `pj_plugin_abi_version` as a `uint32_t` symbol independent of any
