@@ -23,7 +23,6 @@ from feature_floor_check import (  # noqa: E402
     format_version,
     load_surface_table,
     parse_declared_version,
-    scan_source_file,
 )
 
 
@@ -113,21 +112,6 @@ def main() -> int:
             errors.append(f"snapshot surface neither a declaration nor baseline: {surface}")
     for surface in sorted(classified - set(snapshot)):
         errors.append(f"classified surface no longer in the snapshot: {surface}")
-
-    # The agent_tools component calls host surfaces from inside a static library, where a
-    # plugin's floor check (which scans only the plugin's own sources) cannot see them. Every
-    # such surface carries the ToolRegistry alias, so a plugin naming ToolRegistry triggers it.
-    component_sources = sorted((repo / "pj_base/src/agent_tools").glob("*.cpp")) + sorted(
-        (repo / "pj_base/include/pj_base/agent_tools").glob("*.hpp")
-    )
-    for source in component_sources:
-        for identifier, line in scan_source_file(source, table):
-            surface = table.surfaces[identifier]
-            if identifier not in table.baseline and "ToolRegistry" not in surface.tokens:
-                errors.append(
-                    f"{source.relative_to(repo)}:{line} uses {identifier} without the 'ToolRegistry' "
-                    f"alias in pj_base/feature_floors.json; plugins linking agent_tools would miss it"
-                )
 
     if errors:
         print("feature-floors check FAILED:\n" + "\n".join(errors))

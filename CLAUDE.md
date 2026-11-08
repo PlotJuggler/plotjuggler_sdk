@@ -40,9 +40,6 @@ depend on `pj_base`; both use nlohmann/json. Provider headers live under
 `pj_base/sdk/source/`. The pre-0.31 `descriptor_import_support` component and
 include directory forward to `source` for one release; new code uses `source`.
 
-`pj_agent_tools` (`plotjuggler_sdk::agent_tools`) is the MIT agent tool layer shared by plugins
-and the app; see [pj_base/CLAUDE.md](pj_base/CLAUDE.md).
-
 DataSource/MessageParser/Toolbox C protocols live in `pj_base`; the Dialog
 protocol lives in `pj_plugins/dialog_protocol/` and the Widget protocol in
 `pj_plugins/widget_protocol/`. A Widget plugin links Qt; the SDK never does. The datastore and duplicate
