@@ -69,7 +69,6 @@ cmake -S "$SCRIPT_DIR/examples/sdk_consumer" -B "$CONSUMER_BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=Release
 
 cmake --build "$CONSUMER_BUILD_DIR" -j "$(nproc)"
-"$CONSUMER_BUILD_DIR/agent_tools_probe"
 
 # ---------------------------------------------------------------------------
 # 4. Verify each public component is independently findable
@@ -77,7 +76,7 @@ cmake --build "$CONSUMER_BUILD_DIR" -j "$(nproc)"
 
 echo ""
 echo "--- Step 4: Smoke-test find_package COMPONENTS ---"
-for comp in base parser_module plugin_sdk plugin_host source descriptor_import_support agent_tools; do
+for comp in base parser_module plugin_sdk plugin_host source descriptor_import_support; do
   COMP_DIR="$(mktemp -d)"
   cat > "$COMP_DIR/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.22)

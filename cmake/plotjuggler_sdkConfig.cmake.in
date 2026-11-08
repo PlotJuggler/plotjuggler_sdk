@@ -30,7 +30,7 @@ foreach(_comp ${plotjuggler_sdk_FIND_COMPONENTS})
     include("${CMAKE_CURRENT_LIST_DIR}/PjSdkTestFixtures.cmake")
     set(plotjuggler_sdk_plugin_sdk_FOUND TRUE)
 
-  elseif(_comp STREQUAL "source" OR _comp STREQUAL "descriptor_import_support" OR _comp STREQUAL "agent_tools")
+  elseif(_comp STREQUAL "source" OR _comp STREQUAL "descriptor_import_support")
     find_dependency(nlohmann_json)
     set(plotjuggler_sdk_${_comp}_FOUND TRUE)
 

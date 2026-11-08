@@ -15,7 +15,6 @@ Both guides ship under `share/plotjuggler_sdk/docs/` in the installed package.
 |--------|-------------|--------------|---------|
 | **pj_base** | Vocabulary types: `Timestamp`, `DatasetId`, `TopicId`, type trees, `Expected<T>`, `Span<T>` | None | Apache-2.0 |
 | **pj_source** | Provider descriptors, origins, artifact cache, jobs, limits, presentation, completion and Stop; link `plotjuggler_sdk::source` | pj_base, nlohmann/json | Apache-2.0 |
-| **agent_tools** | Agent tool registry and executors over the toolbox host views, plus derived-recipe helpers; link `plotjuggler_sdk::agent_tools` | pj_base, nlohmann/json | MIT |
 | **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox, Widget families), C++ SDK base classes, plugin discovery, host-side loaders, and config helpers | pj_base, nlohmann/json | Apache-2.0 |
 | **cmake/** | Plugin-authoring CMake helpers shipped with `plugin_sdk`: `pj_configure_plugin()` (symbol isolation, export allowlist + gate, manifest validation/sidecar/embed), `pj_embed_file()`, `pj_harden_plugin_exports()`, `pj_add_parser_module()`, `pj_add_sdk_test_fixture()` — see `examples/sdk_consumer` | — | Apache-2.0 |
 
@@ -56,10 +55,8 @@ docs/                      Project-wide design guides
 
 ## License
 
-PlotJuggler SDK is **Apache-2.0** ([LICENSE-APACHE](LICENSE-APACHE)), except the
-`agent_tools` component and its `pj_plugins/testing` fakes, which are **MIT**
-([LICENSE-MIT](LICENSE-MIT)); each source file carries an authoritative
-`SPDX-License-Identifier` header. You may
+PlotJuggler SDK is **Apache-2.0** ([LICENSE-APACHE](LICENSE-APACHE)); each
+source file carries an authoritative `SPDX-License-Identifier` header. You may
 build **proprietary plugins and applications** on the SDK without restriction;
 Apache-2.0 also grants an explicit patent license.
 

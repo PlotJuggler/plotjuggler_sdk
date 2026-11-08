@@ -87,11 +87,10 @@ tests:
 
 about:
   homepage: https://github.com/PlotJuggler/plotjuggler_sdk
-  license: Apache-2.0 AND MIT
+  license: Apache-2.0
   license_file:
     - LICENSE
     - LICENSE-APACHE
-    - LICENSE-MIT
   summary: PlotJuggler SDK — vocabulary types, plugin-author SDK, and host-side plugin loaders
   description: |
     plotjuggler_sdk provides the native CMake package consumed by PlotJuggler

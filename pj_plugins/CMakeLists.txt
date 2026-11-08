@@ -824,10 +824,4 @@ if(PJ_BUILD_TESTS)
   target_compile_options(delegated_ingest_fixture_test PRIVATE ${PJ_WARNING_FLAGS})
   target_link_libraries(delegated_ingest_fixture_test PRIVATE pj_plugin_sdk pj_source GTest::gtest_main)
   add_test(NAME delegated_ingest_fixture_test COMMAND delegated_ingest_fixture_test)
-
-  # Here, not in pj_base/tests: the agent tool executors run against the pj_plugins/testing fakes.
-  add_executable(agent_tools_tool_registry_test tests/agent_tools_tool_registry_test.cpp)
-  target_compile_options(agent_tools_tool_registry_test PRIVATE ${PJ_WARNING_FLAGS})
-  target_link_libraries(agent_tools_tool_registry_test PRIVATE pj_agent_tools pj_plugin_sdk GTest::gtest_main)
-  add_test(NAME agent_tools_tool_registry_test COMMAND agent_tools_tool_registry_test)
 endif()

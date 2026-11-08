@@ -13,23 +13,23 @@
       "setDatasetMetadata": "PJ_data_source_runtime_host_vtable_t::set_dataset_metadata"
     },
     "0.34.0": {
-      "PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT": {"declaration": "", "aliases": ["ToolRegistry"]}
+      "PJ_DATA_PROCESSOR_FLAG_HISTORY_EXEMPT": ""
     },
     "0.37.0": {
       "PJ_DATA_PROCESSOR_TIME_FLAG_INSTANT": "",
       "PJ_DATA_PROCESSOR_TIME_FLAG_WINDOW": "",
-      "createV2": {"declaration": "PJ_data_processors_host_vtable_t::create_data_processor_v2", "aliases": ["ToolRegistry"]},
-      "pollEvaluation": {"declaration": "PJ_data_processors_host_vtable_t::poll_evaluation", "aliases": ["ToolRegistry"]},
-      "releaseEvaluation": {"declaration": "PJ_data_processors_host_vtable_t::release_evaluation", "aliases": ["ToolRegistry"]},
-      "submitEvaluation": {"declaration": "PJ_data_processors_host_vtable_t::submit_evaluation", "aliases": ["ToolRegistry"]}
+      "createV2": "PJ_data_processors_host_vtable_t::create_data_processor_v2",
+      "pollEvaluation": "PJ_data_processors_host_vtable_t::poll_evaluation",
+      "releaseEvaluation": "PJ_data_processors_host_vtable_t::release_evaluation",
+      "submitEvaluation": "PJ_data_processors_host_vtable_t::submit_evaluation"
     },
     "0.38.0": {
-      "attachTopic": {"declaration": "PJ_plot_tab_host_vtable_t::attach_topic", "aliases": ["ToolRegistry"]},
-      "catalogSnapshotV2": {"declaration": "PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2", "aliases": ["ToolRegistry"]},
+      "attachTopic": "PJ_plot_tab_host_vtable_t::attach_topic",
+      "catalogSnapshotV2": "PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2",
       "checkScript": "PJ_data_processors_host_vtable_t::check_data_processor_script",
-      "createTabV2": {"declaration": "PJ_plot_tab_host_vtable_t::create_tab_v2", "aliases": ["ToolRegistry"]},
-      "detachTopic": {"declaration": "PJ_plot_tab_host_vtable_t::detach_topic", "aliases": ["ToolRegistry"]},
-      "focusTab": {"declaration": "PJ_plot_tab_host_vtable_t::focus_tab", "aliases": ["ToolRegistry"]},
+      "createTabV2": "PJ_plot_tab_host_vtable_t::create_tab_v2",
+      "detachTopic": "PJ_plot_tab_host_vtable_t::detach_topic",
+      "focusTab": "PJ_plot_tab_host_vtable_t::focus_tab",
       "kEmbedsSceneViews": {
         "declaration": "PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS",
         "aliases": ["setSceneView"]

@@ -7,19 +7,6 @@ SPDX-License-Identifier header that is authoritative for that file.
   pj_plugins      Apache-2.0     LICENSE-APACHE
   examples        Apache-2.0     LICENSE-APACHE
 
-  MIT exceptions (keep their MIT headers):
-
-  pj_base/include/pj_base/agent_tools/            MIT    LICENSE-MIT
-  pj_base/src/agent_tools/                        MIT    LICENSE-MIT
-  pj_base/tests/agent_tools_series_stats_test.cpp MIT    LICENSE-MIT
-  pj_base/tests/derived_recipes_test.cpp          MIT    LICENSE-MIT
-  pj_plugins/include/pj_plugins/testing/:
-    fake_catalog_host.hpp, fake_multi_dataset_host.hpp,
-    fake_object_read_host.hpp, fake_playback_viewport_hosts.hpp,
-    fake_plot_tabs_host.hpp, recording_dp_host.hpp MIT  LICENSE-MIT
-  pj_plugins/tests/agent_tools_tool_registry_test.cpp
-                                                  MIT    LICENSE-MIT
-
 Rationale:
 
   - The plugin-facing surface (pj_base, pj_plugins) is Apache-2.0 so that
@@ -28,8 +15,7 @@ Rationale:
     license to downstream users.
 
 The columnar storage engine (formerly the MPL-2.0 `pj_datastore` module) has
-moved to the PlotJuggler application repository. Everything else is
-Apache-2.0 except the MIT files listed above (the agent_tools component and
-its test fakes).
+moved to the PlotJuggler application repository; this SDK is now Apache-2.0
+in its entirety.
 
 Copyright (c) 2026 Davide Faconti
