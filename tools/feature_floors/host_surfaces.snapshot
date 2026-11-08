@@ -44,6 +44,8 @@ PJ_dialog_host_capability_t::PJ_DIALOG_HOST_CAN_SELECT_FOLDER
 PJ_dialog_host_capability_t::PJ_DIALOG_HOST_EMBEDS_SCENE_VIEWS
 PJ_dialog_host_capability_t::PJ_DIALOG_HOST_STAGES_BROWSER_FILE
 PJ_feature_catalog_vtable_t::get_feature_catalog
+PJ_mcp_endpoint_host_vtable_t::acquire_endpoint
+PJ_mcp_endpoint_host_vtable_t::release_endpoint
 PJ_object_read_host_vtable_t::entry_count
 PJ_object_read_host_vtable_t::get_bytes
 PJ_object_read_host_vtable_t::list_topics
@@ -121,6 +123,7 @@ PJ_widget_host_vtable_t::report_widget_message
 pj.colormap.v1
 pj.data_processors.v1
 pj.feature_catalog.v1
+pj.mcp_endpoint.v1
 pj.parser_object_write.v1
 pj.parser_runtime.v1
 pj.parser_write.v1

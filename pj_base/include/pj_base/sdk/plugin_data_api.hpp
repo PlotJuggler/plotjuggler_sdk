@@ -2740,4 +2740,63 @@ class FeatureCatalogView {
   PJ_feature_catalog_t catalog_{};
 };
 
+// ---------------------------------------------------------------------------
+// McpEndpointHostView — typed C++ view over PJ_mcp_endpoint_host_t
+// ---------------------------------------------------------------------------
+
+/// Owning copy of a PJ_mcp_endpoint_t: it stays valid after release() and the
+/// host's buffers are gone, but the token it holds is then revoked.
+struct McpEndpoint {
+  std::string url;           ///< e.g. "http://127.0.0.1:<port>/mcp"
+  std::string bearer_token;  ///< send as "Authorization: Bearer <token>"; a credential, never log it
+};
+
+/// C++ wrapper around PJ_mcp_endpoint_host_t (service "pj.mcp_endpoint.v1"): a
+/// private endpoint on the host's MCP server for an MCP client the plugin
+/// launches itself. Optional, desktop hosts only; an absent service means "this
+/// host cannot serve agents". The host keeps the service alive until the plugin
+/// instance is destroyed, so release() may run from the plugin's destructor;
+/// using the view after that is undefined. Empty-constructible; `valid()` is
+/// false unless the host serves both slots. Main-thread.
+class McpEndpointHostView {
+ public:
+  McpEndpointHostView() = default;
+  explicit McpEndpointHostView(PJ_mcp_endpoint_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const noexcept {
+    return host_.ctx != nullptr && host_.vtable != nullptr &&
+           PJ_HAS_TAIL_SLOT(PJ_mcp_endpoint_host_vtable_t, host_.vtable, acquire_endpoint) &&
+           PJ_HAS_TAIL_SLOT(PJ_mcp_endpoint_host_vtable_t, host_.vtable, release_endpoint);
+  }
+
+  /// Open this plugin instance's endpoint, or get the one it already holds (same
+  /// token). The credentials do not expire and are not revoked unasked; if the
+  /// client is refused, release() then acquire() yields a new token. Fails when
+  /// unbound or when the host cannot start (or restart) its server; a failure
+  /// leaves nothing held, so a later acquire() may retry.
+  [[nodiscard]] Expected<McpEndpoint> acquire() const {
+    if (!valid()) {
+      return unexpected("mcp endpoint host is not bound");
+    }
+    PJ_mcp_endpoint_t raw{};
+    PJ_error_t err{};
+    if (!host_.vtable->acquire_endpoint(host_.ctx, &raw, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return McpEndpoint{std::string(toStringView(raw.url)), std::string(toStringView(raw.bearer_token))};
+  }
+
+  /// Revoke the token synchronously: on return no request carrying it is
+  /// accepted. Running calls are abandoned, but their side effects are not
+  /// undone. Idempotent, and a no-op on an unbound view.
+  void release() const noexcept {
+    if (valid()) {
+      host_.vtable->release_endpoint(host_.ctx);
+    }
+  }
+
+ private:
+  PJ_mcp_endpoint_host_t host_{};
+};
+
 }  // namespace PJ::sdk

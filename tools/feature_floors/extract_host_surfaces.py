@@ -57,6 +57,7 @@ HOST_SERVICE_IDS = {
     "pj.colormap.v1",
     "pj.data_processors.v1",
     "pj.feature_catalog.v1",
+    "pj.mcp_endpoint.v1",
     "pj.parser_object_write.v1",
     "pj.parser_runtime.v1",
     "pj.parser_write.v1",

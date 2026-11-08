@@ -3,6 +3,27 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.40.0]
+
+Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,
+PJ_mcp_endpoint_host_vtable_t::release_endpoint (floor 0.40.0). The service is optional, so a
+plugin that treats it as absent on older hosts keeps its `min_sdk_required` and declares
+`suggested_sdk_version` 0.40.0.
+
+MCP endpoint service:
+
+- `pj.mcp_endpoint.v1`: an optional host service, desktop hosts only, that hands the calling
+  plugin instance a private endpoint on the host's MCP server (MCP Streamable HTTP on loopback)
+  for an MCP client the plugin launches itself, such as an agent CLI. The host picks the tools
+  and runs them with that plugin as their owner; an identity a client claims is ignored. The
+  endpoint does not depend on the user's opt-in for external agents and is not advertised to
+  other processes. `acquire_endpoint` returns the URL and bearer token (host-owned, valid until
+  release), `release_endpoint` revokes the token and abandons calls in flight (idempotent).
+  C ABI `PJ_mcp_endpoint_t` (ABI-frozen), `PJ_mcp_endpoint_host_vtable_t`,
+  `PJ_mcp_endpoint_host_t`; C++ `McpEndpointHostView` (`acquire()` returns an owning
+  `McpEndpoint` copy, `release()`) and `McpEndpointHostService`.
+- Test helper `PJ::sdk::testing::FakeMcpEndpointHost` (`pj_base/sdk/testing/fake_mcp_endpoint_host.hpp`).
+
 ## [0.39.0]
 
 Host contract: extended: pj.feature_catalog.v1, PJ_feature_catalog_vtable_t::get_feature_catalog,

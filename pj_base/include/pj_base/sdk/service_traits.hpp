@@ -251,6 +251,21 @@ struct FeatureCatalogService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Optional, desktop hosts only: a private endpoint on the host's MCP server for
+/// an MCP client the plugin launches itself; the host picks the tools and runs
+/// them as this plugin. Absent means "this host cannot serve agents". See the C
+/// ABI doc-comment on PJ_mcp_endpoint_host_vtable_t.
+///
+/// @since 0.40.0
+struct McpEndpointHostService {
+  static constexpr const char* kName = "pj.mcp_endpoint.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_mcp_endpoint_host_t;
+  using Vtable = PJ_mcp_endpoint_host_vtable_t;
+  using View = McpEndpointHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Runtime host exposed to DataSource plugins — progress, diagnostics,
 /// state notification, parser binding, modal message boxes.
 struct DataSourceRuntimeHostService {

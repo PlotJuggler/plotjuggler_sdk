@@ -276,6 +276,41 @@ and title.
 An omitted dataset must resolve uniquely. The host prevents access to other
 plugins' and user-created tabs.
 
+### MCP endpoint for an agent the plugin launches (SDK 0.40.0)
+
+`PJ::sdk::McpEndpointHostService` (optional, desktop hosts only) gives this
+plugin instance a private endpoint on the host's loopback MCP server (MCP
+Streamable HTTP), for an MCP client the plugin starts itself, such as an agent
+CLI. The host picks the tools and runs them with this plugin as owner, so tabs a
+tool creates are this plugin's. A missing service means the host cannot serve
+agents: degrade, do not fail `bind()`.
+
+```cpp
+PJ::Status MyToolbox::startAgent() {
+  auto mcp = services().get<PJ::sdk::McpEndpointHostService>();
+  if (!mcp) {
+    return PJ::unexpected("this PlotJuggler cannot serve agents");
+  }
+  auto endpoint = mcp->acquire();  // same endpoint on every call until release()
+  if (!endpoint) {
+    return PJ::unexpected(endpoint.error());
+  }
+  // Hand endpoint->url and "Authorization: Bearer " + endpoint->bearer_token to the client
+  // you launch. When it stops, mcp->release() revokes the token (the host also releases
+  // on teardown).
+  return launchClient(*endpoint);
+}
+```
+
+The token is the endpoint's only credential: pass it to the launched client only,
+never log or persist it. It does not expire and the host does not revoke it
+unasked; if the client is refused (or `acquire()` failed, which leaves nothing
+held), `release()` then `acquire()` yields a new token. `release()` is
+synchronous: on return no request carrying the token is accepted, running calls
+are abandoned and their side effects stay. The service lives until the plugin
+instance is destroyed, so `release()` may run from the destructor; tools run on
+the host's main thread.
+
 ### Dataset-qualified processor inputs
 
 `pj.data_processors.v1` accepts `dataset_source:topic/field` inputs via the shared
