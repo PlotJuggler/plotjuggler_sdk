@@ -79,6 +79,10 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
   seconds after offset edits. Full examples and the catalog-dependent
   `dataset_source:topic/field` lookup rules are in
   `pj_plugins/docs/toolbox-guide.md` → "Playback, viewport, and owned tabs".
+- **SDK 0.40.0 `McpEndpointHostService`** (optional, desktop only): `acquire()` returns this
+  instance's private MCP endpoint (URL + bearer token, owning copy) for an agent CLI the
+  plugin launches; `release()` revokes it. Absent = the host cannot serve agents. See
+  `pj_plugins/docs/toolbox-guide.md` → "MCP endpoint for an agent the plugin launches".
 
 ## On-demand data processors (SDK 0.37.0)
 

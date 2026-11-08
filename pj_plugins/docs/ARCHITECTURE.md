@@ -322,6 +322,14 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   tabs** — the boundary is the view, not the transport, which is why
   `"pj.playback.v1"` stays global. Hosts without plots (headless) simply do not
   register either.
+  `"pj.mcp_endpoint.v1"` (optional, desktop hosts only, 0.40.0) hands the
+  calling plugin instance a private endpoint (URL + bearer token) on the host's
+  loopback MCP server, for an MCP client the plugin launches itself, such as an
+  agent CLI (`sdk::McpEndpointHostView`). The host picks the tools and runs them
+  with that plugin as owner; a client's claimed identity is ignored. The endpoint
+  does not depend on the user's external-agent opt-in and is not advertised to
+  other processes. `release()` revokes the token; the host also releases when
+  the instance is destroyed. A missing service means the host cannot serve agents.
   Examples, handle selection, and the catalog-dependent qualifier limitations
   are in `toolbox-guide.md` under "Playback, viewport, and owned tabs" and
   "Dataset-qualified processor inputs".

@@ -1769,6 +1769,71 @@ typedef struct {
   const PJ_plot_tab_host_vtable_t* vtable;
 } PJ_plot_tab_host_t;
 
+/**
+ * MCP endpoint host service ("pj.mcp_endpoint.v1", protocol_version 1).
+ *
+ * Optional; served by desktop hosts only, to the plugin families the host
+ * chooses. Hands the calling plugin instance a private endpoint on the host's
+ * MCP server (MCP Streamable HTTP on loopback) for an MCP client the plugin
+ * launches itself, such as an agent CLI. The host decides which tools that
+ * endpoint exposes and runs them with the calling plugin as their owner; any
+ * identity a client claims over MCP is ignored. The endpoint does not depend on
+ * the user's opt-in for external agents and is not advertised to other
+ * processes. Treat a missing service as "this host cannot serve agents".
+ *
+ * LIFETIME: the host keeps `ctx` and the vtable valid at least until the plugin
+ * instance is destroyed, so the plugin may call release_endpoint from its
+ * destructor. If the host's MCP server stops, every endpoint it served is
+ * revoked; a later acquire_endpoint opens a new endpoint on a restarted server
+ * or fails, and release_endpoint stays safe. Calling either slot after the
+ * plugin instance is destroyed is undefined.
+ *
+ * CREDENTIALS: a successful acquire_endpoint returns a URL and token the server
+ * accepts at that moment. They do not expire, and the host does not revoke them
+ * unasked while the plugin instance and the server live. release_endpoint then
+ * acquire_endpoint is the recovery path (e.g. the client is refused) and yields
+ * a new token. The token is the endpoint's only credential: hand it to the
+ * client the plugin launches and nowhere else (no logs, no persisted config).
+ *
+ * Tools run on the host's main thread under the same rules as the host's other
+ * services. All slots are [main-thread]. ABI-APPENDABLE: new slots may be added
+ * at the tail; struct_size gates read.
+ *
+ * @since 0.40.0
+ */
+
+/* ABI-FROZEN: layout permanent; changes = ABI break (add an acquire_endpoint_v2 slot instead). */
+typedef struct {
+  PJ_string_view_t url;          /* full endpoint URL, e.g. "http://127.0.0.1:<port>/mcp" */
+  PJ_string_view_t bearer_token; /* send as "Authorization: Bearer <token>" */
+} PJ_mcp_endpoint_t;
+
+typedef struct PJ_mcp_endpoint_host_vtable_t {
+  uint32_t protocol_version; /* = 1 */
+  uint32_t struct_size;      /* = sizeof(PJ_mcp_endpoint_host_vtable_t) */
+
+  /* [main-thread] Open this plugin instance's endpoint, or return the one it
+   * already holds (same URL and token). Both strings are host-owned and stay
+   * valid until release_endpoint or the end of the service's lifetime: copy
+   * them. Fails (false + *out_error, code PJ_ERROR_CODE_INTERNAL) when the host
+   * cannot start (or restart) its server. A failed call leaves no endpoint held;
+   * a later call may retry. */
+  bool (*acquire_endpoint)(void* ctx, PJ_mcp_endpoint_t* out_endpoint, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Revoke the token, synchronously: once this returns, no request
+   * carrying it is accepted and no queued call for it starts. Calls already
+   * running are abandoned (results dropped, connections closed); side effects
+   * they already caused are not undone. Idempotent, and a no-op when nothing is
+   * held or the server has stopped. The host also releases when the plugin
+   * instance is destroyed. */
+  void (*release_endpoint)(void* ctx) PJ_NOEXCEPT;
+} PJ_mcp_endpoint_host_vtable_t;
+
+typedef struct {
+  void* ctx;
+  const PJ_mcp_endpoint_host_vtable_t* vtable;
+} PJ_mcp_endpoint_host_t;
+
 #ifdef __cplusplus
 }
 #endif

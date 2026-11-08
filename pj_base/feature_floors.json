@@ -45,6 +45,14 @@
       "queryHistory": {"declaration": "PJ_widget_host_vtable_t::query_history", "negotiated": false},
       "notifyInputsChanged": {"declaration": "PJ_widget_host_vtable_t::notify_inputs_changed", "negotiated": false},
       "reportWidgetMessage": {"declaration": "PJ_widget_host_vtable_t::report_widget_message", "negotiated": false}
+    },
+    "0.40.0": {
+      "McpEndpointHostService": {
+        "declaration": "pj.mcp_endpoint.v1",
+        "aliases": ["McpEndpointHostView"]
+      },
+      "acquireMcpEndpoint": "PJ_mcp_endpoint_host_vtable_t::acquire_endpoint",
+      "releaseMcpEndpoint": "PJ_mcp_endpoint_host_vtable_t::release_endpoint"
     }
   },
   "baseline": [

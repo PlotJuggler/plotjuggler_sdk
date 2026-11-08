@@ -34,6 +34,7 @@ from `pj_plugins/dialog_protocol/include/`; Widget headers from
 | `RequestArtifactCache` | Validated artifact publication, read leases and cleanup | `pj_base/sdk/source/request_cache.hpp` |
 | `PJ::readDescriptorImportStartRequest, PJ::writeDescriptorQueryResult` | Caller-sized descriptor-import ABI structs | `pj_base/sdk/descriptor_import.hpp` |
 | `PJ::sdk::testing::DelegatedIngestFixture` | Delegated-ingest ownership, completion, Stop and discard tests; use plugin_sdk | `pj_plugins/testing/delegated_ingest_fixture.hpp` |
+| `PJ::sdk::testing::FakeMcpEndpointHost` | Scriptable `pj.mcp_endpoint.v1` host (held state, token rotation, listener failure, call counts) for plugin tests | `pj_base/sdk/testing/fake_mcp_endpoint_host.hpp` |
 | `pj_add_sdk_test_fixture(name out_target)` | Build packaged mock plugins; no second SDK source download | `cmake/PjSdkTestFixtures.cmake` |
 
 ## Plugin helpers

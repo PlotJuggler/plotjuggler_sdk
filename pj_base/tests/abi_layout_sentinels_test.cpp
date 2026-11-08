@@ -83,6 +83,14 @@ static_assert(offsetof(PJ_playback_host_vtable_t, to_display_time) == 48, "topic
 static_assert(offsetof(PJ_playback_host_vtable_t, to_display_time_for_source) == 56, "source conversion is appended");
 static_assert(sizeof(PJ_playback_host_vtable_t) == 64, "playback vtable size in 0.28.0");
 
+// --- PJ_mcp_endpoint_t (ABI-FROZEN) + its host vtable ---------------------------
+static_assert(sizeof(PJ_mcp_endpoint_t) == 32, "PJ_mcp_endpoint_t size pinned at introduction (0.40.0)");
+static_assert(offsetof(PJ_mcp_endpoint_t, url) == 0, "PJ_mcp_endpoint_t layout pinned");
+static_assert(offsetof(PJ_mcp_endpoint_t, bearer_token) == 16, "PJ_mcp_endpoint_t layout pinned");
+static_assert(offsetof(PJ_mcp_endpoint_host_vtable_t, acquire_endpoint) == 8, "mcp endpoint v1 slot pinned");
+static_assert(offsetof(PJ_mcp_endpoint_host_vtable_t, release_endpoint) == 16, "mcp endpoint v1 slot pinned");
+static_assert(sizeof(PJ_mcp_endpoint_host_vtable_t) == 24, "mcp endpoint vtable size in 0.40.0");
+
 // --- Service registry (fat pointer types) ------------------------------------
 static_assert(sizeof(PJ_service_t) == 16, "PJ_service_t fat pointer pinned");
 static_assert(sizeof(PJ_service_registry_t) == 16, "PJ_service_registry_t fat pointer pinned");
