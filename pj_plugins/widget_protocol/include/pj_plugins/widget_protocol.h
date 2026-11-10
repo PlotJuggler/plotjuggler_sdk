@@ -289,7 +289,11 @@ typedef struct PJ_widget_vtable_t {
 
   /**
    * [main-thread] Bind host services. The host registers "pj.widget_host.v1";
-   * "pj.settings.v1" may also be present.
+   * "pj.settings.v1" may also be present. A host may also offer
+   * "pj.playback.v1" (see pj_base/include/pj_base/plugin_data_api.h,
+   * "Playback host service"); a widget must treat it as optional. It reads the
+   * play/pause state with `get_state` and moves the tracker with `seek`, whose
+   * time is in display-axis seconds, the same unit as PJ_widget_value_t time.
    */
   bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) PJ_NOEXCEPT;
 
@@ -329,6 +333,10 @@ typedef struct PJ_widget_vtable_t {
    * even when no sample changed, after create_qwidget, after every accepted
    * load_config and after any wiring change, so the widget never paints
    * stale state. `values` is valid only during the call.
+   *
+   * The host may also call it, even when no sample changed, when the playback
+   * state changes (play/pause) and when new samples arrive on a wired input.
+   * A widget must treat every call as "re-read what you need".
    */
   void (*on_update)(void* ctx, const PJ_widget_value_t* values, uint32_t count, double time) PJ_NOEXCEPT;
 

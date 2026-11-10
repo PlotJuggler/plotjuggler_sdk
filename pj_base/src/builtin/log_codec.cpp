@@ -47,6 +47,15 @@ std::vector<uint8_t> serializeLog(const Log& log) {
   writer.varint(2, static_cast<uint64_t>(log.level));
   writer.string(3, log.message);
   writer.string(4, log.name);
+  if (!log.file.empty()) {
+    writer.string(5, log.file);
+  }
+  if (!log.function.empty()) {
+    writer.string(6, log.function);
+  }
+  if (log.line != 0) {
+    writer.varint(7, log.line);
+  }
 
   return out;
 }
@@ -78,6 +87,21 @@ Expected<sdk::Log> deserializeLog(const uint8_t* data, size_t size) {
         return tag.type == WireType::kLengthDelimited && r.readString(log.message);
       case 4:
         return tag.type == WireType::kLengthDelimited && r.readString(log.name);
+      case 5:
+        return tag.type == WireType::kLengthDelimited && r.readString(log.file);
+      case 6:
+        return tag.type == WireType::kLengthDelimited && r.readString(log.function);
+      case 7: {
+        if (tag.type != WireType::kVarint) {
+          return false;
+        }
+        uint64_t v = 0;
+        if (!r.readVarint(v)) {
+          return false;
+        }
+        log.line = static_cast<uint32_t>(v);
+        return true;
+      }
       default:
         return false;
     }

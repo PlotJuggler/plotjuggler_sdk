@@ -3,6 +3,24 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [0.41.0]
+
+Host contract: unchanged (no floor impact) — `Log` gains optional fields, and the widget-protocol
+changes are documentation only; `pj.playback.v1` already has its floor in `feature_floors.json`.
+
+Log:
+
+- `PJ::sdk::Log` gains `file`, `function` and `line` (proto fields 5-7 of `PJ.Log`), so a log viewer
+  can show `file:line (function)`. The codec writes them only when non-empty / non-zero; readers
+  built before this release skip the unknown fields.
+
+Widget protocol (docs only, no struct or ABI change):
+
+- A host may offer the optional `pj.playback.v1` service in the registry passed to `bind`; a widget
+  reads play/pause with `get_state` and seeks the tracker with `seek` (display-axis seconds).
+- `on_update` may also be called, with no changed sample, on play/pause and when new samples arrive
+  on a wired input; a widget treats every call as "re-read what you need".
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,
