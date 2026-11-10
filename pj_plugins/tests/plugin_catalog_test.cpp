@@ -68,6 +68,41 @@ class PluginCatalogTest : public ::testing::Test {
   std::filesystem::path dir_;
 };
 
+// Unicode errors must be UTF-8 on every Windows ACP, not only UTF-8 systems.
+TEST_F(PluginCatalogTest, UnicodeFailureDiagnosticsPreservePath) {
+  const auto directory = dir_ / std::filesystem::path(u8"\u8cc7\u6599-\U0001f680");
+  const auto utf8 = directory.u8string();
+  const std::string expected(utf8.begin(), utf8.end());
+  auto missing = scanPluginDsos(directory);
+  ASSERT_FALSE(missing.has_value());
+  EXPECT_NE(missing.error().find(expected), std::string::npos);
+  std::filesystem::create_directories(directory);
+  const auto broken = directory / pluginFileName("broken");
+  {
+    std::ofstream output(broken);
+    ASSERT_TRUE(output.is_open());
+    output << "not a shared library";
+    ASSERT_TRUE(output.good());
+  }
+  auto invalid = inspectPluginDso(broken);
+  ASSERT_FALSE(invalid.has_value());
+  EXPECT_NE(invalid.error().find(expected), std::string::npos);
+  auto unopened = inspectPluginDso(std::shared_ptr<void>{}, broken);
+  ASSERT_FALSE(unopened.has_value());
+  EXPECT_NE(unopened.error().find(expected), std::string::npos);
+  auto unsupported = inspectPluginDso(directory / std::filesystem::path(u8"file.\U0001f680"));
+  ASSERT_FALSE(unsupported.has_value());
+  EXPECT_NE(unsupported.error().find(expected), std::string::npos);
+  auto scan = scanPluginDsos(directory);
+  ASSERT_TRUE(scan.has_value()) << scan.error();
+  EXPECT_TRUE(scan->plugins.empty());
+  ASSERT_EQ(scan->diagnostics.size(), 1u);
+  EXPECT_NE(scan->diagnostics.front().message.find(expected), std::string::npos);
+  auto not_directory = scanPluginDsos(broken);
+  ASSERT_FALSE(not_directory.has_value());
+  EXPECT_NE(not_directory.error().find(expected), std::string::npos);
+}
+
 TEST_F(PluginCatalogTest, MissingDirectoryReturnsError) {
   auto result = scanPluginDsos("/nonexistent/path/xyz");
   EXPECT_FALSE(result.has_value());

@@ -44,7 +44,7 @@ struct ManifestCandidate {
 };
 
 bool hasDsoSuffix(const std::filesystem::path& path) {
-  return path.extension().string() == kDsoSuffix;
+  return detail::pathForLegacyAccessor(path.extension()) == kDsoSuffix;
 }
 
 bool nativeSymbolPresent(void* handle, const char* symbol) noexcept {
@@ -402,13 +402,13 @@ std::string_view toString(PluginFamily family) noexcept {
 
 Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
-    return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
+    return unexpected(fmt::format("not a platform plugin DSO: {}", detail::pathForLegacyAccessor(dso_path)));
   }
 
   detail::LibraryPathIdentity recorded_path;
   auto raw_handle = detail::loadLibraryHandle(dso_path, &recorded_path);
   if (!raw_handle) {
-    return unexpected(fmt::format("{}: {}", dso_path.string(), raw_handle.error()));
+    return unexpected(fmt::format("{}: {}", detail::pathForLegacyAccessor(dso_path), raw_handle.error()));
   }
   return inspectPluginDso(detail::adoptLibraryHandle(*raw_handle), recorded_path.load_path);
 }
@@ -416,9 +416,11 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
 Expected<PluginDescriptor> inspectPluginDso(
     const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
-    return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
+    return unexpected(fmt::format("not a platform plugin DSO: {}", detail::pathForLegacyAccessor(dso_path)));
   }
-  auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
+  auto with_path = [&](const std::string& error) {
+    return fmt::format("{}: {}", detail::pathForLegacyAccessor(dso_path), error);
+  };
   if (handle == nullptr) {
     return unexpected(with_path("library not loaded"));
   }
@@ -487,10 +489,10 @@ Expected<std::vector<PluginFamily>> exportedPluginFamilies(
 Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory) {
   std::error_code ec;
   if (!std::filesystem::exists(directory, ec)) {
-    return unexpected(fmt::format("plugin directory not found: {}", directory.string()));
+    return unexpected(fmt::format("plugin directory not found: {}", detail::pathForLegacyAccessor(directory)));
   }
   if (!std::filesystem::is_directory(directory, ec)) {
-    return unexpected(fmt::format("plugin path is not a directory: {}", directory.string()));
+    return unexpected(fmt::format("plugin path is not a directory: {}", detail::pathForLegacyAccessor(directory)));
   }
 
   PluginScanResult result;

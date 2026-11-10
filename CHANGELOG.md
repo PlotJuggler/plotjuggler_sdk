@@ -77,6 +77,12 @@ SceneEntities and PlotMarkers:
 - `PlotMarkers`: the decoder drops a marker whose `kind` it does not know instead of drawing it as
   a time region; wire numbers unchanged.
 
+Plugin catalog:
+
+- Preserve Unicode paths in plugin catalog failure diagnostics on Windows without
+  converting through the active code page. Invalid plugins and directories now
+  return their intended errors instead of throwing during path formatting.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,
