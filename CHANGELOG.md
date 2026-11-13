@@ -21,6 +21,12 @@ Widget protocol (docs only, no struct or ABI change):
 - `on_update` may also be called, with no changed sample, on play/pause and when new samples arrive
   on a wired input; a widget treats every call as "re-read what you need".
 
+Testing:
+
+- Test helper `PJ::sdk::testing::FakeWidgetHost` (`pj_plugins/sdk/testing/fake_widget_host.hpp`): a
+  `pj.widget_host.v1` host for Widget plugin tests that stores samples at nanosecond times like a
+  real host, so a widget's history reads are tested at epoch-scale display times too.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,
