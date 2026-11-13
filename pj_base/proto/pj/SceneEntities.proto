@@ -86,19 +86,16 @@ message CylinderPrimitive {
 
 // A polyline or line list primitive in a 3D scene. The drawing topology is selected by `type`.
 message LinePrimitive {
-  // Topology of the line drawing
+  // Topology of the line drawing. The values match `foxglove.LinePrimitive.Type`.
   enum Type {
-    // Unknown line type
-    UNKNOWN = 0;
-
     // Connected line segments: 0-1, 1-2, ..., (n-1)-n
-    LINE_STRIP = 1;
+    LINE_STRIP = 0;
 
     // Closed polyline: 0-1, 1-2, ..., (n-1)-n, n-0
-    LINE_LOOP = 2;
+    LINE_LOOP = 1;
 
     // Individual line segments: 0-1, 2-3, 4-5, ...
-    LINE_LIST = 3;
+    LINE_LIST = 2;
   }
 
   // Topology of the line drawing

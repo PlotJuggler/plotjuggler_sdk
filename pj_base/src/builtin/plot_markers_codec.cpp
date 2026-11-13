@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,9 +28,24 @@ using sdk::MarkerStatus;
 using sdk::PlotMarker;
 using sdk::PlotMarkers;
 
-// ---- enum mapping (write raw value; read with default fallback) ----
+// ---- enum mapping (explicit wire numbers; status/severity read with a default fallback) ----
 
-MarkerKind mapKind(uint64_t v) {
+uint64_t kindToWire(MarkerKind kind) {
+  switch (kind) {
+    case MarkerKind::kRegion:
+      return 0;
+    case MarkerKind::kEvent:
+      return 1;
+    case MarkerKind::kValueBand:
+      return 2;
+    case MarkerKind::kLabel:
+      return 3;
+  }
+  return 0;
+}
+
+// nullopt for a kind this reader does not know: the caller drops that marker rather than draw it as a region.
+std::optional<MarkerKind> mapKind(uint64_t v) {
   switch (v) {
     case 0:
       return MarkerKind::kRegion;
@@ -40,7 +56,7 @@ MarkerKind mapKind(uint64_t v) {
     case 3:
       return MarkerKind::kLabel;
     default:
-      return MarkerKind::kRegion;
+      return std::nullopt;
   }
 }
 
@@ -90,7 +106,7 @@ void writeProperty(Writer& writer, const MarkerProperty& property) {
 }
 
 void writeMarker(Writer& writer, const PlotMarker& marker) {
-  writer.varint(1, static_cast<uint64_t>(marker.kind));
+  writer.varint(1, kindToWire(marker.kind));
   writer.varint(2, static_cast<uint64_t>(marker.t_start));
   writer.varint(3, static_cast<uint64_t>(marker.t_end));
   writer.doubleField(4, marker.value_low);
@@ -171,7 +187,8 @@ bool decodeProperty(Reader& reader, MarkerProperty& out) {
   return true;
 }
 
-bool decodeMarker(Reader& reader, PlotMarker& out) {
+// `drop` is set when the marker's kind is one this reader does not know; the caller then discards the marker.
+bool decodeMarker(Reader& reader, PlotMarker& out, bool& drop) {
   // Handler returns true when it consumed the field, false to let parseFields skip
   // it (unknown field, or a known field with the wrong wire type).
   return parseFields(reader, [&](Tag tag, Reader& r) {
@@ -181,7 +198,11 @@ bool decodeMarker(Reader& reader, PlotMarker& out) {
         if (tag.type != WireType::kVarint || !r.readVarint(v)) {
           return false;
         }
-        out.kind = mapKind(v);
+        const auto kind = mapKind(v);
+        drop = !kind.has_value();
+        if (kind) {
+          out.kind = *kind;
+        }
         return true;
       }
       case 2: {
@@ -298,10 +319,13 @@ Expected<sdk::PlotMarkers> deserializePlotMarkers(const uint8_t* data, size_t si
         return unexpected(std::string("PlotMarkers wire: bad nested message length"));
       }
       PlotMarker marker;
-      if (!decodeMarker(nested, marker)) {
+      bool drop = false;
+      if (!decodeMarker(nested, marker, drop)) {
         return unexpected(std::string("PlotMarkers wire: PlotMarker decode failed"));
       }
-      markers.markers.push_back(std::move(marker));
+      if (!drop) {
+        markers.markers.push_back(std::move(marker));
+      }
     } else if (!reader.skip(tag.type)) {
       return unexpected(std::string("PlotMarkers wire: skip failed"));
     }

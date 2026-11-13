@@ -65,6 +65,18 @@ DepthImage:
   produced the depth, so a consumer can pair it with a `CameraInfo` by id. Additive; readers built before this release
   skip the unknown field.
 
+SceneEntities and PlotMarkers:
+
+- **Breaking (wire):** `PJ.LinePrimitive.Type` is renumbered to `LINE_STRIP = 0, LINE_LOOP = 1,
+  LINE_LIST = 2` (was 1/2/3 with `UNKNOWN = 0`), matching `foxglove.LinePrimitive.Type`, which makes
+  `PJ.SceneEntities` wire-compatible with `foxglove.SceneUpdate`. The C++ `sdk::LineType` is
+  unchanged. Bytes written with the old numbering, including by a plugin binary built against 0.x
+  (which still loads, since `PJ_ABI_VERSION` stays 5), are read with the new one, so its line
+  strips draw as loops, its loops as lists and its lists as strips (the unknown value 3 falls back
+  to a strip) until the plugin is rebuilt against 1.0.
+- `PlotMarkers`: the decoder drops a marker whose `kind` it does not know instead of drawing it as
+  a time region; wire numbers unchanged.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,
