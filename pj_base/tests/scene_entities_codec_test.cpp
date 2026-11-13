@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "protobuf_wire_test_helpers.hpp"
@@ -197,6 +198,76 @@ TEST(SceneEntitiesCodecTest, RoundTripLineWithPerVertexColorsAndIndices) {
   EXPECT_EQ(dst_line.indices, std::vector<uint32_t>({0, 1, 2, 3}));
   ASSERT_EQ(dst_line.colors.size(), 4u);
   EXPECT_TRUE(colorNear(ColorRGBA{0, 255, 0, 255}, dst_line.colors[1]));
+}
+
+// SceneEntities { entities: [ SceneEntity { lines: [ LinePrimitive { type: wire } ] } ] }, built by hand.
+std::vector<uint8_t> sceneWithLineTypeOnWire(uint64_t wire) {
+  std::vector<uint8_t> line;
+  pb::appendTag(line, 1, 0);
+  pb::appendVarint(line, wire);
+  std::vector<uint8_t> entity;
+  pb::appendTag(entity, 11, 2);
+  pb::appendLenDelim(entity, line);
+  std::vector<uint8_t> batch;
+  pb::appendTag(batch, 2, 2);  // entities = 2 (deletions = 1)
+  pb::appendLenDelim(batch, entity);
+  return batch;
+}
+
+// The raw `type` varint of the first LinePrimitive in `bytes` (field 11 of the entity, tag 0x5A; its first field is
+// `type`, tag 0x08), found without the codec's reader.
+uint8_t lineTypeOnWire(const std::vector<uint8_t>& bytes) {
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    if (bytes[i] != 0x5A) {
+      continue;
+    }
+    size_t j = i + 1;
+    while (j < bytes.size() && (bytes[j] & 0x80u) != 0) {
+      ++j;
+    }
+    ++j;  // last byte of the length varint
+    if (j + 1 < bytes.size() && bytes[j] == 0x08) {
+      return bytes[j + 1];
+    }
+  }
+  ADD_FAILURE() << "no LinePrimitive type found in the encoded bytes";
+  return 0xFF;
+}
+
+// LinePrimitive.Type uses foxglove.LinePrimitive.Type's numbers (LINE_STRIP=0, LINE_LOOP=1, LINE_LIST=2), pinned here
+// against hand-built bytes so they do not depend on the encoder.
+TEST(SceneEntitiesCodecTest, LineTypeWireNumbersMatchFoxglove) {
+  const std::pair<uint64_t, LineType> decoded_cases[] = {
+      {0, LineType::kLineStrip},
+      {1, LineType::kLineLoop},
+      {2, LineType::kLineList},
+      {3, LineType::kLineStrip},  // a value this reader does not know falls back to the strip
+  };
+  for (const auto& [wire, expected] : decoded_cases) {
+    const auto bytes = sceneWithLineTypeOnWire(wire);
+    auto out = deserializeSceneEntities(bytes.data(), bytes.size());
+    ASSERT_TRUE(out.has_value()) << "wire value " << wire;
+    ASSERT_EQ(out->entities.size(), 1u);
+    ASSERT_EQ(out->entities.front().lines.size(), 1u);
+    EXPECT_EQ(out->entities.front().lines.front().type, expected) << "wire value " << wire;
+  }
+
+  const std::pair<LineType, uint8_t> encoded_cases[] = {
+      {LineType::kLineStrip, 0},
+      {LineType::kLineLoop, 1},
+      {LineType::kLineList, 2},
+  };
+  for (const auto& [type, wire] : encoded_cases) {
+    SceneEntities in;
+    SceneEntity e;
+    e.frame_id = "w";
+    e.id = "l";
+    LinePrimitive line;
+    line.type = type;
+    e.lines.push_back(std::move(line));
+    in.entities.push_back(std::move(e));
+    EXPECT_EQ(lineTypeOnWire(serializeSceneEntities(in)), wire);
+  }
 }
 
 TEST(SceneEntitiesCodecTest, RoundTripModelPrimitive) {

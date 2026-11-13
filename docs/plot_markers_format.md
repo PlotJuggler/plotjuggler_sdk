@@ -50,7 +50,7 @@ for field numbers and wire types.
 
 | Schema field (`PlotMarker`) | SDK behavior |
 |-----------------------------|--------------|
-| `kind` | `PlotMarker::kind`. Unknown values decode to `kRegion`. |
+| `kind` | `PlotMarker::kind`. A reader drops a marker whose kind it does not know. |
 | `t_start` / `t_end` | `int64` ns; `PlotMarker::t_start` / `t_end`. |
 | `value_low` / `value_high` | `double`; ValueBand bounds / optional Event point value. |
 | `has_value` | `PlotMarker::has_value` (the Event point value is meaningful). |
@@ -66,9 +66,11 @@ message); the SDK stores RGBA `uint8_t`. Decode clamps to `[0, 1]` and rounds to
 the nearest byte, so a round trip may differ by one channel value due to
 floating-point rounding.
 
-Enum fields are written as their raw numeric value and always emitted. The reader
-maps unknown `kind` to `kRegion`, unknown `status` to `kNone`, and unknown
-`severity` to `kInfo`, so forward-compatible payloads still decode.
+Enum fields are written as their fixed wire numbers and always emitted. The reader
+maps unknown `status` to `kNone` and unknown `severity` to `kInfo`, so
+forward-compatible payloads still decode. A reader drops a marker whose `kind` it
+does not know, instead of drawing it as a region; the rest of the set decodes. A
+marker with no `kind` field is a region (`0`, which proto3 omits).
 
 A `PlotMarkers` value with no markers serializes to an empty byte buffer. A
 zero-size buffer decodes to an empty set, including when its pointer is null.

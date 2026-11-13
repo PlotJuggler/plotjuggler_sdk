@@ -36,29 +36,29 @@ using sdk::TextPrimitive;
 using sdk::TrianglePrimitive;
 
 // ---------- LineType enum mapping ----------
-//   proto: UNKNOWN=0, LINE_STRIP=1, LINE_LOOP=2, LINE_LIST=3
+//   proto: LINE_STRIP=0, LINE_LOOP=1, LINE_LIST=2 (same numbers as foxglove.LinePrimitive.Type)
 //   SDK:   kLineStrip=0, kLineLoop=1, kLineList=2
+// A wire value the reader does not know decodes as kLineStrip.
 
 uint32_t lineTypeToWire(LineType type) {
   switch (type) {
     case LineType::kLineStrip:
-      return 1;
+      return 0;
     case LineType::kLineLoop:
-      return 2;
+      return 1;
     case LineType::kLineList:
-      return 3;
+      return 2;
   }
-  return 1;
+  return 0;
 }
 
 LineType lineTypeFromWire(uint64_t value) {
   switch (value) {
-    case 2:
+    case 1:
       return LineType::kLineLoop;
-    case 3:
+    case 2:
       return LineType::kLineList;
     case 0:
-    case 1:
     default:
       return LineType::kLineStrip;
   }

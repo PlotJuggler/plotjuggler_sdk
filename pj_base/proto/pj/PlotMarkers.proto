@@ -17,7 +17,7 @@ import "pj/KeyValuePair.proto";
 
 package PJ;
 
-// What a marker marks; selects which anchor fields are meaningful.
+// What a marker marks; selects which anchor fields are meaningful. A reader drops a marker whose kind it does not know.
 enum MarkerKind {
   MARKER_KIND_REGION = 0;      // time span [t_start, t_end]
   MARKER_KIND_EVENT = 1;       // single time t_start (+ optional value)

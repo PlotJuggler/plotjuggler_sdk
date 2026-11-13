@@ -6,7 +6,12 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
 #include <vector>
+
+#include "protobuf_wire_test_helpers.hpp"
 
 namespace PJ {
 namespace {
@@ -140,6 +145,103 @@ TEST(PlotMarkersCodecTest, MultipleMarkersPreserveOrder) {
   auto out = roundTrip(in);
   ASSERT_EQ(out.markers.size(), 2u);
   EXPECT_TRUE(out == in);
+}
+
+TEST(PlotMarkersCodecTest, AllFourKindsRoundTrip) {
+  PlotMarkers in;
+  for (const MarkerKind kind : {MarkerKind::kRegion, MarkerKind::kEvent, MarkerKind::kValueBand, MarkerKind::kLabel}) {
+    PlotMarker m;
+    m.kind = kind;
+    m.t_start = 10;
+    m.label = "m";
+    in.markers.push_back(m);
+  }
+  const PlotMarkers out = roundTrip(in);
+  ASSERT_EQ(out.markers.size(), 4u);
+  EXPECT_TRUE(out == in);
+}
+
+// -----------------------------------------------------------------------------
+// Kind wire numbers, pinned independently of the codec's own mapping
+// -----------------------------------------------------------------------------
+
+// PlotMarkers { markers: [ PlotMarker { kind?, label } ... ] } built by hand. A nullopt kind omits the field, as proto3
+// does for the zero value.
+struct HandMarker {
+  std::optional<uint64_t> kind;
+  std::string label;
+};
+
+std::vector<uint8_t> handBuiltMarkers(const std::vector<HandMarker>& markers) {
+  std::vector<uint8_t> out;
+  for (const auto& m : markers) {
+    std::vector<uint8_t> body;
+    if (m.kind) {
+      test_pb::appendTag(body, 1, 0);
+      test_pb::appendVarint(body, *m.kind);
+    }
+    test_pb::appendTag(body, 10, 2);
+    test_pb::appendString(body, m.label);
+    test_pb::appendTag(out, 1, 2);
+    test_pb::appendLenDelim(out, body);
+  }
+  return out;
+}
+
+TEST(PlotMarkersCodecTest, KindWireNumbersAreStable) {
+  const std::pair<MarkerKind, uint8_t> kinds[] = {
+      {MarkerKind::kRegion, 0}, {MarkerKind::kEvent, 1}, {MarkerKind::kValueBand, 2}, {MarkerKind::kLabel, 3}};
+  for (const auto& [kind, wire] : kinds) {
+    // decode: wire number -> kind
+    const auto bytes = handBuiltMarkers({{wire, "m"}});
+    const auto out = deserializePlotMarkers(bytes.data(), bytes.size());
+    ASSERT_TRUE(out.has_value());
+    ASSERT_EQ(out->markers.size(), 1u);
+    EXPECT_EQ(out->markers[0].kind, kind);
+
+    // encode: kind -> wire number (PlotMarkers.markers[0] is 0x0A <len> 0x08 <kind> ...)
+    PlotMarker m;
+    m.kind = kind;
+    PlotMarkers in;
+    in.markers = {m};
+    const auto encoded = serializePlotMarkers(in);
+    ASSERT_GE(encoded.size(), 4u);
+    EXPECT_EQ(encoded[0], 0x0A);
+    ASSERT_LT(encoded[1], 0x80);  // one-byte length
+    EXPECT_EQ(encoded[2], 0x08);
+    EXPECT_EQ(encoded[3], wire);
+  }
+}
+
+TEST(PlotMarkersCodecTest, MarkerWithoutKindFieldDecodesAsRegion) {
+  const auto bytes = handBuiltMarkers({{std::nullopt, "no kind"}});
+  const auto out = deserializePlotMarkers(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  ASSERT_EQ(out->markers.size(), 1u);
+  EXPECT_EQ(out->markers[0].kind, MarkerKind::kRegion);
+  EXPECT_EQ(out->markers[0].label, "no kind");
+}
+
+// A reader drops a marker whose kind it does not know (a later release may add kinds); the rest of the set decodes.
+TEST(PlotMarkersCodecTest, MarkerWithUnknownKindIsDropped) {
+  const auto bytes =
+      handBuiltMarkers({{1, "before"}, {4, "future kind"}, {std::nullopt, "after"}, {1000, "far future"}});
+  const auto out = deserializePlotMarkers(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  ASSERT_EQ(out->markers.size(), 2u);
+  EXPECT_EQ(out->markers[0].kind, MarkerKind::kEvent);
+  EXPECT_EQ(out->markers[0].label, "before");
+  EXPECT_EQ(out->markers[1].kind, MarkerKind::kRegion);
+  EXPECT_EQ(out->markers[1].label, "after");
+}
+
+// Every marker dropped leaves the empty set, like the empty buffer.
+TEST(PlotMarkersCodecTest, AllMarkersDroppedDecodesToEmptySet) {
+  const auto bytes = handBuiltMarkers({{4, "a"}, {5, "b"}});
+  ASSERT_FALSE(bytes.empty());
+  const auto out = deserializePlotMarkers(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_TRUE(out->markers.empty());
 }
 
 TEST(PlotMarkersCodecTest, ColorRoundTripWithinOneLsb) {
