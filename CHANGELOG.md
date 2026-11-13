@@ -120,12 +120,15 @@ Removed:
 
 Fixes:
 
-- `sdk::toStringView` returns an empty view for a `PJ_string_view_t` with null data and a non-zero
-  size; it used to read `size` bytes past a one-byte literal, including in the host-side adapters
-  that receive plugin-supplied views.
+- A `PJ_string_view_t` with null data and a non-zero size is now an empty string everywhere the SDK
+  converts one: `sdk::toStringView`, the service-registry lookup, and the `saveConfig()` readers of
+  the DataSource, MessageParser and Toolbox handles. They used to read `size` bytes past a one-byte
+  literal, on views supplied by a plugin.
 - `WidgetDataView::chartMarkers()`, `markerTimelineMarks()` and `WidgetEvent::markerTimelineChanged()`
   skip a marker entry that is not an object or has a wrong-typed field; they used to throw
-  `nlohmann::json::type_error`, so one malformed plugin update could take the host down.
+  `nlohmann::json::type_error`, so one malformed plugin update could take the host down. An integer
+  field must now hold a JSON integer: a float there (`"start": 3.0`) skips the entry instead of being
+  truncated.
   `WidgetDataView::ChartMarkerView` is now an alias of `PJ::ChartMarker` (same fields).
 - `DialogHandle` gains `valid()`; when the plugin's `create()` returns null (its constructor threw),
   every method returns empty / false or does nothing instead of passing the null context to the

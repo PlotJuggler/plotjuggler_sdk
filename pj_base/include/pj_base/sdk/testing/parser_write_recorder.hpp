@@ -173,7 +173,7 @@ class ParserWriteRecorder {
       void* ctx, PJ_string_view_t name, PJ_primitive_type_t, PJ_field_handle_t* out_field, PJ_error_t*) noexcept {
     auto* self = static_cast<ParserWriteRecorder*>(ctx);
     uint32_t id = self->next_field_id_++;
-    self->field_names_.emplace(id, std::string(name.data == nullptr ? "" : name.data, name.size));
+    self->field_names_.emplace(id, name.data == nullptr ? std::string() : std::string(name.data, name.size));
     *out_field = PJ_field_handle_t{PJ_topic_handle_t{1}, id};
     return true;
   }

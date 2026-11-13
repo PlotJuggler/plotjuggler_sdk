@@ -88,4 +88,18 @@ TEST(ServiceRegistryBuilderTest, TemplatedOverloadAssertsOnDuplicate) {
   EXPECT_EQ(builder.size(), 1U);
 }
 
+// A plugin-supplied name view with a null pointer and a non-zero size is an
+// empty name, not `size` bytes read from a string literal (an out-of-bounds
+// read that ASAN reports).
+TEST(ServiceRegistryBuilderTest, NullNameViewWithNonZeroSizeIsAnUnknownService) {
+  PJ::ServiceRegistryBuilder builder;
+  builder.registerService<PJ::sdk::SourceWriteHostService>(makeWriteHost(&ctx_a));
+  const PJ_service_registry_t registry = builder.view();
+
+  PJ_service_t out{};
+  PJ_error_t error{};
+  EXPECT_FALSE(registry.vtable->get_service(registry.ctx, PJ_string_view_t{nullptr, 64}, 1, &out, &error));
+  EXPECT_EQ(out.ctx, nullptr);
+}
+
 }  // namespace

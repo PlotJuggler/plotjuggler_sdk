@@ -111,7 +111,7 @@ class DataSourceHandle {
     if (!vt_->save_config(ctx_, &sv, &err)) {
       return unexpected(errorToString(err));
     }
-    out_json.assign(sv.data == nullptr ? "" : sv.data, sv.size);
+    out_json.assign(sv.data == nullptr ? std::string_view() : std::string_view(sv.data, sv.size));
     return okStatus();
   }
 
