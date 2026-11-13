@@ -137,7 +137,7 @@ annotations, frame transforms, or no builtin object.
 | `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
 | `kCameraInfo` | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
 | `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
-| `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
+| `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + source). |
 | `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
 | `kVoxelGrid` | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
 | `kGridMap` | `PJ::sdk::GridMap` | 2D grid of per-cell channels (elevation maps, layered costmaps) in world coordinates. |
@@ -564,7 +564,7 @@ plus an optional `category`.
 | `timestamp_ns` | `Timestamp` | Time of the log message. |
 | `level` | `Log::Level` | `kUnknown`/`kDebug`/`kInfo`/`kWarning`/`kError`/`kFatal` (values match Foxglove). |
 | `message` | `std::string` | Log text. |
-| `name` | `std::string` | Originating process / node / logger name. |
+| `source` | `std::string` | Who emitted it: a process, node or logger name. |
 | `category` | `std::string` | Source-defined grouping (a tag, a subsystem); may be empty. |
 
 The source-location fields (`file`, `function`, `line`) are intentionally omitted.

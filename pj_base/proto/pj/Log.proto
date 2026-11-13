@@ -34,8 +34,8 @@ message Log {
   // Log text.
   string message = 3;
 
-  // Originating process / node / logger name.
-  string name = 4;
+  // Who emitted it: a process, node or logger name.
+  string source = 4;
 
   // Source-defined grouping of the message (a tag, a subsystem); may be empty.
   string category = 5;

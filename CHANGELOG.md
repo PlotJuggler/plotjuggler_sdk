@@ -3,16 +3,20 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [0.41.0]
+## [1.0.0]
 
-Host contract: unchanged (no floor impact) — `Log` gains optional fields, and the widget-protocol
-changes are documentation only; `pj.playback.v1` already has its floor in `feature_floors.json`.
+Host contract: unchanged (no floor impact) — `Log` gains an optional field and renames one on the
+same wire, and the widget-protocol changes are documentation only; `pj.playback.v1` already has its
+floor in `feature_floors.json`.
 
 Log:
 
 - `PJ::sdk::Log` gains an optional `category` (proto field 5 of `PJ.Log`): a source-defined grouping
   (a tag, a subsystem) a log viewer can show and filter on. The codec writes it only when non-empty;
   readers built before this release skip the unknown field.
+- **Breaking (source):** `PJ::sdk::Log::name` is renamed `source`; proto field 4 keeps its number, so
+  the wire format and binaries built against 0.x are unaffected. Code that reads or sets the field
+  must be updated. This rename is why the release is 1.0.0.
 
 Widget protocol (docs only, no struct or ABI change):
 

@@ -46,7 +46,7 @@ std::vector<uint8_t> serializeLog(const Log& log) {
   writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, log.timestamp_ns); });
   writer.varint(2, static_cast<uint64_t>(log.level));
   writer.string(3, log.message);
-  writer.string(4, log.name);
+  writer.string(4, log.source);
   if (!log.category.empty()) {
     writer.string(5, log.category);
   }
@@ -80,7 +80,7 @@ Expected<sdk::Log> deserializeLog(const uint8_t* data, size_t size) {
       case 3:
         return tag.type == WireType::kLengthDelimited && r.readString(log.message);
       case 4:
-        return tag.type == WireType::kLengthDelimited && r.readString(log.name);
+        return tag.type == WireType::kLengthDelimited && r.readString(log.source);
       case 5:
         return tag.type == WireType::kLengthDelimited && r.readString(log.category);
       default:

@@ -26,7 +26,7 @@ TEST(LogCodecTest, RoundTrip) {
   in.timestamp_ns = 1'234'567'890LL;
   in.level = Log::Level::kWarning;
   in.message = "disk almost full";
-  in.name = "/storage_monitor";
+  in.source = "/storage_monitor";
 
   const auto bytes = serializeLog(in);
   auto out = deserializeLog(bytes.data(), bytes.size());
@@ -34,7 +34,7 @@ TEST(LogCodecTest, RoundTrip) {
   EXPECT_EQ(out->timestamp_ns, in.timestamp_ns);
   EXPECT_EQ(out->level, Log::Level::kWarning);
   EXPECT_EQ(out->message, in.message);
-  EXPECT_EQ(out->name, in.name);
+  EXPECT_EQ(out->source, in.source);
 }
 
 TEST(LogCodecTest, EveryLevelRoundTrips) {
@@ -56,7 +56,7 @@ TEST(LogCodecTest, CategoryRoundTrips) {
   in.timestamp_ns = 42;
   in.level = Log::Level::kError;
   in.message = "boom";
-  in.name = "/node";
+  in.source = "/node";
   in.category = "driver";
 
   const auto bytes = serializeLog(in);
@@ -69,7 +69,7 @@ TEST(LogCodecTest, EmptyCategoryIsNotWritten) {
   Log in;
   in.level = Log::Level::kInfo;
   in.message = "hello";
-  in.name = "n";
+  in.source = "n";
 
   const auto bytes = serializeLog(in);
   for (uint8_t b : bytes) {

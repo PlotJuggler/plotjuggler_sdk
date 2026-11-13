@@ -35,7 +35,7 @@ namespace PJ::sdk::testing {
 ///
 /// The fake must outlive the handle from makeHost().
 ///
-/// @since 0.41.0
+/// @since 1.0.0
 class FakeWidgetHost {
  public:
   struct Sample {
