@@ -3,6 +3,34 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [1.0.0]
+
+Host contract: unchanged (no floor impact) — `Log` gains an optional field and renames one on the
+same wire, and the widget-protocol changes are documentation only; `pj.playback.v1` already has its
+floor in `feature_floors.json`.
+
+Log:
+
+- `PJ::sdk::Log` gains an optional `category` (proto field 5 of `PJ.Log`): a source-defined grouping
+  (a tag, a subsystem) a log viewer can show and filter on. The codec writes it only when non-empty;
+  readers built before this release skip the unknown field.
+- **Breaking (source):** `PJ::sdk::Log::name` is renamed `source`; proto field 4 keeps its number, so
+  the wire format and binaries built against 0.x are unaffected. Code that reads or sets the field
+  must be updated. This rename is why the release is 1.0.0.
+
+Widget protocol (docs only, no struct or ABI change):
+
+- A host may offer the optional `pj.playback.v1` service in the registry passed to `bind`; a widget
+  reads play/pause with `get_state` and seeks the tracker with `seek` (display-axis seconds).
+- `on_update` may also be called, with no changed sample, on play/pause and when new samples arrive
+  on a wired input; a widget treats every call as "re-read what you need".
+
+Testing:
+
+- Test helper `PJ::sdk::testing::FakeWidgetHost` (`pj_plugins/sdk/testing/fake_widget_host.hpp`): a
+  `pj.widget_host.v1` host for Widget plugin tests that stores samples at nanosecond times like a
+  real host, so a widget's history reads are tested at epoch-scale display times too.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,

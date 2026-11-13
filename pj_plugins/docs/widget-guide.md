@@ -136,7 +136,9 @@ destroy.
 `onUpdate(values, time)` is called on the host's tracker tick when a value
 changed. The host also calls it, even when no sample changed, after
 `createWidget`, after every accepted `loadConfig` and after any wiring change,
-so the widget never paints stale state.
+so the widget never paints stale state. It may also call it, again with no
+changed sample, when the playback state changes (play/pause) and when new
+samples arrive on a wired input. Treat every call as "re-read what you need".
 
 `values` holds one `PJ_widget_value_t` per wire, not per input: an unwired input
 has no entry, a `multiple` input has one per wired series (`slot`). Entries are
@@ -153,6 +155,14 @@ you keep. Repaint after `onUpdate`; do not read data inside
 An exception thrown from `onUpdate` does not reach the host. The base reports it
 once through `reportWidgetMessage` (level error) and stays silent on the
 following failing ticks until a call succeeds again.
+
+## Playback control
+
+A host may offer the optional `pj.playback.v1` service in the registry passed to
+`bind` (see "Playback host service" in `pj_base/include/pj_base/plugin_data_api.h`).
+Treat it as absent until the lookup succeeds. `get_state` reads the play/pause
+state; `seek` moves the tracker. The time of `seek` is in display-axis seconds,
+the same unit as the `time` of `onUpdate` and of `PJ_widget_value_t`.
 
 ## History
 

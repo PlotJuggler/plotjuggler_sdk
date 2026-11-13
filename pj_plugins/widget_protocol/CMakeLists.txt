@@ -149,8 +149,13 @@ target_compile_definitions(widget_qt_modules_test PRIVATE
 target_link_libraries(widget_qt_modules_test PRIVATE pj_widget_protocol nlohmann_json::nlohmann_json GTest::gtest_main)
 add_test(NAME widget_qt_modules_test COMMAND widget_qt_modules_test)
 
+# The SDK's fake widget host for plugin tests (pj_plugins/sdk/testing/fake_widget_host.hpp).
+add_executable(fake_widget_host_test tests/fake_widget_host_test.cpp)
+target_link_libraries(fake_widget_host_test PRIVATE pj_widget_host GTest::gtest_main)
+add_test(NAME fake_widget_host_test COMMAND fake_widget_host_test)
+
 foreach(_test widget_library_test widget_static_library_test widget_qt_modules_test
-        widget_abi_layout_sentinels_test)
+        widget_abi_layout_sentinels_test fake_widget_host_test)
   target_compile_options(${_test} PRIVATE ${PJ_WARNING_FLAGS})
 endforeach()
 

@@ -11,8 +11,9 @@ import "google/protobuf/timestamp.proto";
 
 package PJ;
 
-// A single textual log message. Mirrors the core of Foxglove's Log schema; the
-// source-location fields (file, line) are intentionally omitted.
+// A single textual log message. Mirrors the core of Foxglove's Log schema, plus
+// an optional category; the source-location fields (file, line) are
+// intentionally omitted.
 message Log {
   // Severity level. Values match Foxglove's Log.Level.
   enum Level {
@@ -33,6 +34,9 @@ message Log {
   // Log text.
   string message = 3;
 
-  // Originating process / node / logger name.
-  string name = 4;
+  // Who emitted it: a process, node or logger name.
+  string source = 4;
+
+  // Source-defined grouping of the message (a tag, a subsystem); may be empty.
+  string category = 5;
 }
