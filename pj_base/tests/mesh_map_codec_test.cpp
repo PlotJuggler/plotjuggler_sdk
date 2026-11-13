@@ -388,6 +388,13 @@ Wire faceChannel(std::string_view name = "c", uint64_t target = 1, uint64_t coun
   return Wire{}.str(1, name).varint(2, target).varint(3, kWireFloat32).varint(4, count).len(5, leBytes<float>({2.5F}));
 }
 
+constexpr uint64_t kFutureEnumValue = 99;  // a target or datatype number no SDK defines yet
+
+/// A channel of a datatype this SDK does not know; its data cannot be size-checked.
+Wire futureDatatypeChannel() {
+  return Wire{}.str(1, "datatype").varint(2, 1).varint(3, kFutureEnumValue).varint(4, 1).len(5, {1, 2, 3, 4, 5});
+}
+
 Expected<MeshMap> decode(const Wire& wire) {
   return deserializeMeshMap(wire.bytes.data(), wire.bytes.size());
 }
@@ -462,7 +469,8 @@ TEST(MeshMapCodecTest, RejectsEachMalformedKnownField) {
   ASSERT_TRUE(decode(triangleMesh().msg(11, faceChannel()).msg(12, Wire{}.varint(3, 7))));  // the valid base
 
   const std::pair<const char*, Wire> cases[] = {
-      {"channel target 7", triangleMesh().msg(11, faceChannel("c", 7))},
+      {"malformed info in a channel with an unknown target",
+       triangleMesh().msg(11, faceChannel("c", 7).len(6, kBadTag))},
       {"channel count beyond uint32", triangleMesh().msg(11, faceChannel("c", 1, kBeyondUint32 + 1))},
       {"vertex_count beyond uint32", triangleMesh(true, kBeyondUint32 + 3)},
       {"face_count beyond uint32", triangleMesh(true, 3, kBeyondUint32 + 1)},
@@ -478,6 +486,18 @@ TEST(MeshMapCodecTest, RejectsEachMalformedKnownField) {
   for (const auto& [what, wire] : cases) {
     EXPECT_EQ(errorOf(decode(wire)), "MeshMap wire: decode failed") << what;
   }
+}
+
+TEST(MeshMapCodecTest, DropsAChannelWhoseTargetOrDatatypeIsNotKnown) {
+  // A later SDK may add a target or a datatype: an older one keeps the rest of the mesh.
+  const auto decoded = decode(
+      triangleMesh()
+          .msg(11, faceChannel("target", kFutureEnumValue))
+          .msg(11, futureDatatypeChannel())
+          .msg(11, faceChannel("kept")));
+  ASSERT_TRUE(decoded) << decoded.error();
+  ASSERT_EQ(decoded->channels.size(), 1u);
+  EXPECT_EQ(decoded->channels[0].name, "kept");
 }
 
 TEST(MeshMapCodecTest, ReadsAChannelKindItDoesNotKnowAsContinuous) {
@@ -520,7 +540,8 @@ TEST(MeshMapUpdateCodecTest, RejectsEachMalformedKnownField) {
   ASSERT_TRUE(decodeUpdate(Wire{}.msg(5, valid_patch)));
 
   const std::pair<const char*, Wire> cases[] = {
-      {"patch channel target 7", Wire{}.msg(5, Wire{}.msg(1, faceChannel("c", 7)))},
+      {"malformed info in a patch with an unknown target",
+       Wire{}.msg(5, Wire{}.msg(1, faceChannel("c", 7).len(6, kBadTag)))},
       {"malformed patch", Wire{}.msg(5, valid_patch).len(5, kBadTag)},
       {"malformed patch channel", Wire{}.msg(5, Wire{}.msg(1, faceChannel().len(6, kBadTag)))},
       {"malformed timestamp", Wire{}.msg(5, valid_patch).len(1, kBadTag)},
@@ -529,6 +550,17 @@ TEST(MeshMapUpdateCodecTest, RejectsEachMalformedKnownField) {
   for (const auto& [what, wire] : cases) {
     EXPECT_EQ(errorOf(decodeUpdate(wire)), "MeshMapUpdate wire: decode failed") << what;
   }
+}
+
+TEST(MeshMapUpdateCodecTest, DropsAPatchWhoseTargetOrDatatypeIsNotKnown) {
+  const auto decoded = decodeUpdate(
+      Wire{}
+          .msg(5, Wire{}.msg(1, faceChannel("target", kFutureEnumValue)))
+          .msg(5, Wire{}.msg(1, futureDatatypeChannel()))
+          .msg(5, Wire{}.msg(1, faceChannel("kept"))));
+  ASSERT_TRUE(decoded) << decoded.error();
+  ASSERT_EQ(decoded->patches.size(), 1u);
+  EXPECT_EQ(decoded->patches[0].channel.name, "kept");
 }
 
 }  // namespace

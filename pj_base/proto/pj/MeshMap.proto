@@ -68,7 +68,9 @@ message MeshFaceLink {
 // mesh within its topic ("" = the topic's only mesh); reserved for topics that
 // carry several meshes replaced by id.
 //
-// Decoders skip unknown fields, so optional fields may be added later.
+// Decoders skip unknown fields, so optional fields may be added later, and drop
+// a channel whose `target` or `datatype` number they do not know, so either
+// enum may grow.
 message MeshMap {
   google.protobuf.Timestamp timestamp = 1;
 

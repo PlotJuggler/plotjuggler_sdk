@@ -743,7 +743,9 @@ wrong wire type (so later optional fields stay readable by older hosts), fails
 on a known field with the right wire type and malformed contents, and runs
 `validateMeshMap()`, which
 checks the array sizes, every face's vertex indices, every channel's size and
-uniqueness, and every link. `MeshMap` is not in the functional-v2 splice table:
+uniqueness, and every link. A channel whose `target` or `datatype` number the
+decoder does not define is dropped and the rest of the mesh is returned, so
+either enum may grow (in a `MeshMapUpdate`, that patch is dropped). `MeshMap` is not in the functional-v2 splice table:
 it has several bulk fields.
 
 ## MeshMapUpdate

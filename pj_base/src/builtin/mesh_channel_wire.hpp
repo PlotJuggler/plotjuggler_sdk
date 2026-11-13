@@ -10,7 +10,9 @@
 // Decoding convention, as in protobuf parsers: an unknown field, or a known
 // field number with the wrong wire type, is skipped (forward compatibility); a
 // known field with the right wire type that fails to read or holds an invalid
-// value fails the whole decode.
+// value fails the whole decode. The exception is a channel whose target or
+// datatype number this SDK does not define: that channel alone is dropped, so
+// a later SDK may add either.
 //
 // Byte fields are returned as spans into the Reader's buffer: callers parse an
 // owned copy of the wire so the spans stay valid under the object's anchor.
@@ -173,14 +175,25 @@ inline sdk::MeshChannel wireDefaultMeshChannel() {
   return channel;
 }
 
+/// How readMeshChannel() left a channel.
+enum class ChannelRead : uint8_t {
+  kOk,
+  /// Well-formed, but its target or datatype number is one this SDK does not
+  /// define: the caller drops the channel and keeps decoding.
+  kUnsupported,
+  kMalformed,
+};
+
 /// Reads one PJ.MeshChannel submessage, overwriting only the fields present on
 /// the wire: start `out` from wireDefaultMeshChannel().
-inline bool readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
+inline ChannelRead readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
   Reader nested;
   if (!reader.readMessage(nested)) {
-    return false;
+    return ChannelRead::kMalformed;
   }
   bool malformed = false;
+  bool unsupported_target = false;
+  bool unsupported_datatype = false;
   const bool parsed = parseFields(nested, [&](Tag tag, Reader& r) {
     uint64_t value = 0;
     switch (tag.field) {
@@ -194,7 +207,8 @@ inline bool readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
         if (tag.type != WireType::kVarint) {
           return false;
         }
-        malformed |= !r.readVarint(value) || value > 1;
+        malformed |= !r.readVarint(value);
+        unsupported_target = value > 1;
         out.target = static_cast<sdk::MeshChannel::Target>(value & 1U);
         return true;
       case 3:
@@ -203,6 +217,8 @@ inline bool readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
         }
         malformed |= !r.readVarint(value);
         out.datatype = pointFieldDatatypeFromWire(value);
+        // 0 is UNKNOWN itself, an unset datatype that validation rejects.
+        unsupported_datatype = value != 0 && out.datatype == sdk::PointField::Datatype::kUnknown;
         return true;
       case 4:
         if (tag.type != WireType::kVarint) {
@@ -227,7 +243,10 @@ inline bool readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
         return false;
     }
   });
-  return parsed && !malformed;
+  if (!parsed || malformed) {
+    return ChannelRead::kMalformed;
+  }
+  return unsupported_target || unsupported_datatype ? ChannelRead::kUnsupported : ChannelRead::kOk;
 }
 
 // ---------- checks ----------

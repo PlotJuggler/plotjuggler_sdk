@@ -35,17 +35,28 @@ bool readPatch(Reader& reader, std::vector<MeshChannelPatch>& out) {
   MeshChannelPatch patch;
   patch.channel = builtin_wire::wireDefaultMeshChannel();
   bool malformed = false;
+  auto channel_read = builtin_wire::ChannelRead::kOk;
   const bool parsed = parseFields(nested, [&](Tag tag, Reader& r) {
     if (tag.type != WireType::kLengthDelimited || (tag.field != 1 && tag.field != 2)) {
       return false;
     }
-    malformed |=
-        tag.field == 1 ? !builtin_wire::readMeshChannel(r, patch.channel) : !builtin_wire::readSpan(r, patch.indices);
+    if (tag.field == 1) {
+      channel_read = builtin_wire::readMeshChannel(r, patch.channel);
+      malformed |= channel_read == builtin_wire::ChannelRead::kMalformed;
+    } else {
+      malformed |= !builtin_wire::readSpan(r, patch.indices);
+    }
     return true;
   });
+  if (!parsed || malformed) {
+    return false;
+  }
+  if (channel_read == builtin_wire::ChannelRead::kUnsupported) {
+    return true;  // dropped: the other patches still apply
+  }
   // A patch without a named channel fails here, before validation, so a wire
   // of empty patches is not materialised first.
-  if (!parsed || malformed || patch.channel.name.empty()) {
+  if (patch.channel.name.empty()) {
     return false;
   }
   out.push_back(std::move(patch));

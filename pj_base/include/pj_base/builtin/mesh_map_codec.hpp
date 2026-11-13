@@ -24,7 +24,8 @@ inline constexpr std::string_view kSchemaMeshMap = "PJ.MeshMap";
 /// parsers, an unknown field, or a known field number with the wrong wire type,
 /// is skipped, so a later SDK may add optional ones; a known field with the
 /// right wire type and malformed contents, or a mesh validateMeshMap() rejects,
-/// is an error.
+/// is an error. A channel whose target or datatype number this SDK does not
+/// define is dropped and the rest of the mesh is returned.
 [[nodiscard]] Expected<sdk::MeshMap> deserializeMeshMap(const uint8_t* data, size_t size);
 
 /// Full check of a mesh whose spans are in place: position_type is float32 or

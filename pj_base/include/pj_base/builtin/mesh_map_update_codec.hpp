@@ -22,7 +22,9 @@ inline constexpr std::string_view kSchemaMeshMapUpdate = "PJ.MeshMapUpdate";
 /// copy of the wire and its spans point into it (`anchor`), unaligned. As in
 /// protobuf parsers, an unknown field, or a known field number with the wrong
 /// wire type, is skipped; a known field with the right wire type and malformed
-/// contents, or an update validateMeshMapUpdate() rejects, is an error.
+/// contents, or an update validateMeshMapUpdate() rejects, is an error. A patch
+/// whose channel has a target or datatype number this SDK does not define is
+/// dropped and the other patches are returned.
 [[nodiscard]] Expected<sdk::MeshMapUpdate> deserializeMeshMapUpdate(const uint8_t* data, size_t size);
 
 /// Layout check: each patch's channel has a name, a known datatype and a

@@ -221,9 +221,10 @@ Expected<MeshMap> deserializeMeshMap(const uint8_t* data, size_t size) {
         MeshChannel channel = builtin_wire::wireDefaultMeshChannel();
         // An unnamed channel fails here, before validation, so a wire of empty
         // channels is not materialised first.
-        if (builtin_wire::readMeshChannel(r, channel) && !channel.name.empty()) {
+        const auto read = builtin_wire::readMeshChannel(r, channel);
+        if (read == builtin_wire::ChannelRead::kOk && !channel.name.empty()) {
           mesh.channels.push_back(std::move(channel));
-        } else {
+        } else if (read != builtin_wire::ChannelRead::kUnsupported) {
           malformed = true;
         }
         return true;
