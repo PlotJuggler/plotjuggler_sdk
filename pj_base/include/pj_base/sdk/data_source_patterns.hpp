@@ -10,8 +10,9 @@
  *  - **StreamSourceBase** — long-lived streaming sources.
  *    Override: extraCapabilities(), onStart(), onPoll(), onStop().
  *
- * Both manage the lifecycle state machine automatically — derived classes
- * only implement the domain-specific work.
+ * Both report lifecycle state automatically (advisory; see
+ * PJ_data_source_state_t) — derived classes only implement the
+ * domain-specific work.
  *
  * A StreamSourceBase with its own receive thread should NOT hand-roll the
  * thread -> onPoll() buffer: pj_plugins/sdk/streaming_source.hpp ships
@@ -55,6 +56,7 @@ namespace PJ {
  *
  * Manages the full lifecycle state machine. The derived class implements
  * importData() — all file I/O, parsing, and write-host calls happen there.
+ * It runs inside start(), which a host may call on a worker thread.
  *
  * ## Config convention
  *
@@ -121,18 +123,23 @@ class StreamSourceBase : public DataSourcePluginBase {
   /// Return additional capability flags (e.g. kCapabilityDirectIngest).
   virtual uint64_t extraCapabilities() const = 0;
 
-  /// Called from start(). Open connections, allocate resources.
+  /// Called from start(), possibly on the GUI thread. Open connections,
+  /// allocate resources. On failure, release what it acquired: onStop() is
+  /// not called and the host may destroy the instance without stop().
   virtual Status onStart() = 0;
 
   /// Called periodically by the host's polling thread.
   /// MUST NOT BLOCK — drain buffered data and return immediately.
   /// Do not call recv(), read(), or any syscall that may wait.
   /// If your source has a receive thread, swap-drain a buffer here.
-  /// Host methods (appendRecord, pushMessage) may only be called from this method.
+  /// [stream-thread] host methods (appendRecord, pushMessage, ...) may only be
+  /// called from onStart/onPoll/onStop, never from a thread you spawned;
+  /// [thread-safe] ones (reportMessage, requestStop, isStopRequested) from any.
   virtual Status onPoll() = 0;
 
-  /// Called from stop(). Close connections, free resources.
-  /// Must be idempotent.
+  /// Called from stop(), possibly on the polling thread rather than the one
+  /// that ran onStart(). Close connections, join your threads, free
+  /// resources. Must be idempotent.
   virtual void onStop() = 0;
 
   Status start() final;

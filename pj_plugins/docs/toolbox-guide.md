@@ -67,11 +67,13 @@ the contract is broader than the other families.
   `ArrowArrayHolder` so the release callbacks fire on scope exit.
 - Persist tool state in `saveConfig()` so a layout reload restores the same
   view. The host has no ambient persistence.
-- Only call host methods from the host's callback thread. Background work
-  must marshal back through the host thread to write data.
+- Call each host method only from the threads its tag allows (see
+  [Threading Model](#threading-model)).
 
 **MUST NOT**
 - Throw exceptions across virtual overrides.
+- Depend on `onDataChanged()` for correctness: it is advisory and a host may
+  never call it.
 - Hold an `ArrowSchema*` / `ArrowArray*` past the scope of the holders that
   own them — the host may reuse the underlying buffers.
 - Treat `catalogSnapshot()` as live data. Snapshots are immutable views at
@@ -500,13 +502,21 @@ No exceptions cross the C ABI boundary.
 
 ## Threading Model
 
-All plugin callbacks — `bind()`,
-`loadConfig()`, `saveConfig()`, `getDialog()` — are called **on the host's
-thread**. The host guarantees single-threaded access per plugin instance.
+The normative table is on `PJ_toolbox_vtable_t` in
+`pj_base/include/pj_base/toolbox_protocol.h`. In short:
 
-Toolbox host and runtime host methods must be called from the same thread that
-invoked the callback. If your plugin uses internal threading, synchronize
-access and only call host methods from the host's thread.
+- Every plugin callback (`bind()`, `loadConfig()`, `saveConfig()`,
+  `getDialog()`, `onDataChanged()`, dialog events) runs on the GUI thread, one
+  at a time per instance. `onDataChanged()` is advisory.
+- `toolboxHost()` (`pj.toolbox_write.v1`) is `[stream-thread]`: call it from
+  any thread, typically your own worker, but one thread at a time per host
+  object — serialize with your own mutex if you fan out.
+- `runtimeHost().reportMessage()`, `notifyDataChanged()` and the
+  `create/release/discardParserIngest` (dataset-ingest) calls are
+  `[thread-safe]`. The ingest view they return is driven one thread at a time.
+- Every other service (object reads, playback, plot tabs, viewport, data
+  processors, colormaps, ...) is `[main-thread]` unless its slot says
+  otherwise: call it from a callback, not from a thread you spawned.
 
 ## Testing
 
@@ -608,6 +618,6 @@ to `source` for one release; new code uses `pj_base/sdk/source/`.
 | `read_series_arrow` succeeds but later code crashes accessing the data | `ArrowSchema` / `ArrowArray` released early, or held by raw pointer past holder scope | Use `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` and keep them alive while the data is read |
 | Catalog reads stale data immediately after writing | `catalogSnapshot()` was acquired before the write | Reacquire the snapshot after `notifyDataChanged()` |
 | Duplicate source names appear in the UI | `createDataSource(name)` always creates a new dataset, even when the display name already exists | Check the catalog first; pick a unique derived-data name or surface a confirmation in the dialog |
-| Plugin works in tests but crashes in the host | Host method called from a thread the toolbox spawned | Marshal back to the host thread (use the dialog's `onTick` or a host-thread queue) |
+| Plugin works in tests but crashes in the host | A `[main-thread]` service called from a thread the toolbox spawned, or two threads inside one `[stream-thread]` host at once | Marshal `[main-thread]` calls back to the GUI thread (the dialog's `onTick` or a host-thread queue); serialize `[stream-thread]` calls with a mutex |
 | Bulk transform output is one row at a time | Output written record-by-record instead of via Arrow | Build an `ArrowArrayStream` and use `appendArrowStream()` for the output |
 | Plugin restarts but the tool's view is empty | Config not persisted | Round-trip every UI-relevant field through `saveConfig()` / `loadConfig()` |

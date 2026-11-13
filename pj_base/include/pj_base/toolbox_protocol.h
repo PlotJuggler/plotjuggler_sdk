@@ -89,7 +89,9 @@ typedef struct PJ_toolbox_runtime_host_vtable_t {
    * by the toolbox write host's create_data_source (== the dataset id).
    * On success fills `out_host` with a standard data-source runtime host
    * fat pointer: ensure_parser_binding / push_message on it behave exactly
-   * as they do for file/stream DataSource plugins. The context stays valid
+   * as they do for file/stream DataSource plugins. Its [stream-thread] slots
+   * may be called from any thread (typically a toolbox worker), one thread at
+   * a time per context; there is no start/poll/stop window. The context stays valid
    * until release_parser_ingest or host teardown.
    * Returns false (with out_error populated) if `data_source_id` is not a live
    * data source or parser ingest is not configured on this host; `out_host` is
@@ -124,6 +126,23 @@ typedef struct {
  * Typical lifecycle: create -> bind(registry) -> load_config (optional)
  *                    -> [user interacts] -> save_config -> destroy.
  * Every slot is PJ_NOEXCEPT.
+ *
+ * Threading (normative). Host -> plugin: every slot except
+ * get_plugin_extension is called on the GUI thread, one at a time per
+ * instance; get_plugin_extension may be called from any thread.
+ * on_data_changed is advisory: a host may never call it.
+ *
+ * Plugin -> host, by service:
+ *   pj.toolbox_runtime.v1      report_message, notify_data_changed and the
+ *                              parser-ingest create/release/discard slots:
+ *                              any thread, concurrently. The ingest context
+ *                              they return: one thread at a time.
+ *   pj.toolbox_write.v1        [stream-thread]: any thread, typically the
+ *                              toolbox's own worker, one thread at a time per
+ *                              host object (see plugin_data_api.h).
+ *   every other service        [main-thread] unless its slot says otherwise:
+ *                              call from inside a host->plugin call or a
+ *                              dialog callback, not from a plugin thread.
  */
 typedef struct PJ_toolbox_vtable_t {
   uint32_t protocol_version;
@@ -168,7 +187,9 @@ typedef struct PJ_toolbox_vtable_t {
   PJ_borrowed_dialog_t (*get_dialog)(void* ctx) PJ_NOEXCEPT;
 
   /** [main-thread] Notify the plugin that new records have been appended
-   *  to the datastore. */
+   *  to the datastore. Advisory: a host is not required to call it (the
+   *  reference host currently does not), so a plugin must not depend on it
+   *  for correctness; re-read the catalog when it needs fresh data. */
   void (*on_data_changed)(void* ctx) PJ_NOEXCEPT;
 
   /** [thread-safe] Query a plugin-exposed extension by reverse-DNS id.

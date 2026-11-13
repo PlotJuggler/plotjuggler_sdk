@@ -11,7 +11,7 @@
  *   if (auto s = handle.bind(registry.view()); !s) { ... }
  *   if (auto s = handle.loadConfig(json); !s) { ... }
  *   if (auto s = handle.start(); !s) { ... }
- *   while (handle.currentState() == PJ::DataSourceState::kRunning) {
+ *   while (!stop_requested) {  // the host's own flag, set via request_stop
  *     if (auto s = handle.poll(); !s) { ... }
  *   }
  *   handle.stop();
