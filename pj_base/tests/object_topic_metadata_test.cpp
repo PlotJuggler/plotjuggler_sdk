@@ -61,6 +61,8 @@ constexpr std::array kBuiltinObjectTypes{
     BuiltinObjectType::kVoxelGrid,
     BuiltinObjectType::kPlotMarkers,
     BuiltinObjectType::kGridMap,
+    BuiltinObjectType::kMeshMap,
+    BuiltinObjectType::kMeshMapUpdate,
 };
 
 struct RegistrationRecorder {

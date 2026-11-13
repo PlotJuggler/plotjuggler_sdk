@@ -80,7 +80,7 @@ into the returned object so large payloads stay zero-copy. See
 ## Two storage families → two byte strategies
 
 - **Byte-backed** (Image, DepthImage, PointCloud, CompressedPointCloud,
-  OccupancyGrid(+Update), VoxelGrid, GridMap, Mesh3D, VideoFrame): potentially megabytes.
+  OccupancyGrid(+Update), VoxelGrid, GridMap, MeshMap(+Update), Mesh3D, VideoFrame): potentially megabytes.
   Keep the payload a zero-copy `Span<const uint8_t>` anchored by a `BufferAnchor`
   (typically a `shared_ptr<vector<uint8_t>>`); only allocate new bytes if a
   conversion is unavoidable.

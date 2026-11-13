@@ -1,0 +1,42 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical channel-mesh patch protobuf schema.
+// Wire-level contract for the byte-backed `MeshMapUpdate` builtin
+// (SDK struct lives in pj_base/include/pj_base/builtin/mesh_map_update.hpp).
+
+syntax = "proto3";
+
+import "pj/MeshMap.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// New values for one channel. `indices` (raw little-endian uint32 values, 4
+// bytes each, not varints; may be empty) lists the vertices or faces
+// `channel.data` covers, in order; empty = dense: the data
+// replaces the whole channel. A channel the base mesh lacks is added, "no data"
+// for elements a sparse patch does not list.
+message MeshChannelPatch {
+  PJ.MeshChannel channel = 1;
+  bytes indices = 2;
+}
+
+// Channel patches for a previously-published PJ.MeshMap. Carries no geometry,
+// so it is not independently drawable: a consumer pairs it with the base mesh
+// (by `geometry_id`, else by topic name `<base>_updates` <-> `<base>`) and
+// applies it only when `geometry_id` matches ("" on either side matches any).
+message MeshMapUpdate {
+  google.protobuf.Timestamp timestamp = 1;
+
+  // The base mesh's frame (informative)
+  string frame_id = 2;
+
+  // The base mesh's `id`
+  string id = 3;
+
+  string geometry_id = 4;
+
+  // (target, name) pairs are unique
+  repeated MeshChannelPatch patches = 5;
+}
