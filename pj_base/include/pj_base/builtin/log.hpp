@@ -3,9 +3,9 @@
  * @brief A single textual log message (level + text + originating name).
  *
  * Log is a small owned builtin — no byte blob, no BufferAnchor. It mirrors the
- * core of Foxglove's Log schema plus the source-location fields of
- * rcl_interfaces/Log (`file`, `function`, `line`), expressed as canonical PJ
- * vocabulary.
+ * core of Foxglove's Log schema (and rcl_interfaces/Log / rosgraph_msgs/Log),
+ * expressed as canonical PJ vocabulary, plus an optional `category`. The
+ * source-location fields (`file`, `function`, `line`) are intentionally omitted.
  */
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
@@ -36,9 +36,7 @@ struct Log {
   Level level = Level::kUnknown;
   std::string message;   ///< Log text.
   std::string name;      ///< Originating process / node / logger name.
-  std::string file;      ///< Source file that emitted the log (may be empty).
-  std::string function;  ///< Function that emitted the log (may be empty).
-  uint32_t line = 0;     ///< Source line (0 = unknown).
+  std::string category;  ///< Source-defined grouping (a tag, a subsystem); may be empty.
 
   bool operator==(const Log&) const = default;
 };

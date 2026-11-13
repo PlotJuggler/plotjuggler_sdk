@@ -556,8 +556,8 @@ using the canonical `PJ.CameraInfo` protobuf wire format.
 ## Log
 
 `Log` is a single textual log message, for a log/console panel. It mirrors the
-core of Foxglove's `Log` schema plus the source-location fields of
-`rcl_interfaces/Log` (`file`, `function`, `line`).
+core of Foxglove's `Log` schema (and `rcl_interfaces/Log` / `rosgraph_msgs/Log`),
+plus an optional `category`.
 
 | Field on `Log` | Type | Notes |
 |----------------|------|-------|
@@ -565,10 +565,9 @@ core of Foxglove's `Log` schema plus the source-location fields of
 | `level` | `Log::Level` | `kUnknown`/`kDebug`/`kInfo`/`kWarning`/`kError`/`kFatal` (values match Foxglove). |
 | `message` | `std::string` | Log text. |
 | `name` | `std::string` | Originating process / node / logger name. |
-| `file` | `std::string` | Source file that emitted the log (may be empty). |
-| `function` | `std::string` | Function that emitted the log (may be empty). |
-| `line` | `uint32_t` | Source line (0 = unknown). |
+| `category` | `std::string` | Source-defined grouping (a tag, a subsystem); may be empty. |
 
+The source-location fields (`file`, `function`, `line`) are intentionally omitted.
 `pj_base/builtin/log_codec.hpp` serializes and deserializes this type using the
 canonical `PJ.Log` protobuf wire format.
 

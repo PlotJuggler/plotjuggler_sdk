@@ -37,7 +37,7 @@ See `docs/builtin_type.md` for the design rationale.
   - `OccupancyGrid`
 - **`OccupancyGridUpdate.proto`** — incremental sub-rectangle patch for a previously-published `OccupancyGrid`; placed by the consumer against the base grid (no own origin/resolution).
   - `OccupancyGridUpdate`
-- **`Log.proto`** — a single textual log message (severity level + text + originating name + optional file/function/line) for a log/console panel; mirrors Foxglove's `Log` plus the source-location fields of `rcl_interfaces/Log`.
+- **`Log.proto`** — a single textual log message (severity level + text + originating name + optional category) for a log/console panel; mirrors the core of Foxglove's `Log` (file/line omitted).
   - `Log`
 - **`VideoFrame.proto`** — one frame of an inter-frame-coded video stream (`h264`, `h265`, `vp9`, `av1`) when per-frame `Image` messages would be wasteful. Field layout is wire-identical to `foxglove.CompressedVideo` (timestamp=1, frame_id=2, data=3, format=4), so one decoder parses both.
   - `VideoFrame`

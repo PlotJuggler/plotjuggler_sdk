@@ -10,9 +10,9 @@ changes are documentation only; `pj.playback.v1` already has its floor in `featu
 
 Log:
 
-- `PJ::sdk::Log` gains `file`, `function` and `line` (proto fields 5-7 of `PJ.Log`), so a log viewer
-  can show `file:line (function)`. The codec writes them only when non-empty / non-zero; readers
-  built before this release skip the unknown fields.
+- `PJ::sdk::Log` gains an optional `category` (proto field 5 of `PJ.Log`): a source-defined grouping
+  (a tag, a subsystem) a log viewer can show and filter on. The codec writes it only when non-empty;
+  readers built before this release skip the unknown field.
 
 Widget protocol (docs only, no struct or ABI change):
 
