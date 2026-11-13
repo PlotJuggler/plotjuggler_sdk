@@ -10,9 +10,8 @@
 #include <vector>
 
 #include "geometry_codec.hpp"
-#include "point_field_codec.hpp"
+#include "mesh_channel_wire.hpp"
 #include "protobuf_wire.hpp"
-#include "record_layout.hpp"
 
 namespace PJ {
 namespace {
@@ -22,78 +21,76 @@ using builtin_wire::Reader;
 using builtin_wire::Tag;
 using builtin_wire::WireType;
 using builtin_wire::Writer;
+using sdk::MeshChannel;
+using sdk::MeshChannelPatch;
 using sdk::MeshMapUpdate;
-using sdk::PointField;
 
-bool readVarint32(Reader& reader, WireType type, uint32_t& out) {
-  if (type != WireType::kVarint) {
+bool readPatch(Reader& reader, std::vector<MeshChannelPatch>& out) {
+  Reader nested;
+  if (!reader.readMessage(nested)) {
     return false;
   }
-  uint64_t v = 0;
-  if (!reader.readVarint(v)) {
+  MeshChannelPatch patch;
+  bool malformed = false;
+  const bool parsed = parseFields(nested, [&](Tag tag, Reader& r) {
+    if (tag.type != WireType::kLengthDelimited || (tag.field != 1 && tag.field != 2)) {
+      return false;
+    }
+    malformed |= tag.field == 1 ? !builtin_wire::readMeshChannel(r, patch.channel)
+                                : !builtin_wire::readSpan(r, tag.type, patch.indices);
+    return true;
+  });
+  if (!parsed || malformed) {
     return false;
   }
-  out = static_cast<uint32_t>(v);
-  return true;
-}
-
-bool readTarget(Reader& reader, WireType type, MeshMapUpdate::Target& out) {
-  uint32_t value = 0;
-  if (!readVarint32(reader, type, value) || value > 1) {
-    return false;
-  }
-  out = static_cast<MeshMapUpdate::Target>(value);
-  return true;
-}
-
-bool readBytesIntoUpdate(Reader& reader, MeshMapUpdate& out) {
-  const uint8_t* data = nullptr;
-  size_t size = 0;
-  if (!reader.readBytes(data, size)) {
-    return false;
-  }
-  auto owned = std::make_shared<std::vector<uint8_t>>(data, data + size);
-  out.data = Span<const uint8_t>(owned->data(), owned->size());
-  out.anchor = owned;
+  out.push_back(std::move(patch));
   return true;
 }
 
 }  // namespace
 
 Expected<void> validateMeshMapUpdate(const MeshMapUpdate& update) {
-  if (auto ok = builtin_wire::validateRecordFields(update.fields, update.stride, "MeshMapUpdate"); !ok) {
-    return ok;
-  }
-  if (update.count > 0) {
-    if (update.stride == 0) {
-      return unexpected(std::string("MeshMapUpdate: zero stride with records declared"));
+  std::vector<const MeshChannel*> channels;
+  channels.reserve(update.patches.size());
+  for (const MeshChannelPatch& patch : update.patches) {
+    const MeshChannel& channel = patch.channel;
+    if (patch.indices.size() % sizeof(uint32_t) != 0) {
+      return unexpected("MeshMapUpdate: channel '" + channel.name + "' indices are not uint32");
     }
-    if (auto ok = builtin_wire::requireField(
-            update.fields, sdk::kMeshMapUpdateIndexField, PointField::Datatype::kUint32, 1, "MeshMapUpdate");
-        !ok) {
-      return ok;
+    if (!patch.indices.empty()) {
+      if (auto ok =
+              builtin_wire::validateMeshChannel(channel, patch.indices.size() / sizeof(uint32_t), "MeshMapUpdate");
+          !ok) {
+        return ok;
+      }
+    } else {
+      // Dense: the element count is the base mesh's, checked when applied;
+      // here the data need only hold whole elements.
+      const uint64_t element_bytes = static_cast<uint64_t>(sdk::bytesPerElement(channel.datatype)) * channel.count;
+      if (auto ok = builtin_wire::validateMeshChannel(
+              channel, element_bytes == 0 ? 0 : channel.data.size() / element_bytes, "MeshMapUpdate");
+          !ok) {
+        return ok;
+      }
     }
+    channels.push_back(&channel);
   }
-  if (static_cast<uint64_t>(update.data.size()) < static_cast<uint64_t>(update.count) * update.stride) {
-    return unexpected(std::string("MeshMapUpdate: data shorter than count * stride"));
-  }
-  return {};
+  return builtin_wire::requireUniqueChannels(channels, "MeshMapUpdate");
 }
 
 std::vector<uint8_t> serializeMeshMapUpdate(const MeshMapUpdate& update) {
   std::vector<uint8_t> out;
   Writer writer(out);
-
   writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, update.timestamp_ns); });
   writer.string(2, update.frame_id);
-  writer.string(3, update.geometry_id);
-  writer.varint(4, static_cast<uint64_t>(update.target));
-  writer.varint(5, update.count);
-  writer.varint(6, update.stride);
-  for (const auto& field : update.fields) {
-    writer.message(7, [&](Writer& nested) { builtin_wire::writePointField(nested, field); });
+  writer.string(3, update.id);
+  writer.string(4, update.geometry_id);
+  for (const MeshChannelPatch& patch : update.patches) {
+    writer.message(5, [&](Writer& nested) {
+      nested.message(1, [&](Writer& channel) { builtin_wire::writeMeshChannel(channel, patch.channel); });
+      nested.bytes(2, patch.indices.data(), patch.indices.size());
+    });
   }
-  writer.bytes(8, update.data.data(), update.data.size());
   return out;
 }
 
@@ -101,34 +98,38 @@ Expected<MeshMapUpdate> deserializeMeshMapUpdate(const uint8_t* data, size_t siz
   if (data == nullptr || size == 0) {
     return unexpected(std::string("MeshMapUpdate wire: empty buffer"));
   }
-
-  Reader reader(data, size);
+  auto owned = std::make_shared<std::vector<uint8_t>>(data, data + size);
+  Reader reader(owned->data(), owned->size());
   MeshMapUpdate update;
-  const bool ok = parseFields(reader, [&](Tag tag, Reader& r) {
+  bool malformed = false;
+  const bool parsed = parseFields(reader, [&](Tag tag, Reader& r) {
+    if (tag.type != WireType::kLengthDelimited) {
+      return false;
+    }
     switch (tag.field) {
       case 1:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readTimestampMessage(r, update.timestamp_ns);
+        malformed |= !builtin_wire::readTimestampMessage(r, update.timestamp_ns);
+        return true;
       case 2:
-        return tag.type == WireType::kLengthDelimited && r.readString(update.frame_id);
+        malformed |= !r.readString(update.frame_id);
+        return true;
       case 3:
-        return tag.type == WireType::kLengthDelimited && r.readString(update.geometry_id);
+        malformed |= !r.readString(update.id);
+        return true;
       case 4:
-        return readTarget(r, tag.type, update.target);
+        malformed |= !r.readString(update.geometry_id);
+        return true;
       case 5:
-        return readVarint32(r, tag.type, update.count);
-      case 6:
-        return readVarint32(r, tag.type, update.stride);
-      case 7:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readPointFieldIntoVector(r, update.fields);
-      case 8:
-        return tag.type == WireType::kLengthDelimited && readBytesIntoUpdate(r, update);
+        malformed |= !readPatch(r, update.patches);
+        return true;
       default:
-        return false;
+        return false;  // unknown field: skipped
     }
   });
-  if (!ok) {
+  if (!parsed || malformed) {
     return unexpected(std::string("MeshMapUpdate wire: decode failed"));
   }
+  update.anchor = std::move(owned);
   if (auto valid = validateMeshMapUpdate(update); !valid) {
     return unexpected(std::move(valid).error());
   }

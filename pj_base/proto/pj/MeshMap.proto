@@ -7,11 +7,35 @@
 
 syntax = "proto3";
 
+import "pj/ChannelInfo.proto";
 import "pj/Geometry.proto";
 import "pj/PointCloud.proto";
 import "google/protobuf/timestamp.proto";
 
 package PJ;
+
+// One data array of a mesh: a value (or a `count`-component vector) per vertex
+// or per face, tightly packed in element order: element e, component c at byte
+// (e * count + c) * element size. `data` holds exactly element_count * count
+// elements, the element count being the mesh's vertex or face count (or, in a
+// MeshChannelPatch, its index count). Conventional names: red, green, blue,
+// alpha (uint8 vertex colour), normal (count 3), uv (count 2).
+message MeshChannel {
+  enum Target {
+    VERTEX = 0;
+    FACE = 1;
+  }
+
+  string name = 1;
+  Target target = 2;
+  PJ.PointField.Datatype datatype = 3;
+
+  // Components per element
+  uint32 count = 4;
+
+  bytes data = 5;
+  PJ.ChannelInfo info = 6;
+}
 
 // A connection between two faces that do not share an edge (stairs, ramp,
 // elevator, door, an off-mesh connection).
@@ -23,63 +47,46 @@ message MeshFaceLink {
   uint32 kind = 3;
 
   bool bidirectional = 4;
+
+  // Travel cost or length; absent = unspecified
+  optional double cost = 5;
 }
 
-// A triangle mesh whose vertices and faces carry named channels — the mesh
-// sibling of GridMap: navigation meshes, traversability / cost meshes,
-// semantic surface maps.
+// A triangle mesh whose vertices and faces carry named data channels — the mesh
+// sibling of GridMap: navigation meshes, traversability / cost meshes, semantic
+// surface maps.
 //
-// Vertices and faces are fixed-size records described by PJ.PointField, both
-// in `data`: vertex v at `v * vertex_stride`, face f at
-// `face_data_offset + f * face_stride`. Required channels: `x`, `y`, `z`
-// (float32 or float64, count 1) when there are vertices; `vertex_indices`
-// (uint32, count 3) when there are faces, each index below `vertex_count`.
-// Every other field is a channel; a NaN in a float channel means "no data".
-// Which channel colours the mesh and the colormap are viewer-side.
+// Geometry: `positions` holds vertex_count interleaved x, y, z of
+// `position_type` (FLOAT32 or FLOAT64) in the local frame of `origin`, itself in
+// `frame_id`; `indices` holds face_count uint32 triplets, each below
+// vertex_count. Data lives in `channels`, one array per channel; (target, name)
+// pairs are unique. Which channel colours the mesh is viewer-side.
 //
-// Vertices are in the local frame of `origin`, itself in `frame_id`.
 // `geometry_id` names the geometry revision ("" = unspecified); a
-// PJ.MeshMapUpdate applies only to the mesh with the same id.
+// PJ.MeshMapUpdate applies only to the mesh with the same id. `id` names the
+// mesh within its topic ("" = the topic's only mesh); reserved for topics that
+// carry several meshes replaced by id.
 //
-// On the SDK side `data` is exposed as `Span<const uint8_t>` plus a
-// `BufferAnchor`; the anchor is a C++ lifetime concept with no wire equivalent.
+// Decoders skip unknown fields, so optional fields may be added later.
 message MeshMap {
-  // Timestamp of the mesh
   google.protobuf.Timestamp timestamp = 1;
 
-  // Source coordinate frame (3D consumers TF-transform from this frame to a fixed render frame)
+  // Source coordinate frame (3D consumers TF-transform from it to a fixed render frame)
   string frame_id = 2;
 
   // Pose of the mesh's local frame in `frame_id`
   PJ.Pose origin = 3;
 
-  // Geometry revision; "" = unspecified
-  string geometry_id = 4;
+  string id = 4;
+  string geometry_id = 5;
 
-  // Number of vertex records
-  uint32 vertex_count = 5;
+  uint32 vertex_count = 6;
+  PJ.PointField.Datatype position_type = 7;
+  bytes positions = 8;
 
-  // Bytes per vertex record (>= the largest vertex field end)
-  uint32 vertex_stride = 6;
+  uint32 face_count = 9;
+  bytes indices = 10;
 
-  // Channel layout of a vertex record
-  repeated PJ.PointField vertex_fields = 7;
-
-  // Number of face (triangle) records
-  uint32 face_count = 8;
-
-  // Bytes per face record (>= the largest face field end)
-  uint32 face_stride = 9;
-
-  // Byte offset of face 0 in `data` (>= vertex_count * vertex_stride)
-  uint64 face_data_offset = 10;
-
-  // Channel layout of a face record
-  repeated PJ.PointField face_fields = 11;
-
-  // Links between faces that do not share an edge
+  repeated MeshChannel channels = 11;
   repeated MeshFaceLink links = 12;
-
-  // Vertex records, then face records from `face_data_offset`
-  bytes data = 13;
 }

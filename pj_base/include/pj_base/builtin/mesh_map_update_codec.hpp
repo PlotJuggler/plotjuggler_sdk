@@ -18,14 +18,17 @@ inline constexpr std::string_view kSchemaMeshMapUpdate = "PJ.MeshMapUpdate";
 /// (see pj_base/proto/pj/MeshMapUpdate.proto).
 [[nodiscard]] std::vector<uint8_t> serializeMeshMapUpdate(const sdk::MeshMapUpdate& update);
 
-/// Decodes canonical PJ.MeshMapUpdate wire bytes. The returned object owns its
-/// bytes via `anchor`. Rejects any update validateMeshMapUpdate() rejects.
+/// Decodes canonical PJ.MeshMapUpdate wire bytes. The returned object owns a
+/// copy of the wire and its spans point into it (`anchor`). Unknown fields are
+/// skipped; a malformed known field, or an update validateMeshMapUpdate()
+/// rejects, is an error.
 [[nodiscard]] Expected<sdk::MeshMapUpdate> deserializeMeshMapUpdate(const uint8_t* data, size_t size);
 
-/// Layout check: every field has a known datatype, a non-zero count and ends
-/// within `stride`; with records declared, `index` exists as uint32 with count 1; `data` covers
-/// `count * stride`. Whether the indices exist in the base mesh is for the
-/// consumer that pairs the two.
+/// Layout check: each patch's channel has a name, a known datatype and a
+/// non-zero count; a sparse patch's indices are uint32 and its data holds one
+/// element per index; a dense patch's data holds whole elements; no (target,
+/// name) repeats. Whether the indices, or a dense patch's element count, fit
+/// the base mesh is for the consumer that pairs the two.
 [[nodiscard]] Expected<void> validateMeshMapUpdate(const sdk::MeshMapUpdate& update);
 
 }  // namespace PJ

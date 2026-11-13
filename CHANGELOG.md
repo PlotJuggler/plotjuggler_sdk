@@ -37,23 +37,27 @@ Testing:
 MeshMap, MeshMapUpdate and ChannelInfo:
 
 `sdk::MeshMap` (`pj_base/builtin/mesh_map.hpp`, `BuiltinObjectType::kMeshMap` = 21,
-`PJ_BUILTIN_OBJECT_TYPE_MESH_MAP`) is a triangle mesh whose vertices and faces carry named
-channels — the mesh sibling of `GridMap` for navigation meshes and cost meshes (EasyNavigation
-NavMap, mesh_navigation's `mesh_msgs`). Vertex and face records are described by the shared
-`PointField` channel model and live in one `data` buffer; `x`/`y`/`z` and `vertex_indices` are
-required, a NaN in a float channel means "no data", styling is viewer-side. `geometry_id` names
-the geometry revision and `links` records connections between faces that do not touch.
-`sdk::MeshMapUpdate` (`kMeshMapUpdate` = 22, `PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE`) is its
-delta counterpart, like `OccupancyGridUpdate`: channel values for listed vertices or faces, keyed
-by an `index` channel and paired with the base mesh by topic name and `geometry_id`.
+`PJ_BUILTIN_OBJECT_TYPE_MESH_MAP`) is a triangle mesh whose vertices and faces carry named data
+channels — the mesh sibling of `GridMap` for navigation, cost and semantic meshes (EasyNavigation
+NavMap, mesh_navigation's `mesh_msgs`). Geometry is interleaved float32/float64 positions plus
+uint32 index triplets; each channel (`sdk::MeshChannel`: name, vertex or face target, datatype,
+component count, data) is its own array, so producers that keep one array per field hand them over
+without repacking. `geometry_id` names the geometry revision, `id` is reserved for topics carrying
+several meshes, and `links` record connections between faces that do not touch.
+`sdk::MeshMapUpdate` (`kMeshMapUpdate` = 22, `PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE`) carries
+channel patches, dense or sparse (with element indices), paired with the base mesh by `geometry_id`
+or by topic name.
 
-`PJ.MeshMap` / `PJ.MeshMapUpdate` wire formats, `mesh_map_codec.hpp` and
-`mesh_map_update_codec.hpp` (`serialize…`, `deserialize…`, and `validateMeshMap` /
-`validateMeshMapUpdate`; `validateMeshMap` also checks every face's vertex indices and every
-link), entries in the type-erased dispatcher, and `sdk::findField()` for looking a channel up by
-name. Neither type is in the functional-v2 splice table or has a parser-module `ObjectWriter`
-builder yet: producers transcode into them, and both can be appended later. Additive: no
-existing struct, slot, or wire format changes.
+`sdk::ChannelInfo` (`pj_base/builtin/channel_info.hpp`) is the shared description of a channel's
+meaning: unit, integer "no data" value, continuous / categorical / bitmask kind, and category labels
+with optional colours. `MeshChannel` embeds it.
+
+`PJ.ChannelInfo` / `PJ.MeshMap` / `PJ.MeshMapUpdate` wire formats, `mesh_map_codec.hpp` and
+`mesh_map_update_codec.hpp` (`serialize…`, `deserialize…`, `validateMeshMap`,
+`validateMeshMapUpdate`), entries in the type-erased dispatcher, and `sdk::findChannel()`. The
+decoders skip unknown fields, like every builtin decoder, and fail on a malformed known field. Not
+in the functional-v2 splice table (several bulk fields) and no parser-module `ObjectWriter` builder
+yet. Additive: no existing struct, slot, or wire format changes.
 
 ## [0.40.0]
 

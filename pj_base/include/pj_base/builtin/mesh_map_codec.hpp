@@ -19,16 +19,19 @@ inline constexpr std::string_view kSchemaMeshMap = "PJ.MeshMap";
 /// layout is checked on decode.
 [[nodiscard]] std::vector<uint8_t> serializeMeshMap(const sdk::MeshMap& mesh);
 
-/// Decodes canonical PJ.MeshMap wire bytes. The returned object owns its bytes
-/// via `anchor`. Rejects any mesh validateMeshMap() rejects.
+/// Decodes canonical PJ.MeshMap wire bytes. The returned object owns a copy of
+/// the wire and its spans point into it (`anchor`). Unknown fields are skipped,
+/// so a later SDK may add optional ones; a malformed known field, or a mesh
+/// validateMeshMap() rejects, is an error.
 [[nodiscard]] Expected<sdk::MeshMap> deserializeMeshMap(const uint8_t* data, size_t size);
 
-/// Full check of a mesh whose bytes are in place: every field has a known
-/// datatype, a non-zero count and ends within its stride; the required
-/// channels exist with the required types; both record regions fit in `data`
-/// without overlapping; every face's vertex indices are below `vertex_count`;
-/// every link names existing faces. Consumers that index records call it
-/// before trusting the layout. Linear in the face count.
+/// Full check of a mesh whose spans are in place: position_type is float32 or
+/// float64 and `positions` holds exactly vertex_count xyz triplets; `indices`
+/// holds exactly face_count uint32 triplets, each below vertex_count; every
+/// channel has a name, a known datatype, a non-zero count and exactly one
+/// element per vertex or face; no (target, name) repeats; every link names
+/// existing faces. Linear in the face count. Consumers that index the arrays
+/// call it before trusting them.
 [[nodiscard]] Expected<void> validateMeshMap(const sdk::MeshMap& mesh);
 
 }  // namespace PJ

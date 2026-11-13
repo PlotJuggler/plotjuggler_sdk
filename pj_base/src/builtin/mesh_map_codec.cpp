@@ -3,6 +3,7 @@
 
 #include "pj_base/builtin/mesh_map_codec.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -11,9 +12,9 @@
 #include <vector>
 
 #include "geometry_codec.hpp"
+#include "mesh_channel_wire.hpp"
 #include "point_field_codec.hpp"
 #include "protobuf_wire.hpp"
-#include "record_layout.hpp"
 
 namespace PJ {
 namespace {
@@ -23,33 +24,10 @@ using builtin_wire::Reader;
 using builtin_wire::Tag;
 using builtin_wire::WireType;
 using builtin_wire::Writer;
+using sdk::MeshChannel;
 using sdk::MeshFaceLink;
 using sdk::MeshMap;
 using sdk::PointField;
-
-bool readVarint32(Reader& reader, WireType type, uint32_t& out) {
-  if (type != WireType::kVarint) {
-    return false;
-  }
-  uint64_t v = 0;
-  if (!reader.readVarint(v)) {
-    return false;
-  }
-  out = static_cast<uint32_t>(v);
-  return true;
-}
-
-bool readBytesIntoMesh(Reader& reader, MeshMap& out) {
-  const uint8_t* data = nullptr;
-  size_t size = 0;
-  if (!reader.readBytes(data, size)) {
-    return false;
-  }
-  auto owned = std::make_shared<std::vector<uint8_t>>(data, data + size);
-  out.data = Span<const uint8_t>(owned->data(), owned->size());
-  out.anchor = owned;
-  return true;
-}
 
 bool readLink(Reader& reader, std::vector<MeshFaceLink>& out) {
   Reader nested;
@@ -57,98 +35,78 @@ bool readLink(Reader& reader, std::vector<MeshFaceLink>& out) {
     return false;
   }
   MeshFaceLink link;
-  const bool ok = parseFields(nested, [&](Tag tag, Reader& r) {
-    uint32_t value = 0;
-    if (!readVarint32(r, tag.type, value)) {
-      return false;
+  bool malformed = false;
+  const bool parsed = parseFields(nested, [&](Tag tag, Reader& r) {
+    if (tag.field == 5) {
+      if (tag.type != WireType::kFixed64) {
+        return false;
+      }
+      malformed |= !r.readDouble(link.cost);
+      return true;
     }
+    if (tag.field < 1 || tag.field > 4 || tag.type != WireType::kVarint) {
+      return false;  // unknown, or an unexpected wire type: skipped
+    }
+    uint64_t value = 0;
+    malformed |= !r.readVarint(value);
     switch (tag.field) {
       case 1:
-        link.from_face = value;
-        return true;
+        malformed |= value > UINT32_MAX;
+        link.from_face = static_cast<uint32_t>(value);
+        break;
       case 2:
-        link.to_face = value;
-        return true;
+        malformed |= value > UINT32_MAX;
+        link.to_face = static_cast<uint32_t>(value);
+        break;
       case 3:
-        link.kind = value;
-        return true;
-      case 4:
-        link.bidirectional = value != 0;
-        return true;
+        malformed |= value > UINT32_MAX;
+        link.kind = static_cast<uint32_t>(value);
+        break;
       default:
-        return false;
+        link.bidirectional = value != 0;
+        break;
     }
+    return true;
   });
-  if (!ok) {
+  if (!parsed || malformed) {
     return false;
   }
   out.push_back(link);
   return true;
 }
 
-Expected<void> requirePosition(const std::vector<PointField>& fields, std::string_view axis) {
-  const PointField* field = sdk::findField(fields, axis);
-  if (field == nullptr) {
-    return unexpected("MeshMap vertex lacks the required field '" + std::string(axis) + "'");
-  }
-  if ((field->datatype != PointField::Datatype::kFloat32 && field->datatype != PointField::Datatype::kFloat64) ||
-      field->count != 1) {
-    return unexpected("MeshMap vertex field '" + std::string(axis) + "' must be one float32 or float64");
-  }
-  return {};
-}
-
 }  // namespace
 
 Expected<void> validateMeshMap(const MeshMap& mesh) {
-  if (auto ok = builtin_wire::validateRecordFields(mesh.vertex_fields, mesh.vertex_stride, "MeshMap vertex"); !ok) {
-    return ok;
+  const uint64_t position_bytes = sdk::bytesPerElement(mesh.position_type);
+  if (mesh.position_type != PointField::Datatype::kFloat32 && mesh.position_type != PointField::Datatype::kFloat64) {
+    return unexpected(std::string("MeshMap: position_type must be float32 or float64"));
   }
-  if (auto ok = builtin_wire::validateRecordFields(mesh.face_fields, mesh.face_stride, "MeshMap face"); !ok) {
-    return ok;
+  if (static_cast<uint64_t>(mesh.positions.size()) != static_cast<uint64_t>(mesh.vertex_count) * 3 * position_bytes) {
+    return unexpected(std::string("MeshMap: positions do not hold vertex_count xyz triplets"));
   }
-
-  const uint64_t size = mesh.data.size();
-  const uint64_t vertex_end = static_cast<uint64_t>(mesh.vertex_count) * mesh.vertex_stride;
-  if (mesh.vertex_count > 0) {
-    if (mesh.vertex_stride == 0) {
-      return unexpected(std::string("MeshMap: zero vertex_stride with vertices declared"));
-    }
-    for (const char* axis : {"x", "y", "z"}) {
-      if (auto ok = requirePosition(mesh.vertex_fields, axis); !ok) {
-        return ok;
-      }
-    }
-    if (vertex_end > size) {
-      return unexpected(std::string("MeshMap: data shorter than vertex_count * vertex_stride"));
+  if (static_cast<uint64_t>(mesh.indices.size()) != static_cast<uint64_t>(mesh.face_count) * 3 * sizeof(uint32_t)) {
+    return unexpected(std::string("MeshMap: indices do not hold face_count uint32 triplets"));
+  }
+  for (uint64_t i = 0; i < static_cast<uint64_t>(mesh.face_count) * 3; ++i) {
+    uint32_t index = 0;
+    std::memcpy(&index, mesh.indices.data() + (i * sizeof(uint32_t)), sizeof(index));
+    if (index >= mesh.vertex_count) {
+      return unexpected("MeshMap: face " + std::to_string(i / 3) + " references a vertex out of range");
     }
   }
 
-  if (mesh.face_count > 0) {
-    if (mesh.face_stride == 0) {
-      return unexpected(std::string("MeshMap: zero face_stride with faces declared"));
-    }
-    if (auto ok = builtin_wire::requireField(
-            mesh.face_fields, sdk::kMeshMapVertexIndicesField, PointField::Datatype::kUint32, 3, "MeshMap face");
-        !ok) {
+  std::vector<const MeshChannel*> channels;
+  channels.reserve(mesh.channels.size());
+  for (const MeshChannel& channel : mesh.channels) {
+    const uint64_t elements = channel.target == MeshChannel::Target::kVertex ? mesh.vertex_count : mesh.face_count;
+    if (auto ok = builtin_wire::validateMeshChannel(channel, elements, "MeshMap"); !ok) {
       return ok;
     }
-    if (mesh.face_data_offset < vertex_end) {
-      return unexpected(std::string("MeshMap: face records overlap the vertex records"));
-    }
-    const uint64_t face_bytes = static_cast<uint64_t>(mesh.face_count) * mesh.face_stride;
-    if (mesh.face_data_offset > size || face_bytes > size - mesh.face_data_offset) {
-      return unexpected(std::string("MeshMap: data shorter than face_data_offset + face_count * face_stride"));
-    }
-    const uint32_t index_offset = sdk::findField(mesh.face_fields, sdk::kMeshMapVertexIndicesField)->offset;
-    const uint8_t* face = mesh.data.data() + mesh.face_data_offset + index_offset;
-    for (uint32_t f = 0; f < mesh.face_count; ++f, face += mesh.face_stride) {
-      uint32_t indices[3];
-      std::memcpy(indices, face, sizeof(indices));
-      if (indices[0] >= mesh.vertex_count || indices[1] >= mesh.vertex_count || indices[2] >= mesh.vertex_count) {
-        return unexpected("MeshMap: face " + std::to_string(f) + " references a vertex out of range");
-      }
-    }
+    channels.push_back(&channel);
+  }
+  if (auto ok = builtin_wire::requireUniqueChannels(channels, "MeshMap"); !ok) {
+    return ok;
   }
 
   for (const MeshFaceLink& link : mesh.links) {
@@ -166,27 +124,27 @@ std::vector<uint8_t> serializeMeshMap(const MeshMap& mesh) {
   writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, mesh.timestamp_ns); });
   writer.string(2, mesh.frame_id);
   writer.message(3, [&](Writer& nested) { builtin_wire::writePose(nested, mesh.origin); });
-  writer.string(4, mesh.geometry_id);
-  writer.varint(5, mesh.vertex_count);
-  writer.varint(6, mesh.vertex_stride);
-  for (const auto& field : mesh.vertex_fields) {
-    writer.message(7, [&](Writer& nested) { builtin_wire::writePointField(nested, field); });
+  writer.string(4, mesh.id);
+  writer.string(5, mesh.geometry_id);
+  writer.varint(6, mesh.vertex_count);
+  writer.varint(7, builtin_wire::pointFieldDatatypeToWire(mesh.position_type));
+  writer.bytes(8, mesh.positions.data(), mesh.positions.size());
+  writer.varint(9, mesh.face_count);
+  writer.bytes(10, mesh.indices.data(), mesh.indices.size());
+  for (const MeshChannel& channel : mesh.channels) {
+    writer.message(11, [&](Writer& nested) { builtin_wire::writeMeshChannel(nested, channel); });
   }
-  writer.varint(8, mesh.face_count);
-  writer.varint(9, mesh.face_stride);
-  writer.varint(10, mesh.face_data_offset);
-  for (const auto& field : mesh.face_fields) {
-    writer.message(11, [&](Writer& nested) { builtin_wire::writePointField(nested, field); });
-  }
-  for (const auto& link : mesh.links) {
+  for (const MeshFaceLink& link : mesh.links) {
     writer.message(12, [&](Writer& nested) {
       nested.varint(1, link.from_face);
       nested.varint(2, link.to_face);
       nested.varint(3, link.kind);
       nested.varint(4, link.bidirectional ? 1 : 0);
+      if (!std::isnan(link.cost)) {
+        nested.doubleField(5, link.cost);
+      }
     });
   }
-  writer.bytes(13, mesh.data.data(), mesh.data.size());
   return out;
 }
 
@@ -194,44 +152,90 @@ Expected<MeshMap> deserializeMeshMap(const uint8_t* data, size_t size) {
   if (data == nullptr || size == 0) {
     return unexpected(std::string("MeshMap wire: empty buffer"));
   }
-
-  Reader reader(data, size);
+  // Parse an owned copy so every span can point straight into it.
+  auto owned = std::make_shared<std::vector<uint8_t>>(data, data + size);
+  Reader reader(owned->data(), owned->size());
   MeshMap mesh;
-  const bool ok = parseFields(reader, [&](Tag tag, Reader& r) {
+  bool malformed = false;
+
+  const bool parsed = parseFields(reader, [&](Tag tag, Reader& r) {
+    const bool length_delimited = tag.type == WireType::kLengthDelimited;
+    uint64_t value = 0;
     switch (tag.field) {
       case 1:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readTimestampMessage(r, mesh.timestamp_ns);
+        if (!length_delimited) {
+          return false;
+        }
+        malformed |= !builtin_wire::readTimestampMessage(r, mesh.timestamp_ns);
+        return true;
       case 2:
-        return tag.type == WireType::kLengthDelimited && r.readString(mesh.frame_id);
+        if (!length_delimited) {
+          return false;
+        }
+        malformed |= !r.readString(mesh.frame_id);
+        return true;
       case 3:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readPoseMessage(r, mesh.origin);
+        if (!length_delimited) {
+          return false;
+        }
+        malformed |= !builtin_wire::readPoseMessage(r, mesh.origin);
+        return true;
       case 4:
-        return tag.type == WireType::kLengthDelimited && r.readString(mesh.geometry_id);
+        if (!length_delimited) {
+          return false;
+        }
+        malformed |= !r.readString(mesh.id);
+        return true;
       case 5:
-        return readVarint32(r, tag.type, mesh.vertex_count);
+        if (!length_delimited) {
+          return false;
+        }
+        malformed |= !r.readString(mesh.geometry_id);
+        return true;
       case 6:
-        return readVarint32(r, tag.type, mesh.vertex_stride);
       case 7:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readPointFieldIntoVector(r, mesh.vertex_fields);
-      case 8:
-        return readVarint32(r, tag.type, mesh.face_count);
       case 9:
-        return readVarint32(r, tag.type, mesh.face_stride);
+        if (tag.type != WireType::kVarint) {
+          return false;
+        }
+        malformed |= !r.readVarint(value);
+        if (tag.field == 7) {
+          mesh.position_type = builtin_wire::pointFieldDatatypeFromWire(value);
+        } else {
+          malformed |= value > UINT32_MAX;
+          (tag.field == 6 ? mesh.vertex_count : mesh.face_count) = static_cast<uint32_t>(value);
+        }
+        return true;
+      case 8:
       case 10:
-        return tag.type == WireType::kVarint && r.readVarint(mesh.face_data_offset);
-      case 11:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readPointFieldIntoVector(r, mesh.face_fields);
+        if (!length_delimited) {
+          return false;
+        }
+        malformed |= !builtin_wire::readSpan(r, tag.type, tag.field == 8 ? mesh.positions : mesh.indices);
+        return true;
+      case 11: {
+        if (!length_delimited) {
+          return false;
+        }
+        MeshChannel channel;
+        malformed |= !builtin_wire::readMeshChannel(r, channel);
+        mesh.channels.push_back(std::move(channel));
+        return true;
+      }
       case 12:
-        return tag.type == WireType::kLengthDelimited && readLink(r, mesh.links);
-      case 13:
-        return tag.type == WireType::kLengthDelimited && readBytesIntoMesh(r, mesh);
+        if (!length_delimited) {
+          return false;
+        }
+        malformed |= !readLink(r, mesh.links);
+        return true;
       default:
-        return false;
+        return false;  // unknown field: skipped, so later additions stay readable
     }
   });
-  if (!ok) {
+  if (!parsed || malformed) {
     return unexpected(std::string("MeshMap wire: decode failed"));
   }
+  mesh.anchor = std::move(owned);
   if (auto valid = validateMeshMap(mesh); !valid) {
     return unexpected(std::move(valid).error());
   }

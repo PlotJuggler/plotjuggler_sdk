@@ -7,47 +7,35 @@
 
 syntax = "proto3";
 
-import "pj/PointCloud.proto";
+import "pj/MeshMap.proto";
 import "google/protobuf/timestamp.proto";
 
 package PJ;
 
-// New channel values for some vertices or faces of a base PJ.MeshMap. Carries
-// no geometry, so it is not independently drawable: a consumer pairs it with
-// the base mesh (topic `<base>_updates` <-> `<base>`) and applies it only when
-// `geometry_id` matches.
-//
-// `data` holds `count` records of `stride` bytes; `fields` must contain
-// `index` (uint32, count 1), the element the record updates. Every other field
-// overwrites the base mesh's same-named channel (a channel the base lacks is
-// added, "no data" elsewhere).
-message MeshMapUpdate {
-  enum Target {
-    FACES = 0;
-    VERTICES = 1;
-  }
+// New values for one channel. `indices` (packed uint32, may be empty) lists the
+// vertices or faces `channel.data` covers, in order; empty = dense: the data
+// replaces the whole channel. A channel the base mesh lacks is added, "no data"
+// for elements a sparse patch does not list.
+message MeshChannelPatch {
+  PJ.MeshChannel channel = 1;
+  bytes indices = 2;
+}
 
-  // Timestamp of the update
+// Channel patches for a previously-published PJ.MeshMap. Carries no geometry,
+// so it is not independently drawable: a consumer pairs it with the base mesh
+// (by `geometry_id`, else by topic name `<base>_updates` <-> `<base>`) and
+// applies it only when `geometry_id` matches ("" on either side matches any).
+message MeshMapUpdate {
   google.protobuf.Timestamp timestamp = 1;
 
-  // Must match the base mesh's frame
+  // The base mesh's frame (informative)
   string frame_id = 2;
 
-  // Must match the base mesh's geometry_id; "" = unspecified (applies to any)
-  string geometry_id = 3;
+  // The base mesh's `id`
+  string id = 3;
 
-  // Element kind the records update
-  Target target = 4;
+  string geometry_id = 4;
 
-  // Number of records
-  uint32 count = 5;
-
-  // Bytes per record (>= the largest field end)
-  uint32 stride = 6;
-
-  // Record layout; contains `index`
-  repeated PJ.PointField fields = 7;
-
-  // Packed records
-  bytes data = 8;
+  // (target, name) pairs are unique
+  repeated MeshChannelPatch patches = 5;
 }

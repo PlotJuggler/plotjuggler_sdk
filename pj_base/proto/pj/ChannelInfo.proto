@@ -1,0 +1,44 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical channel-semantics protobuf schema, shared by every
+// channelled builtin (SDK struct in pj_base/include/pj_base/builtin/channel_info.hpp).
+
+syntax = "proto3";
+
+import "pj/Color.proto";
+
+package PJ;
+
+// How a channel's values are meant to be read.
+enum ChannelKind {
+  CONTINUOUS = 0;   // a measured or computed quantity (cost, height, probability)
+  CATEGORICAL = 1;  // integer class ids (semantic label, surface index, region)
+  BITMASK = 2;      // independent flags packed into an integer
+}
+
+// One named value of a categorical channel.
+message ChannelCategory {
+  int64 value = 1;
+  string label = 2;
+
+  // The producer's colour for this value; absent = viewer palette
+  PJ.Color color = 3;
+}
+
+// What a channel's numbers mean, beyond their storage type. Every field is
+// optional: an empty message is a continuous, unit-less channel whose only
+// "no data" marker is NaN.
+message ChannelInfo {
+  // Unit, e.g. "m", "s", "1/1000 log-odds"; "" = none
+  string unit = 1;
+
+  // The value that means "no data" in an integer channel; NaN always means
+  // "no data" in a float channel, for which this is an additional marker
+  optional double no_data = 2;
+
+  ChannelKind kind = 3;
+
+  // value -> label (+ colour), for a CATEGORICAL channel
+  repeated ChannelCategory categories = 4;
+}
