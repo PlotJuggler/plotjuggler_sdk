@@ -91,6 +91,30 @@ TEST(FrameTransformsCodecTest, EmptyBufferProducesError) {
   EXPECT_FALSE(output.has_value());
 }
 
+TEST(FrameTransformsCodecTest, DecodesAnEmptyRotationMessageAsIdentity) {
+  // transforms { child_frame_id: "c" rotation {} }: a producer that touched the
+  // rotation without setting it. All four components are the zero value.
+  const std::vector<uint8_t> golden = {0x0a, 0x05, 0x1a, 0x01, 0x63, 0x2a, 0x00};
+  auto output = deserializeFrameTransforms(golden.data(), golden.size());
+  ASSERT_TRUE(output.has_value());
+  ASSERT_EQ(output->transforms.size(), 1u);
+  EXPECT_EQ(output->transforms[0].rotation, sdk::Quaternion{});
+}
+
+TEST(FrameTransformsCodecTest, DecodesCanonicalProto3RotationWithElidedZeroW) {
+  // protoc --encode=PJ.FrameTransforms pj/FrameTransforms.proto of:
+  //   transforms { child_frame_id: "a" rotation { x: 1 y: 0 z: 0 w: 0 } }
+  //   transforms { child_frame_id: "b" }
+  // A 180-degree rotation: w = 0 is the zero value, so the rotation carries x only.
+  const std::vector<uint8_t> golden = {0x0a, 0x0e, 0x1a, 0x01, 0x61, 0x2a, 0x09, 0x09, 0x00, 0x00, 0x00,
+                                       0x00, 0x00, 0x00, 0xf0, 0x3f, 0x0a, 0x03, 0x1a, 0x01, 0x62};
+  auto output = deserializeFrameTransforms(golden.data(), golden.size());
+  ASSERT_TRUE(output.has_value());
+  ASSERT_EQ(output->transforms.size(), 2u);
+  EXPECT_EQ(output->transforms[0].rotation, (sdk::Quaternion{.x = 1.0, .y = 0.0, .z = 0.0, .w = 0.0}));
+  EXPECT_EQ(output->transforms[1].rotation, sdk::Quaternion{});  // absent rotation: identity
+}
+
 TEST(FrameTransformsCodecTest, InvalidNestedMessageProducesError) {
   std::vector<uint8_t> bytes;
   pb::appendTag(bytes, 1, 2);

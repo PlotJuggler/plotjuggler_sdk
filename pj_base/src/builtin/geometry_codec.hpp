@@ -8,6 +8,11 @@
 // (proto seconds + nanos <-> SDK int64 nanoseconds), and for Color (proto
 // double [0..1] RGBA <-> SDK ColorRGBA uint8 [0..255]).
 //
+// A present message decodes from the proto3 zero values, which a standard
+// encoder omits; an absent one leaves the caller's default (an identity
+// orientation, a unit scale). A known field with the right wire type and
+// malformed contents fails the decode.
+//
 // Inline-only; not exposed through the public include path.
 
 #include <algorithm>
@@ -59,25 +64,23 @@ inline void writeTimestamp(Writer& writer, Timestamp timestamp_ns) {
 
 inline bool decodeTimestamp(Reader& reader, Timestamp& out) {
   TimestampParts parts;
-  const bool ok = parseFields(reader, [&](Tag tag, Reader& r) {
-    if (tag.type != WireType::kVarint) {
-      return false;
+  bool malformed = false;
+  const bool parsed = parseFields(reader, [&](Tag tag, Reader& r) {
+    if (tag.type != WireType::kVarint || (tag.field != 1 && tag.field != 2)) {
+      return false;  // unknown, or a wrong wire type: skipped by parseFields
     }
+    // A consumed field reports failure through `malformed`: returning false
+    // would make parseFields skip again over the bytes that follow.
     uint64_t value = 0;
-    if (!r.readVarint(value)) {
-      return false;
-    }
+    malformed |= !r.readVarint(value);
     if (tag.field == 1) {
       parts.seconds = static_cast<int64_t>(value);
-      return true;
-    }
-    if (tag.field == 2) {
+    } else {
       parts.nanos = static_cast<int32_t>(value);
-      return true;
     }
-    return false;
+    return true;
   });
-  return ok && combineTimestamp(parts, out);
+  return parsed && !malformed && combineTimestamp(parts, out);
 }
 
 inline bool readTimestampMessage(Reader& reader, Timestamp& out) {
@@ -93,6 +96,7 @@ inline void writeVector2(Writer& writer, const sdk::Vector2& v) {
 }
 
 inline bool decodeVector2(Reader& reader, sdk::Vector2& out) {
+  out = {};
   return parseFields(reader, [&](Tag tag, Reader& r) {
     if (tag.type != WireType::kFixed64) {
       return false;
@@ -122,6 +126,7 @@ inline void writeVector3(Writer& writer, const sdk::Vector3& v) {
 }
 
 inline bool decodeVector3(Reader& reader, sdk::Vector3& out) {
+  out = {};
   return parseFields(reader, [&](Tag tag, Reader& r) {
     if (tag.type != WireType::kFixed64) {
       return false;
@@ -153,6 +158,7 @@ inline void writePoint3(Writer& writer, const sdk::Point3& p) {
 }
 
 inline bool decodePoint3(Reader& reader, sdk::Point3& out) {
+  out = {};
   return parseFields(reader, [&](Tag tag, Reader& r) {
     if (tag.type != WireType::kFixed64) {
       return false;
@@ -185,7 +191,8 @@ inline void writeQuaternion(Writer& writer, const sdk::Quaternion& q) {
 }
 
 inline bool decodeQuaternion(Reader& reader, sdk::Quaternion& out) {
-  return parseFields(reader, [&](Tag tag, Reader& r) {
+  out = {.x = 0.0, .y = 0.0, .z = 0.0, .w = 0.0};  // not the identity: w = 0 is elided on the wire
+  const bool parsed = parseFields(reader, [&](Tag tag, Reader& r) {
     if (tag.type != WireType::kFixed64) {
       return false;
     }
@@ -202,6 +209,12 @@ inline bool decodeQuaternion(Reader& reader, sdk::Quaternion& out) {
         return false;
     }
   });
+  // All zeros is not a rotation: it is what a producer writes when it leaves the
+  // orientation unset, so it reads as the identity.
+  if (parsed && out.x == 0.0 && out.y == 0.0 && out.z == 0.0 && out.w == 0.0) {
+    out.w = 1.0;
+  }
+  return parsed;
 }
 
 inline bool readQuaternionMessage(Reader& reader, sdk::Quaternion& out) {
@@ -217,19 +230,17 @@ inline void writePose(Writer& writer, const sdk::Pose& p) {
 }
 
 inline bool decodePose(Reader& reader, sdk::Pose& out) {
-  return parseFields(reader, [&](Tag tag, Reader& r) {
-    if (tag.type != WireType::kLengthDelimited) {
-      return false;
+  bool malformed = false;
+  const bool parsed = parseFields(reader, [&](Tag tag, Reader& r) {
+    if (tag.type != WireType::kLengthDelimited || (tag.field != 1 && tag.field != 2)) {
+      return false;  // unknown, or a wrong wire type: skipped by parseFields
     }
-    switch (tag.field) {
-      case 1:
-        return readVector3Message(r, out.position);
-      case 2:
-        return readQuaternionMessage(r, out.orientation);
-      default:
-        return false;
-    }
+    // The submessage is consumed even when its contents are malformed, so the
+    // failure goes through `malformed` rather than a second skip.
+    malformed |= tag.field == 1 ? !readVector3Message(r, out.position) : !readQuaternionMessage(r, out.orientation);
+    return true;
   });
+  return parsed && !malformed;
 }
 
 inline bool readPoseMessage(Reader& reader, sdk::Pose& out) {

@@ -17,6 +17,28 @@ namespace {
 using sdk::Mesh3D;
 namespace pb = ::PJ::test_pb;
 
+TEST(Mesh3DCodecTest, DecodesScaleWithElidedZeroComponent) {
+  std::vector<uint8_t> scale;  // {x: 2, y: 2}: z = 0 elided by a proto3 encoder
+  pb::appendTag(scale, 1, 1);
+  pb::appendDouble(scale, 2.0);
+  pb::appendTag(scale, 2, 1);
+  pb::appendDouble(scale, 2.0);
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 8, 2);
+  pb::appendString(bytes, "file:///a.glb");
+  const std::vector<uint8_t> no_scale = bytes;
+  pb::appendTag(bytes, 5, 2);
+  pb::appendLenDelim(bytes, scale);
+
+  auto out = deserializeMesh3D(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->scale, (sdk::Vector3{.x = 2.0, .y = 2.0, .z = 0.0}));
+
+  out = deserializeMesh3D(no_scale.data(), no_scale.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->scale, (sdk::Vector3{.x = 1.0, .y = 1.0, .z = 1.0}));  // absent scale: (1, 1, 1)
+}
+
 TEST(Mesh3DCodecTest, SchemaName) {
   EXPECT_EQ(kSchemaMesh3D, "PJ.Mesh3D");
 }
