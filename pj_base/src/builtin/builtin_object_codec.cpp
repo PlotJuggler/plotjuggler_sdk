@@ -17,6 +17,8 @@
 #include "pj_base/builtin/image_codec.hpp"
 #include "pj_base/builtin/log_codec.hpp"
 #include "pj_base/builtin/mesh3d_codec.hpp"
+#include "pj_base/builtin/mesh_map_codec.hpp"
+#include "pj_base/builtin/mesh_map_update_codec.hpp"
 #include "pj_base/builtin/occupancy_grid_codec.hpp"
 #include "pj_base/builtin/occupancy_grid_update_codec.hpp"
 #include "pj_base/builtin/plot_markers_codec.hpp"
@@ -100,6 +102,10 @@ Expected<std::vector<uint8_t>> serializeBuiltinObject(const sdk::BuiltinObject& 
       return serializeAs<sdk::PlotMarkers>(object, type, serializePlotMarkers);
     case sdk::BuiltinObjectType::kGridMap:
       return serializeAs<sdk::GridMap>(object, type, serializeGridMap);
+    case sdk::BuiltinObjectType::kMeshMap:
+      return serializeAs<sdk::MeshMap>(object, type, serializeMeshMap);
+    case sdk::BuiltinObjectType::kMeshMapUpdate:
+      return serializeAs<sdk::MeshMapUpdate>(object, type, serializeMeshMapUpdate);
     case sdk::BuiltinObjectType::kNone:
       return unexpected(std::string("cannot serialize builtin object with type kNone"));
   }
@@ -144,6 +150,10 @@ Expected<sdk::BuiltinObject> deserializeBuiltinObject(sdk::BuiltinObjectType typ
       return deserializeAs<sdk::PlotMarkers>(data, size, deserializePlotMarkers);
     case sdk::BuiltinObjectType::kGridMap:
       return deserializeAs<sdk::GridMap>(data, size, deserializeGridMap);
+    case sdk::BuiltinObjectType::kMeshMap:
+      return deserializeAs<sdk::MeshMap>(data, size, deserializeMeshMap);
+    case sdk::BuiltinObjectType::kMeshMapUpdate:
+      return deserializeAs<sdk::MeshMapUpdate>(data, size, deserializeMeshMapUpdate);
     case sdk::BuiltinObjectType::kNone:
       return unexpected(std::string("cannot deserialize builtin object with type kNone"));
   }

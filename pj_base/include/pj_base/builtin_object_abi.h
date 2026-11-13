@@ -58,6 +58,8 @@ typedef enum PJ_builtin_object_type_t {
   PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID = 18,
   PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS = 19,
   PJ_BUILTIN_OBJECT_TYPE_GRID_MAP = 20,
+  PJ_BUILTIN_OBJECT_TYPE_MESH_MAP = 21,
+  PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE = 22,
   /* Reserve future types; appended at the tail. Numeric values are stable
    * across releases — never renumber. Each new value here must match the
    * matching kFoo entry in BuiltinObjectType (builtin_object.hpp). */

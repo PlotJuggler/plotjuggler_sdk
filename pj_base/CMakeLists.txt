@@ -29,6 +29,8 @@ add_library(pj_base STATIC
   src/builtin/video_frame_codec.cpp
   src/builtin/voxel_grid_codec.cpp
   src/builtin/grid_map_codec.cpp
+  src/builtin/mesh_map_codec.cpp
+  src/builtin/mesh_map_update_codec.cpp
   src/number_parse.cpp
   src/time_format.cpp
   src/parser_module_abi.cpp
@@ -215,6 +217,7 @@ if(PJ_BUILD_TESTS)
     tests/poses_in_frame_codec_test.cpp
     tests/voxel_grid_codec_test.cpp
     tests/grid_map_codec_test.cpp
+    tests/mesh_map_codec_test.cpp
     tests/plot_markers_codec_test.cpp
   )
 

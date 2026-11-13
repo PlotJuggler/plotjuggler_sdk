@@ -16,6 +16,8 @@ using PJ::sdk::Image;
 using PJ::sdk::ImageAnnotations;
 using PJ::sdk::Log;
 using PJ::sdk::Mesh3D;
+using PJ::sdk::MeshMap;
+using PJ::sdk::MeshMapUpdate;
 using PJ::sdk::name;
 using PJ::sdk::OccupancyGrid;
 using PJ::sdk::OccupancyGridUpdate;
@@ -48,6 +50,8 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{PosesInFrame{}}), BuiltinObjectType::kPosesInFrame);
   EXPECT_EQ(typeOf(BuiltinObject{VoxelGrid{}}), BuiltinObjectType::kVoxelGrid);
   EXPECT_EQ(typeOf(BuiltinObject{GridMap{}}), BuiltinObjectType::kGridMap);
+  EXPECT_EQ(typeOf(BuiltinObject{MeshMap{}}), BuiltinObjectType::kMeshMap);
+  EXPECT_EQ(typeOf(BuiltinObject{MeshMapUpdate{}}), BuiltinObjectType::kMeshMapUpdate);
   EXPECT_EQ(typeOf(BuiltinObject{PlotMarkers{}}), BuiltinObjectType::kPlotMarkers);
 }
 
@@ -72,6 +76,8 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kVoxelGrid,
            BuiltinObjectType::kPlotMarkers,
            BuiltinObjectType::kGridMap,
+           BuiltinObjectType::kMeshMap,
+           BuiltinObjectType::kMeshMapUpdate,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);

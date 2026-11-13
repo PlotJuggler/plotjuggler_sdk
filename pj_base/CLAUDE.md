@@ -15,8 +15,8 @@ build details. It must not depend on Qt, `pj_datastore` or `pj_plugins`.
 
 ## Layout
 - `include/pj_base/` — vocabulary primitives: `types.hpp`, `time.hpp` (absolute time spine: `Timepoint`/`Duration` + `fromRaw`/`toRaw`), `type_tree.hpp`, `dataset.hpp`, `expected.hpp`, `span.hpp`, `number_parse.hpp`, `assert.hpp`, `diagnostic_sink.hpp`, `buffer_anchor.hpp`.
-- `include/pj_base/builtin/` — 18 builtin struct headers (`*.hpp`) and all 18
-  wire codecs (`*_codec.hpp`). Numeric tags are stable; values 2 and 12 are
+- `include/pj_base/builtin/` — one struct header (`*.hpp`) and one wire codec
+  (`*_codec.hpp`) per builtin type. Numeric tags are stable; values 2 and 12 are
   permanently reserved. Also contains the tagged, type-erased `BuiltinObject`
   holder and type-erased codec dispatcher, and the compile-time field tables
   (`field_table.hpp`, one `<type>_fields.hpp` per tabled struct).

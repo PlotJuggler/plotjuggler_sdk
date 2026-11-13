@@ -60,6 +60,8 @@ namespace PJ::sdk {
     case BuiltinObjectType::kPosesInFrame:
     case BuiltinObjectType::kPlotMarkers:
     case BuiltinObjectType::kGridMap:
+    case BuiltinObjectType::kMeshMap:
+    case BuiltinObjectType::kMeshMapUpdate:
       return nullptr;
   }
   return nullptr;

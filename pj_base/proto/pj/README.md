@@ -65,6 +65,10 @@ See `docs/builtin_type.md` for the design rationale.
   - `VoxelGrid`
 - **`GridMap.proto`** — 2D grid of per-cell channels (the layered sibling of `OccupancyGrid`: elevation maps, multi-layer costmaps); reuses `PointField` for the per-cell channel layout and mirrors `foxglove.Grid`'s row-major record layout so `data` stays a zero-copy view. Which channel is height/color is viewer-side.
   - `GridMap`
+- **`MeshMap.proto`** — triangle mesh whose vertices and faces carry named channels (the mesh sibling of `GridMap`: navigation meshes, cost meshes); reuses `PointField` for both record layouts, with vertices and faces in one `data` buffer. Which channel colours the mesh is viewer-side.
+  - `MeshFaceLink`, `MeshMap`
+- **`MeshMapUpdate.proto`** — sparse channel patch for a previously-published `MeshMap` (records keyed by an `index` channel); applied by the consumer against the base mesh with the same `geometry_id`.
+  - `MeshMapUpdate`
 
 ### 2D image annotations (vector overlays)
 

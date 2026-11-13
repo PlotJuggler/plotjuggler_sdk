@@ -1,0 +1,53 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: Apache-2.0
+
+// PlotJuggler canonical channel-mesh patch protobuf schema.
+// Wire-level contract for the byte-backed `MeshMapUpdate` builtin
+// (SDK struct lives in pj_base/include/pj_base/builtin/mesh_map_update.hpp).
+
+syntax = "proto3";
+
+import "pj/PointCloud.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// New channel values for some vertices or faces of a base PJ.MeshMap. Carries
+// no geometry, so it is not independently drawable: a consumer pairs it with
+// the base mesh (topic `<base>_updates` <-> `<base>`) and applies it only when
+// `geometry_id` matches.
+//
+// `data` holds `count` records of `stride` bytes; `fields` must contain
+// `index` (uint32, count 1), the element the record updates. Every other field
+// overwrites the base mesh's same-named channel (a channel the base lacks is
+// added, "no data" elsewhere).
+message MeshMapUpdate {
+  enum Target {
+    FACES = 0;
+    VERTICES = 1;
+  }
+
+  // Timestamp of the update
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Must match the base mesh's frame
+  string frame_id = 2;
+
+  // Must match the base mesh's geometry_id; "" = unspecified (applies to any)
+  string geometry_id = 3;
+
+  // Element kind the records update
+  Target target = 4;
+
+  // Number of records
+  uint32 count = 5;
+
+  // Bytes per record (>= the largest field end)
+  uint32 stride = 6;
+
+  // Record layout; contains `index`
+  repeated PJ.PointField fields = 7;
+
+  // Packed records
+  bytes data = 8;
+}

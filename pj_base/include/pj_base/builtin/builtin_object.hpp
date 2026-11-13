@@ -41,6 +41,8 @@
 #include "pj_base/builtin/image_annotations.hpp"
 #include "pj_base/builtin/log.hpp"
 #include "pj_base/builtin/mesh3d.hpp"
+#include "pj_base/builtin/mesh_map.hpp"
+#include "pj_base/builtin/mesh_map_update.hpp"
 #include "pj_base/builtin/occupancy_grid.hpp"
 #include "pj_base/builtin/occupancy_grid_update.hpp"
 #include "pj_base/builtin/plot_markers.hpp"
@@ -75,6 +77,8 @@ enum class BuiltinObjectType : uint16_t {
   kVoxelGrid = 18,            ///< sdk::VoxelGrid — dense 3D voxel grid (occupancy/cost/ESDF/semantic).
   kPlotMarkers = 19,          ///< sdk::PlotMarkers — findings on a time-series plot (regions, events, bands, labels).
   kGridMap = 20,              ///< sdk::GridMap — 2D grid of per-cell channels (elevation maps, layered costmaps).
+  kMeshMap = 21,              ///< sdk::MeshMap — triangle mesh with per-vertex / per-face channels.
+  kMeshMapUpdate = 22,        ///< sdk::MeshMapUpdate — sparse channel patch for a MeshMap.
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -125,6 +129,10 @@ struct SchemaClassification {
       return "kPlotMarkers";
     case BuiltinObjectType::kGridMap:
       return "kGridMap";
+    case BuiltinObjectType::kMeshMap:
+      return "kMeshMap";
+    case BuiltinObjectType::kMeshMapUpdate:
+      return "kMeshMapUpdate";
   }
   return "kNone";
 }
@@ -189,6 +197,12 @@ struct SchemaClassification {
   if (s == "kGridMap") {
     return BuiltinObjectType::kGridMap;
   }
+  if (s == "kMeshMap") {
+    return BuiltinObjectType::kMeshMap;
+  }
+  if (s == "kMeshMapUpdate") {
+    return BuiltinObjectType::kMeshMapUpdate;
+  }
   return std::nullopt;
 }
 
@@ -221,6 +235,8 @@ PJ_BUILTIN_OBJECT_TRAIT(PosesInFrame)
 PJ_BUILTIN_OBJECT_TRAIT(VoxelGrid)
 PJ_BUILTIN_OBJECT_TRAIT(PlotMarkers)
 PJ_BUILTIN_OBJECT_TRAIT(GridMap)
+PJ_BUILTIN_OBJECT_TRAIT(MeshMap)
+PJ_BUILTIN_OBJECT_TRAIT(MeshMapUpdate)
 #undef PJ_BUILTIN_OBJECT_TRAIT
 
 /// Tag + opaque value. See the file comment for why the tag is explicit

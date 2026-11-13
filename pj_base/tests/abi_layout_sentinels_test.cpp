@@ -155,6 +155,8 @@ static_assert(PJ_BUILTIN_OBJECT_TYPE_POSES_IN_FRAME == 17, "PosesInFrame type id
 static_assert(PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID == 18, "VoxelGrid type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS == 19, "PlotMarkers type id pinned");
 static_assert(PJ_BUILTIN_OBJECT_TYPE_GRID_MAP == 20, "GridMap type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_MESH_MAP == 21, "MeshMap type id pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE == 22, "MeshMapUpdate type id pinned");
 static_assert(sizeof(PJ_schema_classification_t) == 4, "PJ_schema_classification_t layout pinned");
 static_assert(offsetof(PJ_schema_classification_t, object_type) == 0, "object_type at offset 0");
 static_assert(offsetof(PJ_schema_classification_t, reserved) == 2, "reserved at offset 2");

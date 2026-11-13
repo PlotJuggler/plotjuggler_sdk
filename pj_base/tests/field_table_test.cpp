@@ -1219,7 +1219,7 @@ TEST(FieldTableTest, DescribeCoversExactlyTheTabledTypes) {
 
   // Every other stable BuiltinObjectType value (mirrors the array in
   // builtin_object_codec_test.cpp) must resolve to nullptr.
-  const std::array<BuiltinObjectType, 9> other_types{
+  const std::array<BuiltinObjectType, 11> other_types{
       BuiltinObjectType::kOccupancyGrid,
       BuiltinObjectType::kCompressedPointCloud,
       BuiltinObjectType::kMesh3D,
@@ -1229,6 +1229,8 @@ TEST(FieldTableTest, DescribeCoversExactlyTheTabledTypes) {
       BuiltinObjectType::kPosesInFrame,
       BuiltinObjectType::kGridMap,
       BuiltinObjectType::kPlotMarkers,
+      BuiltinObjectType::kMeshMap,
+      BuiltinObjectType::kMeshMapUpdate,
   };
   for (auto type : other_types) {
     EXPECT_EQ(PJ::sdk::describe(type), nullptr) << PJ::sdk::name(type);

@@ -32,6 +32,8 @@ The public headers live under:
 #include <pj_base/builtin/log.hpp>
 #include <pj_base/builtin/voxel_grid.hpp>
 #include <pj_base/builtin/grid_map.hpp>
+#include <pj_base/builtin/mesh_map.hpp>
+#include <pj_base/builtin/mesh_map_update.hpp>
 #include <pj_base/builtin/plot_markers.hpp>
 // Codecs — one per type, all share the canonical PJ.<Type> wire format under pj_base/proto/pj/.
 #include <pj_base/builtin/builtin_object_codec.hpp>
@@ -52,6 +54,8 @@ The public headers live under:
 #include <pj_base/builtin/log_codec.hpp>
 #include <pj_base/builtin/voxel_grid_codec.hpp>
 #include <pj_base/builtin/grid_map_codec.hpp>
+#include <pj_base/builtin/mesh_map_codec.hpp>
+#include <pj_base/builtin/mesh_map_update_codec.hpp>
 #include <pj_base/builtin/plot_markers_codec.hpp>
 ```
 
@@ -99,7 +103,7 @@ Builtin objects fall into two serialization families:
 
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
-| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `VoxelGrid`, `GridMap`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | Preserve zero-copy views while in-process; use the canonical codec at storage or C ABI boundaries. If no source anchor exists, materialize before returning a long-lived view. |
+| Byte-backed views | `Image`, `DepthImage`, `PointCloud`, `CompressedPointCloud`, `OccupancyGrid`, `OccupancyGridUpdate`, `VoxelGrid`, `GridMap`, `MeshMap`, `MeshMapUpdate`, `Mesh3D`, `VideoFrame` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | Preserve zero-copy views while in-process; use the canonical codec at storage or C ABI boundaries. If no source anchor exists, materialize before returning a long-lived view. |
 | Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `RobotDescription`, `CameraInfo`, `Log`, `PosesInFrame`, `PlotMarkers` | SDK structs own their vectors/strings/scalars directly. | Canonical codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription.text` remains raw URDF/SDF/MJCF source inside its small canonical envelope. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
@@ -141,6 +145,8 @@ annotations, frame transforms, or no builtin object.
 | `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
 | `kVoxelGrid` | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
 | `kGridMap` | `PJ::sdk::GridMap` | 2D grid of per-cell channels (elevation maps, layered costmaps) in world coordinates. |
+| `kMeshMap` | `PJ::sdk::MeshMap` | Triangle mesh whose vertices and faces carry named channels (navigation meshes, cost meshes). |
+| `kMeshMapUpdate` | `PJ::sdk::MeshMapUpdate` | Sparse channel patch for a previously-published `MeshMap`. |
 | `kPlotMarkers` | `PJ::sdk::PlotMarkers` | Findings on a time-series plot (regions, events, bands, and labels). |
 
 ### Object-topic renderer metadata
@@ -675,6 +681,66 @@ splice form and decodes with an empty span; the host runs `validateGridMap()`
 right after attaching the spliced bytes, and consumers that index cells run it
 again defensively.
 
+## MeshMap
+
+`MeshMap` is a triangle mesh whose vertices and faces carry named channels —
+the mesh sibling of `GridMap` — for navigation meshes, traversability / cost
+meshes and semantic surface maps (e.g. EasyNavigation NavMap,
+mesh_navigation's `mesh_msgs`).
+
+It is a byte-backed view. Vertices and faces are fixed-size records described
+by the same `PointField` model `PointCloud`, `VoxelGrid` and `GridMap` use, and
+both live in the one `data` buffer: vertex `v` at `v * vertex_stride`, face `f`
+at `face_data_offset + f * face_stride`. One buffer keeps the type's bulk bytes
+in a single wire field, like every other byte-backed builtin.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp_ns` | `Timestamp` | Time of the mesh. `0` when the source had none. |
+| `frame_id` | `std::string` | Source coordinate frame; 3D consumers TF-transform from it. |
+| `origin` | `Pose` | Pose of the mesh's local frame in `frame_id` (identity for most producers). |
+| `geometry_id` | `std::string` | Geometry revision; `""` = unspecified. A `MeshMapUpdate` applies only to the mesh with the same id. |
+| `vertex_count` / `vertex_stride` / `vertex_fields` | `uint32_t` / `uint32_t` / `std::vector<PointField>` | Vertex records. `x`, `y`, `z` (float32 or float64, count 1) are required when there are vertices. |
+| `face_count` / `face_stride` / `face_fields` | `uint32_t` / `uint32_t` / `std::vector<PointField>` | Face (triangle) records. `vertex_indices` (uint32, count 3) is required when there are faces. |
+| `face_data_offset` | `uint64_t` | Byte offset of face 0 in `data`, at or after the vertex records. |
+| `data` | `Span<const uint8_t>` + `BufferAnchor` | Vertex records, then face records. |
+| `links` | `std::vector<MeshFaceLink>` | Connections between faces that do not share an edge (`from_face`, `to_face`, producer-defined `kind`, `bidirectional`). |
+
+Every field besides the required ones is a channel. Channels exist on both
+element kinds because producers differ: NavMap stores its layers per face,
+`mesh_msgs` stores costs and colours per vertex. Per-vertex channels
+interpolate across a face; per-face channels are flat. As in `GridMap`, a NaN in
+a float channel means "no data" and integer channels have no empty sentinel, so
+a producer whose source has one (an "unknown" value) widens that channel to
+float32 with NaN. Which channel colours the mesh, the colormap and the range are
+viewer-side; `red`, `green`, `blue`, `alpha` are the conventional vertex colour
+channels.
+
+`pj_base/builtin/mesh_map_codec.hpp` serializes and deserializes this type
+using the canonical `PJ.MeshMap` protobuf wire format. Decoding runs
+`validateMeshMap()`, which rejects a layout the record math could not index
+safely (a field outside its stride, a missing or mistyped required channel,
+record regions outside `data` or overlapping) and checks every face's vertex
+indices and every link against the counts. `MeshMap` is not in the
+functional-v2 splice table: producers transcode into it, so there are no
+source bytes to splice.
+
+## MeshMapUpdate
+
+`MeshMapUpdate` is the delta counterpart to `MeshMap`, as `OccupancyGridUpdate`
+is to `OccupancyGrid`: new channel values for listed vertices or faces
+(`target`), with no geometry, so it is not independently drawable. A stateful
+consumer pairs it with the base mesh by topic name (`<base>_updates` <->
+`<base>`) and applies it only when `geometry_id` matches (`""` matches any).
+
+`data` holds `count` records of `stride` bytes described by `fields`; with
+records, `index` (uint32, count 1) is required and names the element. Every
+other field overwrites the base mesh's same-named channel; a channel the base
+lacks is added, "no data" elsewhere. `pj_base/builtin/mesh_map_update_codec.hpp`
+serializes it as `PJ.MeshMapUpdate`; `validateMeshMapUpdate()` checks the
+record layout, and whether the indices exist in the base mesh is the consumer's
+check.
+
 ## Field tables
 
 `pj_base/builtin/field_table.hpp` describes a builtin struct's members at
@@ -744,6 +810,7 @@ snapshot) can treat each entry as the full picture.
 | ROS `map_msgs/OccupancyGridUpdate` | `OccupancyGridUpdate` | Forward the cell-space patch (`x`/`y`/`width`/`height` + bytes); the consumer pairs it with the base grid and supplies origin/resolution. |
 | `foxglove.VoxelGrid` / `costmap_2d/VoxelGrid` | `VoxelGrid` | Map counts/strides/`cell_size`/`origin` into the struct; keep voxel bytes zero-copy in Z-Y-X order. The draw predicate is viewer-side. |
 | `foxglove.Grid` / `foxglove_msgs/Grid` | `GridMap` | Map `pose`/`cell_size`/strides into the struct and keep cell bytes zero-copy; `row_count` is `data.size / row_stride`; each `PackedElementField` becomes a `PointField` with the datatype renumbered (Foxglove: UINT8=1, INT8=2, UINT16=3, INT16=4, UINT32=5, INT32=6, FLOAT32=7, FLOAT64=8) and `count = 1`. |
+| EasyNavigation `navmap_ros_interfaces/NavMap` | `MeshMap` | Transcode once: interleave the separate position and index arrays into vertex and face records, write each layer as a per-face channel (a layer with an "unknown" value becomes float32 with NaN there), the surface index as a per-face `surface` channel, and links as `links`. `NavMapLayer` messages become `MeshMapUpdate` with `target = kFaces`. |
 | ROS `grid_map_msgs/GridMap` | `GridMap` | Transcode once: flip both axes (grid_map puts index (0,0) at the +x/+y corner), unwrap the ring-buffer start indices, interleave the column-major per-layer arrays into row-major cell records (one float32 channel per layer), and move the center pose to the corner of cell (0,0). |
 
 The builtin type is the boundary object. After conversion, consumers should not

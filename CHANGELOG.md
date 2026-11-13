@@ -5,9 +5,12 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [1.0.0]
 
-Host contract: unchanged (no floor impact) — `Log` gains an optional field and renames one on the
-same wire, and the widget-protocol changes are documentation only; `pj.playback.v1` already has its
-floor in `feature_floors.json`.
+Host contract: extended: builtin object types kMeshMap (21) and kMeshMapUpdate (22) (floor 1.0.0).
+Builtin object types are not among the surfaces `feature_floors.json` classifies, so the floor
+checker cannot see them: a plugin that emits either type raises its `min_sdk_required` to 1.0.0
+by hand, because an older host cannot decode the object. `Log` gains an optional field and renames
+one on the same wire, and the widget-protocol changes are documentation only; `pj.playback.v1`
+already has its floor in `feature_floors.json`.
 
 Log:
 
@@ -30,6 +33,27 @@ Testing:
 - Test helper `PJ::sdk::testing::FakeWidgetHost` (`pj_plugins/sdk/testing/fake_widget_host.hpp`): a
   `pj.widget_host.v1` host for Widget plugin tests that stores samples at nanosecond times like a
   real host, so a widget's history reads are tested at epoch-scale display times too.
+
+MeshMap, MeshMapUpdate and ChannelInfo:
+
+`sdk::MeshMap` (`pj_base/builtin/mesh_map.hpp`, `BuiltinObjectType::kMeshMap` = 21,
+`PJ_BUILTIN_OBJECT_TYPE_MESH_MAP`) is a triangle mesh whose vertices and faces carry named
+channels — the mesh sibling of `GridMap` for navigation meshes and cost meshes (EasyNavigation
+NavMap, mesh_navigation's `mesh_msgs`). Vertex and face records are described by the shared
+`PointField` channel model and live in one `data` buffer; `x`/`y`/`z` and `vertex_indices` are
+required, a NaN in a float channel means "no data", styling is viewer-side. `geometry_id` names
+the geometry revision and `links` records connections between faces that do not touch.
+`sdk::MeshMapUpdate` (`kMeshMapUpdate` = 22, `PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE`) is its
+delta counterpart, like `OccupancyGridUpdate`: channel values for listed vertices or faces, keyed
+by an `index` channel and paired with the base mesh by topic name and `geometry_id`.
+
+`PJ.MeshMap` / `PJ.MeshMapUpdate` wire formats, `mesh_map_codec.hpp` and
+`mesh_map_update_codec.hpp` (`serialize…`, `deserialize…`, and `validateMeshMap` /
+`validateMeshMapUpdate`; `validateMeshMap` also checks every face's vertex indices and every
+link), entries in the type-erased dispatcher, and `sdk::findField()` for looking a channel up by
+name. Neither type is in the functional-v2 splice table or has a parser-module `ObjectWriter`
+builder yet: producers transcode into them, and both can be appended later. Additive: no
+existing struct, slot, or wire format changes.
 
 ## [0.40.0]
 
