@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [1.0.0]
+## [1.0.0] — Unreleased
 
 Host contract: extended: builtin object types kMeshMap (21) and kMeshMapUpdate (22) (floor 1.0.0).
 Builtin object types are not among the surfaces `feature_floors.json` classifies, so the floor
