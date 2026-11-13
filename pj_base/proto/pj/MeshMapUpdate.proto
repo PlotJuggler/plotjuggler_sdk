@@ -12,8 +12,9 @@ import "google/protobuf/timestamp.proto";
 
 package PJ;
 
-// New values for one channel. `indices` (packed uint32, may be empty) lists the
-// vertices or faces `channel.data` covers, in order; empty = dense: the data
+// New values for one channel. `indices` (raw little-endian uint32 values, 4
+// bytes each, not varints; may be empty) lists the vertices or faces
+// `channel.data` covers, in order; empty = dense: the data
 // replaces the whole channel. A channel the base mesh lacks is added, "no data"
 // for elements a sparse patch does not list.
 message MeshChannelPatch {

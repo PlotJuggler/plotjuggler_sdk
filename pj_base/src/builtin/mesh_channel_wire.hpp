@@ -7,9 +7,10 @@
 // target=2, datatype=3, count=4, data=5, info=6), shared by the MeshMap and
 // MeshMapUpdate codecs, plus the checks both run on a channel.
 //
-// Decoding convention: an unknown field, or a known one with an unexpected wire
-// type, is skipped (forward compatibility); a known field that fails to read or
-// holds an invalid value fails the whole decode.
+// Decoding convention, as in protobuf parsers: an unknown field, or a known
+// field number with the wrong wire type, is skipped (forward compatibility); a
+// known field with the right wire type that fails to read or holds an invalid
+// value fails the whole decode.
 //
 // Byte fields are returned as spans into the Reader's buffer: callers parse an
 // owned copy of the wire so the spans stay valid under the object's anchor.
@@ -17,7 +18,6 @@
 // Inline-only; not exposed through the public include path.
 
 #include <cstdint>
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,10 +30,10 @@
 
 namespace PJ::builtin_wire {
 
-inline bool readSpan(Reader& reader, WireType type, Span<const uint8_t>& out) {
+inline bool readSpan(Reader& reader, Span<const uint8_t>& out) {
   const uint8_t* data = nullptr;
   size_t size = 0;
-  if (type != WireType::kLengthDelimited || !reader.readBytes(data, size)) {
+  if (!reader.readBytes(data, size)) {
     return false;
   }
   out = Span<const uint8_t>(data, size);
@@ -162,7 +162,24 @@ inline void writeMeshChannel(Writer& writer, const sdk::MeshChannel& channel) {
   writer.message(6, [&](Writer& nested) { writeChannelInfo(nested, channel.info); });
 }
 
-inline bool decodeMeshChannel(Reader& nested, sdk::MeshChannel& out) {
+/// A MeshChannel holding the proto3 zero values (VERTEX, UNKNOWN datatype,
+/// count 0). A standard encoder omits fields equal to them, so a decoder starts
+/// from this rather than from the struct defaults, which differ.
+inline sdk::MeshChannel wireDefaultMeshChannel() {
+  sdk::MeshChannel channel;
+  channel.target = sdk::MeshChannel::Target::kVertex;
+  channel.datatype = sdk::PointField::Datatype::kUnknown;
+  channel.count = 0;
+  return channel;
+}
+
+/// Reads one PJ.MeshChannel submessage, overwriting only the fields present on
+/// the wire: start `out` from wireDefaultMeshChannel().
+inline bool readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
+  Reader nested;
+  if (!reader.readMessage(nested)) {
+    return false;
+  }
   bool malformed = false;
   const bool parsed = parseFields(nested, [&](Tag tag, Reader& r) {
     uint64_t value = 0;
@@ -198,7 +215,7 @@ inline bool decodeMeshChannel(Reader& nested, sdk::MeshChannel& out) {
         if (tag.type != WireType::kLengthDelimited) {
           return false;
         }
-        malformed |= !readSpan(r, tag.type, out.data);
+        malformed |= !readSpan(r, out.data);
         return true;
       case 6:
         if (tag.type != WireType::kLengthDelimited) {
@@ -211,11 +228,6 @@ inline bool decodeMeshChannel(Reader& nested, sdk::MeshChannel& out) {
     }
   });
   return parsed && !malformed;
-}
-
-inline bool readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
-  Reader nested;
-  return reader.readMessage(nested) && decodeMeshChannel(nested, out);
 }
 
 // ---------- checks ----------
@@ -237,18 +249,6 @@ inline bool readMeshChannel(Reader& reader, sdk::MeshChannel& out) {
   if (elements > UINT64_MAX / channel.count / element_bytes ||
       static_cast<uint64_t>(channel.data.size()) != elements * channel.count * element_bytes) {
     return unexpected(what + ": channel '" + channel.name + "' data does not match its element count");
-  }
-  return {};
-}
-
-/// No (target, name) pair repeats.
-[[nodiscard]] inline Expected<void> requireUniqueChannels(
-    const std::vector<const sdk::MeshChannel*>& channels, const std::string& what) {
-  std::set<std::pair<int, std::string>> seen;
-  for (const sdk::MeshChannel* channel : channels) {
-    if (!seen.emplace(static_cast<int>(channel->target), channel->name).second) {
-      return unexpected(what + ": channel '" + channel->name + "' appears twice for the same target");
-    }
   }
   return {};
 }

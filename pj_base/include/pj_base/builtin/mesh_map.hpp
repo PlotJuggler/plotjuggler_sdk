@@ -25,7 +25,8 @@ namespace sdk {
 
 /// One data array of a mesh: a value (or a `count`-component vector) per
 /// vertex or per face, stored tightly packed in element order: element `e`,
-/// component `c` at byte `(e * count + c) * bytesPerElement(datatype)`.
+/// component `c` at byte `(e * count + c) * bytesPerElement(datatype)`, each
+/// element little-endian.
 /// `data.size()` is exactly `element_count * count * bytesPerElement(datatype)`,
 /// where the element count is the mesh's vertex or face count (or, in a
 /// MeshChannelPatch, its index count).
@@ -64,8 +65,8 @@ struct MeshFaceLink {
 ///
 /// Geometry is two arrays: `positions`, `vertex_count` interleaved x, y, z of
 /// `position_type` (float32 or float64), in the local frame of `origin`, itself
-/// in `frame_id`; and `indices`, `face_count` uint32 triplets, each below
-/// `vertex_count`. Data lives in `channels`, one array per channel, so a
+/// in `frame_id`; and `indices`, `face_count` triplets of 4-byte uint32, each
+/// below `vertex_count`. Every array is little-endian. Data lives in `channels`, one array per channel, so a
 /// producer that stores one array per field hands them over without repacking.
 /// Which channel colours the mesh, the colormap and the range are viewer-side.
 ///
@@ -75,7 +76,8 @@ struct MeshFaceLink {
 /// topics that carry several meshes (tiles, blocks) replaced by id.
 ///
 /// Every span is kept alive by `anchor`; they may view the source payload or a
-/// freshly allocated buffer.
+/// freshly allocated buffer. A span carries no alignment guarantee: read its
+/// elements with `memcpy`, never by casting the pointer.
 struct MeshMap {
   Timestamp timestamp_ns = 0;
   std::string frame_id;  ///< Source coordinate frame; required for 3D TF resolution.

@@ -279,6 +279,8 @@ TEST(BuiltinObjectSpliceTable, ContainsOnlyUnambiguousTopLevelBulkByteFields) {
            uint16_t{PJ_BUILTIN_OBJECT_TYPE_LOG},
            uint16_t{PJ_BUILTIN_OBJECT_TYPE_POSES_IN_FRAME},
            uint16_t{PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS},
+           uint16_t{PJ_BUILTIN_OBJECT_TYPE_MESH_MAP},
+           uint16_t{PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE},
        }) {
     uint32_t field_number = 99;
     EXPECT_FALSE(pj_builtin_object_splice_field_number_v1(absent, &field_number));

@@ -26,7 +26,8 @@
 namespace PJ {
 namespace sdk {
 
-/// New values for one channel. `indices` (uint32, may be empty) lists the
+/// New values for one channel. `indices` (little-endian 4-byte uint32, no
+/// alignment guarantee, may be empty) lists the
 /// vertices or faces `channel.data` covers, in order; empty means dense: the
 /// data replaces the whole channel and must hold one element per vertex or
 /// face of the base mesh. A channel the base mesh lacks is added, with "no

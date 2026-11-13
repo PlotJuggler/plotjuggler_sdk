@@ -16,8 +16,9 @@ package PJ;
 
 // One data array of a mesh: a value (or a `count`-component vector) per vertex
 // or per face, tightly packed in element order: element e, component c at byte
-// (e * count + c) * element size. `data` holds exactly element_count * count
-// elements, the element count being the mesh's vertex or face count (or, in a
+// (e * count + c) * element size, each element little-endian with the native
+// size of `datatype`. `data` holds exactly element_count * count elements, the
+// element count being the mesh's vertex or face count (or, in a
 // MeshChannelPatch, its index count). Conventional names: red, green, blue,
 // alpha (uint8 vertex colour), normal (count 3), uv (count 2).
 message MeshChannel {
@@ -57,10 +58,10 @@ message MeshFaceLink {
 // surface maps.
 //
 // Geometry: `positions` holds vertex_count interleaved x, y, z of
-// `position_type` (FLOAT32 or FLOAT64) in the local frame of `origin`, itself in
-// `frame_id`; `indices` holds face_count uint32 triplets, each below
-// vertex_count. Data lives in `channels`, one array per channel; (target, name)
-// pairs are unique. Which channel colours the mesh is viewer-side.
+// `position_type` (FLOAT32 or FLOAT64, little-endian) in the local frame of
+// `origin`, itself in `frame_id`; `indices` holds face_count triplets of raw
+// little-endian uint32 (4 bytes each, three per face), each below vertex_count. Data lives in `channels`, one array per
+// channel; (target, name) pairs are unique. Which channel colours the mesh is viewer-side.
 //
 // `geometry_id` names the geometry revision ("" = unspecified); a
 // PJ.MeshMapUpdate applies only to the mesh with the same id. `id` names the

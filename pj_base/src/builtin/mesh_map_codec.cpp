@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -96,17 +98,15 @@ Expected<void> validateMeshMap(const MeshMap& mesh) {
     }
   }
 
-  std::vector<const MeshChannel*> channels;
-  channels.reserve(mesh.channels.size());
+  std::set<std::pair<MeshChannel::Target, std::string_view>> seen;
   for (const MeshChannel& channel : mesh.channels) {
     const uint64_t elements = channel.target == MeshChannel::Target::kVertex ? mesh.vertex_count : mesh.face_count;
     if (auto ok = builtin_wire::validateMeshChannel(channel, elements, "MeshMap"); !ok) {
       return ok;
     }
-    channels.push_back(&channel);
-  }
-  if (auto ok = builtin_wire::requireUniqueChannels(channels, "MeshMap"); !ok) {
-    return ok;
+    if (!seen.emplace(channel.target, channel.name).second) {
+      return unexpected("MeshMap: channel '" + channel.name + "' appears twice for the same target");
+    }
   }
 
   for (const MeshFaceLink& link : mesh.links) {
@@ -156,6 +156,7 @@ Expected<MeshMap> deserializeMeshMap(const uint8_t* data, size_t size) {
   auto owned = std::make_shared<std::vector<uint8_t>>(data, data + size);
   Reader reader(owned->data(), owned->size());
   MeshMap mesh;
+  mesh.position_type = PointField::Datatype::kUnknown;  // the proto3 zero value, omitted by encoders
   bool malformed = false;
 
   const bool parsed = parseFields(reader, [&](Tag tag, Reader& r) {
@@ -211,15 +212,20 @@ Expected<MeshMap> deserializeMeshMap(const uint8_t* data, size_t size) {
         if (!length_delimited) {
           return false;
         }
-        malformed |= !builtin_wire::readSpan(r, tag.type, tag.field == 8 ? mesh.positions : mesh.indices);
+        malformed |= !builtin_wire::readSpan(r, tag.field == 8 ? mesh.positions : mesh.indices);
         return true;
       case 11: {
         if (!length_delimited) {
           return false;
         }
-        MeshChannel channel;
-        malformed |= !builtin_wire::readMeshChannel(r, channel);
-        mesh.channels.push_back(std::move(channel));
+        MeshChannel channel = builtin_wire::wireDefaultMeshChannel();
+        // An unnamed channel fails here, before validation, so a wire of empty
+        // channels is not materialised first.
+        if (builtin_wire::readMeshChannel(r, channel) && !channel.name.empty()) {
+          mesh.channels.push_back(std::move(channel));
+        } else {
+          malformed = true;
+        }
         return true;
       }
       case 12:

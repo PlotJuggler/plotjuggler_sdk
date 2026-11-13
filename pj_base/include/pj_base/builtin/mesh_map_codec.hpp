@@ -20,9 +20,11 @@ inline constexpr std::string_view kSchemaMeshMap = "PJ.MeshMap";
 [[nodiscard]] std::vector<uint8_t> serializeMeshMap(const sdk::MeshMap& mesh);
 
 /// Decodes canonical PJ.MeshMap wire bytes. The returned object owns a copy of
-/// the wire and its spans point into it (`anchor`). Unknown fields are skipped,
-/// so a later SDK may add optional ones; a malformed known field, or a mesh
-/// validateMeshMap() rejects, is an error.
+/// the wire and its spans point into it (`anchor`), unaligned. As in protobuf
+/// parsers, an unknown field, or a known field number with the wrong wire type,
+/// is skipped, so a later SDK may add optional ones; a known field with the
+/// right wire type and malformed contents, or a mesh validateMeshMap() rejects,
+/// is an error.
 [[nodiscard]] Expected<sdk::MeshMap> deserializeMeshMap(const uint8_t* data, size_t size);
 
 /// Full check of a mesh whose spans are in place: position_type is float32 or

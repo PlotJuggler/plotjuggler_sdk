@@ -719,15 +719,16 @@ own `ChannelInfo`.
 | `origin` | `Pose` | Pose of the mesh's local frame in `frame_id` (identity for most producers). |
 | `id` | `std::string` | The mesh within its topic; `""` = the topic's only mesh. Reserved for topics carrying several meshes (tiles, blocks) replaced by id. |
 | `geometry_id` | `std::string` | Geometry revision; `""` = unspecified. A `MeshMapUpdate` applies only to the mesh with the same id. |
-| `vertex_count` / `position_type` / `positions` | `uint32_t` / `PointField::Datatype` / `Span<const uint8_t>` | Interleaved x, y, z, float32 or float64. |
-| `face_count` / `indices` | `uint32_t` / `Span<const uint8_t>` | uint32 triplets, each below `vertex_count`. |
+| `vertex_count` / `position_type` / `positions` | `uint32_t` / `PointField::Datatype` / `Span<const uint8_t>` | Interleaved x, y, z, float32 or float64, little-endian. |
+| `face_count` / `indices` | `uint32_t` / `Span<const uint8_t>` | Little-endian 4-byte uint32, three per face, each below `vertex_count`. |
 | `channels` | `std::vector<MeshChannel>` | One array per channel; (target, name) pairs are unique. |
 | `links` | `std::vector<MeshFaceLink>` | Connections between faces that do not share an edge (`from_face`, `to_face`, producer-defined `kind`, `bidirectional`, `cost` with NaN = unspecified). |
 | `anchor` | `BufferAnchor` | Keeps every span alive. |
 
 A `MeshChannel` is `name`, `target` (vertex or face), `datatype`, `count`
 (components per element: 3 for a normal, 2 for a uv), `data` (tightly packed in
-element order, exactly `element_count * count` elements) and `info`
+element order, exactly `element_count * count` little-endian elements of the
+datatype's native size) and `info`
 (`ChannelInfo`). Conventional names: `red`, `green`, `blue`, `alpha` (uint8
 vertex colour), `normal`, `uv`. Per-vertex channels interpolate across a face;
 per-face channels are flat. Which channel colours the mesh, the colormap and the
@@ -735,9 +736,12 @@ range are viewer-side. Polygon meshes are triangulated by the producer, which ma
 add a face channel naming the polygon each triangle came from.
 
 `pj_base/builtin/mesh_map_codec.hpp` serializes it as `PJ.MeshMap`. Decoding
-copies the wire once and points every span into the copy, skips unknown fields
-(as every builtin decoder does, so later optional fields stay readable by older
-hosts), fails on a malformed known field, and runs `validateMeshMap()`, which
+copies the wire once and points every span into the copy (spans have no
+alignment guarantee: read elements with `memcpy`, do not cast the pointer).
+Like protobuf parsers, it skips unknown fields and known field numbers with the
+wrong wire type (so later optional fields stay readable by older hosts), fails
+on a known field with the right wire type and malformed contents, and runs
+`validateMeshMap()`, which
 checks the array sizes, every face's vertex indices, every channel's size and
 uniqueness, and every link. `MeshMap` is not in the functional-v2 splice table:
 it has several bulk fields.
@@ -747,7 +751,8 @@ it has several bulk fields.
 `MeshMapUpdate` is the delta counterpart to `MeshMap`, as `OccupancyGridUpdate`
 is to `OccupancyGrid`: channel patches with no geometry, so it is not
 independently drawable. Each `MeshChannelPatch` is a `MeshChannel` plus
-optional uint32 `indices`: with indices the data covers the listed elements;
+optional `indices` (raw little-endian uint32, 4 bytes each): with indices the
+data covers the listed elements;
 without them the patch is dense and replaces the whole channel. A channel the
 base mesh lacks is added, with "no data" for elements a sparse patch does not
 list; `channel.info` replaces the base channel's.
@@ -756,7 +761,8 @@ A consumer pairs an update topic with the mesh whose `geometry_id` it carries,
 and falls back to the topic-name convention `<base>_updates` <-> `<base>` when
 ids are unset; it applies an update only when `geometry_id` matches (`""` on
 either side matches any). `pj_base/builtin/mesh_map_update_codec.hpp`
-serializes it as `PJ.MeshMapUpdate`; `validateMeshMapUpdate()` checks each
+serializes it as `PJ.MeshMapUpdate` and decodes it under the same rules as
+`MeshMap`; `validateMeshMapUpdate()` checks each
 patch's layout, and whether the indices fit the base mesh is the consumer's
 check.
 

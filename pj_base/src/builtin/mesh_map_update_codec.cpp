@@ -5,7 +5,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -31,16 +33,19 @@ bool readPatch(Reader& reader, std::vector<MeshChannelPatch>& out) {
     return false;
   }
   MeshChannelPatch patch;
+  patch.channel = builtin_wire::wireDefaultMeshChannel();
   bool malformed = false;
   const bool parsed = parseFields(nested, [&](Tag tag, Reader& r) {
     if (tag.type != WireType::kLengthDelimited || (tag.field != 1 && tag.field != 2)) {
       return false;
     }
-    malformed |= tag.field == 1 ? !builtin_wire::readMeshChannel(r, patch.channel)
-                                : !builtin_wire::readSpan(r, tag.type, patch.indices);
+    malformed |=
+        tag.field == 1 ? !builtin_wire::readMeshChannel(r, patch.channel) : !builtin_wire::readSpan(r, patch.indices);
     return true;
   });
-  if (!parsed || malformed) {
+  // A patch without a named channel fails here, before validation, so a wire
+  // of empty patches is not materialised first.
+  if (!parsed || malformed || patch.channel.name.empty()) {
     return false;
   }
   out.push_back(std::move(patch));
@@ -50,8 +55,7 @@ bool readPatch(Reader& reader, std::vector<MeshChannelPatch>& out) {
 }  // namespace
 
 Expected<void> validateMeshMapUpdate(const MeshMapUpdate& update) {
-  std::vector<const MeshChannel*> channels;
-  channels.reserve(update.patches.size());
+  std::set<std::pair<MeshChannel::Target, std::string_view>> seen;
   for (const MeshChannelPatch& patch : update.patches) {
     const MeshChannel& channel = patch.channel;
     if (patch.indices.size() % sizeof(uint32_t) != 0) {
@@ -73,9 +77,11 @@ Expected<void> validateMeshMapUpdate(const MeshMapUpdate& update) {
         return ok;
       }
     }
-    channels.push_back(&channel);
+    if (!seen.emplace(channel.target, channel.name).second) {
+      return unexpected("MeshMapUpdate: channel '" + channel.name + "' appears twice for the same target");
+    }
   }
-  return builtin_wire::requireUniqueChannels(channels, "MeshMapUpdate");
+  return {};
 }
 
 std::vector<uint8_t> serializeMeshMapUpdate(const MeshMapUpdate& update) {

@@ -19,9 +19,10 @@ inline constexpr std::string_view kSchemaMeshMapUpdate = "PJ.MeshMapUpdate";
 [[nodiscard]] std::vector<uint8_t> serializeMeshMapUpdate(const sdk::MeshMapUpdate& update);
 
 /// Decodes canonical PJ.MeshMapUpdate wire bytes. The returned object owns a
-/// copy of the wire and its spans point into it (`anchor`). Unknown fields are
-/// skipped; a malformed known field, or an update validateMeshMapUpdate()
-/// rejects, is an error.
+/// copy of the wire and its spans point into it (`anchor`), unaligned. As in
+/// protobuf parsers, an unknown field, or a known field number with the wrong
+/// wire type, is skipped; a known field with the right wire type and malformed
+/// contents, or an update validateMeshMapUpdate() rejects, is an error.
 [[nodiscard]] Expected<sdk::MeshMapUpdate> deserializeMeshMapUpdate(const uint8_t* data, size_t size);
 
 /// Layout check: each patch's channel has a name, a known datatype and a
