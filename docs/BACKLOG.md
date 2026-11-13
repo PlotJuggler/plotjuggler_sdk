@@ -8,9 +8,7 @@ imply that consumer repositories have adopted it.
 ## 0.31 delivery status
 
 The 2026-09-05 promotion plan is implemented below, with the 2026-09-06
-maintainer decisions on query/rate ownership. `pj_source` replaces the compiled
-`descriptor_import_support` component; the old target and includes forward for
-one release. New consumers use `plotjuggler_sdk::source` and `PJ::sdk::source`.
+maintainer decisions on query/rate ownership. New consumers use `plotjuggler_sdk::source` and `PJ::sdk::source`.
 
 | Original item | Status and reuse destination |
 |---|---|

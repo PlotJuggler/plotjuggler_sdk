@@ -8,17 +8,17 @@
 
 #include <gtest/gtest.h>
 
-#include "pj_base/sdk/descriptor_import/origin.hpp"
+#include "pj_base/sdk/source/origin.hpp"
 
 namespace {
 
-using PJ::sdk::descriptor_import::Origin;
-using PJ::sdk::descriptor_import::originAllowed;
-using PJ::sdk::descriptor_import::originKey;
-using PJ::sdk::descriptor_import::OriginPolicy;
-using PJ::sdk::descriptor_import::parseOrigin;
-using PJ::sdk::descriptor_import::parseOriginList;
-using PJ::sdk::descriptor_import::sameOrigin;
+using PJ::sdk::source::Origin;
+using PJ::sdk::source::originAllowed;
+using PJ::sdk::source::originKey;
+using PJ::sdk::source::OriginPolicy;
+using PJ::sdk::source::parseOrigin;
+using PJ::sdk::source::parseOriginList;
+using PJ::sdk::source::sameOrigin;
 
 OriginPolicy grpcPolicy() {
   OriginPolicy policy;

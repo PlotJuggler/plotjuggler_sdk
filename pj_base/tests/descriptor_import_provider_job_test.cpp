@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "pj_base/sdk/descriptor_import.hpp"
-#include "pj_base/sdk/descriptor_import/provider_job.hpp"
+#include "pj_base/sdk/source/provider_job.hpp"
 #include "pj_base/sdk/testing/provider_job_probe.hpp"
 
 namespace {
@@ -24,11 +24,11 @@ namespace {
 using namespace std::chrono_literals;
 using PJ::readDescriptorImportStartRequest;
 using PJ::writeDescriptorQueryResult;
-using PJ::sdk::descriptor_import::ImportOutcome;
-using PJ::sdk::descriptor_import::JobControl;
-using PJ::sdk::descriptor_import::ProviderJob;
-using PJ::sdk::descriptor_import::SettlementLatch;
-using PJ::sdk::descriptor_import::testing::startWithGateProbe;
+using PJ::sdk::source::ImportOutcome;
+using PJ::sdk::source::JobControl;
+using PJ::sdk::source::ProviderJob;
+using PJ::sdk::source::SettlementLatch;
+using PJ::sdk::source::testing::startWithGateProbe;
 
 struct Recorder {
   std::atomic<int> datasets{0};

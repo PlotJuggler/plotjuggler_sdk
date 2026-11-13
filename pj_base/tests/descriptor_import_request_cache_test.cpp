@@ -16,19 +16,19 @@
 #include <string>
 #include <vector>
 
-#include "pj_base/sdk/descriptor_import/request_cache.hpp"
+#include "pj_base/sdk/source/request_cache.hpp"
 #include "pj_base/sdk/testing/request_cache_probe.hpp"
 
 namespace {
 
 namespace fs = std::filesystem;
-using PJ::sdk::descriptor_import::ArtifactValidator;
-using PJ::sdk::descriptor_import::CacheSpec;
-using PJ::sdk::descriptor_import::CleanupPolicy;
-using PJ::sdk::descriptor_import::IdentityScheme;
-using PJ::sdk::descriptor_import::ReadLease;
-using PJ::sdk::descriptor_import::RequestArtifactCache;
-using PJ::sdk::descriptor_import::testing::cleanupWithProbe;
+using PJ::sdk::source::ArtifactValidator;
+using PJ::sdk::source::CacheSpec;
+using PJ::sdk::source::CleanupPolicy;
+using PJ::sdk::source::IdentityScheme;
+using PJ::sdk::source::ReadLease;
+using PJ::sdk::source::RequestArtifactCache;
+using PJ::sdk::source::testing::cleanupWithProbe;
 
 const std::string kPrefix = "test:v1:sha256/128:";
 const std::string kSuffix = ".artifact";

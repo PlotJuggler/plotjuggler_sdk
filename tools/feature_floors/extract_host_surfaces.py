@@ -40,7 +40,6 @@ from pathlib import Path
 # Host-side vtables beyond the PJ_*host_vtable_t naming convention.
 EXTRA_HOST_VTABLES = {
     "PJ_service_registry_vtable_t",
-    "PJ_colormap_registry_vtable_t",
     "PJ_settings_store_vtable_t",
     "PJ_feature_catalog_vtable_t",
 }
@@ -54,7 +53,6 @@ PLUGIN_SIDE_VTABLES = {
 }
 # Versioned ids the HOST serves through the service registry (host surfaces).
 HOST_SERVICE_IDS = {
-    "pj.colormap.v1",
     "pj.data_processors.v1",
     "pj.feature_catalog.v1",
     "pj.mcp_endpoint.v1",
@@ -77,7 +75,6 @@ HOST_SERVICE_IDS = {
 # Versioned ids of PLUGIN-provided extensions (the host queries the plugin).
 PLUGIN_EXTENSION_IDS = {
     "pj.descriptor_import.v1",
-    "pj.parser_functional.v1",
     "pj.parser_functional.v2",
     "pj.parser_route_claims.v1",
     "pj.topic_subscription.v1",

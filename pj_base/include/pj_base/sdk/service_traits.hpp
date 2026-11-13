@@ -163,15 +163,6 @@ struct ToolboxHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
-struct ColorMapRegistryService {
-  static constexpr const char* kName = "pj.colormap.v1";
-  static constexpr uint32_t kMinVersion = 1;
-  using Raw = PJ_colormap_registry_t;
-  using Vtable = PJ_colormap_registry_vtable_t;
-  using View = ColorMapRegistryView;
-  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
-};
-
 /// Optional service for plugins that submit WHOLE-SERIES data processors to the host
 /// by data (kind + language + script + input/output names + params JSON + flags).
 /// Nothing executable crosses the boundary; the host compiles, runs, and routes the

@@ -3,7 +3,7 @@ project(sdk_consumer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk source descriptor_import_support)
+find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk source)
 
 # A plugin is: add_library(SHARED) + link plugin_sdk + pj_configure_plugin().
 # The helper (shipped with plugin_sdk) applies symbol isolation, the export
@@ -33,12 +33,12 @@ pj_embed_file(dialog_controls_example
   VAR_NAME kUiContent
 )
 
-# Probe for the descriptor_import_support component: links the exported
-# compiled target and touches one symbol per public header.
-add_executable(descriptor_import_probe descriptor_import_probe.cpp)
-target_link_libraries(descriptor_import_probe PRIVATE plotjuggler_sdk::descriptor_import_support)
+# Probe for the source component: links the exported compiled target and
+# touches one symbol per public header.
+add_executable(source_probe source_probe.cpp)
+target_link_libraries(source_probe PRIVATE plotjuggler_sdk::source)
 
-# New component and packaged fixture consumption, alongside the deprecated probe.
+# Packaged fixture consumption.
 foreach(fixture mock_data_source mock_file_source mock_toolbox missing_id_data_source)
   pj_add_sdk_test_fixture(${fixture} fixture_target)
   # Repeated calls must return the same target without redefining it.

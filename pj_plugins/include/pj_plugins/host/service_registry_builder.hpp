@@ -37,7 +37,7 @@ class ServiceRegistryBuilder {
   /// Register a service under @p name. Rejects null pointers and duplicate
   /// names (silent overwrite would mask configuration bugs).
   ///
-  /// @param name              Canonical service name (e.g. "pj.colormap.v1").
+  /// @param name              Canonical service name (e.g. "pj.source_write.v1").
   /// @param protocol_version  The version of the service as implemented here.
   ///                          Consumers may request any version <= this value.
   /// @param service           Fat pointer to the service. The builder does

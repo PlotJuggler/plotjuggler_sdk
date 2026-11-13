@@ -98,15 +98,14 @@ Key pieces:
 ## Route claims and functional extensions
 
 Recompile a handler-registering parser against SDK 0.22 and the base class
-automatically exposes all three host-facing tables:
+automatically exposes both host-facing tables:
 
 - `pj.parser_route_claims.v1` reports exact claims from the handler table. It
   never reports a wildcard. The host synthesizes one universal wildcard scalar
   claim per manifest encoding.
-- `pj.parser_functional.v1` carries complete canonical-wire objects and scalar
-  records through synchronous caller-owned sinks.
-- `pj.parser_functional.v2` keeps the scalar route unchanged and adds the object
-  splice sink. The host asks for v2 first and falls back to v1.
+- `pj.parser_functional.v2` carries scalar records and canonical-wire objects
+  (complete, or with one spliced bulk field) through synchronous caller-owned
+  sinks.
 
 Scalar and object routes resolve independently. Another provider may therefore
 own the object route for a type that this parser still flattens to scalars. There

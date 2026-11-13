@@ -607,8 +607,6 @@ C++ consumers: `PJ::DescriptorImportProviderView`, `PJ::JoinableJob`,
 Start with [Existing SDK utilities](../../docs/sdk-utilities.md), then follow
 [the provider contract](../../docs/provider-guide.md). It covers the existing
 job/cache machinery, descriptor validation, completion, Stop and test fixtures.
-The pre-0.31 `descriptor_import_support` component and include directory forward
-to `source` for one release; new code uses `pj_base/sdk/source/`.
 
 ## Common Mistakes
 

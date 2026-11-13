@@ -11,7 +11,6 @@
 #include <string>
 
 #include "detail/library_loader.hpp"
-#include "pj_plugins/host/config_envelope.hpp"
 #include "pj_plugins/host/data_source_library.hpp"
 #include "pj_plugins/host/dialog_handle.hpp"
 
@@ -339,34 +338,6 @@ TEST(SourceDialogIntegration, NoDialogPluginReturnsNull) {
   // resolveDialogVtable should fail (no dialog vtable exported)
   auto dialog_vt = lib->resolveDialogVtable();
   EXPECT_FALSE(dialog_vt);
-}
-
-// --- Test 10: Config envelope ---
-
-TEST(SourceDialogIntegration, ConfigEnvelopeRoundTrip) {
-  std::string source_cfg = R"({"host":"localhost","port":9090})";
-  std::string parser_binding = R"({"parser":"json"})";
-
-  std::string packed = PJ::ConfigEnvelope::pack(source_cfg, parser_binding);
-  auto unpacked = PJ::ConfigEnvelope::unpack(packed);
-  ASSERT_TRUE(unpacked) << unpacked.error();
-  EXPECT_EQ(unpacked->source_config, source_cfg);
-  EXPECT_EQ(unpacked->parser_binding, parser_binding);
-}
-
-TEST(SourceDialogIntegration, ConfigEnvelopeDefaultParserBinding) {
-  std::string source_cfg = R"({"host":"example.com"})";
-  std::string packed = PJ::ConfigEnvelope::pack(source_cfg);
-  auto unpacked = PJ::ConfigEnvelope::unpack(packed);
-  ASSERT_TRUE(unpacked) << unpacked.error();
-  EXPECT_EQ(unpacked->source_config, source_cfg);
-  EXPECT_EQ(unpacked->parser_binding, "{}");
-}
-
-TEST(SourceDialogIntegration, ConfigEnvelopeRejectsInvalid) {
-  EXPECT_FALSE(PJ::ConfigEnvelope::unpack("not json"));
-  EXPECT_FALSE(PJ::ConfigEnvelope::unpack(R"({"version":99})"));
-  EXPECT_FALSE(PJ::ConfigEnvelope::unpack(R"({"version":1})"));
 }
 
 }  // namespace

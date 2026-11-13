@@ -49,7 +49,7 @@ extern "C" {
  * pre-v5 parser DSOs because the C++ MessageParserPluginBase
  * pure-functional contract changed parseScalars()/parseObject() return
  * types to ScalarRecord/ObjectRecord. SDK 0.21 subsequently placed those
- * results behind the additive `pj.parser_functional.v1` C extension; direct
+ * results behind an additive C extension, now `pj.parser_functional.v2`; direct
  * host calls on the C++ base remain only as a temporary old-plugin bridge.
  *
  * The C data-plane layout remains the v4 layout:
@@ -941,30 +941,11 @@ typedef struct {
   const PJ_object_read_host_vtable_t* vtable;
 } PJ_object_read_host_t;
 
-/**
- * Colormap registry service ("pj.colormap.v1", protocol_version 1).
- *
- * Independent host-provided service for toolbox plugins that want to
- * publish named colormap callbacks.
+/*
+ * Service id "pj.colormap.v1" is RETIRED as of 1.0.0 and must never be reused:
+ * toolbox binaries built against earlier SDKs request it with the old layout.
+ * A future colormap service would be "pj.colormap.v2".
  */
-typedef struct PJ_colormap_registry_vtable_t {
-  uint32_t protocol_version;
-  uint32_t struct_size;
-
-  /* [main-thread] Register a named colormap. eval_fn is invoked later from
-   * the main GUI thread when rendering. */
-  bool (*register_map)(
-      void* ctx, PJ_string_view_t name, const char* (*eval_fn)(double value, void* user_ctx), void* user_ctx,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Unregister a previously registered colormap. */
-  bool (*unregister_map)(void* ctx, PJ_string_view_t name, PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_colormap_registry_vtable_t;
-
-typedef struct {
-  void* ctx;
-  const PJ_colormap_registry_vtable_t* vtable;
-} PJ_colormap_registry_t;
 
 /**
  * Data-processor host service ("pj.data_processors.v1", protocol_version 1).

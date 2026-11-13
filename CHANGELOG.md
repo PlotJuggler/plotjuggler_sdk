@@ -94,6 +94,29 @@ SceneEntities and PlotMarkers:
 - `PlotMarkers`: the decoder drops a marker whose `kind` it does not know instead of drawing it as
   a time region; wire numbers unchanged.
 
+Removed:
+
+- **Breaking (source):** the `pj.colormap.v1` service: `PJ_colormap_registry_vtable_t`,
+  `PJ_colormap_registry_t`, `sdk::ColorMapRegistryView`, `sdk::ColorMapRegistryService` and
+  `ToolboxPluginBase::colorMapRegistry()` / `colorMapRegistryBound()`. No replacement; no host
+  served it. The id `pj.colormap.v1` is retired and never reused (a future service would be
+  `pj.colormap.v2`).
+- **Breaking (source):** `PJ::ConfigEnvelope` (`pj_plugins/host/config_envelope.hpp`). No
+  replacement; the host never used it.
+- **Breaking (source):** the `descriptor_import_support` compatibility surface: the
+  `plotjuggler_sdk::descriptor_import_support` CMake target and Conan component, and the forwarding
+  headers under `pj_base/sdk/descriptor_import/` with their `PJ::sdk::descriptor_import` namespace
+  alias. Use `plotjuggler_sdk::source`, `pj_base/sdk/source/` and `PJ::sdk::source`.
+  `pj_base/sdk/descriptor_import.hpp` and the `pj.descriptor_import.v1` protocol are unchanged.
+- **Breaking (source):** the `pj.parser_functional.v1` extension: `PJ_PARSER_FUNCTIONAL_EXTENSION_V1`,
+  `PJ_parser_functional_v1_t`, `PJ_parser_object_sink_v1_t`, `PJ_parser_parse_object_fn_t` and
+  their `*_V1_MIN_SIZE` macros. `MessageParserPluginBase` no longer answers the v1 id and
+  `MessageParserHandle` negotiates only `pj.parser_functional.v2`, treating a v1-only parser like one
+  without a functional extension. Use v2. The id `pj.parser_functional.v1` is retired and never
+  reused.
+- **Breaking (source):** `PJ::sdk::MediaMetadataBuilder` (`pj_base/sdk/media_metadata.hpp`). Use
+  `ObjectTopicMetadataBuilder` (`pj_base/sdk/object_topic_metadata.hpp`).
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,

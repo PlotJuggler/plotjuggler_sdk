@@ -188,7 +188,7 @@ class CsvFileLoader : public PJ::FileSourceBase {
 
   PJ::Status loadConfig(std::string_view json) override {
     config_ = std::string(json);
-    // Extract "filepath" from the JSON config envelope.
+    // Extract "filepath" from the JSON config.
     // Use whatever JSON library your plugin links.
     // path_ = parse(json)["filepath"];
     return PJ::okStatus();
@@ -640,9 +640,7 @@ evolution automatically.
 
 **Integrated parser dialog:** Add a `pj_parser_slot` placeholder to render the
 selected parser's configuration dialog inline. The host detects the placeholder.
-Both dialogs share a window but persist config independently:
-`ConfigEnvelope.source_config` for the source and `ConfigEnvelope.parser_binding`
-for the parser. See `pj_plugins/docs/message-parser-guide.md` § "Dialog integration".
+See `pj_plugins/docs/message-parser-guide.md` § "Dialog integration".
 
 ## Lifecycle Signals
 
@@ -968,14 +966,9 @@ because the source owns the dialog object itself.
 `loadConfig()` restores it. Headless restart: `loadConfig(saved) → start()` —
 no dialog needed.
 
-The host wraps the source config in a versioned envelope (`ConfigEnvelope`)
-that also holds host-owned parser binding state:
-
-```json
-{"version": 1, "source_config": "...", "parser_binding": "..."}
-```
-
-The source never sees `parser_binding` — the host manages it.
+When the source dialog embeds a parser dialog, the host adds a
+`_parser_config` key to that JSON, which `PJ::sdk::parserConfigOverride()`
+(`pj_plugins/sdk/streaming_source.hpp`) reads.
 
 A complete example lives at `pj_plugins/examples/mock_source_with_dialog.cpp`.
 See `pj_plugins/docs/dialog-plugin-guide.md` for the dialog protocol itself.

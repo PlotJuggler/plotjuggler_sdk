@@ -9,8 +9,6 @@ PJ_INGEST_COMPLETION_FLAG_ATTESTS_EMPTY_TOPICS
 PJ_INGEST_COMPLETION_FLAG_NONE
 PJ_PARSER_ROUTE_FLAG_OBJECT_V1
 PJ_PARSER_ROUTE_FLAG_SCALAR_V1
-PJ_colormap_registry_vtable_t::register_map
-PJ_colormap_registry_vtable_t::unregister_map
 PJ_data_processors_host_vtable_t::check_data_processor_script
 PJ_data_processors_host_vtable_t::create_data_processor
 PJ_data_processors_host_vtable_t::create_data_processor_v2
@@ -119,7 +117,6 @@ PJ_viewport_host_vtable_t::zoom_to_time_range
 PJ_widget_host_vtable_t::notify_inputs_changed
 PJ_widget_host_vtable_t::query_history
 PJ_widget_host_vtable_t::report_widget_message
-pj.colormap.v1
 pj.data_processors.v1
 pj.feature_catalog.v1
 pj.mcp_endpoint.v1

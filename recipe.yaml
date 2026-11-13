@@ -38,7 +38,7 @@ requirements:
     - fmt 12.*
     - fast_float 8.*
   run:
-    # nlohmann_json appears in PUBLIC installed headers (config_envelope.hpp) and is
+    # nlohmann_json appears in PUBLIC installed headers (pj_plugins/sdk/streaming_source.hpp) and is
     # find_dependency()'d by the installed CMake config, so consumers need it at use
     # time. Constrain to the 3.x line built against (header-only API breaks at majors).
     - nlohmann_json >=3.12,<4

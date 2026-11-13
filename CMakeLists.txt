@@ -150,7 +150,7 @@ endif()
 # Components:
 #   base         — vocabulary types (always available)
 #   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
-#   source       — compiled provider helpers (descriptor_import_support is an alias)
+#   source       — compiled provider helpers
 #   plugin_host  — host-side loaders (data_source, message_parser, toolbox,
 #                  dialog, catalogs)
 # ---------------------------------------------------------------------------

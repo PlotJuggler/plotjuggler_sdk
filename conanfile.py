@@ -6,7 +6,6 @@ Exposes CMake components under the `plotjuggler_sdk::` namespace:
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
   source       — compiled source-provider support
-  descriptor_import_support — compatibility alias for source
 
 A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
 
@@ -177,11 +176,6 @@ class PlotjugglerSdkConan(ConanFile):
         source.libs = ["pj_source"]
         source.includedirs = ["include"]
         source.requires = ["base", "nlohmann_json::nlohmann_json"]
-
-        support = self.cpp_info.components["descriptor_import_support"]
-        support.set_property("cmake_target_name", "plotjuggler_sdk::descriptor_import_support")
-        support.libs = []
-        support.requires = ["source"]
 
 
         # --- plugin_host (umbrella linking every host-side loader) ---
