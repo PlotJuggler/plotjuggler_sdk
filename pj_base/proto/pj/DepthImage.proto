@@ -56,4 +56,8 @@ message DepthImage {
 
   // Distortion coefficients for `distortion_model`. Length depends on the model.
   repeated double D = 8;
+
+  // Coordinate frame of the camera that produced the depth. Consumers pair the depth with the `CameraInfo` carrying the
+  // same `frame_id`. Empty when the producer has no frame information.
+  string frame_id = 9;
 }

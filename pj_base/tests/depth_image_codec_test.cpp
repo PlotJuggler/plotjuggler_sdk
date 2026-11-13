@@ -73,6 +73,46 @@ TEST(DepthImageCodecTest, RoundTripPlumbBobDistortion) {
   }
 }
 
+TEST(DepthImageCodecTest, RoundTripPreservesFrameId) {
+  DepthImage in;
+  in.width = 2;
+  in.height = 1;
+  in.encoding = "16UC1";
+  in.frame_id = "camera_depth_optical_frame";
+
+  const auto bytes = serializeDepthImage(in);
+  auto out = deserializeDepthImage(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->frame_id, "camera_depth_optical_frame");
+  EXPECT_EQ(out->encoding, "16UC1");
+}
+
+// Bytes written before `frame_id` existed (no field 9) must decode with an empty frame_id.
+TEST(DepthImageCodecTest, MissingFrameIdDecodesEmpty) {
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 2, 0);  // width
+  pb::appendVarint(bytes, 4);
+  pb::appendTag(bytes, 4, 2);  // encoding
+  pb::appendString(bytes, "16UC1");
+
+  auto out = deserializeDepthImage(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->width, 4u);
+  EXPECT_EQ(out->encoding, "16UC1");
+  EXPECT_TRUE(out->frame_id.empty());
+}
+
+// Pins `frame_id` to proto field 9 independently of the encoder.
+TEST(DepthImageCodecTest, FrameIdIsProtoField9) {
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 9, 2);
+  pb::appendString(bytes, "cam0");
+
+  auto out = deserializeDepthImage(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->frame_id, "cam0");
+}
+
 // K * p / p.z, the forward pinhole projection: the oracle for unprojection.
 std::array<double, 2> project(const std::array<double, 9>& k, const std::array<double, 3>& p) {
   const double x = k[0] * p[0] + k[1] * p[1] + k[2] * p[2];
