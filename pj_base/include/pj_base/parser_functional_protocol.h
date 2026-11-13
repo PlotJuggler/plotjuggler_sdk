@@ -27,8 +27,8 @@ extern "C" {
 #endif
 
 /* Extension id "pj.parser_functional.v1" is RETIRED as of 1.0.0 and must
- * never be reused: plugins built against SDK 0.21-0.40 export it with the old
- * table layout. Hosts negotiate only "pj.parser_functional.v2". */
+ * never be reused: plugins built against SDK 0.21 through 1.0.0-dev.1 export it
+ * with the old table layout. Hosts negotiate only "pj.parser_functional.v2". */
 
 /** Caller-owned synchronous sink for one scalar record.
  *

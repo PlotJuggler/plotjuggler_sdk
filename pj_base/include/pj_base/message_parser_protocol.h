@@ -13,7 +13,7 @@
  * extension declared in parser_functional_protocol.h. Scalar fields cross
  * as synchronous borrowed C values; canonical objects cross as a stable type
  * tag plus canonical wire bytes or a v2 splice. No C++ parser class or STL
- * value crosses the new path. Parsers built before SDK 0.21 do not expose the
+ * value crosses the new path. Parsers built before SDK 0.22 do not expose the
  * extension and may use a deprecated host compatibility bridge until the next
  * SDK major version. Pure-C plugins may continue using parse() to write
  * scalars to writeHost.

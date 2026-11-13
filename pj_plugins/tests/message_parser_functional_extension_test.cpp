@@ -437,12 +437,30 @@ TEST(MessageParserFunctionalExtension, ObjectRouteReturnsAHostOwnedTypedValue) {
 }
 
 TEST(MessageParserFunctionalExtension, HostTreatsRetiredV1OnlyParserAsHavingNoFunctionalRoute) {
-  // A parser built against SDK 0.21-0.40 may answer only the retired
-  // "pj.parser_functional.v1" id; the host never negotiates it.
+  // A parser built against SDK 0.21 through 1.0.0-dev.1 answers the retired
+  // "pj.parser_functional.v1" id with a well-formed table. The host must not
+  // negotiate it: a restored fallback would call these entry points.
+  struct RetiredV1Table {
+    uint32_t struct_size;
+    PJ_parser_parse_scalars_fn_t parse_scalars;
+    bool (*parse_object)(void*, int64_t, PJ_payload_t, const void*, PJ_error_t*) noexcept;
+  };
+  static int retired_calls = 0;
+  retired_calls = 0;
   static const PJ_message_parser_vtable_t vtable = [] {
     PJ_message_parser_vtable_t copy = *parserVtable<FunctionalParser>();
     copy.get_plugin_extension = [](void*, PJ_string_view_t id) noexcept -> const void* {
-      static const int old_table = 0;
+      static const RetiredV1Table old_table{
+          sizeof(RetiredV1Table),
+          [](void*, int64_t, PJ_bytes_view_t, const PJ_parser_scalar_sink_v1_t*, PJ_error_t*) noexcept {
+            ++retired_calls;
+            return true;
+          },
+          [](void*, int64_t, PJ_payload_t, const void*, PJ_error_t*) noexcept {
+            ++retired_calls;
+            return true;
+          },
+      };
       const std::string_view name{id.data == nullptr ? "" : id.data, id.size};
       return name == "pj.parser_functional.v1" ? &old_table : nullptr;
     };
@@ -454,6 +472,7 @@ TEST(MessageParserFunctionalExtension, HostTreatsRetiredV1OnlyParserAsHavingNoFu
   auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>{});
   ASSERT_FALSE(record.has_value());
   EXPECT_NE(record.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), std::string::npos);
+  EXPECT_EQ(retired_calls, 0);
 }
 
 TEST(MessageParserFunctionalExtension, HostV2PathReconstructsEligibleSplices) {

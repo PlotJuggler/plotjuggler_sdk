@@ -836,10 +836,10 @@ zero-length canonical payload is accepted as the valid proto3 default message
 when the separate type tag is known. Concrete builtins and codecs live under
 `pj_base/builtin/`; see `docs/builtin_type.md` for the catalog.
 
-Pre-0.21 parsers expose no functional extension, and handler-based 0.21 parsers
-may expose v1 without v2. The host keeps a clearly isolated, deprecated
-direct-C++ bridge for binaries with neither extension. New plugins and new host
-code use v2-first negotiation; SDK 1.0 can remove the bridge and the frozen
+Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
+builds expose none, and 0.21 builds expose only the retired v1. The host keeps a
+clearly isolated, deprecated direct-C++ bridge for those binaries. New plugins
+and new host code use v2; SDK 1.0 can remove the bridge and the frozen
 `MessageParserPluginBase` layout constraint.
 
 ## Per-topic pause (demand-driven subscription)

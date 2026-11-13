@@ -134,8 +134,8 @@ class MessageParserHandle {
     return okStatus();
   }
 
-  /// True when this parser exposes the 0.21 pure-functional C extension.
-  /// Older parsers return false and can be handled through the deprecated
+  /// True when this parser exposes the pure-functional C extension (v2, SDK
+  /// 0.22 and later). Older parsers return false and can be handled through the deprecated
   /// in-process C++ compatibility bridge until the next SDK major version.
   [[nodiscard]] bool supportsFunctionalParsing() const {
     return functionalExtension() != nullptr;

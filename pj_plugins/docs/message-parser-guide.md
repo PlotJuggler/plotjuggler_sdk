@@ -664,7 +664,7 @@ when at least one handler exists. Its trampolines:
 `MessageParserHandle::parseScalarsFunctional()` copies or consumes scalar views
 only during the callback.
 
-`parseObjectFunctional()` negotiates v2 first and reconstructs a valid splice
+`parseObjectFunctional()` uses the v2 extension and reconstructs a valid splice
 when present. It checks that the emitted type matches the binding's expected
 object type, then decodes synchronously into a host-owned `ObjectRecord`.
 That value remains safe after the parser instance and shared library are gone.
@@ -681,11 +681,11 @@ This avoids exporting plugin allocators, destructors, RTTI, STL layout or
 type-erasure internals. Measure this path for image/point-cloud workloads.
 Do not bypass it with direct C++ calls.
 
-Parsers built before SDK 0.21 expose no functional extension, and handler-based
-0.21 parsers may expose v1 without v2. New host code uses v2-first/v1-fallback
-negotiation and may use a deprecated, isolated direct-C++ bridge only when both
-extensions are absent. It must not otherwise cast an opaque parser context; SDK
-1.0 removes the bridge.
+Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
+builds expose none, and 0.21 builds expose only the retired v1. New host code
+negotiates v2 and may use a deprecated, isolated direct-C++ bridge only when v2
+is absent. It must not otherwise cast an opaque parser context; SDK 1.0 removes
+the bridge.
 
 Builtin types and their canonical codecs live under `pj_base/builtin/`, one
 header per type. `serializeBuiltinObject()` / `deserializeBuiltinObject()`

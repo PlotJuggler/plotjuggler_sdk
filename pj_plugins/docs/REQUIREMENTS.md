@@ -135,10 +135,10 @@ Independent decoder, typically driven by a DataSource via the host.
   pays the explicit canonical serialization boundary.
 - Extension presence is truthful, not merely SDK-version-based: a rebuilt
   parser that still overrides only legacy `parse()` must not advertise the
-  functional extensions. Hosts query after `bind_schema` and do not cache an
-  earlier absence; an older handler parser may expose v1 without v2.
+  functional extension. Hosts query after `bind_schema` and do not cache an
+  earlier absence.
 - Until SDK 1.0, a host may use an isolated deprecated direct-C++ bridge for a
-  pre-0.21 parser whose functional extensions are absent. The bridge and its
+  pre-0.22 parser, which exposes no v2 extension. The bridge and its
   class-layout constraint are removed together at 1.0.
 
 ### Dialog
