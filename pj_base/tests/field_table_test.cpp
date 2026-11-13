@@ -422,6 +422,7 @@ DepthImage makeSampleDepthImage() {
   image.distortion_model = "plumb_bob";
   image.D = {0.1, -0.2, 0.001, -0.002, 0.05};
   image.timestamp_ns = -42;
+  image.frame_id = "camera_depth";
 
   std::vector<uint8_t> bytes(static_cast<size_t>(image.width) * image.height * 4);
   for (size_t i = 0; i < bytes.size(); ++i) {

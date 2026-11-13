@@ -88,6 +88,7 @@ struct FieldTable<DepthImage> {
       field<&DepthImage::distortion_model>("distortion_model"),
       field<&DepthImage::D>("D"),
       field<&DepthImage::timestamp_ns>("timestamp_ns"),
+      field<&DepthImage::frame_id>("frame_id"),
   };
   static constexpr FieldTableView view{"DepthImage", Span<const FieldDescriptor>(fields)};
 };

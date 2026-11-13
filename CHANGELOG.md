@@ -59,6 +59,12 @@ decoders skip unknown fields, like every builtin decoder, and fail on a malforme
 in the functional-v2 splice table (several bulk fields) and no parser-module `ObjectWriter` builder
 yet. Additive: no existing struct, slot, or wire format changes.
 
+DepthImage:
+
+- `sdk::DepthImage` gains `frame_id` (proto field 9 of `PJ.DepthImage`), the coordinate frame of the camera that
+  produced the depth, so a consumer can pair it with a `CameraInfo` by id. Additive; readers built before this release
+  skip the unknown field.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,

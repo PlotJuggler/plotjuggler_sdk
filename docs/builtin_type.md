@@ -226,6 +226,10 @@ for this type.
 | `K` | `std::array<double, 9>` | 3x3 row-major camera intrinsic matrix. |
 | `distortion_model` | `std::string` | Empty for rectified images; otherwise identifies the distortion model. |
 | `D` | `std::vector<double>` | Distortion coefficients for `distortion_model`. |
+| `frame_id` | `std::string` | Coordinate frame of the camera that produced the depth; consumers pair it with the `CameraInfo` of the same `frame_id`. Empty when unknown. |
+
+`data` is row-major and tightly packed (`width * height` pixels, no row padding; the row stride is `width` times the
+pixel size, 2 bytes for `16UC1` and 4 for `32FC1`), and the field table reports it as not big-endian.
 
 `K` follows the usual camera matrix convention:
 

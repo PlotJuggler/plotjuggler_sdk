@@ -69,6 +69,11 @@ struct DepthImage {
   std::vector<double> D;
 
   Timestamp timestamp_ns = 0;
+
+  /// Coordinate frame of the camera that produced the depth. Lets a consumer
+  /// pair the depth with the CameraInfo of the same frame_id. Empty when the
+  /// producer has no frame information.
+  std::string frame_id;
 };
 
 }  // namespace sdk

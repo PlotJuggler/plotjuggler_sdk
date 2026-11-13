@@ -50,6 +50,7 @@ std::vector<uint8_t> serializeDepthImage(const DepthImage& depth) {
   writer.packedDouble(6, depth.K);
   writer.string(7, depth.distortion_model);
   writer.packedDouble(8, depth.D);
+  writer.string(9, depth.frame_id);
 
   return out;
 }
@@ -98,6 +99,8 @@ Expected<sdk::DepthImage> deserializeDepthImage(const uint8_t* data, size_t size
         return tag.type == WireType::kLengthDelimited && r.readString(depth.distortion_model);
       case 8:
         return tag.type == WireType::kLengthDelimited && readPackedDouble(r, depth.D);
+      case 9:
+        return tag.type == WireType::kLengthDelimited && r.readString(depth.frame_id);
       default:
         return false;
     }
