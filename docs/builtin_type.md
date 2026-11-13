@@ -693,7 +693,7 @@ fields by name in a later, additive release.
 |-------|------|-------|
 | `unit` | `std::string` | e.g. `m`, `s`, `1/1000 log-odds`; `""` = none. |
 | `no_data` | `std::optional<double>` | The value that means "no data" in an integer channel (an occupancy grid's 255). NaN always means "no data" in a float channel; for one, this is an additional marker. |
-| `kind` | `ChannelKind` | `kContinuous` (a quantity: colormap), `kCategorical` (class ids: palette), `kBitmask` (flags). Unknown values on the wire read as continuous. |
+| `kind` | `ChannelKind` | `kContinuous` (a quantity: colormap), `kCategorical` (class ids: palette). Unknown values on the wire read as continuous. |
 | `categories` | `std::vector<ChannelCategory>` | value → label, with an optional colour, for a categorical channel. |
 
 Every field is optional: a default `ChannelInfo` is a continuous, unit-less

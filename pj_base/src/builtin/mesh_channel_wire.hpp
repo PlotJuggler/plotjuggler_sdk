@@ -135,7 +135,7 @@ inline bool readChannelInfo(Reader& reader, sdk::ChannelInfo& out) {
         uint64_t value = 0;
         malformed |= !r.readVarint(value);
         // A kind this SDK does not know reads as continuous, the safe default.
-        out.kind = value <= 2 ? static_cast<sdk::ChannelKind>(value) : sdk::ChannelKind::kContinuous;
+        out.kind = value <= 1 ? static_cast<sdk::ChannelKind>(value) : sdk::ChannelKind::kContinuous;
         return true;
       }
       case 4:

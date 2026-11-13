@@ -480,6 +480,12 @@ TEST(MeshMapCodecTest, RejectsEachMalformedKnownField) {
   }
 }
 
+TEST(MeshMapCodecTest, ReadsAChannelKindItDoesNotKnowAsContinuous) {
+  const auto decoded = decode(triangleMesh().msg(11, faceChannel().msg(6, Wire{}.varint(3, 2))));
+  ASSERT_TRUE(decoded) << decoded.error();
+  EXPECT_EQ(decoded->channels.at(0).info.kind, ChannelKind::kContinuous);
+}
+
 TEST(MeshMapCodecTest, RejectsAnUnnamedChannelWhileParsing) {
   // The parser rejects it (decode failed), before validation would.
   EXPECT_EQ(errorOf(decode(triangleMesh().msg(11, Wire{}).msg(11, faceChannel()))), "MeshMap wire: decode failed");

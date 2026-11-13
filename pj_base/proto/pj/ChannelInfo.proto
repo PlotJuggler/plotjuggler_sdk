@@ -12,9 +12,8 @@ package PJ;
 
 // How a channel's values are meant to be read.
 enum ChannelKind {
-  CONTINUOUS = 0;   // a measured or computed quantity (cost, height, probability)
-  CATEGORICAL = 1;  // integer class ids (semantic label, surface index, region)
-  BITMASK = 2;      // independent flags packed into an integer
+  CHANNEL_KIND_CONTINUOUS = 0;   // a measured or computed quantity (cost, height, probability)
+  CHANNEL_KIND_CATEGORICAL = 1;  // integer class ids (semantic label, surface index, region)
 }
 
 // One named value of a categorical channel.
@@ -39,6 +38,6 @@ message ChannelInfo {
 
   ChannelKind kind = 3;
 
-  // value -> label (+ colour), for a CATEGORICAL channel
+  // value -> label (+ colour), for a CHANNEL_KIND_CATEGORICAL channel
   repeated ChannelCategory categories = 4;
 }

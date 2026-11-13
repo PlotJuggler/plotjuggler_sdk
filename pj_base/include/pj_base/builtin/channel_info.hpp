@@ -18,12 +18,10 @@ namespace PJ {
 namespace sdk {
 
 /// How a channel's values are meant to be read, so a viewer can pick a
-/// colouring: a colormap for continuous values, a palette for categories,
-/// per-bit inspection for flag sets.
+/// colouring: a colormap for continuous values, a palette for categories.
 enum class ChannelKind : uint8_t {
   kContinuous = 0,   ///< a measured or computed quantity (cost, height, probability)
   kCategorical = 1,  ///< integer class ids (semantic label, surface index, region)
-  kBitmask = 2,      ///< independent flags packed into an integer (area flags)
 };
 
 /// One named value of a categorical channel.

@@ -49,7 +49,7 @@ channel patches, dense or sparse (with element indices), paired with the base me
 or by topic name.
 
 `sdk::ChannelInfo` (`pj_base/builtin/channel_info.hpp`) is the shared description of a channel's
-meaning: unit, integer "no data" value, continuous / categorical / bitmask kind, and category labels
+meaning: unit, integer "no data" value, continuous or categorical kind, and category labels
 with optional colours. `MeshChannel` embeds it.
 
 `PJ.ChannelInfo` / `PJ.MeshMap` / `PJ.MeshMapUpdate` wire formats, `mesh_map_codec.hpp` and
