@@ -169,14 +169,21 @@ class Reader {
     return static_cast<size_t>(end_ - p_);
   }
 
+  /// Fails on field number 0 and on numbers above protobuf's maximum, 2^29 - 1,
+  /// which would otherwise be truncated into a valid low field number.
   bool readTag(Tag& out) {
+    constexpr uint64_t kMaxFieldNumber = (uint64_t{1} << 29) - 1;
     uint64_t raw = 0;
-    if (!readVarint(raw) || raw == 0) {
+    if (!readVarint(raw)) {
       return false;
     }
-    out.field = static_cast<uint32_t>(raw >> 3);
+    const uint64_t field = raw >> 3;
+    if (field == 0 || field > kMaxFieldNumber) {
+      return false;
+    }
+    out.field = static_cast<uint32_t>(field);
     out.type = static_cast<WireType>(raw & 0x7u);
-    return out.field != 0;
+    return true;
   }
 
   bool readVarint(uint64_t& out) {
