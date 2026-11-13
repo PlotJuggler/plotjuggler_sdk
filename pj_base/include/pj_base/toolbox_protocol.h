@@ -169,7 +169,7 @@ typedef struct PJ_toolbox_vtable_t {
   /**
    * [main-thread] Bind host services. The host registers at least
    * "pj.toolbox_write.v1" and "pj.toolbox_runtime.v1"; optional services
-   * such as "pj.colormap.v1" may also be present.
+   * may also be present.
    */
   bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) PJ_NOEXCEPT;
 

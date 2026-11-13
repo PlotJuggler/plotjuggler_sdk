@@ -82,11 +82,6 @@ Status ToolboxPluginBase::bind(sdk::ServiceRegistry services) {
   }
   runtime_host_view_ = *runtime;
 
-  // Colormap is optional — acquire opportunistically.
-  if (auto cm = services.get<sdk::ColorMapRegistryService>()) {
-    colormap_view_ = *cm;
-  }
-
   // Object read is optional — transformer-style toolboxes resolve it.
   if (auto obj = services.get<sdk::ToolboxObjectReadHostService>()) {
     object_read_host_view_ = *obj;

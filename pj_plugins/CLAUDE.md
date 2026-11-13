@@ -16,7 +16,7 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
   handles. `plugin_catalog` scans embedded manifests (`scanPluginDsos` /
   `inspectPluginDso`). `ParserClaimCatalog` and `ParserRouteResolver` handle
   parser claim admission and per-route resolution. Also contains
-  `ServiceRegistryBuilder` and `ConfigEnvelope`.
+  `ServiceRegistryBuilder`.
   The DSO catalog that resolves duplicates and composes loaded plugin families
   is **host policy**. It lives in the app (`pj_runtime`, `PluginRuntimeCatalog`).
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:

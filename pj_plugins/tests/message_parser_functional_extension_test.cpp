@@ -140,7 +140,7 @@ bool emitNoScalars(void*, int64_t, PJ_bytes_view_t, const PJ_parser_scalar_sink_
   return true;
 }
 
-bool emitNoObject(void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v1_t*, PJ_error_t*) noexcept {
+bool emitNoObject(void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t*, PJ_error_t*) noexcept {
   return true;
 }
 
@@ -155,20 +155,12 @@ bool emitTwoScalarRecords(
 }
 
 bool emitUnknownObject(
-    void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v1_t* sink, PJ_error_t* out_error) noexcept {
+    void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v2_t* sink, PJ_error_t* out_error) noexcept {
   if (sink == nullptr || sink->accept_object == nullptr) {
     return false;
   }
   const uint8_t byte = 0;
   return sink->accept_object(sink->ctx, false, 0, 999, PJ_bytes_view_t{&byte, sizeof(byte)}, out_error);
-}
-
-bool emitImageV1(void*, int64_t, PJ_payload_t, const PJ_parser_object_sink_v1_t* sink, PJ_error_t* out_error) noexcept {
-  static constexpr std::array<uint8_t, 2> kImageWire{0x10, 0x01};
-  return sink != nullptr && sink->accept_object != nullptr &&
-         sink->accept_object(
-             sink->ctx, false, 0, PJ_BUILTIN_OBJECT_TYPE_IMAGE, PJ_bytes_view_t{kImageWire.data(), kImageWire.size()},
-             out_error);
 }
 
 bool emitSplicedPointCloudV2(
@@ -211,10 +203,10 @@ bool emitMismatchedImageV2(
              out_error);
 }
 
-template <PJ_parser_parse_scalars_fn_t ParseScalars, PJ_parser_parse_object_fn_t ParseObject>
+template <PJ_parser_parse_scalars_fn_t ParseScalars, auto ParseObject>
 const PJ_message_parser_vtable_t* adversarialVtable() {
-  static const PJ_parser_functional_v1_t extension{
-      .struct_size = sizeof(PJ_parser_functional_v1_t),
+  static const PJ_parser_functional_v2_t extension{
+      .struct_size = sizeof(PJ_parser_functional_v2_t),
       .parse_scalars = ParseScalars,
       .parse_object = ParseObject,
   };
@@ -222,7 +214,7 @@ const PJ_message_parser_vtable_t* adversarialVtable() {
     PJ_message_parser_vtable_t copy = *parserVtable<FunctionalParser>();
     copy.get_plugin_extension = [](void*, PJ_string_view_t id) noexcept -> const void* {
       const std::string_view name{id.data == nullptr ? "" : id.data, id.size};
-      return name == PJ_PARSER_FUNCTIONAL_EXTENSION_V1 ? &extension : nullptr;
+      return name == PJ_PARSER_FUNCTIONAL_EXTENSION_V2 ? &extension : nullptr;
     };
     return copy;
   }();
@@ -262,22 +254,20 @@ TEST(MessageParserFunctionalExtension, NewlyBuiltParserExposesStableExtensionAut
   ASSERT_TRUE(handle.valid());
   EXPECT_TRUE(handle.supportsFunctionalParsing());
   const auto* extension =
-      static_cast<const PJ_parser_functional_v1_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
+      static_cast<const PJ_parser_functional_v2_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
   ASSERT_NE(extension, nullptr);
-  EXPECT_GE(extension->struct_size, PJ_PARSER_FUNCTIONAL_V1_MIN_SIZE);
+  EXPECT_GE(extension->struct_size, PJ_PARSER_FUNCTIONAL_V2_MIN_SIZE);
+  // The retired v1 id is never answered by a newly built parser.
+  EXPECT_EQ(handle.getPluginExtension("pj.parser_functional.v1"), nullptr);
 }
 
-TEST(MessageParserFunctionalExtension, NewlyBuiltParserExposesV1AndV2AndV2EmitsFullCanonicalWire) {
+TEST(MessageParserFunctionalExtension, NewlyBuiltParserExposesV2AndV2EmitsFullCanonicalWire) {
   PJ::MessageParserHandle handle(parserVtable<FunctionalParser>());
   ASSERT_TRUE(handle.bindSchema(kSchema, {}));
 
-  const auto* v1 =
-      static_cast<const PJ_parser_functional_v1_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
   const auto* v2 =
       static_cast<const PJ_parser_functional_v2_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
-  ASSERT_NE(v1, nullptr);
   ASSERT_NE(v2, nullptr);
-  EXPECT_GE(v1->struct_size, PJ_PARSER_FUNCTIONAL_V1_MIN_SIZE);
   EXPECT_GE(v2->struct_size, PJ_PARSER_FUNCTIONAL_V2_MIN_SIZE);
   EXPECT_NE(v2->parse_scalars, nullptr);
 
@@ -446,12 +436,24 @@ TEST(MessageParserFunctionalExtension, ObjectRouteReturnsAHostOwnedTypedValue) {
   EXPECT_EQ(image->data[3], 6U);
 }
 
-TEST(MessageParserFunctionalExtension, HostFallsBackToV1WhenV2IsAbsent) {
-  PJ::MessageParserHandle handle(adversarialVtable<emitNoScalars, emitImageV1>());
+TEST(MessageParserFunctionalExtension, HostTreatsRetiredV1OnlyParserAsHavingNoFunctionalRoute) {
+  // A parser built against SDK 0.21-0.40 may answer only the retired
+  // "pj.parser_functional.v1" id; the host never negotiates it.
+  static const PJ_message_parser_vtable_t vtable = [] {
+    PJ_message_parser_vtable_t copy = *parserVtable<FunctionalParser>();
+    copy.get_plugin_extension = [](void*, PJ_string_view_t id) noexcept -> const void* {
+      static const int old_table = 0;
+      const std::string_view name{id.data == nullptr ? "" : id.data, id.size};
+      return name == "pj.parser_functional.v1" ? &old_table : nullptr;
+    };
+    return copy;
+  }();
+  PJ::MessageParserHandle handle(&vtable);
   ASSERT_TRUE(handle.bindSchema(kSchema, {}));
+  EXPECT_FALSE(handle.supportsFunctionalParsing());
   auto record = handle.parseObjectFunctional(0, PJ::Span<const uint8_t>{});
-  ASSERT_TRUE(record.has_value()) << record.error();
-  EXPECT_EQ(PJ::sdk::typeOf(record->object), PJ::sdk::BuiltinObjectType::kImage);
+  ASSERT_FALSE(record.has_value());
+  EXPECT_NE(record.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), std::string::npos);
 }
 
 TEST(MessageParserFunctionalExtension, HostV2PathReconstructsEligibleSplices) {
@@ -536,7 +538,7 @@ TEST(MessageParserFunctionalExtension, NewlyBuiltLegacyStyleParserDoesNotFalsely
   const auto status = handle.parseScalarsFunctional(
       0, {}, [](std::optional<PJ::Timestamp>, PJ::Span<const PJ_named_field_value_t>) { return PJ::okStatus(); });
   EXPECT_FALSE(status);
-  EXPECT_NE(status.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), std::string::npos);
+  EXPECT_NE(status.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), std::string::npos);
 }
 
 TEST(MessageParserFunctionalExtension, HandlerRegisteredDuringBindEnablesExtensionWithoutCapabilityCaching) {
@@ -561,7 +563,7 @@ TEST(MessageParserFunctionalExtension, MixedModelParserAdvertisesOnlyForHandledS
   const auto status = unhandled.parseScalarsFunctional(
       0, {}, [](std::optional<PJ::Timestamp>, PJ::Span<const PJ_named_field_value_t>) { return PJ::okStatus(); });
   EXPECT_FALSE(status);
-  EXPECT_NE(status.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), std::string::npos);
+  EXPECT_NE(status.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), std::string::npos);
 }
 
 TEST(MessageParserFunctionalExtension, RebindingToAnUnhandledSchemaWithdrawsTheFunctionalRoute) {
@@ -573,18 +575,16 @@ TEST(MessageParserFunctionalExtension, RebindingToAnUnhandledSchemaWithdrawsTheF
   EXPECT_FALSE(handle.supportsFunctionalParsing());
 }
 
-TEST(MessageParserFunctionalExtension, SchemaGatingWithdrawsV2AlongsideV1) {
-  // v2 shares v1's advertisement gate. A host prefers v2, so a v2 that stayed
-  // advertised for a schema only legacy parse() implements would send every
-  // message down a route parse_object/parse_scalars can only reject.
+TEST(MessageParserFunctionalExtension, SchemaGatingWithdrawsV2) {
+  // A v2 that stayed advertised for a schema only legacy parse() implements
+  // would send every message down a route parse_object/parse_scalars can only
+  // reject.
   PJ::MessageParserHandle handled(parserVtable<MixedModelParser>());
   ASSERT_TRUE(handled.bindSchema(kSchema, {}));
-  EXPECT_NE(handled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), nullptr);
   EXPECT_NE(handled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), nullptr);
 
   PJ::MessageParserHandle unhandled(parserVtable<MixedModelParser>());
   ASSERT_TRUE(unhandled.bindSchema("example/Unhandled", {}));
-  EXPECT_EQ(unhandled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), nullptr);
   EXPECT_EQ(unhandled.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), nullptr);
 }
 
@@ -595,7 +595,7 @@ TEST(MessageParserFunctionalExtension, LegacyParserWithoutExtensionRemainsDetect
   const auto status = handle.parseScalarsFunctional(
       0, {}, [](std::optional<PJ::Timestamp>, PJ::Span<const PJ_named_field_value_t>) { return PJ::okStatus(); });
   EXPECT_FALSE(status);
-  EXPECT_NE(status.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V1), std::string::npos);
+  EXPECT_NE(status.error().find(PJ_PARSER_FUNCTIONAL_EXTENSION_V2), std::string::npos);
 }
 
 TEST(MessageParserFunctionalExtension, HostRejectsSuccessWithoutExactlyOneSinkCall) {
@@ -636,7 +636,7 @@ TEST(MessageParserFunctionalExtension, ProviderRejectsMalformedCallerOwnedSinkBe
   PJ::MessageParserHandle handle(parserVtable<FunctionalParser>());
   ASSERT_TRUE(handle.bindSchema(kSchema, {}));
   const auto* extension =
-      static_cast<const PJ_parser_functional_v1_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
+      static_cast<const PJ_parser_functional_v2_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
   ASSERT_NE(extension, nullptr);
 
   PJ_parser_scalar_sink_v1_t undersized_sink{};
@@ -645,8 +645,8 @@ TEST(MessageParserFunctionalExtension, ProviderRejectsMalformedCallerOwnedSinkBe
   EXPECT_FALSE(extension->parse_scalars(handle.context(), 0, PJ_bytes_view_t{}, &undersized_sink, &error));
   EXPECT_NE(std::string_view(error.message).find("scalar sink"), std::string_view::npos);
 
-  PJ_parser_object_sink_v1_t undersized_object_sink{};
-  undersized_object_sink.struct_size = offsetof(PJ_parser_object_sink_v1_t, accept_object);
+  PJ_parser_object_sink_v2_t undersized_object_sink{};
+  undersized_object_sink.struct_size = offsetof(PJ_parser_object_sink_v2_t, accept_object_spliced);
   error = {};
   EXPECT_FALSE(extension->parse_object(handle.context(), 0, PJ_payload_t{}, &undersized_object_sink, &error));
   EXPECT_NE(std::string_view(error.message).find("object sink"), std::string_view::npos);
@@ -656,7 +656,7 @@ TEST(MessageParserFunctionalExtension, ObjectPayloadAnchorIsReleasedExactlyOnceA
   PJ::MessageParserHandle handle(parserVtable<FunctionalParser>());
   ASSERT_TRUE(handle.bindSchema(kSchema, {}));
   const auto* extension =
-      static_cast<const PJ_parser_functional_v1_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
+      static_cast<const PJ_parser_functional_v2_t*>(handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
   ASSERT_NE(extension, nullptr);
 
   int releases = 0;
@@ -670,10 +670,12 @@ TEST(MessageParserFunctionalExtension, ObjectPayloadAnchorIsReleasedExactlyOnceA
               .release = [](void* ctx) { ++*static_cast<int*>(ctx); },
           },
   };
-  PJ_parser_object_sink_v1_t sink{
-      .struct_size = sizeof(PJ_parser_object_sink_v1_t),
+  PJ_parser_object_sink_v2_t sink{
+      .struct_size = sizeof(PJ_parser_object_sink_v2_t),
       .ctx = nullptr,
       .accept_object = [](void*, bool, int64_t, uint16_t, PJ_bytes_view_t, PJ_error_t*) noexcept { return true; },
+      .accept_object_spliced = [](void*, bool, int64_t, uint16_t, PJ_bytes_view_t, uint32_t, uint64_t, uint64_t,
+                                  PJ_error_t*) noexcept { return true; },
   };
   PJ_error_t error{};
 
@@ -682,8 +684,8 @@ TEST(MessageParserFunctionalExtension, ObjectPayloadAnchorIsReleasedExactlyOnceA
 
   PJ::MessageParserHandle throwing_handle(parserVtable<ThrowingFunctionalParser>());
   ASSERT_TRUE(throwing_handle.bindSchema(kSchema, {}));
-  const auto* throwing_extension = static_cast<const PJ_parser_functional_v1_t*>(
-      throwing_handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
+  const auto* throwing_extension = static_cast<const PJ_parser_functional_v2_t*>(
+      throwing_handle.getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
   ASSERT_NE(throwing_extension, nullptr);
   releases = 0;
   error = {};

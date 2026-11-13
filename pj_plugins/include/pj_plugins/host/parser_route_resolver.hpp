@@ -83,7 +83,7 @@ struct ParserProbeDecision {
 
 using ParserProbeCallback = std::function<ParserProbeDecision(const ParserProbeRequest&)>;
 
-/// Provider config supplied by the host's config-envelope layer.
+/// Provider config supplied by the host.
 struct ParserProviderConfig {
   std::string json;
   std::string digest;

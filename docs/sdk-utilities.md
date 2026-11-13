@@ -60,7 +60,7 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::SemVer::parse, PJ::SemVer::isValid, PJ::SemVer::operator<=>; PJ::sdkVersion` | Parse/compare SDK and manifest versions | `pj_base/sdk/semver.hpp; pj_base/sdk/version.hpp` |
 | `PJ::WidgetEvent` | Decode raw widget events; DialogPluginTyped already dispatches typed handlers | `pj_plugins/sdk/widget_event.hpp` |
 | `PJ::FilePickerOptions, FilePickerResult, TreeItem, TreeCell` | Canonical picker/tree payloads and wire-value spellings | `pj_plugins/sdk/file_picker_types.hpp; pj_plugins/sdk/tree_types.hpp` |
-| `PJ::sdk::MediaMetadataBuilder, ObjectTopicMetadataBuilder` | Build media hints and canonical renderer metadata | `pj_base/sdk/media_metadata.hpp; pj_base/sdk/object_topic_metadata.hpp` |
+| `PJ::sdk::ObjectTopicMetadataBuilder` | Build canonical renderer metadata and supplemental media hints | `pj_base/sdk/object_topic_metadata.hpp` |
 | `PJ::sdk::ObjectBytes` | Own object-read bytes through move-only RAII | `pj_base/sdk/object_bytes.hpp` |
 | `PJ::sdk::ArrowSchemaHolder, ArrowArrayHolder, ArrowStreamHolder` | Own Arrow out-params; successful writes transfer ownership, failed writes retain it | `pj_base/sdk/arrow.hpp` |
 | `PJ::sdk::parseEvaluationReport` | Parse a data-processor poll report (COMPLETED or FAILED) and derive each bundle's stamp | `pj_plugins/sdk/evaluation_report.hpp` |

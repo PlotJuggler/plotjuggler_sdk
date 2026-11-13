@@ -9,8 +9,8 @@
  *     per-record, with an optional append_arrow_stream tail slot for
  *     parser-shaped formats that naturally decode batches.
  *
- * Pure-functional production uses the additive `pj.parser_functional.v1` and
- * v2 extensions declared in parser_functional_protocol.h. Scalar fields cross
+ * Pure-functional production uses the additive `pj.parser_functional.v2`
+ * extension declared in parser_functional_protocol.h. Scalar fields cross
  * as synchronous borrowed C values; canonical objects cross as a stable type
  * tag plus canonical wire bytes or a v2 splice. No C++ parser class or STL
  * value crosses the new path. Parsers built before SDK 0.21 do not expose the

@@ -116,11 +116,11 @@ Independent decoder, typically driven by a DataSource via the host.
   JSON.
 - Lifecycle: create → bind → parse* → destroy.
 - A parser that registers `SchemaHandler` entries exposes
-  `pj.parser_functional.v1`, `pj.parser_functional.v2`, and
+  `pj.parser_functional.v2` and
   `pj.parser_route_claims.v1` after schema binding. Functional scalar and object
   results cross only through synchronous caller-owned C sinks; v2 may represent
-  one eligible object bulk field as a payload-relative splice. The host queries
-  v2 first, falls back to v1, and must never cast the opaque context to
+  one eligible object bulk field as a payload-relative splice. The host must
+  never cast the opaque context to
   `MessageParserPluginBase` for such a parser.
 - Route classification reports exact handler-table claims only. The host owns
   each encoding's universal wildcard scalar claim and resolves scalar and object
@@ -306,14 +306,10 @@ to all Toolbox plugins.
 - The plugin decides what state it persists.
 - The host restores state deterministically from `loadConfig()` alone —
   hidden ambient sources like `QSettings` are not required.
-- For delegated sources, the host wraps source and parser config in a
-  versioned `ConfigEnvelope`:
-
-```json
-{"version": 1, "source_config": "...", "parser_binding": "..."}
-```
-
-The source never sees `parser_binding`; the host manages it.
+- The host stores the JSON string returned by `saveConfig()` and passes it back to
+  `loadConfig()`. When the source dialog embeds a parser dialog, the host adds a
+  `_parser_config` key to that JSON, which `PJ::sdk::parserConfigOverride()`
+  (`pj_plugins/sdk/streaming_source.hpp`) reads.
 
 ## 8. External SDK Consumption
 

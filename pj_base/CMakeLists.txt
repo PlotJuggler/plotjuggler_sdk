@@ -114,18 +114,13 @@ set_target_properties(pj_source PROPERTIES
   EXPORT_NAME source
 )
 add_library(plotjuggler_sdk::source ALIAS pj_source)
-# Deprecated compatibility target, retained for one release.
-add_library(pj_descriptor_import_support INTERFACE)
-target_link_libraries(pj_descriptor_import_support INTERFACE pj_source)
-set_target_properties(pj_descriptor_import_support PROPERTIES EXPORT_NAME descriptor_import_support)
-add_library(plotjuggler_sdk::descriptor_import_support ALIAS pj_descriptor_import_support)
 
 # ---------------------------------------------------------------------------
 # Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt)
 # ---------------------------------------------------------------------------
 
 if(PJ_INSTALL_SDK)
-  install(TARGETS pj_base pj_source pj_descriptor_import_support EXPORT plotjuggler_sdkTargets
+  install(TARGETS pj_base pj_source EXPORT plotjuggler_sdkTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
@@ -174,7 +169,6 @@ if(PJ_BUILD_TESTS)
     tests/image_annotations_codec_test.cpp
     tests/image_annotations_decoder_test.cpp
     tests/field_table_test.cpp
-    tests/media_metadata_test.cpp
     tests/object_topic_metadata_test.cpp
     tests/push_message_test.cpp
     tests/attach_source_record_test.cpp

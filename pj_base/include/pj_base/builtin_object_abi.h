@@ -8,7 +8,7 @@
  * carrying a PJ_builtin_object_type_t.
  *
  * Canonical-object and pure-functional scalar production use the additive
- * `pj.parser_functional.v1` and v2 C extensions. MessageParserPluginBase keeps
+ * `pj.parser_functional.v2` C extension. MessageParserPluginBase keeps
  * the plugin-author-facing ObjectRecord/ScalarRecord API inside the plugin
  * DSO; its trampolines emit only POD scalar views, canonical wire bytes, or a
  * v2 splice using the frozen eligibility table below. The concrete host-owned

@@ -37,8 +37,7 @@ ownership or storage formats change. Read only the relevant reference sections.
 
 `pj_source` (`plotjuggler_sdk::source`, `PJ::sdk::source`) and `pj_plugins`
 depend on `pj_base`; both use nlohmann/json. Provider headers live under
-`pj_base/sdk/source/`. The pre-0.31 `descriptor_import_support` component and
-include directory forward to `source` for one release; new code uses `source`.
+`pj_base/sdk/source/`.
 
 DataSource/MessageParser/Toolbox C protocols live in `pj_base`; the Dialog
 protocol lives in `pj_plugins/dialog_protocol/` and the Widget protocol in

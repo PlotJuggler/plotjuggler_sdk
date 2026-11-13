@@ -4,7 +4,7 @@
 > write-host supports per-record writes and an optional Arrow stream
 > batch path for parser-shaped formats that naturally decode batches.
 > SchemaHandler-based parsers additionally expose
-> `pj.parser_functional.v1`, `pj.parser_functional.v2`, and
+> `pj.parser_functional.v2` and
 > `pj.parser_route_claims.v1`; no C++ result object crosses the plugin boundary.
 > For ABI evolution rules, error semantics, and noexcept discipline see
 > `ARCHITECTURE.md`.
@@ -293,19 +293,17 @@ if (!status) {
 
 ## Optional Features
 
-### Route claims and functional v1/v2
+### Route claims and functional v2
 
-Registering at least one `SchemaHandler` automatically exposes three extension
+Registering at least one `SchemaHandler` automatically exposes two extension
 tables; parser authors do not implement them by hand:
 
 - `pj.parser_route_claims.v1` classifies exact handler-table coverage. It never
   reports wildcard claims. The host synthesizes the universal wildcard scalar
   claim from each manifest encoding.
-- `pj.parser_functional.v1` delivers scalar records and complete canonical-wire
-  objects through synchronous caller-owned sinks.
-- `pj.parser_functional.v2` keeps the scalar contract and adds a sink for one
-  splice-eligible object field. `MessageParserHandle` queries v2 first and falls
-  back to v1 when it is absent.
+- `pj.parser_functional.v2` delivers scalar records and canonical-wire objects
+  through synchronous caller-owned sinks, including one splice-eligible object
+  field.
 
 The host resolves scalar and object routes independently. A parser may keep the
 scalar route for a type it flattens while another provider owns that type's
@@ -430,25 +428,20 @@ placeholder in the source dialog. The host detects it and resolves the parser
 library for the selected encoding. It creates an owned parser dialog and renders
 it in the slot.
 
-Both dialogs share a window but persist config independently:
-`ConfigEnvelope.source_config` for the source and `ConfigEnvelope.parser_binding`
-for the parser.
-
 **Standalone:** The host shows the parser dialog as a modal from a settings
 panel or parser-selection UI. This is host-application logic, not protocol.
 
 #### Config flow for delegated sources
 
-1. User configures the parser in the dialog → `parser_dialog.save_config()` →
-   host stores the JSON in `ConfigEnvelope.parser_binding`.
-2. Source calls `runtimeHost().ensureParserBinding(request)` — the source may
+The host stores the JSON string returned by `saveConfig()` and passes it back to
+`loadConfig()`. When the source dialog embeds a parser dialog, the host adds a
+`_parser_config` key to that JSON, which `PJ::sdk::parserConfigOverride()`
+(`pj_plugins/sdk/streaming_source.hpp`) reads.
+
+1. Source calls `runtimeHost().ensureParserBinding(request)` — the source may
    leave `parser_config_json` empty in the request.
-3. Host intercepts, injects the stored parser config into
+2. Host intercepts, injects the stored parser config into
    `parser.load_config()` before calling `parse()`.
-4. On layout save, the host persists the full `ConfigEnvelope`.
-5. On headless restart, the host loads the envelope →
-   `source.loadConfig(source_config)` + restores parser bindings from
-   `parser_binding` → `source.start()`.
 
 #### Protobuf example sketch
 
@@ -658,8 +651,8 @@ handler.parse_object =
   matching viewer.
 
 The types above are plugin-author C++ conveniences, not the binary boundary.
-After `bindSchema`, `MessageParserPluginBase` advertises functional v1 and v2
-when at least one handler exists. Their trampolines:
+After `bindSchema`, `MessageParserPluginBase` advertises functional v2
+when at least one handler exists. Its trampolines:
 
 1. invokes `parseScalars` / `parseObject` inside the plugin DSO;
 2. delivers scalar fields through one synchronous caller-owned C sink, or

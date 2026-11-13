@@ -141,8 +141,7 @@ if (!r) return PJ::unexpected(r.error());               // a failed push IS an e
 The cache owns the `ensureParserBinding` + `pushMessage` pair per topic and anchors
 the payload bytes so the host's fetch callable is idempotent and by-value (the host
 may invoke it zero, one, or many times, from consumer threads, and releases it once
-even when the push fails). The config-envelope that ties source⇆parser is managed
-by the host; you never see the parser directly. Two delegated-ingest traps the
+even when the push fails). You never see the parser directly. Two delegated-ingest traps the
 helpers already encode — know them anyway:
 
 - **Forward `_parser_config`.** The host injects the parser's saved options into

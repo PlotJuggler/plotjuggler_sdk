@@ -8,10 +8,7 @@ A descriptor-import provider turns a saved request into a finite dataset. Link
 Your plugin owns request semantics, transport, trust, credentials, parser selection
 and UI. This guide uses the existing C ABI and adds no protocol slots.
 
-`plotjuggler_sdk::descriptor_import_support`, its Conan component, and headers
-under `pj_base/sdk/descriptor_import/` forward to `source` for one release.
-Existing source consumers still build. Use `pj_base/sdk/source/` for new code.
-The consumer extension views remain in `pj_base/sdk/descriptor_import.hpp`.
+The consumer extension views live in `pj_base/sdk/descriptor_import.hpp`.
 
 ## Reuse the provider machinery
 

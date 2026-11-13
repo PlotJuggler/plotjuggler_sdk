@@ -2,10 +2,10 @@
  * @file parser_functional_protocol.h
  * @brief Additive C ABI extension for pure-functional MessageParser results.
  *
- * A handler-based MessageParser exposes the v1 and v2 tables from
- * get_plugin_extension after at least one SchemaHandler is registered. They
- * replace direct host calls on MessageParserPluginBase with synchronous,
- * caller-owned C sinks; v2 adds an optional single-field object splice. No
+ * A handler-based MessageParser exposes the v2 table from
+ * get_plugin_extension after at least one SchemaHandler is registered. It
+ * replaces direct host calls on MessageParserPluginBase with synchronous,
+ * caller-owned C sinks, including an optional single-field object splice. No
  * C++ object, STL container, exception, or plugin allocation survives an
  * extension call.
  */
@@ -26,7 +26,9 @@
 extern "C" {
 #endif
 
-#define PJ_PARSER_FUNCTIONAL_EXTENSION_V1 "pj.parser_functional.v1"
+/* Extension id "pj.parser_functional.v1" is RETIRED as of 1.0.0 and must
+ * never be reused: plugins built against SDK 0.21-0.40 export it with the old
+ * table layout. Hosts negotiate only "pj.parser_functional.v2". */
 
 /** Caller-owned synchronous sink for one scalar record.
  *
@@ -61,19 +63,7 @@ typedef bool (*PJ_parser_accept_object_fn_t)(
     void* ctx, bool has_timestamp, int64_t timestamp_ns, uint16_t object_type, PJ_bytes_view_t canonical_wire,
     PJ_error_t* out_error) PJ_NOEXCEPT;
 
-typedef struct PJ_parser_object_sink_v1_t {
-  /** Initialize to sizeof(PJ_parser_object_sink_v1_t). Future revisions may
-   * append fields; providers must accept every compatible prefix.
-   */
-  uint32_t struct_size;
-  void* ctx;
-  PJ_parser_accept_object_fn_t accept_object;
-} PJ_parser_object_sink_v1_t;
-
-#define PJ_PARSER_OBJECT_SINK_V1_MIN_SIZE \
-  (offsetof(PJ_parser_object_sink_v1_t, accept_object) + sizeof(PJ_parser_accept_object_fn_t))
-
-/** Pure-functional parser extension v1.
+/** Scalar parsing entry point of the functional extension.
  *
  * Calls are [stream-thread] and synchronous. A provider validates the sink
  * table before invoking plugin code. On success it calls the supplied sink
@@ -83,26 +73,6 @@ typedef struct PJ_parser_object_sink_v1_t {
 typedef bool (*PJ_parser_parse_scalars_fn_t)(
     void* plugin_ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, const PJ_parser_scalar_sink_v1_t* sink,
     PJ_error_t* out_error) PJ_NOEXCEPT;
-
-/** Object parsing takes ownership of exactly one `payload.anchor` reference at
- * function entry and releases it exactly once on every success/failure path.
- * A null ctx + null release is a borrowed call-duration-only payload. The
- * provider may propagate an owning anchor inside plugin-side C++ values while
- * parsing, but all such values are destroyed before this C call returns.
- */
-typedef bool (*PJ_parser_parse_object_fn_t)(
-    void* plugin_ctx, int64_t timestamp_ns, PJ_payload_t payload, const PJ_parser_object_sink_v1_t* sink,
-    PJ_error_t* out_error) PJ_NOEXCEPT;
-
-typedef struct PJ_parser_functional_v1_t {
-  /** sizeof(PJ_parser_functional_v1_t) for this append-only table revision. */
-  uint32_t struct_size;
-  PJ_parser_parse_scalars_fn_t parse_scalars;
-  PJ_parser_parse_object_fn_t parse_object;
-} PJ_parser_functional_v1_t;
-
-#define PJ_PARSER_FUNCTIONAL_V1_MIN_SIZE \
-  (offsetof(PJ_parser_functional_v1_t, parse_object) + sizeof(PJ_parser_parse_object_fn_t))
 
 #define PJ_PARSER_FUNCTIONAL_EXTENSION_V2 "pj.parser_functional.v2"
 #define PJ_PARSER_ERROR_KIND_DATA_ERROR "pj.parser.data_error"
@@ -137,10 +107,13 @@ typedef struct PJ_parser_object_sink_v2_t {
 
 /** Pure-functional parser extension v2.
  *
- * Calls are [stream-thread] and synchronous. Scalar parsing is unchanged
- * from v1. Object parsing consumes exactly one payload anchor reference using
- * the v1 ownership contract and may deliver either a complete canonical wire
- * object or one splice-eligible object. Failures set `extended_kind` to one
+ * Calls are [stream-thread] and synchronous. Object parsing takes ownership
+ * of exactly one `payload.anchor` reference at function entry and releases it
+ * exactly once on every success/failure path. A null ctx + null release is a
+ * borrowed call-duration-only payload. The provider may propagate an owning
+ * anchor inside plugin-side C++ values while parsing, but all such values are
+ * destroyed before this C call returns. It may deliver either a complete
+ * canonical wire object or one splice-eligible object. Failures set `extended_kind` to one
  * of the frozen PJ_PARSER_ERROR_KIND_* values and leave `extended` null.
  */
 typedef struct PJ_parser_functional_v2_t {
