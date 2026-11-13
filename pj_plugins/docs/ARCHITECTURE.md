@@ -218,7 +218,10 @@ previously-circulated pre-v4 design included):
   enforced at compile time. Trampolines catch and translate internally.
 - **Thread-class tags on every slot.** Every function-pointer field in
   the ABI headers carries a `[main-thread]` / `[stream-thread]` /
-  `[thread-safe]` comment. Host-side runtime checking is optional
+  `[thread-safe]` comment (DataSource `start`/`stop` state their rule in
+  words). Each family's plugin vtable also carries a normative per-slot
+  threading table (`data_source_protocol.h`, `toolbox_protocol.h`).
+  Host-side runtime checking is optional
   (reserved for a future `"pj.thread_check.v1"` service).
 - **Embedded-manifest plugin discovery.** Each DSO exports a
   family-specific protocol vtable with embedded metadata (`manifest_json`

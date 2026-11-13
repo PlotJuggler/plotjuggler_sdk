@@ -8,7 +8,9 @@
  *     See pj_base/plugin_data_api.h. append_arrow_ipc is removed.
  *   - Every vtable slot is PJ_NOEXCEPT. Trampolines that drop exceptions
  *     through the ABI boundary are now a compile-time error in C++.
- *   - Every slot carries a thread-class tag (// [main-thread], etc.).
+ *   - Every slot carries a thread-class tag (// [main-thread], etc.), except
+ *     start/stop, whose rule none of the tags expresses; see the threading
+ *     table on PJ_data_source_vtable_t.
  *
  * The host obtains the plugin's vtable via `PJ_get_data_source_vtable()`
  * and drives the plugin through: create -> bind(registry) -> load_config
@@ -63,13 +65,15 @@ extern "C" {
 #endif
 
 /**
- * Plugin lifecycle state machine.
+ * Plugin lifecycle states, as reported through notify_state / current_state.
  *
- * Valid transitions:
- *   idle -> configuring -> starting -> running -> stopping -> stopped
- *   running -> paused -> running  (if SUPPORTS_PAUSE capability set)
- *   any -> failed  (terminal)
- *   stopped is terminal — create a new instance to restart.
+ * ADVISORY: a host may ignore notify_state and never call current_state (the
+ * reference host does both), so a plugin must not depend on either for
+ * correctness. What a host acts on is the start() return value, request_stop,
+ * is_stop_requested and complete_ingest. A plugin is not required to visit
+ * every state; the SDK bases report starting, then running (stream) or
+ * stopped/failed (file). stopped and failed are terminal for the instance:
+ * the host never calls start() twice and creates a new instance to restart.
  */
 typedef enum {
   PJ_DATA_SOURCE_STATE_IDLE = 0,
@@ -255,7 +259,8 @@ typedef struct PJ_ingest_completion_t {
  * raw message payloads. The per-slot thread tag governs: the host may drive
  * start()/stop() on one thread and poll() (with its [stream-thread]
  * callbacks) on another, so a host must treat [stream-thread] callbacks as
- * arriving off its UI thread and marshal accordingly.
+ * arriving off its UI thread and marshal accordingly. When a plugin may call
+ * the [stream-thread] slots is narrowed in PJ_data_source_vtable_t.
  *
  * Fallible calls take a `PJ_error_t* out_error` which the callee populates
  * on failure. Callers may pass NULL if they don't need the detail.
@@ -287,7 +292,8 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
   /** [thread-safe] Returns true if the host has requested the plugin to stop. */
   bool (*is_stop_requested)(void* ctx) PJ_NOEXCEPT;
 
-  /** [thread-safe] Inform the host that the plugin has transitioned to @p state. */
+  /** [thread-safe] Inform the host that the plugin has transitioned to @p state.
+   *  Advisory: a host may ignore it (see PJ_data_source_state_t). */
   void (*notify_state)(void* ctx, PJ_data_source_state_t state) PJ_NOEXCEPT;
 
   /**
@@ -308,7 +314,7 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * [main-thread] Display a modal message box to the user and wait for
+   * [thread-safe] Display a modal message box to the user and wait for
    * their response. BLOCKS until the user closes the dialog. The host is
    * responsible for showing the dialog on the UI thread in a thread-safe
    * manner; the plugin may call from any thread and the host will marshal.
@@ -499,6 +505,43 @@ typedef struct {
  *   create  -> bind(registry) -> load_config (optional)
  *           -> start -> poll* -> stop -> destroy
  *
+ * Threading (normative). The host never runs two of create, bind,
+ * load_config, save_config, get_dialog, start, poll, stop and destroy
+ * concurrently on one instance, and each happens-after the previous returned;
+ * consecutive calls may come from different threads.
+ *
+ *   create, destroy, capabilities,  GUI thread, never while start/poll/stop
+ *   bind, load_config, save_config, runs. load_config may be called several
+ *   get_dialog                      times before start; save_config also
+ *                                   after start returned.
+ *   start                           Once. Any host thread: a FINITE_IMPORT
+ *                                   start may run on a worker and block for
+ *                                   the whole import (the host calls no
+ *                                   poll); a CONTINUOUS_STREAM start may run
+ *                                   on the GUI thread and must return
+ *                                   promptly.
+ *   poll                            CONTINUOUS_STREAM only, after start
+ *                                   returned true; repeatedly, from one host
+ *                                   thread that need not be start's.
+ *   stop                            Possibly on poll's thread, after the
+ *                                   last poll returned. May be skipped: a
+ *                                   host may destroy after a failed start or
+ *                                   a finished import without calling stop,
+ *                                   so release resources in destroy as well.
+ *   get_plugin_extension            Any thread, concurrently with anything.
+ *   set_active_topics (extension)   GUI thread, concurrently with poll and
+ *                                   with the plugin's own threads.
+ *   pause, resume, current_state    Advisory; a host may never call them.
+ *                                   If called: GUI thread, never while
+ *                                   start/poll/stop runs.
+ *
+ * Plugin -> host: [stream-thread] slots of the write hosts and of the runtime
+ * host may be called only while a start, poll or stop call on this instance
+ * is in progress, from one thread at a time (a plugin thread that the call
+ * waits on counts; a thread still producing after the call returned does not:
+ * between polls the host touches the same host objects). [thread-safe] slots
+ * may be called from any thread while the instance exists.
+ *
  * Fallible slots take a PJ_error_t* out-param which the callee populates
  * on failure. Callers may pass NULL to discard error detail. Every slot
  * is PJ_NOEXCEPT; exceptions from the implementation must be caught
@@ -556,23 +599,60 @@ typedef struct PJ_data_source_vtable_t {
    * On success, returns true and writes to @p out_json a view over a
    * plugin-owned string that remains valid until the next call to this
    * function on the same ctx.
+   *
+   * The output must be a UTF-8 JSON object that load_config accepts; a host
+   * persists it (e.g. in a layout) and later passes it back verbatim apart
+   * from the host-written keys listed under load_config. It may carry
+   * "filepath" and "_parser_config" back (a file layout replays this output,
+   * so that is how its parser config survives), never "__pj_saved_filepath".
    */
   bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /** [main-thread] Restore plugin configuration from JSON. */
+  /**
+   * [main-thread] Restore plugin configuration from JSON.
+   *
+   * @p config_json is either empty, meaning "no saved config" (load_config
+   * is still called, e.g. on a stream's first run, and must keep defaults),
+   * or a UTF-8 JSON object: the output of this plugin's save_config or of its
+   * embedded dialog's save_config (after an accepted dialog), with host keys
+   * added or rewritten, or host keys alone. It may have been written by an
+   * OLDER version of the plugin, which load_config must still accept. Top-level
+   * keys starting with "_" belong to the host; the plugin must not define
+   * its own. Keys the reference host writes:
+   *   "filepath"            — file sources: the file to import, rewritten
+   *                           on layout replay to the file actually opened.
+   *   "_parser_config"      — string: the embedded parser dialog's config;
+   *                           forward it as parser_config_json in
+   *                           ensure_parser_binding (the host does not).
+   *   "__pj_saved_filepath" — layout replay only: the absolute path that
+   *                           "filepath" replaced, to rebase sidecar files.
+   * "__pj_fanout" is host-defined but plugin-written: an array of complete
+   * config strings in an accepted file-source config, asking the host to
+   * import each with its own instance. May be called several times before
+   * start.
+   */
   bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** [main-thread] Begin data acquisition. May spawn stream threads internally. */
+  /** Begin data acquisition. Thread: see the table above (not necessarily the
+   *  GUI thread). May spawn plugin threads. If it fails, release what it
+   *  acquired: the host may destroy the instance without calling stop. */
   bool (*start)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /** [main-thread] Stop data acquisition. Must be idempotent. Failures are not reportable. */
+  /** Stop data acquisition. Thread: see the table above (may be poll's
+   *  thread). Must be idempotent. Failures are not reportable. */
   void (*stop)(void* ctx) PJ_NOEXCEPT;
-  /** [main-thread] Pause a running source. Returns false + error if unsupported. */
+  /** [main-thread] Advisory: a host may never call it and pauses ingest
+   *  host-side instead. Pause a running source. Returns false + error if
+   *  unsupported. */
   bool (*pause)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /** [main-thread] Resume a paused source. Returns false + error if unsupported. */
+  /** [main-thread] Advisory, as pause. Resume a paused source. Returns
+   *  false + error if unsupported. */
   bool (*resume)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
-  /** [stream-thread] Called periodically by the host while running. */
+  /** [stream-thread] Called periodically by the host while running, from one
+   *  host thread (see the table above). Must not block. */
   bool (*poll)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** [thread-safe] Return the plugin's current lifecycle state. */
+  /** [main-thread] Advisory: a host may never call it. Return the plugin's
+   *  current lifecycle state. Not [thread-safe]: the SDK bases keep the state
+   *  unsynchronised, so never call it while start/poll/stop runs. */
   PJ_data_source_state_t (*current_state)(void* ctx) PJ_NOEXCEPT;
 
   /**
@@ -634,8 +714,10 @@ typedef struct PJ_data_source_vtable_t {
 typedef struct {
   uint32_t struct_size; /**< sizeof(PJ_topic_subscription_v1_t) — for forward-compatible growth. */
   /**
-   * [main-thread] Set the full active-topic set. Entered on the host thread;
-   * the plugin marshals to its own stream thread. Returns false + populates
+   * [main-thread] Set the full active-topic set. Entered on the GUI thread,
+   * concurrently with poll (also once right after start, before the first
+   * poll); the plugin stores the set in a mutex-protected latest-wins slot
+   * that its stream thread drains, never a command queue. Returns false + populates
    * out_error on failure. Names the source does not recognize are ignored
    * (not an error).
    */

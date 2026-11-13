@@ -159,7 +159,8 @@ class ToolboxPluginBase {
     return PJ_borrowed_dialog_t{nullptr, nullptr};
   }
 
-  /// React to data appended to the datastore. Default is no-op.
+  /// React to data appended to the datastore. Default is no-op. Advisory: a
+  /// host may never call it, so do not depend on it for correctness.
   virtual void onDataChanged() {}
 
   /// Return a pointer to a static plugin-exposed extension for @p id, or

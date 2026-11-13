@@ -100,8 +100,9 @@ finite imports (CSV, Parquet, MCAP) and continuous streams (MQTT, ZMQ, UDP).
 - May decode data directly (direct ingest) or hand raw payloads to a
   MessageParser (delegated ingest).
 - Topics may appear lazily at runtime.
-- Lifecycle: idle → configuring → starting → running → stopping → stopped.
-  Optional pause/resume.
+- Lifecycle: create → bind → load_config → start → poll* → stop → destroy,
+  signalled by the `start`/`poll` results, `request_stop`, `is_stop_requested`
+  and `complete_ingest`. Reported states and pause/resume are advisory.
 
 ### MessageParser
 
@@ -234,7 +235,7 @@ DataSource plugins receive a runtime host providing:
 
 - Message reporting (info/warning/error to host UI log).
 - Progress bar (start/update/finish with optional cancellation).
-- State notifications and plugin-initiated stop.
+- Advisory state notifications and plugin-initiated stop.
 - Delegated parser binding and raw message dispatch.
 
 Toolbox plugins receive a simpler runtime host:
@@ -270,9 +271,11 @@ controls inside a DataSource dialog via the `pj_parser_slot` placeholder.
 
 ### Threading
 
-All plugin callbacks are called on the host's thread. The host guarantees
-single-threaded access per instance. Plugins needing internal threads must
-synchronize and call host methods only from callback context.
+Each slot's thread rule is its tag; the per-family tables on
+`PJ_data_source_vtable_t` and `PJ_toolbox_vtable_t` are normative. A DataSource
+`start` may run on a worker and `stop` on the polling thread; per-topic
+`set_active_topics` runs concurrently with `poll`. Plugins needing internal
+threads must synchronize and call host methods only where those tables allow.
 
 ## 6. Capability System
 
