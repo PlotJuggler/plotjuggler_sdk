@@ -46,8 +46,13 @@ protocol lives in `pj_plugins/dialog_protocol/` and the Widget protocol in
 plugin-resolution catalog belong to the application, not this SDK.
 
 The installed `cmake/` helpers (`pj_configure_plugin`, `pj_embed_file`,
-`pj_harden_plugin_exports`, `pj_add_parser_module`, `pj_add_sdk_test_fixture`)
-are public API and follow the same versioning contract as headers.
+`pj_harden_plugin_exports`, `pj_add_sdk_test_fixture`) are public API and follow
+the same versioning contract as headers.
+
+`experimental/` holds components that are built and tested here but never
+installed or packaged, and that carry no compatibility promise. It currently
+holds functional parser modules: see
+[experimental/parser_module/README.md](experimental/parser_module/README.md).
 
 ## Build and test
 
@@ -133,7 +138,7 @@ release. The real `X.Y.Z` is cut once, when the feature's contract is complete.
 - `CamelCase` types, `camelBack` functions, `lower_case` variables,
   `lower_case_` members, `kCamelCase` constants.
 - Match module ownership: vocabulary in `PJ`, SDK helpers in `PJ::sdk`,
-  provider helpers in `PJ::sdk::source`, standalone parser modules in `pj`.
+  provider helpers in `PJ::sdk::source`, experimental parser modules in `pj`.
 - Fallible operations use `PJ::Expected<T>` / `PJ::Status`; invariants use
   `PJ_ASSERT`. Warnings: `-Wall -Wextra -Werror`.
 

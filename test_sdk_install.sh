@@ -76,7 +76,7 @@ cmake --build "$CONSUMER_BUILD_DIR" -j "$(nproc)"
 
 echo ""
 echo "--- Step 4: Smoke-test find_package COMPONENTS ---"
-for comp in base parser_module plugin_sdk plugin_host source descriptor_import_support; do
+for comp in base plugin_sdk plugin_host source descriptor_import_support; do
   COMP_DIR="$(mktemp -d)"
   cat > "$COMP_DIR/CMakeLists.txt" <<EOF
 cmake_minimum_required(VERSION 3.22)
@@ -119,6 +119,12 @@ for forbidden_dir in /tests/ /examples/ /src/; do
     LEAKED=1
   fi
 done
+# experimental/ is never installed: nothing of the parser-module kit may ship.
+if find "$STAGING_DIR" -iname '*parser_module*' -o -iname 'PjParserModule*' | grep -q .; then
+  echo "ERROR: experimental parser-module files leaked into the install tree:"
+  find "$STAGING_DIR" -iname '*parser_module*' -o -iname 'PjParserModule*'
+  LEAKED=1
+fi
 if [[ $LEAKED -ne 0 ]]; then
   exit 1
 fi
