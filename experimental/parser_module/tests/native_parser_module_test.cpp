@@ -13,7 +13,7 @@
 
 #include "native_parser_module_fixture.hpp"
 #include "pj_base/parser_module_abi.h"
-#include "pj_plugins/host/parser_claim_catalog.hpp"
+#include "pj_plugins/host/parser_module_claims.hpp"
 
 namespace PJ {
 namespace {
@@ -66,7 +66,7 @@ TEST(NativeParserModule, LoadsCompleteAbiAndCopiesManifestForCatalogAdmission) {
   EXPECT_TRUE(diagnostics.empty());
 
   ParserClaimCatalog catalog;
-  auto manifest = catalog.ingestModuleManifest(module->manifestJson(), ParserClaimProvenance::kFolderDrop, 7);
+  auto manifest = ingestParserModuleManifest(catalog, module->manifestJson(), ParserClaimProvenance::kFolderDrop, 7);
   ASSERT_TRUE(manifest.has_value()) << manifest.error();
   EXPECT_EQ(manifest->id, "org.plotjuggler.test.native-module");
   EXPECT_EQ(manifest->claims.size(), pj_fixture::kClaimCount);

@@ -26,11 +26,6 @@ has selected a topic/encoding and supplies payloads to decode. If one `parse()`
 call naturally yields a batch, the parser write host can accept it through
 `writeHost().appendArrowStream(...)`.
 
-If a supported encoding already exists and you only need one or a few exact
-custom message types rendered as canonical objects or scalars, use a native
-**functional parser module** instead of owning or forking the whole encoding.
-See `.claude/skills/plotjuggler-plugin/references/parser-module.md`.
-
 A MessageParser is the right choice when:
 - Each message is independently decodable (JSON line, single Protobuf message,
   ROS message, Influx line).

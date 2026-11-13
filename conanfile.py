@@ -5,7 +5,6 @@ Exposes CMake components under the `plotjuggler_sdk::` namespace:
   base         — pj_base, vocabulary types (always available)
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
-  parser_module — standalone functional parser-module authoring headers
   source       — compiled source-provider support
   descriptor_import_support — compatibility alias for source
 
@@ -70,6 +69,7 @@ class PlotjugglerSdkConan(ConanFile):
         "pj_base/*",
         "tools/feature_floors/*",
         "pj_plugins/*",
+        "experimental/*",  # built only with_tests=True; never packaged
         "examples/*",
         "!*/__pycache__/*",
     )
@@ -150,12 +150,11 @@ class PlotjugglerSdkConan(ConanFile):
         # the package level (self.cpp_info), not at component level — declaring
         # it on the `sdk` component below silently produced an empty
         # plotjuggler_sdk_BUILD_MODULES_PATHS_RELEASE in the generated data
-        # file. Ship the plugin-authoring helpers (PjPlugin.cmake) and the
-        # parser-module helper from the package root so CMakeDeps actually
-        # include()s them after find_package() returns.
+        # file. Ship the plugin-authoring helpers (PjPlugin.cmake) from the
+        # package root so CMakeDeps actually include()s them after
+        # find_package() returns.
         self.cpp_info.set_property("cmake_build_modules", [
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPlugin.cmake"),
-            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjParserModule.cmake"),
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjSdkTestFixtures.cmake"),
         ])
 
@@ -171,13 +170,6 @@ class PlotjugglerSdkConan(ConanFile):
         sdk.libs = []  # INTERFACE only
         sdk.includedirs = ["include"]
         sdk.requires = ["base", "nlohmann_json::nlohmann_json"]
-
-        # --- parser_module (header-only functional parser-module authoring kit;
-        # pj_add_parser_module() comes from the PjParserModule build module) ---
-        kit = self.cpp_info.components["parser_module"]
-        kit.set_property("cmake_target_name", "plotjuggler_sdk::parser_module")
-        kit.libs = []  # INTERFACE only: authored modules link no SDK library
-        kit.includedirs = ["include"]
 
         # --- source (descriptor-import provider support) ---
         source = self.cpp_info.components["source"]
@@ -204,7 +196,6 @@ class PlotjugglerSdkConan(ConanFile):
                 "pj_dialog_library",
                 "pj_widget_host",
                 "pj_plugin_catalog",
-                "pj_parser_module_host",
                 "pj_parser_claim_catalog",
                 "pj_plugin_loader_detail",
             ]

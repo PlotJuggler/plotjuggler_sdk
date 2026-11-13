@@ -16,7 +16,7 @@ Both guides ship under `share/plotjuggler_sdk/docs/` in the installed package.
 | **pj_base** | Vocabulary types: `Timestamp`, `DatasetId`, `TopicId`, type trees, `Expected<T>`, `Span<T>` | None | Apache-2.0 |
 | **pj_source** | Provider descriptors, origins, artifact cache, jobs, limits, presentation, completion and Stop; link `plotjuggler_sdk::source` | pj_base, nlohmann/json | Apache-2.0 |
 | **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox, Widget families), C++ SDK base classes, plugin discovery, host-side loaders, and config helpers | pj_base, nlohmann/json | Apache-2.0 |
-| **cmake/** | Plugin-authoring CMake helpers shipped with `plugin_sdk`: `pj_configure_plugin()` (symbol isolation, export allowlist + gate, manifest validation/sidecar/embed), `pj_embed_file()`, `pj_harden_plugin_exports()`, `pj_add_parser_module()`, `pj_add_sdk_test_fixture()` — see `examples/sdk_consumer` | — | Apache-2.0 |
+| **cmake/** | Plugin-authoring CMake helpers shipped with `plugin_sdk`: `pj_configure_plugin()` (symbol isolation, export allowlist + gate, manifest validation/sidecar/embed), `pj_embed_file()`, `pj_harden_plugin_exports()`, `pj_add_sdk_test_fixture()` — see `examples/sdk_consumer` | — | Apache-2.0 |
 
 ## Getting Started
 
@@ -48,7 +48,7 @@ git ls-files -z '*.cpp' | xargs -0 clang-tidy-22 -p build   # clang-tidy
 ```
 pj_base/                   Vocabulary, builtin codecs and sdk/source/ provider support
 pj_plugins/                C-ABI plugin protocol, SDK, host loaders
-cmake/                     Installed CMake helpers for plugin authors (PjPlugin.cmake, PjParserModule.cmake, PjSdkTestFixtures.cmake)
+cmake/                     Installed CMake helpers for plugin authors (PjPlugin.cmake, PjSdkTestFixtures.cmake)
 examples/sdk_consumer/     find_package() consumer exercising the helpers (built by the release + conda checks)
 docs/                      Project-wide design guides
 ```

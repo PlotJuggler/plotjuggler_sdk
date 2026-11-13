@@ -12,6 +12,23 @@ by hand, because an older host cannot decode the object. `Log` gains an optional
 one on the same wire, and the widget-protocol changes are documentation only; `pj.playback.v1`
 already has its floor in `feature_floors.json`.
 
+Functional parser modules leave the installed SDK:
+
+- **Breaking (source, packaging):** the parser-module kit is no longer installed or packaged. It
+  moves to `experimental/parser_module/`, where it is still built and tested but carries no
+  compatibility promise; no host loads modules yet, so its export ABI and manifest schema are not
+  frozen by 1.0. Removed from the package: the `plotjuggler_sdk::parser_module` component and
+  `pj_add_parser_module()` (`PjParserModule.cmake`), the headers `pj_base/parser_module/*.hpp`,
+  `pj_base/parser_module_abi.h`, `pj_base/parser_module_manifest.hpp`,
+  `pj_plugins/host/native_parser_module.hpp` and `pj_plugins/host/parser_module_runtime.hpp`, and
+  the `pj_parser_module_host` archive that `plotjuggler_sdk::plugin_host` linked. The
+  `PJ::parser_module` block codecs leave the `pj_base` archive.
+- **Breaking (source):** `ParserClaimCatalog::ingestModuleManifest`, `decodeParserModuleManifest`
+  and `ParserModuleManifest` leave `pj_plugins/host/parser_claim_catalog.hpp`. Claim admission,
+  `synthesizeParserPluginClaims` and `ParserRouteResolver` are unchanged.
+- `PJ_MODULE_PARSE_INPUT_FLAG_HAS_TIMESTAMP` leaves the `feature_floors.json` baseline with the
+  header that declared it.
+
 Log:
 
 - `PJ::sdk::Log` gains an optional `category` (proto field 5 of `PJ.Log`): a source-defined grouping

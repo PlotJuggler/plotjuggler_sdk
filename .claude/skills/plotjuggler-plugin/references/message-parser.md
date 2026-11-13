@@ -14,10 +14,6 @@ not a parser. A parser only decodes payloads the host hands it. A parser is righ
 when many payloads on a topic share an encoding (JSON, protobuf, ROS, a custom
 binary) and you decode each into fields.
 
-If an existing encoding already carries one custom type that you want to render
-as a canonical object or scalars, use a **functional parser module** instead of
-forking or replacing the encoding's MessageParser. See `parser-module.md`.
-
 ## Header (trap)
 
 ```cpp

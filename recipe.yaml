@@ -60,7 +60,6 @@ tests:
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/plotjuggler_sdkConfigVersion.cmake
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjPlugin.cmake
         - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjCheckElfPluginExports.cmake
-        - ${{ "lib" if unix else "Library/lib" }}/cmake/plotjuggler_sdk/PjParserModule.cmake
         - ${{ "include" if unix else "Library/include" }}/pj_base/sdk/version.hpp
         - ${{ "include" if unix else "Library/include" }}/pj_base/sdk/semver.hpp
   # Actually exercise the package: build the repo's example consumer, which
