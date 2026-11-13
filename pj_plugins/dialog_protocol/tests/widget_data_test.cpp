@@ -644,3 +644,11 @@ TEST(WidgetDataTest, SetTreeVisibleIdsAfterClearReEmitsFilterInSameBuilder) {
   wd.clearTreeVisibleIds("topicTree").setTreeVisibleIds("topicTree", {"imu", "gps"});
   EXPECT_EQ(parse(wd)["topicTree"]["tree_visible_ids"], nlohmann::json({"imu", "gps"}));
 }
+
+TEST(WidgetDataTest, InvalidUtf8IsReplacedInsteadOfDroppingTheUpdate) {
+  WidgetData wd;
+  wd.setText("label", "can\xff").setText("other", "fine");  // e.g. a channel name read from a binary log
+  const auto j = parse(wd);
+  EXPECT_EQ(j["label"]["text"], "can\xEF\xBF\xBD");  // U+FFFD
+  EXPECT_EQ(j["other"]["text"], "fine");
+}

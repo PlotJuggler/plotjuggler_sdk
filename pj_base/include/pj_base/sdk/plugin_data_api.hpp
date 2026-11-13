@@ -320,8 +320,12 @@ namespace detail {
 
 }  // namespace detail
 
+/// Null data reads as empty whatever the size: a malformed {nullptr, size > 0} view is never dereferenced.
 [[nodiscard]] inline std::string_view toStringView(PJ_string_view_t view) {
-  return std::string_view(view.data == nullptr ? "" : view.data, view.size);
+  if (view.data == nullptr) {
+    return "";
+  }
+  return std::string_view(view.data, view.size);
 }
 
 [[nodiscard]] inline PJ_string_view_t toAbiString(std::string_view view) {

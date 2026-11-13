@@ -162,6 +162,10 @@ class PlotjugglerSdkConan(ConanFile):
         base.set_property("cmake_target_name", "plotjuggler_sdk::base")
         base.libs = ["pj_base"]
         base.includedirs = ["include"]
+        # PUBLIC on pj_base in CMake, but CMakeDeps ignores the installed targets file:
+        # consumers must compile PJ_ASSERT the way the archives were built (ODR).
+        if self.options.assert_throws:
+            base.defines = ["PJ_ASSERT_THROWS"]
 
         # --- plugin_sdk (umbrella INTERFACE: pj_base + pj_dialog_sdk) ---
         sdk = self.cpp_info.components["plugin_sdk"]

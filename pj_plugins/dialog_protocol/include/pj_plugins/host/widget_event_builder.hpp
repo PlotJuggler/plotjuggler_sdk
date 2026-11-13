@@ -18,14 +18,14 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string textChanged(std::string_view text) {
     nlohmann::json j;
     j["text"] = text;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QComboBox: index changed (index only)
   [[nodiscard]] static std::string indexChanged(int index) {
     nlohmann::json j;
     j["current_index"] = index;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QComboBox: index changed (index + current text)
@@ -33,56 +33,56 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["current_index"] = index;
     j["current_text"] = current_text;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QCheckBox, QRadioButton: toggled
   [[nodiscard]] static std::string toggled(bool checked) {
     nlohmann::json j;
     j["checked"] = checked;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QSpinBox: value changed (int)
   [[nodiscard]] static std::string valueChanged(int value) {
     nlohmann::json j;
     j["value"] = value;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QDoubleSpinBox: value changed (double)
   [[nodiscard]] static std::string valueChanged(double value) {
     nlohmann::json j;
     j["value"] = value;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QListWidget: selection changed
   [[nodiscard]] static std::string selectionChanged(const std::vector<std::string>& selected) {
     nlohmann::json j;
     j["selected_items"] = selected;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QPushButton: clicked
   [[nodiscard]] static std::string clicked() {
     nlohmann::json j;
     j["clicked"] = true;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// File picker: file selected
   [[nodiscard]] static std::string fileSelected(std::string_view path) {
     nlohmann::json j;
     j["file_selected"] = path;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// Folder picker: folder selected
   [[nodiscard]] static std::string folderSelected(std::string_view path) {
     nlohmann::json j;
     j["folder_selected"] = path;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// Structured file-picker result. A fully valid Selected result co-emits its
@@ -102,7 +102,7 @@ struct WidgetEventBuilder {
     if (auto legacy = detail::filePickerLegacySelection(result)) {
       j[std::string(legacy->key)] = legacy->path;
     }
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// Embedded scene view: a request the host could not honour. Deliver it to the
@@ -112,14 +112,14 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["scene_view_error"] = {
         {"kind", error.kind}, {"topic", error.topic}, {"dataset", error.dataset}, {"reason", error.reason}};
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QTabWidget: tab changed
   [[nodiscard]] static std::string tabChanged(int index) {
     nlohmann::json j;
     j["tab_index"] = index;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QStackedWidget: current page changed. Always emits both the transient
@@ -129,7 +129,7 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["stacked_index"] = index;
     j["stacked_page"] = page_object_name;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QTreeWidget: selection changed. `ids` is the complete logical selected-ID
@@ -138,7 +138,7 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string treeSelectionChanged(const std::vector<std::string>& ids) {
     nlohmann::json j;
     j["tree_selection_changed"] = ids;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QTreeWidget: an item was activated by keyboard or double-click.
@@ -146,7 +146,7 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string treeItemActivated(std::string_view id, int column) {
     nlohmann::json j;
     j["tree_item_activated"] = {{"id", id}, {"column", column}};
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QTreeWidget: an item's expanded state changed.
@@ -154,7 +154,7 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string treeExpansionChanged(std::string_view id, bool expanded) {
     nlohmann::json j;
     j["tree_expansion_changed"] = {{"id", id}, {"expanded", expanded}};
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QTreeWidget: an item's column-0 check state changed.
@@ -162,21 +162,21 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string treeCheckStateChanged(std::string_view id, TreeCheckState state) {
     nlohmann::json j;
     j["tree_check_state_changed"] = {{"id", id}, {"state", treeCheckStateWireValue(state)}};
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QListWidget: item double-clicked
   [[nodiscard]] static std::string itemDoubleClicked(int index) {
     nlohmann::json j;
     j["item_double_clicked_index"] = index;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QListWidget (deletable): a row's trailing delete (trash) button was clicked.
   [[nodiscard]] static std::string itemDeleteRequested(int index) {
     nlohmann::json j;
     j["item_delete_index"] = index;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QListWidget: a row's context menu (declared via the widget's
@@ -185,7 +185,7 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string itemContextAction(int index, std::string_view action_id) {
     nlohmann::json j;
     j["item_context_action"] = {{"index", index}, {"action", action_id}};
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QTableWidget: a horizontal-header section was clicked (column index).
@@ -194,14 +194,14 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string headerClicked(int section) {
     nlohmann::json j;
     j["header_section"] = section;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QTableWidget: a radio button in the radio column was selected (row index).
   [[nodiscard]] static std::string tableRadioSelected(int row) {
     nlohmann::json j;
     j["table_radio_row"] = row;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// Code editor: code changed. `cursor` is the caret offset (bytes) in the new
@@ -213,14 +213,14 @@ struct WidgetEventBuilder {
     if (cursor >= 0) {
       j["code_cursor"] = cursor;
     }
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
   [[nodiscard]] static std::string itemsDropped(const std::vector<std::string>& labels) {
     nlohmann::json j;
     j["items_dropped"] = labels;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// Same, with the catalog data source of each label (parallel to `labels`, 0 = unknown). The labels stay bare names,
@@ -230,7 +230,7 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["items_dropped"] = labels;
     j["items_dropped_data_sources"] = data_source_ids;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// DateRangePicker: date/time range filter changed. from/to are ISO-8601
@@ -239,7 +239,7 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["date_from_iso"] = from_iso;
     j["date_to_iso"] = to_iso;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// QDateTimeEdit: displayed datetime edited (ISO-8601, e.g. "2026-05-21T13:45:00").
@@ -247,7 +247,7 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string dateTimeChanged(std::string_view iso8601) {
     nlohmann::json j;
     j["datetime_iso"] = iso8601;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// RangeSlider: lower/upper handle position changed (slider units).
@@ -255,7 +255,7 @@ struct WidgetEventBuilder {
     nlohmann::json j;
     j["range_lower"] = lower;
     j["range_upper"] = upper;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// MarkerTimeline: the mark set changed (user drag / resize / delete). Carries
@@ -263,7 +263,7 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string markerTimelineChanged(const std::vector<TimelineMark>& marks) {
     nlohmann::json j;
     j["marker_timeline_marks"] = timelineMarksToJson(marks);
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 
   /// ChartPreviewWidget: visible range changed via zoom or pan.
@@ -273,7 +273,7 @@ struct WidgetEventBuilder {
     j["chart_x_max"] = x_max;
     j["chart_y_min"] = y_min;
     j["chart_y_max"] = y_max;
-    return j.dump();
+    return detail::dumpWidgetJson(j);
   }
 };
 

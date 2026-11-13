@@ -121,14 +121,10 @@ TEST(PluginDataApiTest, ToStringViewHandlesNullData) {
   EXPECT_EQ(sdk::toStringView(null_zero), "");
   EXPECT_EQ(sdk::toStringView(null_zero).size(), 0U);
 
-  // Null data pointer with non-zero size → still uses "" base but with the given size
-  // The SDK does: std::string_view(view.data == nullptr ? "" : view.data, view.size)
-  // With nullptr and size=5, it constructs std::string_view("", 5) which has size 5
-  // but that reads past the empty string literal — this tests current behavior
+  // Null data pointer with non-zero size (a malformed, possibly plugin-supplied view) → empty,
+  // never a view of `size` bytes past a one-byte literal.
   const PJ_string_view_t null_nonzero{nullptr, 5};
-  const auto result = sdk::toStringView(null_nonzero);
-  // The key thing: it doesn't crash (null guard prevents UB from nullptr dereference)
-  EXPECT_NE(result.data(), nullptr);
+  EXPECT_EQ(sdk::toStringView(null_nonzero).size(), 0U);
 }
 
 TEST(PluginDataApiTest, SourceWriteHostViewRejectsMissingAppendArrowStreamTailSlot) {
