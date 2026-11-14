@@ -151,7 +151,9 @@ The direct C++ parser bridge (docs only, no code change):
   the host reads objects through `pj.parser_functional.v2` only.
 - 1.0.0 itself changes two of those layouts: `sdk::Log` (`category`) and `sdk::DepthImage`
   (`frame_id`). A parser built against 0.x that returns either type must be rebuilt for a 1.0 host.
-  No parser in pj-official-plugins returns them.
+  In pj-official-plugins no parser returns `DepthImage`, and `parser_ros` returns `Log` only from
+  1.4.0, which is built against the 1.0 layout. Both members are appended at the tail, so a 0.x
+  host reading an object from a 1.0 parser sees the members it knows at their old offsets.
 
 Builtin decoders:
 
