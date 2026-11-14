@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -127,6 +128,53 @@ struct ChartMarker {
   std::string label;
 };
 
+namespace detail {
+
+/// Reads the optional `key` of a JSON object into `out` without throwing. Absent: `out` keeps
+/// its default, true. Present with the wrong type (or an integer outside `int`): false, so the
+/// marker decoders below skip that entry instead of letting nlohmann's value() throw.
+template <typename T>
+[[nodiscard]] bool readOptionalWidgetField(const nlohmann::json& obj, const char* key, T& out) {
+  const auto it = obj.find(key);
+  if (it == obj.end()) {
+    return true;
+  }
+  if constexpr (std::is_same_v<T, std::string>) {
+    if (!it->is_string()) {
+      return false;
+    }
+  } else if constexpr (std::is_same_v<T, bool>) {
+    if (!it->is_boolean()) {
+      return false;
+    }
+  } else if constexpr (std::is_same_v<T, double>) {
+    if (!it->is_number()) {
+      return false;
+    }
+  } else {
+    static_assert(std::is_same_v<T, int>);
+    if (it->is_number_unsigned()) {
+      if (it->template get<std::uint64_t>() > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        return false;
+      }
+    } else if (
+        !it->is_number_integer() || it->template get<std::int64_t>() < std::numeric_limits<int>::min() ||
+        it->template get<std::int64_t>() > std::numeric_limits<int>::max()) {
+      return false;
+    }
+  }
+  out = it->template get<T>();
+  return true;
+}
+
+/// Serializes widget data / widget events. Invalid UTF-8 (a label read from a binary log)
+/// becomes U+FFFD instead of throwing, which would discard the whole document.
+[[nodiscard]] inline std::string dumpWidgetJson(const nlohmann::json& json) {
+  return json.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+}
+
+}  // namespace detail
+
 /// The single source of truth for the ChartMarker ⇆ JSON wire shape, shared by the
 /// data setter and the data-view (so a field change cannot drift between them).
 [[nodiscard]] inline nlohmann::json chartMarkersToJson(const std::vector<ChartMarker>& marks) {
@@ -145,6 +193,7 @@ struct ChartMarker {
   return arr;
 }
 
+/// Never throws: an entry that is not an object, or has a field of the wrong type, is skipped.
 [[nodiscard]] inline std::vector<ChartMarker> chartMarkersFromJson(const nlohmann::json& arr) {
   std::vector<ChartMarker> marks;
   if (!arr.is_array()) {
@@ -153,15 +202,14 @@ struct ChartMarker {
   marks.reserve(arr.size());
   for (const auto& jm : arr) {
     ChartMarker m;
-    m.kind = jm.value("kind", std::string());
-    m.x0 = jm.value("x0", 0.0);
-    m.x1 = jm.value("x1", 0.0);
-    m.y0 = jm.value("y0", 0.0);
-    m.y1 = jm.value("y1", 0.0);
-    m.has_value = jm.value("has_value", false);
-    m.color = jm.value("color", std::string());
-    m.label = jm.value("label", std::string());
-    marks.push_back(std::move(m));
+    if (jm.is_object() && detail::readOptionalWidgetField(jm, "kind", m.kind) &&
+        detail::readOptionalWidgetField(jm, "x0", m.x0) && detail::readOptionalWidgetField(jm, "x1", m.x1) &&
+        detail::readOptionalWidgetField(jm, "y0", m.y0) && detail::readOptionalWidgetField(jm, "y1", m.y1) &&
+        detail::readOptionalWidgetField(jm, "has_value", m.has_value) &&
+        detail::readOptionalWidgetField(jm, "color", m.color) &&
+        detail::readOptionalWidgetField(jm, "label", m.label)) {
+      marks.push_back(std::move(m));
+    }
   }
   return marks;
 }
@@ -200,6 +248,8 @@ struct TimelineMark {
   return arr;
 }
 
+/// Never throws: an entry that is not an object, or has a field of the wrong type (or an
+/// integer outside `int`), is skipped.
 [[nodiscard]] inline std::vector<TimelineMark> timelineMarksFromJson(const nlohmann::json& arr) {
   std::vector<TimelineMark> marks;
   if (!arr.is_array()) {
@@ -208,11 +258,11 @@ struct TimelineMark {
   marks.reserve(arr.size());
   for (const auto& jm : arr) {
     TimelineMark m;
-    m.id = jm.value("id", 0);
-    m.region = jm.value("region", true);
-    m.start = jm.value("start", 0);
-    m.end = jm.value("end", 0);
-    marks.push_back(m);
+    if (jm.is_object() && detail::readOptionalWidgetField(jm, "id", m.id) &&
+        detail::readOptionalWidgetField(jm, "region", m.region) &&
+        detail::readOptionalWidgetField(jm, "start", m.start) && detail::readOptionalWidgetField(jm, "end", m.end)) {
+      marks.push_back(m);
+    }
   }
   return marks;
 }
@@ -1095,7 +1145,7 @@ class WidgetData {
 
   /// Serialize to JSON string
   std::string toJson() const {
-    return data_.dump();
+    return detail::dumpWidgetJson(data_);
   }
 
   /// Reset for reuse

@@ -62,5 +62,37 @@ class SceneViewFloorTest(unittest.TestCase):
             self.assertEqual(self.run_cli(source), 1, msg=source)
 
 
+class MeshMapFloorTest(unittest.TestCase):
+    """Emitting a 1.0.0 builtin object type is a hard 1.0.0 floor (an older host cannot decode it)."""
+
+    def run_cli(self, source: str, floor: str) -> int:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"min_sdk_required": floor}))
+            (root / "src").mkdir()
+            (root / "src/plugin.cpp").write_text(source)
+            argv = ["--table", str(TABLE), "--manifest", str(manifest), "--sources", str(root / "src")]
+            return ffc.main(argv)
+
+    def test_every_spelling_needs_floor_1_0_0(self):
+        for source in (
+            "auto t = PJ::BuiltinObjectType::kMeshMap;",
+            "auto t = PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE;",
+            "PJ::sdk::MeshMap mesh;",
+            "auto bytes = PJ::sdk::serializeMeshMapUpdate(update);",
+        ):
+            self.assertEqual(self.run_cli(source, "0.40.0"), 1, msg=source)
+            self.assertEqual(self.run_cli(source, "1.0.0"), 0, msg=source)
+
+    def test_matching_respects_identifier_boundaries(self):
+        table = ffc.load_surface_table(TABLE)
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "plugin.cpp"
+            source.write_text("PJ::sdk::MeshMapUpdate update;\n")
+            matched = {identifier for identifier, _ in ffc.scan_source_file(source, table)}
+        self.assertEqual(matched, {"kMeshMapUpdate"})
+
+
 if __name__ == "__main__":
     unittest.main()

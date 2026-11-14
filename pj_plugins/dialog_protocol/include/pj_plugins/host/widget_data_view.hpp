@@ -18,7 +18,7 @@
 
 #include "pj_base/expected.hpp"
 #include "pj_base/number_parse.hpp"
-#include "pj_plugins/sdk/widget_data.hpp"  // TimelineMark, SceneView
+#include "pj_plugins/sdk/widget_data.hpp"  // ChartMarker, TimelineMark, SceneView
 
 namespace PJ {
 
@@ -706,20 +706,13 @@ class WidgetDataView {
     return view;
   }
 
-  /// A marker overlaid on the chart (see PJ::ChartMarker / setChartMarkers).
+  /// A marker overlaid on the chart: the plugin-side PJ::ChartMarker (see setChartMarkers),
+  /// decoded by the shared chartMarkersFromJson.
   /// Interpret by `kind`: "event" (point at x0,y0 if has_value, else vline at x0),
   /// "region" (x-span [x0,x1]), "value_band" (y-band [y0,y1]; line when y0==y1), "label".
-  struct ChartMarkerView {
-    std::string kind;
-    double x0 = 0.0;
-    double x1 = 0.0;
-    double y0 = 0.0;
-    double y1 = 0.0;
-    bool has_value = false;
-    std::string color;  // optional hex "#rrggbb"; empty means use a default palette
-    std::string label;
-  };
+  using ChartMarkerView = ChartMarker;
 
+  /// Entries that are not objects or carry a wrong-typed field are skipped (never throws).
   [[nodiscard]] std::optional<std::vector<ChartMarkerView>> chartMarkers(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
@@ -729,24 +722,7 @@ class WidgetDataView {
     if (it == w->end() || !it->is_array()) {
       return std::nullopt;
     }
-    std::vector<ChartMarkerView> result;
-    result.reserve(it->size());
-    for (const auto& m : *it) {
-      if (!m.is_object()) {
-        continue;
-      }
-      ChartMarkerView mv;
-      mv.kind = m.value("kind", std::string());
-      mv.x0 = m.value("x0", 0.0);
-      mv.x1 = m.value("x1", 0.0);
-      mv.y0 = m.value("y0", 0.0);
-      mv.y1 = m.value("y1", 0.0);
-      mv.has_value = m.value("has_value", false);
-      mv.color = m.value("color", std::string());
-      mv.label = m.value("label", std::string());
-      result.push_back(std::move(mv));
-    }
-    return result;
+    return chartMarkersFromJson(*it);
   }
 
   /// Returns whether interactive zoom is enabled on this chart widget.

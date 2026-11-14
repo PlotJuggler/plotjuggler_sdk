@@ -112,7 +112,8 @@ class ServiceRegistryBuilder {
       }
       return false;
     }
-    std::string key(name.data == nullptr ? "" : name.data, name.size);
+    // A null view is empty whatever its size: never read `size` bytes from a literal.
+    const std::string key = name.data == nullptr ? std::string() : std::string(name.data, name.size);
     auto it = self->entries_.find(key);
     if (it == self->entries_.end()) {
       if (out_error != nullptr) {

@@ -166,10 +166,11 @@ DataSource may add `"file_extensions": [".csv"]`.
 `min_sdk_required` declares the oldest **host** SDK contract your plugin
 functions on. It is independent of the SDK you build against: `pj_base` /
 `pj_source` are static libraries compiled into your plugin, so adopting a new
-helper (`parseIso8601Utc`, `sliderToWindow`, a codec) **never** raises the
+helper (`parseIso8601Utc`, `sliderToWindow`) **never** raises the
 floor. Only **host-contract** surfaces do — runtime-host tail slots, named
-services, wire contracts — and the authority for which release introduced each
-is `feature_floors.json`, shipped in the package at
+services, wire contracts, and emitting a builtin object type an older host
+cannot decode (`MeshMap` needs 1.0.0) — and the authority for which release
+introduced each is `feature_floors.json`, shipped in the package at
 `share/plotjuggler_sdk/feature_floors.json`.
 
 When you adopt a surface newer than your floor, pick one:

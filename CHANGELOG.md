@@ -6,9 +6,10 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 ## [1.0.0] — Unreleased
 
 Host contract: extended: builtin object types kMeshMap (21) and kMeshMapUpdate (22) (floor 1.0.0).
-Builtin object types are not among the surfaces `feature_floors.json` classifies, so the floor
-checker cannot see them: a plugin that emits either type raises its `min_sdk_required` to 1.0.0
-by hand, because an older host cannot decode the object. `Log` gains an optional field and renames
+`feature_floors.json` now classifies the `PJ_builtin_object_type_t` enumerators (the types that
+shipped before 1.0.0 as baseline), so the floor checker flags a plugin that uses either new type
+with a `min_sdk_required` below 1.0.0: the floor is hard, not negotiated, because an older host
+cannot decode the object. `Log` gains an optional field and renames
 one on the same wire, and the widget-protocol changes are documentation only; `pj.playback.v1`
 already has its floor in `feature_floors.json`.
 
@@ -116,6 +117,26 @@ Removed:
   reused.
 - **Breaking (source):** `PJ::sdk::MediaMetadataBuilder` (`pj_base/sdk/media_metadata.hpp`). Use
   `ObjectTopicMetadataBuilder` (`pj_base/sdk/object_topic_metadata.hpp`).
+
+Fixes:
+
+- A `PJ_string_view_t` with null data and a non-zero size is now an empty string everywhere the SDK
+  converts one: `sdk::toStringView`, the service-registry lookup, and the `saveConfig()` readers of
+  the DataSource, MessageParser and Toolbox handles. They used to read `size` bytes past a one-byte
+  literal, on views supplied by a plugin.
+- `WidgetDataView::chartMarkers()`, `markerTimelineMarks()` and `WidgetEvent::markerTimelineChanged()`
+  skip a marker entry that is not an object or has a wrong-typed field; they used to throw
+  `nlohmann::json::type_error`, so one malformed plugin update could take the host down. An integer
+  field must now hold a JSON integer: a float there (`"start": 3.0`) skips the entry instead of being
+  truncated.
+  `WidgetDataView::ChartMarkerView` is now an alias of `PJ::ChartMarker` (same fields).
+- `DialogHandle` gains `valid()`; when the plugin's `create()` returns null (its constructor threw),
+  every method returns empty / false or does nothing instead of passing the null context to the
+  plugin.
+- `WidgetData::toJson()` and `WidgetEventBuilder` replace invalid UTF-8 with U+FFFD; one non-UTF-8
+  string (a label read from a binary log) used to make the whole dialog update vanish silently.
+- The Conan package now propagates `PJ_ASSERT_THROWS` to consumers when built with
+  `assert_throws=True`; consumers compiled `PJ_ASSERT` as `assert` against archives built to throw.
 
 ## [0.40.0]
 

@@ -68,6 +68,15 @@ class DialogHandle {
   DialogHandle(const DialogHandle&) = delete;
   DialogHandle& operator=(const DialogHandle&) = delete;
 
+  /// False when there is no vtable or no context (the plugin's create() returned
+  /// null, e.g. its constructor threw, or the handle was moved from). Every method
+  /// below then returns its "nothing" value (empty string / false / no-op) without
+  /// calling into the plugin.
+  /// @since 1.0.0
+  [[nodiscard]] bool valid() const noexcept {
+    return vt_ != nullptr && ctx_ != nullptr;
+  }
+
   /// Supply immutable host information to this dialog instance.
   ///
   /// This method owns the optional-tail-slot gate: runtime engines must call it
@@ -84,44 +93,50 @@ class DialogHandle {
   ///
   /// @since 0.21.0
   [[nodiscard]] SetHostInfoResult setHostInfo(const PJ_dialog_host_info_t& info, PJ_error_t* out_error = nullptr) {
-    if (vt_ == nullptr || ctx_ == nullptr || !PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, set_host_info)) {
+    if (!valid() || !PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, set_host_info)) {
       return SetHostInfoResult::Unsupported;
     }
     return vt_->set_host_info(ctx_, &info, out_error) ? SetHostInfoResult::Accepted : SetHostInfoResult::Rejected;
   }
 
-  // --- Queries ---
+  // --- Queries (empty when !valid()) ---
   [[nodiscard]] std::string manifest() const {
-    return safeString(vt_->get_manifest(ctx_));
+    return valid() ? safeString(vt_->get_manifest(ctx_)) : std::string();
   }
   [[nodiscard]] std::string ui_content() const {
-    return safeString(vt_->get_ui_content(ctx_));
+    return valid() ? safeString(vt_->get_ui_content(ctx_)) : std::string();
   }
   [[nodiscard]] std::string widget_data() const {
-    return safeString(vt_->get_widget_data(ctx_));
+    return valid() ? safeString(vt_->get_widget_data(ctx_)) : std::string();
   }
 
-  // --- Events (fallible — errors swallowed here; callers that need detail call vtable directly) ---
+  // --- Events (fallible — errors swallowed here; callers that need detail call vtable directly; false when
+  // !valid()) ---
   [[nodiscard]] bool sendEvent(std::string_view widget_name, std::string_view event_json) {
-    return vt_->on_widget_event(ctx_, std::string(widget_name).c_str(), std::string(event_json).c_str(), nullptr);
+    return valid() &&
+           vt_->on_widget_event(ctx_, std::string(widget_name).c_str(), std::string(event_json).c_str(), nullptr);
   }
 
   [[nodiscard]] bool tick() {
-    return vt_->on_tick(ctx_, nullptr);
+    return valid() && vt_->on_tick(ctx_, nullptr);
   }
 
-  // --- Dialog result ---
+  // --- Dialog result (no-ops when !valid()) ---
   void accept(std::string_view final_state_json) {
-    vt_->on_accepted(ctx_, std::string(final_state_json).c_str());
+    if (valid()) {
+      vt_->on_accepted(ctx_, std::string(final_state_json).c_str());
+    }
   }
   void reject() {
-    vt_->on_rejected(ctx_);
+    if (valid()) {
+      vt_->on_rejected(ctx_);
+    }
   }
 
-  // --- Config persistence ---
+  // --- Config persistence (empty / false when !valid()) ---
   [[nodiscard]] std::string save_config() const {
     PJ_string_view_t sv{};
-    if (!vt_->save_config(ctx_, &sv, nullptr)) {
+    if (!valid() || !vt_->save_config(ctx_, &sv, nullptr)) {
       return std::string();
     }
     return sv.data == nullptr ? std::string() : std::string(sv.data, sv.size);
@@ -129,7 +144,7 @@ class DialogHandle {
 
   [[nodiscard]] bool load_config(std::string_view config_json) {
     PJ_string_view_t sv{config_json.data(), config_json.size()};
-    return vt_->load_config(ctx_, sv, nullptr);
+    return valid() && vt_->load_config(ctx_, sv, nullptr);
   }
 
   // --- Escape hatch ---

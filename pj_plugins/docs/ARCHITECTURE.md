@@ -6,8 +6,8 @@ Seven rules the loader and every plugin author rely on. Breaking any of
 these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
 
 One classification obligation rides alongside these rules: **a new host
-surface — a host-vtable tail slot, a versioned service/extension id, or a
-wire-contract flag — must be classified in `pj_base/feature_floors.json` in
+surface — a host-vtable tail slot, a versioned service/extension id, a
+wire-contract flag, or a builtin object type — must be classified in `pj_base/feature_floors.json` in
 the same PR.** CI enforces it (`tools/feature_floors/check_feature_floors.py`
 diffs the extracted host-surface inventory against the checked-in snapshot),
 and the installed copy of the table is what downstream plugin repositories
