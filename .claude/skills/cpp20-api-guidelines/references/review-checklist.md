@@ -21,9 +21,9 @@ Run this checklist before returning recommendations or code.
 14. Are objects fully valid after construction (no two-phase init)?
 
 ## Container & formatting usage
-15. Are hash containers in `.cpp` files using `tsl::robin_map`/`tsl::robin_set` instead of `std::unordered_*`?
-16. Are hash containers in `.hpp` headers using `std::unordered_map`/`std::unordered_set`?
-17. Are string operations using `fmt::format` where appropriate?
+15. Do public headers include only the standard library (and nlohmann/json where the module already exposes it)?
+16. Is fmt kept out of public headers (it is a private dependency)?
+17. Is a small collection a `std::vector` scan rather than a hash container?
 18. Are time values using `int64_t` nanoseconds or `std::chrono` types instead of raw integers?
 19. Are public API headers using `PJ::Expected<T>` / `PJ::Status` for error handling?
 20. Is `.has_value()` checked before accessing `Expected<T>` values (not `.ok()`)?

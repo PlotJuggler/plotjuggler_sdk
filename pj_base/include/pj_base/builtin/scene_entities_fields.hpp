@@ -160,7 +160,7 @@ struct FieldTable<ModelPrimitive> {
   static constexpr FieldTableView view{"ModelPrimitive", Span<const FieldDescriptor>(fields)};
 };
 
-/// Fields of `SceneEntity`: `timestamp` (int64), `frame_id`, `id`,
+/// Fields of `SceneEntity`: `timestamp_ns` (int64), `frame_id`, `id`,
 /// `lifetime_ns` (int64), `frame_locked`, `metadata` (list of
 /// `KeyValuePair`), and the nine primitive lists in `SceneEntity`'s
 /// declaration order (`arrows`, `cubes`, `spheres`, `cylinders`, `lines`,
@@ -187,7 +187,7 @@ struct FieldTable<SceneEntity> {
   static constexpr FieldTableView view{"SceneEntity", Span<const FieldDescriptor>(fields)};
 };
 
-/// Fields of `SceneEntityDeletion`: `type` (enum), `timestamp` (int64), `id`.
+/// Fields of `SceneEntityDeletion`: `type` (enum), `timestamp_ns` (int64), `id`.
 template <>
 struct FieldTable<SceneEntityDeletion> {
   static constexpr std::array fields{

@@ -25,7 +25,8 @@ class MyToolbox : public PJ::ToolboxPluginBase {
   }
 
   void onDataChanged() override {
-    // host tells you the dataset changed; re-read if you cache anything
+    // Advisory: a host may never call it. Re-read the catalog when the user
+    // acts, and treat this only as an early hint to drop a cache.
   }
 
   // Do work when the user acts (e.g. from the dialog). Take the timestamps from
@@ -90,7 +91,15 @@ Gate on `DataProcessorsHostView::hasTypedRequests()`; the flow (createV2, submit
 `parseEvaluationReport`) is in `pj_plugins/docs/toolbox-guide.md` → "Typed requests and
 on-demand evaluation", the contract in the `pj.data_processors.v1` comment of `plugin_data_api.h`.
 
-## Reading a series (Arrow)
+## Reading a series
+
+`toolboxHost().readSeries(field)` returns a `PJ::sdk::MaterializedSeriesView`
+that owns the Arrow buffers: `rowCount()`, `timestamps()` (int64 ns) and the
+typed `valuesAs*()` pointers. A sample the source did not provide is a **null**:
+the `valuesAs*()` slot of a null is unspecified (hosts zero it), so when
+`nullCount() != 0` skip the rows where `isNull(row)` before computing anything.
+
+The raw Arrow path underneath it, for when you need the buffers themselves:
 
 ```cpp
 #include <pj_base/sdk/arrow.hpp>
@@ -115,8 +124,11 @@ than row-by-row `appendRecord`.
   Call it **once per logical operation**, not per row. Forgetting it entirely
   means your new series never appear in the UI; calling it per record floods the
   host.
-- **Host methods only from the host thread** (SKILL.md rule 2). Background work
-  must marshal back.
+- **Threads** (SKILL.md rule 2). Writes through `toolboxHost()` may come from
+  your own worker thread, one thread at a time per host object.
+  `objectReadHost()` and the optional services (playback, viewport, plot tabs,
+  data processors, MCP endpoint) are main-thread: call them from inside a host
+  call or a dialog callback.
 - **Arrow RAII, no dangling pointers** (SKILL.md rule 6). Never keep a raw
   `ArrowSchema*`/`ArrowArray*` past its holder's scope.
 - **A `catalogSnapshot()` is a point-in-time view.** After you write and call
@@ -127,9 +139,14 @@ than row-by-row `appendRecord`.
 
 ## Emitting objects (images, clouds, …)
 
-`registerObjectTopic(source, name, metadata_json)` then
+`registerObjectTopic(source, name, PJ::sdk::BuiltinObjectType::kImage)` then
 `pushOwnedObject(topic, ts, serialized_bytes)` — serialize with the matching
-builtin codec first. See `references/builtin-objects.md` and `V4_STORE.md`.
+builtin codec first. Use that typed overload: it writes the
+`builtin_object_type` metadata viewers discover the type from, which the raw
+`metadata_json` overload leaves to you. A toolbox has no lazy push. To attach
+an object topic to a dataset that already exists (plot markers on loaded data),
+use `registerObjectTopicOnDataset()`, with `setObjectTopicRetention()` to bound
+it. See `references/builtin-objects.md` and `docs/object_store.md`.
 
 ## Embedding a dialog
 

@@ -13,10 +13,10 @@
 
 ## 1. Motivation
 
-Plugins — and a future **AI agent** — need a way to put **graphical markers** on
-plots (a shaded time region, a point at an event, a value band) and to **ask which
-markers exist** on a given series. Use the existing `PlotMarkers` type and codec
-through [ObjectStore services](../V4_STORE.md).
+Plugins and **AI agents** (through the host's `kind="markers"` data processors)
+put **graphical markers** on plots (a shaded time region, a point at an event, a
+value band) and **ask which markers exist** on a given series. Use the existing `PlotMarkers` type and codec
+through [ObjectStore services](object_store.md).
 
 **A marker is a structured finding.** It carries a pass/fail status, severity
 and category alongside its time anchor. Reports and consumer-side filtering
@@ -29,8 +29,8 @@ A marker has three consumers of one data model:
 
 Producers edit an in-memory set and republish the whole `PlotMarkers` value;
 there is no per-marker add/delete API. Toolbox plugins and the host can read
-sets through the generic object pipeline. Future agents and ingestion parsers
-can use the same type.
+sets through the generic object pipeline. Agents and ingestion parsers
+use the same type.
 
 ## 2. Vocabulary
 
@@ -111,9 +111,7 @@ No payload field sets its scope.
   `severity ≥ warning` is done on the deserialized set.
 
 - **UC-6 — JSON report.** A run exports a report — `overall_status`, plus every
-  finding with its timestamps and severity. The data model supports this with no GUI;
-  a true headless CLI entry point is a separate, deferred effort (PJ4 is GUI-only
-  today), so v1 exposes export as a host action.
+  finding with its timestamps and severity. The data model supports this with no GUI.
 
 - **UC-7 — GUI inspection.** A user sees markers colored by severity, hovers for a
   tooltip with the semantic fields, and uses a **markers panel** to filter (by

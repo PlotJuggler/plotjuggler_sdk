@@ -1,6 +1,6 @@
 ---
 name: cpp20-api-guidelines
-description: "Generate and review C++20 code in a simplicity-first style. Use when tasks involve API design, code reviews, refactors, or coding standards where correctness and usability matter: const-by-default, stateless-first interfaces, minimal abstraction (avoid SOLID-for-its-own-sake), DRY with restraint, testability by design, explicit ownership/lifetimes, PJ::Expected<T>/PJ::Status error handling, and tsl::robin_map containers."
+description: "Generate and review C++20 code in a simplicity-first style. Use when tasks involve API design, code reviews, refactors, or coding standards where correctness and usability matter: const-by-default, stateless-first interfaces, minimal abstraction (avoid SOLID-for-its-own-sake), DRY with restraint, testability by design, explicit ownership/lifetimes, and PJ::Expected<T>/PJ::Status error handling."
 ---
 
 # C++20 API Guidelines
@@ -28,6 +28,7 @@ description: "Generate and review C++20 code in a simplicity-first style. Use wh
   - Use `PJ::Expected<T>` (recoverable error with value), `PJ::Status`
     (recoverable error, no return value), `PJ::Span<T>` (non-owning view).
   - Success: `PJ::okStatus()`. Error: `PJ::unexpected(msg)`. Check: `.has_value()`.
-- Use `tsl::robin_map` for hash containers in `.cpp` files, `std::unordered_map` in headers.
-  Use `fmt::format` for string formatting.
+- Use `std::unordered_map` / `std::unordered_set` for hash containers. Public
+  headers include only the standard library (plus nlohmann/json where the module
+  already exposes it); fmt is private to the SDK's own `.cpp` files.
 - Include minimal code examples only when they clarify contracts or misuse prevention.

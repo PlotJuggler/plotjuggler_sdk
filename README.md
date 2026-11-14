@@ -3,8 +3,10 @@
 [![Linux CI](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/linux-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/linux-ci.yml)
 [![Windows CI](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_sdk/actions/workflows/windows-ci.yml)
 
-C++20 foundation libraries for [PlotJuggler](https://github.com/facontidavide/PlotJuggler).
+C++20 plugin SDK and host-loading libraries for [PlotJuggler](https://github.com/PlotJuggler/PlotJuggler).
 
+Writing a plugin? Start with the [plugin-authoring guide](.claude/skills/plotjuggler-plugin/SKILL.md)
+and the family guides in [`pj_plugins/docs/`](pj_plugins/docs/).
 Start with [Existing SDK utilities](docs/sdk-utilities.md) before writing helpers.
 Source providers also follow [the provider contract](docs/provider-guide.md).
 Both guides ship under `share/plotjuggler_sdk/docs/` in the installed package.
@@ -15,7 +17,7 @@ Both guides ship under `share/plotjuggler_sdk/docs/` in the installed package.
 |--------|-------------|--------------|---------|
 | **pj_base** | Vocabulary types: `Timestamp`, `DatasetId`, `TopicId`, type trees, `Expected<T>`, `Span<T>` | None | Apache-2.0 |
 | **pj_source** | Provider descriptors, origins, artifact cache, jobs, limits, presentation, completion and Stop; link `plotjuggler_sdk::source` | pj_base, nlohmann/json | Apache-2.0 |
-| **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox, Widget families), C++ SDK base classes, plugin discovery, host-side loaders, and config helpers | pj_base, nlohmann/json | Apache-2.0 |
+| **pj_plugins** | C-ABI plugin protocol (DataSource, MessageParser, Dialog, Toolbox, Widget families), C++ SDK base classes, plugin discovery and host-side loaders | pj_base, nlohmann/json | Apache-2.0 |
 | **cmake/** | Plugin-authoring CMake helpers shipped with `plugin_sdk`: `pj_configure_plugin()` (symbol isolation, export allowlist + gate, manifest validation/sidecar/embed), `pj_embed_file()`, `pj_harden_plugin_exports()`, `pj_add_sdk_test_fixture()` — see `examples/sdk_consumer` | — | Apache-2.0 |
 
 ## Getting Started
@@ -40,7 +42,8 @@ cd plotjuggler_sdk
 ./build.sh              # RelWithDebInfo (build/)
 ./build.sh --debug      # Debug + ASAN (build/debug_asan)
 ./test.sh               # runs tests in all discovered build dirs
-git ls-files -z '*.cpp' | xargs -0 clang-tidy-22 -p build   # clang-tidy
+pre-commit run --all-files   # clang-format and file hygiene
+git ls-files -z '*.cpp' | xargs -0 clang-tidy-22 -p build/debug_asan   # clang-tidy (not a CI gate)
 ```
 
 ## Project Layout
@@ -49,9 +52,15 @@ git ls-files -z '*.cpp' | xargs -0 clang-tidy-22 -p build   # clang-tidy
 pj_base/                   Vocabulary, builtin codecs and sdk/source/ provider support
 pj_plugins/                C-ABI plugin protocol, SDK, host loaders
 cmake/                     Installed CMake helpers for plugin authors (PjPlugin.cmake, PjSdkTestFixtures.cmake)
-examples/sdk_consumer/     find_package() consumer exercising the helpers (built by the release + conda checks)
-docs/                      Project-wide design guides
+examples/sdk_consumer/     find_package() consumer exercising the helpers (built by ./test_sdk_install.sh and the conda recipe test)
+experimental/              Built and tested here, never installed (functional parser modules)
+tools/feature_floors/      Host-contract floor table checks
+packaging/                 conan-center-index recipe staging
+docs/                      Project-wide design guides; RELEASING.md for versions and releases
 ```
+
+Conan/CMake components: `base`, `source`, `plugin_sdk` (what a plugin links) and
+`plugin_host` (the loaders a host or a plugin test links).
 
 ## License
 
@@ -60,6 +69,5 @@ source file carries an authoritative `SPDX-License-Identifier` header. You may
 build **proprietary plugins and applications** on the SDK without restriction;
 Apache-2.0 also grants an explicit patent license.
 
-The columnar storage engine (formerly the MPL-2.0 `pj_datastore` module) has
-moved to the PlotJuggler application repo; plugins load through a stable C ABI
-and never link it. See [LICENSE](LICENSE) for the full mapping.
+The columnar storage engine belongs to the PlotJuggler application; plugins
+reach it through the stable C ABI and never link it. See [LICENSE](LICENSE).

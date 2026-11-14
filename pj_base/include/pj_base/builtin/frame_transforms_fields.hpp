@@ -58,7 +58,7 @@ struct FieldTable<Pose> {
   static constexpr FieldTableView view{"Pose", Span<const FieldDescriptor>(fields)};
 };
 
-/// Fields of `FrameTransform`: `timestamp` (int64), `parent_frame_id`,
+/// Fields of `FrameTransform`: `timestamp_ns` (int64), `parent_frame_id`,
 /// `child_frame_id` (strings), `translation` (Vector3), `rotation` (Quaternion).
 template <>
 struct FieldTable<FrameTransform> {

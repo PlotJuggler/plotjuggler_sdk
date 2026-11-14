@@ -52,8 +52,8 @@ the host, which routes them to the appropriate parser based on encoding name.
 1. Subclass `PJ::MessageParserPluginBase`.
 2. For new parsers, register `SchemaHandler` entries for functional scalar
    and/or builtin-object output. For a legacy push-only parser, override
-   `parse()` instead. Optionally override `bindSchema()`, `saveConfig()`, and
-   `loadConfig()`.
+   `parse()` instead. Optionally override `bindSchema()` (call the base
+   implementation first), `saveConfig()`, and `loadConfig()`.
 3. Export with `PJ_MESSAGE_PARSER_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"...","encoding":["..."]})")`
 4. Build as a shared library linking `plotjuggler_sdk::plugin_sdk`
 
@@ -295,15 +295,17 @@ if (!status) {
 
 ### Route claims and functional v2
 
-Registering at least one `SchemaHandler` automatically exposes two extension
-tables; parser authors do not implement them by hand:
+`MessageParserPluginBase` answers two extension ids itself; parser authors do
+not implement them by hand:
 
-- `pj.parser_route_claims.v1` classifies exact handler-table coverage. It never
+- `pj.parser_route_claims.v1` is always answered. It classifies exact
+  handler-table coverage (a type without a handler is declined) and never
   reports wildcard claims. The host synthesizes the universal wildcard scalar
   claim from each manifest encoding.
 - `pj.parser_functional.v2` delivers scalar records and canonical-wire objects
   through synchronous caller-owned sinks, including one splice-eligible object
-  field.
+  field. It is answered only when the bound type has a handler; before
+  `bindSchema()`, when any handler is registered.
 
 The host resolves scalar and object routes independently. A parser may keep the
 scalar route for a type it flattens while another provider owns that type's
@@ -312,18 +314,26 @@ canonical-object route.
 ### Schema binding
 
 Override `bindSchema()` to receive schema data before parsing begins. The
-default implementation is a no-op.
+default implementation records the bound type name, which the `SchemaHandler`
+dispatch looks up, so an override must call
+`MessageParserPluginBase::bindSchema()` first.
 
 ```cpp
 PJ::Status bindSchema(std::string_view type_name,
                        PJ::Span<const uint8_t> schema) override {
+  if (auto status = PJ::MessageParserPluginBase::bindSchema(type_name, schema);
+      !status) {
+    return status;
+  }
   // Store schema for use during parse().
-  type_name_ = std::string(type_name);
   schema_.assign(schema.begin(), schema.end());
   // Build lookup tables, compile descriptors, etc.
   return PJ::okStatus();
 }
 ```
+
+If the plugin has its own type-name convention, normalize `type_name` before
+delegating, and register handlers under that same canonical form.
 
 `type_name` identifies the encoding-specific message type, such as
 `"sensor_msgs/msg/Imu"` for `ros2msg` or `"my.package.ImuSample"` for Protobuf.
@@ -466,6 +476,10 @@ it without instantiating the plugin.
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `encoding` | array of strings | yes | Case-sensitive registered encodings this parser handles, e.g. `["json"]`, `["protobuf"]`, or `["ros1msg", "ros2msg"]`. The host uses this list to match binding requests to parsers; one parser may register more than one encoding. |
+
+`min_sdk_required`, `suggested_sdk_version` (with a `floor_test`) and the
+deprecated `min_plotjuggler_version` are optional compatibility keys common to
+every family; see [REQUIREMENTS.md §2.1](REQUIREMENTS.md#21-compatibility-vocabulary).
 
 Example:
 ```json
@@ -611,10 +625,10 @@ to `1.0/0.0`. Tests can assert uniformly without type dispatch code.
   `message_parser_library_test.cpp` — real-DSO ownership test proving a decoded
   object survives parser destruction and plugin unload.
 
-## Builtin-object pipeline (PR #86)
+## Builtin-object pipeline
 
 Beyond the scalar-column output that `parse()` and the
-`sdk::ParserWriteHostService` cover, the SDK adds a second, narrow
+`sdk::ParserWriteHostService` cover, the SDK offers a second, narrow
 output channel for canonical builtin objects returned by the parser and
 visualised by widgets that never learn the source-specific wire format.
 
@@ -633,9 +647,9 @@ handler.parse_object =
 ```
 
 - `classifySchema` is the *a-priori* declaration — given a type name +
-  schema bytes, announce which `BuiltinObjectType` (`kImage`,
-  `kDepthImage`, `kPointCloud`, `kImageAnnotations`, `kFrameTransforms`,
-  `kNone`) this schema produces. The host consults the answer **before** it
+  schema bytes, announce which `BuiltinObjectType` this schema produces
+  (`kNone` for scalar-only; the enum is in `pj_base/builtin/builtin_object.hpp`
+  and the catalog in [builtin_type.md](../../docs/builtin_type.md)). The host consults the answer **before** it
   ever sees the payload, so it can pick the right `ObjectIngestPolicy` for the
   topic.
 - Classification is side-effect free. `classifySchema` must not emit parser
@@ -652,7 +666,7 @@ handler.parse_object =
 
 The types above are plugin-author C++ conveniences, not the binary boundary.
 After `bindSchema`, `MessageParserPluginBase` advertises functional v2
-when at least one handler exists. Its trampolines:
+when the bound type has a handler. Its trampolines:
 
 1. invokes `parseScalars` / `parseObject` inside the plugin DSO;
 2. delivers scalar fields through one synchronous caller-owned C sink, or
@@ -679,15 +693,15 @@ propagate the input buffer without an initial copy.
 The DSO boundary still performs one canonical serialization and one host decode.
 This avoids exporting plugin allocators, destructors, RTTI, STL layout or
 type-erasure internals. Measure this path for image/point-cloud workloads.
-Do not bypass it with direct C++ calls.
+New host code reads parser output through it rather than through direct C++
+calls; the direct bridge is described below.
 
 Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
 builds expose none, and 0.21 builds expose only the retired v1. New host code
 negotiates v2.
 
-PlotJuggler 4 has not made that move: it reads objects from every parser by
-casting the opaque context to `MessageParserPluginBase*` and calling
-`parseObject()`. That direct C++ bridge is deprecated but supported through
+PlotJuggler 4 reads objects from every parser by casting the opaque context to
+`MessageParserPluginBase*` and calling `parseObject()`. That direct C++ bridge is deprecated but supported through
 1.x. For a parser author it has one consequence: a parser and the host must
 agree on the layout of the builtin struct the parser returns, so a parser that
 emits a type whose struct changed in an SDK release has to be rebuilt against
@@ -698,17 +712,16 @@ it when the host moves to v2.
 
 Builtin types and their canonical codecs live under `pj_base/builtin/`, one
 header per type. `serializeBuiltinObject()` / `deserializeBuiltinObject()`
-cover every stable builtin tag; `RobotDescription` now has a canonical wire
-codec as well. A zero-byte payload is the valid proto3 default message when the
+cover every stable builtin tag, `RobotDescription` included. A zero-byte payload is the valid proto3 default message when the
 separate type tag is known. `sdk::Image` carries an open-ended `std::string encoding`
 (`"rgb8"`, `"bgr8"`, `"mono8"`, `"jpeg"`, `"png"`, `"compressedDepth"`,
 …) so raw and compressed images share a single type. New types are
 appended without changing the `BuiltinObject` type (its tag-plus-opaque-value
 erasure is forward-compatible by construction).
 
-Reference implementation: `pj_ported_plugins/parser_ros` —
-`SchemaHandler` table driven by a static `catalog()`. See
-`PLUGIN_DEVELOPMENT.md` in that repo for a top-down walkthrough.
+Reference implementation: `parser_ros` in the official plugins repository
+(pj-official-plugins) — a `SchemaHandler` table driven by a static `catalog()`.
+`PLUGIN_DEVELOPMENT.md` in that repository gives a top-down walkthrough.
 
 ## Common Mistakes
 

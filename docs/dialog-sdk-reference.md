@@ -8,7 +8,7 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 
 ## Runtime Host Information (since 0.21.0)
 
-`DialogPluginBase::hostInfo()` returns an owned `std::optional<DialogHostInfo>`
+`DialogPluginBase::hostInfo()` returns a `const std::optional<DialogHostInfo>&`
 with `sdk_version`, `plotjuggler_version`, and a capability mask. An empty
 optional means a pre-0.21 or non-conforming embedding host and is the signal to
 use a compatible fallback. Test capabilities with
@@ -33,6 +33,8 @@ last-writer-wins.
 ---
 
 ## WidgetData Setters
+
+`WidgetData::toJson()` and `WidgetEventBuilder` replace invalid UTF-8 in strings with U+FFFD, so one bad label cannot drop a whole update.
 
 ### QLineEdit
 
@@ -184,6 +186,7 @@ Selected result requires at least one non-empty path.
 | `setListPlaceholder(name, text)` | Centered empty-state hint over the list while it has no items; hidden once items appear. |
 | `setListItemsDisabled(name, vector<string>)` | Grey out (disable + make unselectable) the items whose text is in the set, keeping them visible; matched by item text. An empty/absent set re-enables every item. |
 | `setListSelectionMode(name, bool multi)` | Switch a list between single (`false`, default) and multi (`true`, extended) selection. |
+| `setListItemColors(name, vector<string> colors)` | Foreground color per item, parallel to the items vector (CSS color string, empty = default palette color). |
 
 ### QTableWidget
 
@@ -195,6 +198,10 @@ Selected result requires at least one non-empty path.
 | `setTableSortIndicator(name, column, ascending)` | Draw the header arrow **without** enabling Qt's sorting — for tables that sort themselves via `onHeaderClicked` (Qt paints an arrow only for its own sorting). Cosmetic; never reorders rows. |
 | `setSelectedRows(name, vector<int>)` | Set selected row indices |
 | `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) |
+| `setVisibleRows(name, vector<int>)` | Live filtering: hide every row whose index is not in the set (empty hides all). To show all rows again pass the full index list. |
+| `clearVisibleRows(name)` | Unset a previous `setVisibleRows`; the host then makes **no** visibility change, so it does not re-show hidden rows by itself. |
+| `setRowColor(name, row, color_hex)` | Tint one row's background (`"#rrggbb"`; empty clears the override) |
+| `setCellTooltip(name, row, col, tooltip)` | Set the tooltip of one cell |
 | `setTableRadioColumn(name, column, checked_row)` | Render `column` as an exclusive radio group; `checked_row` is selected (-1 = none). Fires `onTableRadioSelected`. |
 | `appendTableRows(name, seq, rows)` | Delta: append rows without resending `rows` — string or `TableItem` rows (typed rows keep their sort keys via a sparse `append_values` map). See guide → "Table deltas". |
 | `updateTableCells(name, seq, vector<TableCellUpdate>)` | Delta: rewrite individual cells (`{row, col, TableItem}`, plugin row space). Replaces the whole cell — a keyless item clears the sort key. |
@@ -276,6 +283,8 @@ table delta protocol's fresh sequence gate and all-or-nothing application rules.
 | `setChartMarkers(name, vector<ChartMarker>)` | Overlay markers (events/regions/value-bands) on top of the series |
 | `clearChart(name)` | Remove chart series and markers |
 | `setChartZoomEnabled(name, bool)` | Enable chart zoom/pan events |
+| `setChartAutoZoom(name, bool)` | Zoom to extents on every series update (`true`) or keep the user's zoom (`false`) |
+| `setChartPlaceholder(name, text)` | Overlay hint shown while the chart has no series; hidden once data arrives |
 
 ### QFrame Embedded Scene View (since 0.38.0)
 
@@ -356,6 +365,23 @@ Editable multi-marker strip: any number of resizable Region spans + single-point
 
 `TimelineMark{int id; bool region; int start; int end;}` — `region=false` is a point Event (`end` ignored).
 
+### RangeSlider (custom widget)
+
+Two-handle integer range slider.
+
+| Method | Description |
+|--------|-------------|
+| `setRangeSliderBounds(name, min, max)` | Integer `[min, max]` bounds. Resets the handle values, so set the values afterwards |
+| `setRangeSliderValues(name, lower, upper)` | Handle positions, in slider units |
+| `setRangeSliderTimeSpan(name, min_ns, max_ns)` | Map the slider span onto an absolute time window for the handle and duration labels (`0,0` disables) |
+| `setRangeSliderMarkers(name, vector<RangeSliderMarker>)` | Boundary segments (`start`, `end`, `label`) drawn on the slider; empty clears |
+
+### DateRangePicker (custom widget)
+
+| Method | Description |
+|--------|-------------|
+| `setDateRangePlaceholder(name, earliest_iso, latest_iso)` | Soft placeholder hints for the empty from/to fields (ISO-8601 dates; empty clears that side). Not a range constraint |
+
 ### Generic (any widget)
 
 | Method | Description |
@@ -371,6 +397,9 @@ Editable multi-marker strip: any number of resizable Region spans + single-point
 |--------|-------------|
 | `requestAccept()` | Close dialog with OK (one-shot) |
 | `requestSubDialog(ui_xml)` | Open nested modal sub-dialog |
+| `requestSubPanel(ui_xml)` | Open one live, non-blocking sub-panel: its widget events reach the normal handlers and the plugin keeps pushing `WidgetData` to it. The host sends a synthetic `onClicked("subPanelClosed")` when the user dismisses it. Re-requesting while one is open is ignored |
+| `closeSubPanel()` | Close the sub-panel opened by `requestSubPanel`; no-op if none is open |
+| `requestClose(reason)` | Panel hosts only (ignored by dialogs): close the panel hosting the plugin; `reason` is a plugin-defined string forwarded to the host |
 
 ---
 
@@ -392,12 +421,17 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts (table: column-0 text) |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
 | `onItemDeleteRequested(name, index)` | QListWidget (deletable) | Row whose trash button was clicked (see `setListItemsDeletable`) |
+| `onItemContextAction(name, index, action_id)` | QListWidget | Row and id of the context-menu action that fired; the action set is the `pj_context_actions` `.ui` property |
+| `onHeaderClicked(name, section)` | QTableWidget | Column whose header was clicked, for tables that sort themselves |
 | `onTableRadioSelected(name, row)` | QTableWidget radio column | Row whose radio was clicked (see `setTableRadioColumn`) |
 | `onCodeChanged(name, code)` | QPlainTextEdit code editor | Edited code |
 | `onCodeChangedWithCursor(name, code, cursor)` | QPlainTextEdit code editor | Edited code + caret offset (`cursor < 0` when no opt-in / not reported); defaults to `onCodeChanged` |
 | `onItemsDropped(name, items)` | Any widget with `setDropTarget` | Dropped item labels |
+| `onDroppedItems(name, items)` | Any widget with `setDropTarget` | `vector<DroppedItem{name, data_source_id}>`; override instead of `onItemsDropped` to tell same-named series of different datasets apart (`data_source_id` 0 = unknown). Defaults to `onItemsDropped` |
 | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onMarkerTimelineChanged(name, marks)` | MarkerTimeline | Full `std::vector<TimelineMark>` set after a drag/resize/delete |
+| `onRangeChanged(name, lower, upper)` | RangeSlider | New handle positions |
+| `onDateRangeChanged(name, from_iso, to_iso)` | DateRangePicker | ISO-8601 range bounds (empty = unbounded on that side) |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
 | `onStackedPageChanged(name, index, page_object_name)` | QStackedWidget | New page index and stable Qt `objectName`. Since 0.21.0. |
 | `onTreeSelectionChanged(name, ids)` | QTreeWidget | Complete logical selected-ID set, including filtered-out selections |
@@ -471,23 +505,11 @@ Add a placeholder widget named `pj_parser_slot` in your `.ui`:
 </widget>
 ```
 
-### Host Configuration
+### Host Behavior
 
-Configure the host dialog runtime with a parser dialog provider:
+The injection is host behaviour, not SDK code:
 
-```cpp
-HostDialogRuntimeConfig config;
-config.parser_dialog_provider = [&](const std::string& encoding) -> const PJ_dialog_vtable_t* {
-  return registry.queryParserDialog(encoding);
-};
-config.initial_parser_config = saved_parser_config;  // Optional
-
-auto result = runHostDialog(dialog_handle, config);
-```
-
-### Behavior
-
-1. When the user selects an encoding in `comboBoxProtocol`, the host dialog runtime looks up the parser's dialog vtable
+1. When the user selects an encoding in `comboBoxProtocol`, the host looks up the parser's dialog vtable
 2. If found, the parser's UI is loaded and injected into `pj_parser_slot`
 3. The parser dialog's events and `widget_data()` are handled independently
 4. On accept, both configs are returned to the host: the source config and the parser config

@@ -1,7 +1,7 @@
 # ObjectStore Plugin ABI
 
-`pj_datastore::ObjectStore` is the timestamped opaque-payload store that
-complements `DataEngine`. `DataEngine` stores typed scalar series; `ObjectStore`
+`pj_datastore::ObjectStore` (a type of the PlotJuggler application, not of this
+SDK) is the timestamped opaque-payload store that complements `DataEngine`. `DataEngine` stores typed scalar series; `ObjectStore`
 stores raw bytes for object topics such as structured messages, images, point
 clouds, annotations, and other domain-specific payloads.
 
@@ -16,7 +16,7 @@ entry point.
 | `pj.source_object_write.v1` | `PJ_object_write_host_t` | `SourceObjectWriteHostView` | DataSource plugins that create object topics |
 | `pj.parser_object_write.v1` | `PJ_parser_object_write_host_t` | `ParserObjectWriteHostView` | MessageParser plugins bound to an object topic |
 | `pj.toolbox_object_read.v1` | `PJ_object_read_host_t` | `ToolboxObjectReadHostView` | Toolbox plugins that read object topics |
-| `pj.toolbox.v1` | `PJ_toolbox_host_t` | `ToolboxHostView` | Toolbox plugins that create or annotate object topics |
+| `pj.toolbox_write.v1` | `PJ_toolbox_host_t` | `ToolboxHostView` | Toolbox plugins that create or annotate object topics |
 
 The service traits live in `pj_base/include/pj_base/sdk/service_traits.hpp`.
 The raw ABI structs live in `pj_base/include/pj_base/plugin_data_api.h`.
@@ -61,7 +61,7 @@ The host-side implementation is `DatastoreParserObjectWriteHost`.
 
 ## Toolbox Object Writes
 
-Use `ToolboxHostView` from `pj.toolbox.v1` to publish objects from a toolbox:
+Use `ToolboxHostView` from `pj.toolbox_write.v1` to publish objects from a toolbox:
 
 - `registerObjectTopic(source, name, metadata_json)` registers under a source
   created by the toolbox.
@@ -74,8 +74,11 @@ Use `ToolboxHostView` from `pj.toolbox.v1` to publish objects from a toolbox:
   use `1` when republishing a whole marker set.
 
 These optional tail slots return an error on older hosts. Reuse them for
-[plot markers](docs/plot_markers_architecture.md); no marker-specific store or
-per-marker mutation API is needed.
+[plot markers](plot_markers_architecture.md); no marker-specific store or
+per-marker mutation API is needed. The other path that writes `PlotMarkers`
+objects is a `kind="markers"` data processor (`pj.data_processors.v1`,
+`DataProcessorsHostView::createMarkers`): the host runs the script and publishes
+the set itself.
 
 ## Toolbox Object Reads
 

@@ -1,9 +1,10 @@
 # Writing a Toolbox Plugin
 
 > **Tracks the v5 plugin ABI** (`PJ_ABI_VERSION == 5`). Toolbox plugins
-> read time series via the host's `read_series_arrow` slot, which
-> returns a caller-owned `ArrowSchema` + `ArrowArray` pair (no more
-> materialised `std::vector`). Wrap returns in
+> read time series with `ToolboxHostView::readSeries()` (a typed
+> `MaterializedSeriesView`) or `readSeriesArrow()`. Both sit on the host's
+> `read_series_arrow` slot, which returns a caller-owned `ArrowSchema` +
+> `ArrowArray` pair. Wrap raw Arrow out-params in
 > `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` for scope-bound
 > release. See `ARCHITECTURE.md` for the full ABI rules.
 
@@ -28,8 +29,8 @@ Toolbox plugins are long-lived and UI-driven. They may create data sources or
 transform existing data into new outputs. DataSource is write-only with a
 streaming lifecycle; MessageParser is headless with request/response calls.
 
-Link only `pj_base`, without Qt or host internals. Plugins communicate through
-a stable C ABI.
+Link only the SDK (`plotjuggler_sdk::plugin_sdk`), without Qt or host
+internals. Plugins communicate through a stable C ABI.
 
 Typical Toolbox use cases: FFT analysis, quaternion rotation, Lua scripting
 editor, custom data transforms.
@@ -42,8 +43,8 @@ editor, custom data transforms.
 3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. If you ship an embedded dialog, also declare it as a
    `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog, kManifestJson)`
-5. Build as a shared library linking `pj_base` (+ `pj_dialog_sdk` if
-   you have a dialog)
+5. Build as a shared library linking `plotjuggler_sdk::plugin_sdk` (which
+   includes the dialog SDK) and call `pj_configure_plugin(...)` on it
 
 For namespaced classes in a static build, provide each getter-symbol token
 separately: `PJ_TOOLBOX_PLUGIN_NAMED(my::Toolbox, MyToolbox, kManifest)` and
@@ -63,8 +64,9 @@ the contract is broader than the other families.
 - Call `runtimeHost().notifyDataChanged()` after any successful write that the
   user should see in the UI. Coalesce per logical operation, not per record.
   For example, call once after producing a new series.
-- Wrap all `read_series_arrow` returns in `PJ::sdk::ArrowSchemaHolder` /
-  `ArrowArrayHolder` so the release callbacks fire on scope exit.
+- Wrap raw `readSeriesArrow()` out-params in `PJ::sdk::ArrowSchemaHolder` /
+  `ArrowArrayHolder` so the release callbacks fire on scope exit (`readSeries()`
+  does it for you).
 - Persist tool state in `saveConfig()` so a layout reload restores the same
   view. The host has no ambient persistence.
 - Call each host method only from the threads its tag allows (see
@@ -74,8 +76,9 @@ the contract is broader than the other families.
 - Throw exceptions across virtual overrides.
 - Depend on `onDataChanged()` for correctness: it is advisory and a host may
   never call it.
-- Hold an `ArrowSchema*` / `ArrowArray*` past the scope of the holders that
-  own them — the host may reuse the underlying buffers.
+- Hold an `ArrowSchema*` / `ArrowArray*` (or a `MaterializedSeriesView`'s
+  pointers) past the scope of the holders that own them — the host may reuse the
+  underlying buffers.
 - Treat `catalogSnapshot()` as live data. Snapshots are immutable views at
   acquisition time; reacquire after writes if you need to see your own
   changes.
@@ -155,11 +158,17 @@ PJ_TOOLBOX_PLUGIN(MyToolbox,
 ### 4. Build
 
 ```cmake
+find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
+
 add_library(my_toolbox_plugin SHARED my_toolbox.cpp)
-target_link_libraries(my_toolbox_plugin PRIVATE pj_base)
+target_link_libraries(my_toolbox_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
+pj_configure_plugin(my_toolbox_plugin FAMILIES toolbox)
 ```
 
-No other dependencies are needed.
+If the toolbox embeds a dialog, list `toolbox dialog` in `FAMILIES`
+(`examples/sdk_consumer/CMakeLists.txt` shows a plugin with a dialog). No other
+dependencies are needed; `pj_base` and `pj_dialog_sdk` are the in-tree names of
+the targets behind `plugin_sdk`.
 
 ## Lifecycle
 
@@ -203,19 +212,30 @@ data store.
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
 | `hasCatalogSnapshotV2()`, `catalogSnapshotV2()` (0.38.0) | Like `catalogSnapshot()`, plus every object topic (`objectTopics()`: dataset, builtin type, metadata JSON, and the entry count and raw time range the store retains now). The two halves are not read atomically: a topic created between the reads may appear in one half only. Derived and marker topics are included; tell them apart by metadata (`kDerivedMetadataKey`, the marker keys in `object_topic_metadata.hpp`), never by name. |
-| `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
+| `readSeries(field)` | Read one field's full time series as a `MaterializedSeriesView`: `rowCount()`, `timestamps()`, typed `valuesAs*()` pointers, `nullCount()` / `isNull(row)`. The normal read path; see *Reading a series*. |
+| `readSeriesArrow(field, schema*, array*)` | The same data as host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value); `readSeries` wraps it. |
 | `registerObjectTopic(source, name, type[, extra_metadata])` | Register a built-in media/object topic under a data source. The typed overload emits the canonical `builtin_object_type` renderer metadata and returns an `ObjectTopicHandle`. |
 | `registerObjectTopic(source, name, metadata_json)` | Raw-metadata overload for custom or untyped object topics. The store retains the JSON verbatim. |
+| `registerObjectTopicOnDataset(dataset, name, type[, extra_metadata])` | Register an object topic on an EXISTING dataset (by `DatasetId`), for annotations such as plot markers on data another source loaded. Idempotent per name: it returns the existing handle. A raw `metadata_json` overload exists. |
+| `setObjectTopicRetention(topic, max_entries)` | Keep only the last `max_entries` snapshots of an object topic (0 = unlimited). A producer that republishes a whole set under one topic passes 1. |
 | `pushOwnedObject(topic, ts, payload)` | Eager-push serialized object bytes into the ObjectStore under an object topic; the host copies the bytes, so the plugin's buffer is free immediately after the call returns. |
+
+Every `toolboxHost()` slot is `[stream-thread]`: it may be called from the
+toolbox's own worker thread, one thread at a time per host object (see
+[Threading Model](#threading-model)). The object-topic slots are tail slots and
+return an error on a host that predates them.
 
 ### Runtime host — control plane
 
 Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 
-| Method | Purpose |
-|---|---|
-| `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
-| `notifyDataChanged()` | Tell the host that data was modified; refresh UI. Idempotent and cheap; coalesce per logical operation, not per record. |
+| Method | Thread | Purpose |
+|---|---|---|
+| `reportMessage(level, text)` | `[thread-safe]` | Send info/warning/error to the host UI log. |
+| `notifyDataChanged()` | `[thread-safe]` | Tell the host that data was modified; refresh UI. Idempotent and cheap; coalesce per logical operation, not per record. |
+| `createParserIngest(id)` / `createDatasetIngest(id)` | `[thread-safe]` | Create (or fetch) the ingest context of a toolbox-created data source (`id` is the `.id` of `createDataSource`'s handle). Both return a view over the same context: `ensureParserBinding` / `pushMessage` for delegated parsing, progress and stop for direct writes. Drive the returned view from one worker thread at a time. |
+| `releaseParserIngest(id)` / `releaseDatasetIngest(id)` | `[thread-safe]` | Flush and destroy the context. Idempotent. Do not use the view afterwards. |
+| `discardParserIngest(id)` | `[thread-safe]` | Abort a provisional ingest without committing: staged source records are dropped and any capture is never published. Quiesce every user of the view first and serialize release/discard per dataset id. An older host returns an error; `releaseParserIngest` is not a substitute. |
 
 ### Playback, viewport, and owned tabs (SDK 0.28.0)
 
@@ -353,38 +373,70 @@ The contract (lifetime, time flags, report schema, errors) is the
    (`pj_plugins/sdk/evaluation_report.hpp`); COMPLETED and FAILED share its shape.
    Read `stopped` and `error`: an empty `bundles` list alone is not "no sample".
 
-### Reading a series via Arrow
+### Reading a series
 
-`readSeriesArrow()` is the only read path in v4 — it returns
-`ArrowSchema` + `ArrowArray` out-params populated by the host.
-Wrap the out-params in the RAII holders from `pj_base/sdk/arrow.hpp`
-so they are released automatically at scope exit:
+`readSeries(field)` is the normal read path. It returns a `MaterializedSeriesView`
+that owns the host's Arrow data and exposes it through typed accessors:
+
+```cpp
+void MyToolbox::runFft(PJ::sdk::FieldHandle field) {
+  auto series = toolboxHost().readSeries(field);
+  if (!series) {
+    runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError,
+                                "readSeries failed: " + series.error());
+    return;
+  }
+
+  const PJ::Span<const int64_t> ts = series->timestamps();  // ns since Unix epoch
+  const double* values = series->valuesAsFloat64();         // nullptr if the field is not float64
+  if (values == nullptr) {
+    return;
+  }
+  const bool has_nulls = series->nullCount() != 0;
+  for (size_t row = 0; row < series->rowCount(); ++row) {
+    if (has_nulls && series->isNull(row)) {
+      continue;  // the value slot of a null is unspecified (hosts zero it)
+    }
+    consume(ts[row], values[row]);
+  }
+}
+// The view releases the Arrow data at scope exit.
+```
+
+`type()` reports the value column's primitive type; each `valuesAs*()` returns
+`nullptr` when the column has another type. A null sample is one the source did
+not provide (an empty CSV cell, an absent optional field). Its `valuesAs*()` slot
+is unspecified, so skip rows where `isNull(row)` whenever `nullCount() != 0`
+instead of reading the slot as a zero. The pointers and span alias the Arrow
+buffers and are valid while the view is alive.
+
+`readSeriesArrow()` returns the same data as raw `ArrowSchema` + `ArrowArray`
+out-params, for code that speaks Arrow directly (DuckDB, Polars, pandas via
+PyCapsule, ...). Wrap the out-params in the RAII holders from
+`pj_base/sdk/arrow.hpp` so they are released at scope exit:
 
 ```cpp
 #include <pj_base/sdk/arrow.hpp>
 
-void MyToolbox::runFft(PJ::sdk::FieldHandle field) {
-  PJ::sdk::ArrowSchemaHolder schema;
-  PJ::sdk::ArrowArrayHolder  array;
+PJ::sdk::ArrowSchemaHolder schema;
+PJ::sdk::ArrowArrayHolder  array;
 
-  auto status = toolboxHost().readSeriesArrow(field, schema.out(), array.out());
-  if (!status) {
-    runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError,
-                                "readSeriesArrow failed: " + status.error());
-    return;
-  }
-
-  // array.get() now points to a two-column Arrow struct:
-  //   column 0: "timestamp"   — int64 nanoseconds since Unix epoch
-  //   column 1: <field name>  — typed to the field's primitive type
-  // Walk children[0]->buffers / children[1]->buffers per Arrow spec,
-  // or hand array.get() directly to analytics code that speaks Arrow
-  // (DuckDB, Polars, pandas via PyCapsule, …).
+auto status = toolboxHost().readSeriesArrow(field, schema.out(), array.out());
+if (!status) {
+  runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError,
+                              "readSeriesArrow failed: " + status.error());
+  return;
 }
+
+// array.get() points to a two-column Arrow struct:
+//   column 0: "timestamp"   — int64 nanoseconds since Unix epoch
+//   column 1: <field name>  — typed to the field's primitive type
+// Walk children[0]->buffers / children[1]->buffers per the Arrow spec; the
+// value column's validity bitmap marks the null samples.
 // schema and array are released here by their destructors.
 ```
 
-**Bulk-write output:** pair `readSeriesArrow` with `appendArrowStream`
+**Bulk-write output:** pair `readSeries` / `readSeriesArrow` with `appendArrowStream`
 to round-trip data through a transform. Use the rvalue-ref overload:
 
 ```cpp
@@ -397,7 +449,7 @@ auto status = toolboxHost().appendArrowStream(
 
 ### Writing object payloads (images, point clouds, annotations)
 
-`readSeriesArrow` / `appendArrowStream` cover *scalar* columns.
+`readSeries` / `appendArrowStream` cover *scalar* columns.
 Use object writes for **canonical media**, such as images, point clouds and
 annotation overlays. They route to the host `ObjectStore`, not the columnar engine:
 
@@ -456,6 +508,7 @@ PJ::Status loadConfig(std::string_view json) override {
 | Flag | Value | When to use |
 |---|---|---|
 | `kToolboxCapabilityHasDialog` | `1 << 0` | Plugin provides a persistent UI panel |
+| `kToolboxCapabilityNonModalDialog` | `1 << 1` | Show the dialog as a non-modal panel rather than a modal pop-up; set it together with `kToolboxCapabilityHasDialog` |
 
 ## Manifest Schema
 
@@ -470,6 +523,10 @@ it without instantiating the plugin.
 | `description` | string | no | Short description of the plugin. |
 | `badge` | string | no | Short label (e.g. `"AI"`, at most 8 characters advised) a host may show next to objects the plugin creates (0.38.0). Absent: host policy (e.g. the plugin name). Read as `PluginDescriptor::badge`. |
 | `capabilities` | string[] | no | Declarative tags; a host ignores tags it does not know. `"custom_topics_editor"` (`kCustomTopicsEditorCapability`, 0.38.0) marks the editor of the host's Custom topics. Read with `PluginDescriptor::hasCapability`. |
+
+`min_sdk_required`, `suggested_sdk_version` (with a `floor_test`) and the
+deprecated `min_plotjuggler_version` are optional compatibility keys common to
+every family; see [REQUIREMENTS.md §2.1](REQUIREMENTS.md#21-compatibility-vocabulary).
 
 Example:
 ```json
@@ -515,7 +572,7 @@ The normative table is on `PJ_toolbox_vtable_t` in
   `create/release/discardParserIngest` (dataset-ingest) calls are
   `[thread-safe]`. The ingest view they return is driven one thread at a time.
 - Every other service (object reads, playback, plot tabs, viewport, data
-  processors, colormaps, ...) is `[main-thread]` unless its slot says
+  processors, ...) is `[main-thread]` unless its slot says
   otherwise: call it from a callback, not from a thread you spawned.
 
 ## Testing
@@ -550,7 +607,7 @@ TEST(MyToolboxTest, Basic) {
 The store captures `appendRecord` writes and counts `createDataSource` and
 `notifyDataChanged` calls. `flatRecords()` gives a flat (timestamp, name, value)
 view. `writtenRecords()` preserves nested rows of fields.
-See `pj_plugins/testing/toolbox_test_store.hpp` for the full API.
+See `pj_plugins/include/pj_plugins/testing/toolbox_test_store.hpp` for the full API.
 
 ## Examples
 

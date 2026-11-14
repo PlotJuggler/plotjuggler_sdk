@@ -50,14 +50,23 @@ Five plugin families exist:
 
 ### 2.1 Compatibility vocabulary
 
-Plugin compatibility uses three separate values. They are not aliases and a
+Plugin compatibility uses separate values. They are not aliases and a
 manifest must not substitute one for another:
 
 | Value | Meaning | Enforcement |
 |---|---|---|
-| `min_sdk_required` | Minimum PlotJuggler SDK contract whose features the plugin actually requires | Hard host-side load gate before plugin instantiation |
-| `min_plotjuggler_version` | Minimum PlotJuggler application release expected by the plugin | Existing application-level advisory policy |
-| ABI/dialog protocol version | Binary C ABI and dialog C/wire contract compatibility | Existing strict vtable, `struct_size`, and protocol validation |
+| `min_sdk_required` | Minimum PlotJuggler SDK contract whose features the plugin actually requires (the functioning floor) | Hard host-side load gate before plugin instantiation |
+| `suggested_sdk_version` | Full-feature floor: the SDK release at which every host surface the plugin uses is available. Declared together with a `floor_test` whenever it is above `min_sdk_required` | Informational; never an admission criterion |
+| `min_plotjuggler_version` | Deprecated application-release expectation | Decoded for back-compat and never gates |
+| ABI/dialog protocol version | Binary C ABI and dialog C/wire contract compatibility | Strict vtable, `struct_size`, and protocol validation |
+
+`tools/feature_floors/feature_floor_check.py`, installed with
+`feature_floors.json` in `share/plotjuggler_sdk/`, validates a manifest's floors
+for plugin repositories: `min_sdk_required` must cover every non-negotiated host
+surface the plugin's sources use, and when a used surface was introduced after
+it, the manifest declares `suggested_sdk_version` (the newest introducing
+release) plus the `floor_test` gtest that proves the plugin works against a
+floor-level host.
 
 `min_sdk_required` is not automatically the SDK version used to compile the
 plugin. A plugin compiled with a newer SDK declares the oldest SDK contract
@@ -115,13 +124,14 @@ Independent decoder, typically driven by a DataSource via the host.
   instance — the host creates it and bridges config to parser instances via
   JSON.
 - Lifecycle: create → bind → parse* → destroy.
-- A parser that registers `SchemaHandler` entries exposes
-  `pj.parser_functional.v2` and
-  `pj.parser_route_claims.v1` after schema binding. Functional scalar and object
-  results cross only through synchronous caller-owned C sinks; v2 may represent
-  one eligible object bulk field as a payload-relative splice. The host must
-  never cast the opaque context to
-  `MessageParserPluginBase` for such a parser.
+- `MessageParserPluginBase` always answers `pj.parser_route_claims.v1` (a type
+  without a handler is declined) and answers `pj.parser_functional.v2` only when
+  the bound type has a handler (before binding, when any handler is registered).
+  Functional scalar and object results cross only through synchronous
+  caller-owned C sinks; v2 may represent one eligible object bulk field as a
+  payload-relative splice. New host code reads results through v2 rather than
+  casting the opaque context to `MessageParserPluginBase`; the deprecated bridge
+  below remains supported.
 - Route classification reports exact handler-table claims only. The host owns
   each encoding's universal wildcard scalar claim and resolves scalar and object
   routes independently.
@@ -225,11 +235,14 @@ is bound to one topic.
 Only Toolbox requires read access:
 
 - `catalogSnapshot()` — enumerate available data sources, topics, and fields.
-- `readSeriesArrow(field)` — read the full time series for a field as a
-  host-owned `ArrowSchema` + `ArrowArray` pair (timestamp column +
-  value column). Plugins wrap the out-params in
-  `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` for scope-bound
-  release.
+- `readSeries(field)` — read the full time series for a field as a
+  `MaterializedSeriesView` (`rowCount()`, `timestamps()`, typed `valuesAs*()`
+  pointers, `nullCount()` / `isNull(row)`). The value slot of a null sample is
+  unspecified, so a caller skips rows where `isNull(row)` when `nullCount() != 0`.
+- `readSeriesArrow(field)` — the same data as a host-owned `ArrowSchema` +
+  `ArrowArray` pair (timestamp column + value column), which `readSeries` wraps.
+  Plugins wrap the out-params in `PJ::sdk::ArrowSchemaHolder` /
+  `ArrowArrayHolder` for scope-bound release.
 
 Materialization/decompression is acceptable when reading actual sample data.
 
@@ -293,13 +306,14 @@ threads must synchronize and call host methods only where those tables allow.
 | `kCapabilityDelegatedIngest` | Plugin pushes raw bytes for host-side parsing |
 | `kCapabilitySupportsPause` | pause()/resume() are implemented |
 | `kCapabilityHasDialog` | Plugin provides a configuration dialog |
-| `kCapabilityPerTopicPause` | Host may pause/resume individual topics on a live connection (advertise via `notifyAvailableTopics` + `pj.topic_subscription.v1`) — see `docs/ARCHITECTURE.md` → "Per-topic pause" and `docs/data-source-guide.md` |
+| `kCapabilityPerTopicPause` | Host may pause/resume individual topics on a live connection (advertise via `notifyAvailableTopics` + `pj.topic_subscription.v1`) — see [ARCHITECTURE.md](ARCHITECTURE.md#per-topic-pause-demand-driven-subscription) and [data-source-guide.md](data-source-guide.md) |
 
 ### Toolbox Capabilities
 
 | Flag | Purpose |
 |---|---|
 | `kToolboxCapabilityHasDialog` | Plugin provides a persistent UI panel |
+| `kToolboxCapabilityNonModalDialog` | The dialog is shown as a non-modal panel rather than a modal pop-up |
 
 Read, write, create-source, and destructive-update capabilities are intrinsic
 to all Toolbox plugins.

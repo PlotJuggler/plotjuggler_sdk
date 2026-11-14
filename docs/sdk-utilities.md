@@ -36,6 +36,11 @@ from `pj_plugins/dialog_protocol/include/`; Widget headers from
 | `PJ::sdk::testing::DelegatedIngestFixture` | Delegated-ingest ownership, completion, Stop and discard tests; use plugin_sdk | `pj_plugins/testing/delegated_ingest_fixture.hpp` |
 | `PJ::sdk::testing::FakeWidgetHost` | In-memory `pj.widget_host.v1` host for Widget plugin tests: per-wire samples at nanosecond store times, inclusive display-time history, caps, decimation, undeliverable samples, `on_update` values at a tracker | `pj_plugins/sdk/testing/fake_widget_host.hpp` |
 | `PJ::sdk::testing::FakeMcpEndpointHost` | Scriptable `pj.mcp_endpoint.v1` host (held state, token rotation, listener failure, call counts) for plugin tests | `pj_base/sdk/testing/fake_mcp_endpoint_host.hpp` |
+| `PJ::testing::ToolboxTestStore` | In-memory toolbox host + runtime host for toolbox unit tests: hand-populated topics/fields served through the Arrow read path, captures `append_record` writes, counts `create_data_source` / `notify_data_changed` | `pj_plugins/testing/toolbox_test_store.hpp` |
+| `PJ::sdk::testing::ParserWriteRecorder` | Capture every parser `append_record` / `append_bound_record` as `RecordedRow`s for parser unit tests | `pj_base/sdk/testing/parser_write_recorder.hpp` |
+| `PJ::sdk::testing::ParserRuntimeRecorder` | In-memory parser diagnostic sink; strings are copied, so records outlive the parse call | `pj_base/sdk/testing/parser_runtime_recorder.hpp` |
+| `startWithGateProbe` | `ProviderJob::start()` with a hook that runs while the worker is parked, to test gate-release races | `pj_base/sdk/testing/provider_job_probe.hpp` |
+| `cleanupWithProbe` | `RequestArtifactCache::cleanup()` with a hook between directory scan and eviction, to test concurrent cleanup | `pj_base/sdk/testing/request_cache_probe.hpp` |
 | `pj_add_sdk_test_fixture(name out_target)` | Build packaged mock plugins; no second SDK source download | `cmake/PjSdkTestFixtures.cmake` |
 
 ## Plugin helpers
@@ -63,6 +68,10 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::sdk::ObjectTopicMetadataBuilder` | Build canonical renderer metadata and supplemental media hints | `pj_base/sdk/object_topic_metadata.hpp` |
 | `PJ::sdk::ObjectBytes` | Own object-read bytes through move-only RAII | `pj_base/sdk/object_bytes.hpp` |
 | `PJ::sdk::ArrowSchemaHolder, ArrowArrayHolder, ArrowStreamHolder` | Own Arrow out-params; successful writes transfer ownership, failed writes retain it | `pj_base/sdk/arrow.hpp` |
+| `PJ::sdk::TimestampPolicy, kCanonicalPolicy, detectTimestampColumn, timestampUnitFromJson, timestampUnitToJson` | Pick the time-axis column of a tabular source (native-type pass, then name pass) and persist its `timestamp_column` / `timestamp_unit` config | `pj_plugins/sdk/timestamp_policy.hpp` |
+| `PJ::sdk::ObjectIngestPolicyResolver` | Per-topic > source > type > default policy for deferred object fetch (memory vs re-read cost); host side | `pj_plugins/sdk/object_ingest_policy.hpp` |
+| `PJ::sdk::DatasetQualifierSplit, splitDatasetQualifier, qualifiedSeriesName` | Split or compose `dataset_source:topic/field` against the known dataset names; not a persistent identity | `pj_base/sdk/dataset_qualified_name.hpp` |
+| `PJ::sdk::MaterializedSeriesView` | Typed view over a series read through `ToolboxHostView::readSeries`: timestamps, values, and `nullCount()` / `isNull()` for the validity bitmap (the `valuesAs*()` pointers do not read it) | `pj_base/sdk/plugin_data_api.hpp` |
 | `PJ::sdk::parseEvaluationReport` | Parse a data-processor poll report (COMPLETED or FAILED) and derive each bundle's stamp | `pj_plugins/sdk/evaluation_report.hpp` |
 | `PJ::sdk::storeCatalogSnapshotV2` | Host side: write a catalog snapshot v2 under the caller-size rule, releasing it on refusal | `pj_base/sdk/plugin_data_api.hpp` |
 | `PJ::sdk::readDataProcessorRequest, readEvaluationBudget` | Host side: decode a typed data-processor request or budget (read-prefix rule, structural rejections) | `pj_base/sdk/data_processors_host.hpp` |
@@ -72,6 +81,7 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::WidgetLibrary, WidgetHandle, WidgetHostBridge` | Host side of the Widget family: load, instantiate per type, serve `pj.widget_host.v1` from callbacks | `pj_plugins/host/widget_library.hpp; widget_handle.hpp; widget_host_bridge.hpp` |
 | `PJ_WIDGET_QT_MODULES` | Canonical Qt module list a widget may declare in `qt_modules` | `pj_plugins/widget_qt_modules.h` |
 | `pj_embed_file, pj_configure_plugin` | Embed UI/manifest assets and configure plugin exports/build rules | `cmake/PjPlugin.cmake` |
+| `pj_harden_plugin_exports` | Restrict a plugin DSO's exports to the ABI entry points (ELF version script with a post-build gate; Mach-O export list). `pj_configure_plugin` applies it unless `NO_EXPORT_HARDENING` | `cmake/PjPlugin.cmake` |
 
 Outside this SDK, reuse pj-official-plugins common/:
 

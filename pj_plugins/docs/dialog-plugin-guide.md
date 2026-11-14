@@ -99,7 +99,8 @@ renders the widgets, and relays events to the plugin over the C vtable.
 5. Override the typed event handlers you need (`onTextChanged`,
    `onIndexChanged`, `onToggled`, etc.) — return `true` when state changes.
 6. Export with `PJ_DIALOG_PLUGIN(YourClass, kManifestJson)`.
-7. Build as a shared library linking `pj_dialog_sdk`.
+7. Build as a shared library linking `plotjuggler_sdk::plugin_sdk` and call
+   `pj_configure_plugin(... FAMILIES dialog)` on it.
 
 For a namespaced class in a static build, provide the getter-symbol token
 separately: `PJ_DIALOG_PLUGIN_NAMED(my::Dialog, MyDialog, kManifestJson)`.
@@ -198,13 +199,14 @@ stored strings and the complete capability mask. Plugin code should normally
 observe one delivery before first use; the replacement rule makes re-binding
 deterministic for embedding hosts and tests.
 
-The generated SDK version header and all four feature-test macros are deferred
-to their separate 0.21 package: `PJ_SDK_HAS_DIALOG_HOST_INFO`,
-`PJ_SDK_HAS_DIALOG_STACKED_WIDGET`, `PJ_SDK_HAS_DIALOG_TREE`, and
-`PJ_SDK_HAS_STRUCTURED_FILE_PICKER`. The companion PlotJuggler 4 work is also
-deferred: host-info delivery, QStackedWidget and QTreeWidget bindings, and the
-shared picker controller with lease/staging support. This SDK branch defines
-the toolkit-neutral contracts only.
+Two checks answer two different questions. The generated header
+`pj_base/sdk/version.hpp` offers `PJ_SDK_VERSION_AT_LEAST(major, minor, patch)`
+for the SDK the plugin is compiled against (see
+[REQUIREMENTS.md §2.1](REQUIREMENTS.md#21-compatibility-vocabulary)). Whether the
+host offers a feature is a runtime question: use `hostInfo()` / `hostHas(capability)`
+above. There are no `PJ_SDK_HAS_*` feature-test macros. This SDK defines the
+toolkit-neutral contracts only; the host supplies host-info delivery, the
+`QStackedWidget` and `QTreeWidget` bindings, and the file-picker controller.
 
 ## Step by Step
 
@@ -421,10 +423,16 @@ catalog discovery must instantiate those dialogs to call `manifest()`.
 ### 6. Build
 
 ```cmake
+find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
+
 add_library(my_dialog_plugin SHARED my_dialog.cpp)
-target_link_libraries(my_dialog_plugin PRIVATE pj_dialog_sdk)
+target_link_libraries(my_dialog_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
+pj_configure_plugin(my_dialog_plugin FAMILIES dialog)
 ```
 
+`pj_configure_plugin` applies symbol isolation and the export allowlist and
+validates `manifest.json` (see `examples/sdk_consumer/CMakeLists.txt`).
+`pj_dialog_sdk` is the in-tree name of the dialog target behind `plugin_sdk`.
 No Qt dependency is needed in the plugin — only the host links Qt.
 
 ## Manifest Schema
@@ -444,7 +452,10 @@ apply in both forms.
 | `description` | string | no | Short description of the dialog. |
 
 The host validates these keys when it inspects the dialog vtable; manifests
-missing a required string are rejected.
+missing a required string are rejected. `min_sdk_required`,
+`suggested_sdk_version` (with a `floor_test`) and the deprecated
+`min_plotjuggler_version` are optional compatibility keys common to every
+family; see [REQUIREMENTS.md §2.1](REQUIREMENTS.md#21-compatibility-vocabulary).
 
 ## The Reactive Loop
 
@@ -637,10 +648,8 @@ and invalid check-state strings reject the whole `tree_items` update. There is
 no partial tree. `WidgetDataView::treeItems(name, &validation_error)` returns
 `nullopt` and fills the reason so an embedding host can diagnose the rejection.
 
-V1 deliberately uses complete keyed snapshots; incremental tree deltas are
-deferred until profiling justifies them. A future tree-delta design must reuse
-the table protocol's fresh sequence-number gate and all-or-nothing application
-rules rather than introduce another ordering contract.
+Tree updates are always complete keyed snapshots; the protocol has no
+incremental tree deltas.
 
 > **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
 > widget binding system. Use `QPlainTextEdit` for plain text or code editing,
@@ -1169,12 +1178,11 @@ wd.appendTableRows("faultTable", delta_seq_,
 wd.updateTableCells("faultTable", delta_seq_, {{2, 1, {duration_ms, "1.2 s"}}});
 ```
 
-> **Host support:** this SDK release ships the protocol (setters + the
-> `WidgetDataView::tableDelta` decoder); the PlotJuggler host applies deltas
-> from its companion release onward. Older hosts ignore the `table_delta` key
-> entirely (unknown keys are skipped by design), so emitting deltas against
-> one is a harmless no-op — keep a full `setTableRows` fallback if you must
-> support them.
+> **Host support:** the SDK provides the setters and the
+> `WidgetDataView::tableDelta` decoder. A host that does not apply deltas
+> ignores the `table_delta` key entirely (unknown keys are skipped by design),
+> so emitting deltas against one is a harmless no-op — keep a full
+> `setTableRows` fallback if you must support such hosts.
 
 ## Choosing a Base Class
 
@@ -1257,7 +1265,7 @@ The source handle owns the dialog object storage and keeps the plugin DSO
 loaded, so any borrowed dialog handle must be scoped inside the source handle's
 lifetime.
 
-See `pj_plugins/docs/data-source-guide.md` for the full DataSource-side
+See [data-source-guide.md](data-source-guide.md) for the full DataSource-side
 documentation of this pattern.
 
 ## Common Mistakes

@@ -1,12 +1,13 @@
 ---
 name: plotjuggler-plugin
 description: >-
-  Write or modify a PlotJuggler plugin (DataSource, MessageParser, Toolbox, or
-  Dialog) using the plotjuggler_sdk. Use this
+  Write or modify a PlotJuggler plugin (DataSource, MessageParser, Toolbox,
+  Dialog, or Widget) using the plotjuggler_sdk. Use this
   whenever the task is to implement, extend, debug, or build a PlotJuggler
   extension — importing a file format, streaming live data, parsing message
   payloads, mapping a custom type to a canonical object or scalars, adding a
-  data-processing toolbox, or building a plugin configuration dialog — even if
+  data-processing toolbox, building a plugin configuration dialog, or adding a
+  dockable panel that shows a custom Qt widget — even if
   the user does not say the word "plugin". It gives the fast path, correct CMake,
   and load-bearing ABI/lifetime rules. Do NOT use it for changing the SDK's own
   ABI/protocol (that is a maintainer task with different rules — see below).
@@ -14,7 +15,7 @@ description: >-
 
 # Writing a PlotJuggler plugin
 
-PlotJuggler has four **plugin families**. Subclass a family's small C++20 base
+PlotJuggler has five **plugin families**. Subclass a family's small C++20 base
 class and export it from a shared library (`.so`/`.dll`/`.dylib`).
 `plotjuggler_sdk` supplies each base class. A one-line macro emits the entry
 point, version symbol, exception trampolines and symbol folding.
@@ -24,6 +25,11 @@ This skill is the author-oriented fast path. The repo's `pj_plugins/docs/` guide
 are the full reference; this steers you to the right one and front-loads the
 things that silently break a plugin.
 
+Paths in this skill are relative to the SDK repository. An installed package
+(Conan, pixi) carries the headers, the CMake helpers and only two guides,
+`share/plotjuggler_sdk/docs/{sdk-utilities,provider-guide}.md`; read the other
+guides and the examples in the repository.
+
 ## Are you writing a plugin, or changing the SDK?
 
 - **Writing a plugin *against* the SDK** → this skill. The macros handle ABI
@@ -32,7 +38,7 @@ things that silently break a plugin.
 - **Changing the SDK's own ABI/protocol** (adding vtable slots, editing a struct,
   bumping a `PJ_*_PROTOCOL_VERSION`, touching `pj_base/abi/baseline.abi`) → this is a
   **maintainer** task. Stop and follow `pj_plugins/docs/ARCHITECTURE.md` §0a and
-  the "Release Versioning" contract in the root `CLAUDE.md`. Different rules apply.
+  `docs/RELEASING.md`. Different rules apply.
 
 ## Step 1 — How do you get the SDK?
 
@@ -43,13 +49,19 @@ plotjuggler_sdk::plugin_sdk)` — only the acquisition step differs:
 - **Conan package** (`plotjuggler_sdk`) — the common external route; the official
   plugins use it. Pin the compatibility range explicitly:
   `plotjuggler_sdk/[>=X.Y.Z <(X+1).0.0]`, where `X.Y.Z` is the version that
-  introduced the newest SDK feature you actually use (pre-1.0 the upper bound is
-  `<1.0.0` — the SDK guarantees no breaks within `0.x`). Tip from the official
+  introduced the newest SDK feature you actually use. On the `0.x` line that is
+  `[>=0.Y.Z <1.0.0]`: no `0.x` release breaks an earlier one. `1.0.0` is the
+  first MAJOR and changes source (its `CHANGELOG.md` section lists what). Until
+  it is released it exists only as `1.0.0-dev.N`: pin that version exactly,
+  because a range skips pre-releases and two dev builds promise each other
+  nothing. Tip from the official
   repo: keep the version in a single `SDK_VERSION` file your `conanfile.py` reads.
   Then `find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)`.
 - **pixi / conda package** (`plotjuggler_sdk`) — same `find_package` + target once
   the package is in your environment.
-- **git submodule / vendored source** — `add_subdirectory(plotjuggler_sdk)`; the
+- **git submodule / vendored source** — set `PJ_BUILD_TESTS` to `OFF` (it
+  defaults to `ON` and pulls in GTest, the examples and `experimental/`), then
+  `add_subdirectory(plotjuggler_sdk)`; the
   same `plotjuggler_sdk::plugin_sdk` alias exists in-tree, and
   `pj_configure_plugin` / `pj_embed_file` are available too, so the CMake below is identical.
   (Editing the SDK repo itself is this world: the raw umbrella target is
@@ -65,11 +77,16 @@ plotjuggler_sdk::plugin_sdk)` — only the acquisition step differs:
 | Decode a **byte payload** on a topic into named fields (JSON, protobuf, ROS, custom) | **MessageParser** | `references/message-parser.md` |
 | A **tool** that reads existing data, transforms it, and writes new topics | **Toolbox** | `references/toolbox.md` |
 | A **configuration UI** (for a source/parser/toolbox, or standalone) | **Dialog** | `references/dialog.md` |
+| A **dockable panel** showing a Qt widget you draw, fed by series the user wires to it | **Widget** | `references/widget.md` |
 
 A single `.so` can host **more than one family** — the supported pattern is an
 owner + its embedded Dialog (one `PJ_*_PLUGIN(...)` macro per family at file
 scope). Don't ship *unrelated* families in one DSO: catalog discovery reads one
-primary family descriptor per library.
+primary family descriptor per library. A Widget library is always its own
+library: it is the only family that links Qt, and no other family may.
+
+Functional parser modules under `experimental/parser_module/` are not a plugin
+family and are not installed. Do not build a plugin on them.
 
 If your data is object-like (image, point cloud, occupancy grid, transforms,
 markers…) rather than scalar time series, also read `references/builtin-objects.md`
@@ -88,17 +105,23 @@ second argument is the **manifest JSON literal** (see Step 5).
 | MessageParser | `PJ::MessageParserPluginBase` | ⚠ `pj_plugins/sdk/message_parser_plugin_base.hpp` | `registerSchemaHandler()` in ctor/`bindSchema()` | `PJ_MESSAGE_PARSER_PLUGIN(C, m)` |
 | Toolbox | `PJ::ToolboxPluginBase` | `pj_base/sdk/toolbox_plugin_base.hpp` | `capabilities()` (+ data ops) | `PJ_TOOLBOX_PLUGIN(C, m)` |
 | Dialog | `PJ::DialogPluginTyped` | `pj_plugins/sdk/dialog_plugin_typed.hpp` + `.../widget_data.hpp` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(C, m)` |
+| Widget | `PJ::WidgetPluginBase` | `pj_plugins/sdk/widget_plugin_base.hpp` | `inputs()`, `createWidget()`, `onUpdate()` | `PJ_WIDGET_PLUGIN(C, m)` |
 
-> ⚠ **Header-location trap.** Three base classes live under `pj_base/sdk/`, but
-> `MessageParserPluginBase` lives under **`pj_plugins/sdk/`**, and the Dialog SDK
-> lives under `pj_plugins/sdk/` too (installed there from the `dialog_protocol`
-> module). Do not substitute a `pj_base/sdk/` path for either one; use the paths
-> in the table.
+> ⚠ **Header-location trap.** The DataSource and Toolbox bases live under
+> `pj_base/sdk/`, but `MessageParserPluginBase` lives under **`pj_plugins/sdk/`**,
+> and so do the Dialog and Widget SDKs (installed there from the
+> `dialog_protocol` and `widget_protocol` modules). Do not substitute a
+> `pj_base/sdk/` path for those; use the paths in the table.
+
+A class inside a namespace, or a plugin linked statically into the host
+(`PJ_STATIC_PLUGINS`, the WebAssembly build), registers with
+`PJ_*_PLUGIN_NAMED(ns::Class, Class, manifest)`.
 
 The quickest correct start is to copy a working example from this repo and edit it:
 `examples/sdk_consumer/` (minimal external DataSource with the full CMake),
-`pj_plugins/examples/mock_*.cpp` (DataSource, parser, toolbox, source+dialog), and
-`pj_plugins/dialog_protocol/examples/mock_dialog.cpp` (standalone dialog). Each
+`pj_plugins/examples/mock_*.cpp` (DataSource, parser, toolbox, source+dialog),
+`pj_plugins/dialog_protocol/examples/mock_dialog.cpp` (standalone dialog) and
+`pj_plugins/widget_protocol/examples/mock_widget.cpp` (widget). Each
 family reference embeds an API skeleton for when the repo isn't at hand (domain
 placeholders like `openSocket()` are yours to fill in).
 
@@ -128,7 +151,7 @@ add_library(my_plugin SHARED my_plugin.cpp)
 target_link_libraries(my_plugin PRIVATE plotjuggler_sdk::plugin_sdk)  # same in all worlds
 
 pj_configure_plugin(my_plugin
-  FAMILIES        data_source                 # data_source | message_parser | toolbox | dialog
+  FAMILIES        data_source                 # data_source | message_parser | toolbox | dialog | widget
                                               # (list several: `data_source dialog` for an embedded dialog)
   MANIFEST_FILE   ${CMAKE_CURRENT_SOURCE_DIR}/manifest.json
   MANIFEST_HEADER generated/my_manifest.hpp   # -> #include "my_manifest.hpp"
@@ -139,9 +162,11 @@ pj_configure_plugin(my_plugin
 ```
 
 The `plotjuggler_sdk::plugin_sdk` component supplies the common author surface —
-base + parser SDK + dialog SDK + these CMake helpers. Compiled provider support
-requires `plotjuggler_sdk::source` as well. You do **not** link a separate
-dialog target downstream (`pj_dialog_sdk` is an in-tree name).
+base + parser SDK + dialog SDK + widget SDK + these CMake helpers. Compiled
+provider support requires `plotjuggler_sdk::source` as well. You do **not** link
+a separate dialog or widget target downstream (`pj_dialog_sdk` and
+`pj_widget_sdk` are in-tree names). A test that loads the built plugin through
+the host loaders adds the `plugin_host` component (see Verify).
 
 **`pj_configure_plugin` is required in practice.** It:
 
@@ -157,8 +182,12 @@ dialog target downstream (`pj_dialog_sdk` is an in-tree name).
    `STB_GNU_UNIQUE` symbol leaks.
 
 MessageParser manifests **must** include `"encoding": ["json", …]`.
-The host routes payloads by these case-sensitive names.
-DataSource may add `"file_extensions": [".csv"]`.
+The host routes payloads by these case-sensitive names, and admits only the
+registered ones: `PJ::registeredParserEncodings()` in
+`pj_plugins/host/parser_claim_catalog.hpp` is the list. A parser claiming any
+other name is refused when its claims are admitted.
+DataSource may add `"file_extensions": [".csv"]`. A Widget manifest needs
+`widgets` and `qt_modules` (see `references/widget.md`).
 `pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 
 ### `min_sdk_required` — the host floor, not the build pin
@@ -224,15 +253,21 @@ coalescing, etc.) — read them.
    stray exception's `what()` into the ABI error, non-fallible ones can only
    swallow it, and an exception escaping a `noexcept` slot terminates the
    process. Explicit `Status` returns are the only predictable diagnostics.
-2. **Keep the data plane on the host's callback thread.** `writeHost()`,
-   `toolboxHost()`, and `pushMessage()` are single-threaded — a background I/O
-   thread must buffer under a mutex and hand data off inside `onPoll()`/`poll()`.
-   The authoritative source is the thread tag on each slot in the protocol
-   headers: slots tagged `[thread-safe]` — `reportMessage()`,
-   `isStopRequested()`, `notifyState()`, `requestStop()`, and the toolbox's
-   `notifyDataChanged()` — may be called from any thread (e.g. reporting a
-   connection loss from an I/O callback). Everything else stays on the callback
-   thread.
+2. **Respect each host slot's thread tag.** The tag on the slot in the protocol
+   header is the authority (`data_source_protocol.h`, `toolbox_protocol.h`,
+   `plugin_data_api.h`); the list below is the common part, not all of it.
+   - **DataSource:** `writeHost()` and `pushMessage()` are used only inside the
+     host's calls (`onStart()`/`onPoll()`/`onStop()`). A background I/O thread
+     buffers under a mutex (`PJ::sdk::DrainQueue`) and hands data off in
+     `onPoll()`.
+   - **Toolbox:** writes through `toolboxHost()` may come from the toolbox's own
+     worker thread, one thread at a time per host object. Every other toolbox
+     service (object reads, playback, viewport, plot tabs, data processors) is
+     main-thread: call it from inside a host call or a dialog callback.
+   - **Any thread:** `reportMessage()`, `isStopRequested()`, `notifyState()`,
+     `requestStop()` and the toolbox's `notifyDataChanged()`, for example to
+     report a connection loss from an I/O callback.
+   - **Widget:** everything is on the GUI thread.
 3. **Timestamps are `int64` nanoseconds since the Unix epoch.** Not seconds, not
    row indices. Extract or synthesize a real absolute nanosecond value. Use
    `std::chrono::system_clock` for receive-time stamps — **never**
@@ -246,7 +281,8 @@ coalescing, etc.) — read them.
    Dialogs and toolboxes restore from the layout *before data arrives*.
    Tolerate older configs by migrating or defaulting missing keys.
    Do not *fail* `loadConfig()` merely because referenced data is not loaded yet.
-   Re-resolve in `onDataChanged()`.
+   Resolve it again when the user acts or when you need the data. A toolbox must
+   not wait for `onDataChanged()`: it is advisory and a host may never call it.
 5. **String lifetimes across the ABI.** SDK overrides return `std::string` — the
    base class buffers it for the ABI, one buffer per slot, invalidated at the
    next call of the *same* method on the same instance. So never hold the host's
@@ -270,9 +306,13 @@ coalescing, etc.) — read them.
   required keys (+ `encoding` for a parser).
 - Load it in PlotJuggler, or preferably test the **real built `.so`** through
   the host loaders (`DataSourceLibrary::load(path)`,
-  `MessageParserLibrary::load(path)`, …). Inject the path as a compile definition.
-  Bind SDK test helpers as host services: `pj_base/sdk/testing/parser_write_recorder.hpp`
-  and `pj_plugins/testing/toolbox_test_store.hpp`. Assert on the writes.
+  `MessageParserLibrary::load(path)`, …). They are in the `plugin_host`
+  component: `find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk plugin_host)`
+  and link the test to `plotjuggler_sdk::plugin_host`. Inject the path as a compile definition.
+  Bind SDK test helpers as host services: `pj_base/sdk/testing/parser_write_recorder.hpp`,
+  `pj_plugins/testing/toolbox_test_store.hpp`,
+  `pj_plugins/testing/delegated_ingest_fixture.hpp` and, for a widget,
+  `pj_plugins/sdk/testing/fake_widget_host.hpp`. Assert on the writes.
   This exercises the host's exact ABI surface via `dlopen`.
 - Round-trip `saveConfig()` → `loadConfig()` → run with no dialog.
 
@@ -282,8 +322,10 @@ coalescing, etc.) — read them.
 |---|---|
 | What each family may do; capabilities; permission matrix; config contract | `pj_plugins/docs/REQUIREMENTS.md` |
 | How the C ABI / loaders / host bridge work (mostly maintainer detail) | `pj_plugins/docs/ARCHITECTURE.md` |
-| Writing each family, in depth | `pj_plugins/docs/{data-source,message-parser,toolbox,dialog-plugin}-guide.md` |
+| Writing each family, in depth | `pj_plugins/docs/{data-source,message-parser,toolbox,dialog-plugin,widget}-guide.md` |
 | Dialog `WidgetData` setters + event-handler signatures | `docs/dialog-sdk-reference.md` |
 | Builtin object types + their wire codecs | `docs/builtin_type.md`, `pj_base/include/pj_base/builtin/` |
-| Object store: publish/read objects, ownership, lazy fetch | `V4_STORE.md` |
+| Marking findings on a time-series plot (`PlotMarkers`) | `docs/plot_markers_format.md`, `docs/plot_markers_architecture.md` |
+| Helpers that already exist | `docs/sdk-utilities.md` |
+| Object store: publish/read objects, ownership, lazy fetch | `docs/object_store.md` |
 | C++ style, error handling, `PJ::Expected<T>`, naming | `docs/cpp_design_recommendations.md` |
