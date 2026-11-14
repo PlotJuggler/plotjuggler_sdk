@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------
 # EXPERIMENTAL: functional parser modules (authoring kit, export ABI, native
-# host loader/runtime). Not installed, not packaged, and outside the SDK
+# and wasm host loader/runtime). Not installed, not packaged, and outside the SDK
 # compatibility promise. See README.md.
 # ---------------------------------------------------------------------------
 
@@ -23,16 +23,28 @@ add_library(plotjuggler_sdk::parser_module ALIAS pj_parser_module)
 add_library(pj_parser_module_abi STATIC
   src/parser_module_abi.cpp
   src/parser_module_manifest.cpp
+  src/parser_module_wasm.cpp
 )
 target_include_directories(pj_parser_module_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(pj_parser_module_abi PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
 set_target_properties(pj_parser_module_abi PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(pj_parser_module_abi PUBLIC pj_base)
 
-# Native module loader, runtime and manifest-to-claims decoding.
+# Build-time frontend for embedding exact manifest bytes and running the same
+# static wasm audit used by the conformance gate. pj_add_parser_module(TARGETS
+# wasm) invokes it by this alias.
+add_executable(pj_wasm_embed_manifest tools/pj_wasm_embed_manifest.cpp)
+target_compile_features(pj_wasm_embed_manifest PRIVATE cxx_std_20)
+target_compile_options(pj_wasm_embed_manifest PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(pj_wasm_embed_manifest PRIVATE pj_parser_module_abi)
+set_target_properties(pj_wasm_embed_manifest PROPERTIES OUTPUT_NAME pj-wasm-embed-manifest)
+add_executable(plotjuggler_sdk::wasm_embed_manifest ALIAS pj_wasm_embed_manifest)
+
+# Native module loader, runtime, session budget and manifest-to-claims decoding.
 add_library(pj_parser_module_host STATIC
   src/native_parser_module.cpp
   src/parser_module_runtime.cpp
+  src/parser_module_session_budget.cpp
   src/parser_module_claims.cpp
 )
 target_include_directories(pj_parser_module_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -48,11 +60,67 @@ target_link_libraries(pj_parser_module_host
     ${CMAKE_DL_LIBS}
 )
 
+# Wasm module loader/runtime, executed by a statically linked Wasmer 7.0.1
+# C API. Built only when PJ_WASMER_ROOT names that installation.
+set(PJ_WASMER_ROOT "$ENV{PJ_WASMER_ROOT}" CACHE PATH
+  "Wasmer 7.0.1 C-API root used for wasm parser-module execution")
+set(_pj_wasmer_include "${PJ_WASMER_ROOT}/include")
+find_file(_pj_wasmer_library
+  NAMES libwasmer.a libwasmer.lib wasmer.lib
+  PATHS "${PJ_WASMER_ROOT}/lib"
+  NO_DEFAULT_PATH
+  NO_CACHE)
+set(PJ_WASMER_AVAILABLE OFF)
+if(NOT PJ_WASMER_ROOT)
+  message(STATUS
+    "Wasm parser-module loader skipped: PJ_WASMER_ROOT cache/env variable is not set")
+elseif(NOT EXISTS "${_pj_wasmer_include}/wasm.h" OR
+       NOT EXISTS "${_pj_wasmer_include}/wasmer.h" OR
+       NOT _pj_wasmer_library)
+  message(STATUS
+    "Wasm parser-module loader skipped: Wasmer C-API is missing under PJ_WASMER_ROOT=${PJ_WASMER_ROOT}")
+else()
+  file(STRINGS "${_pj_wasmer_include}/wasmer.h" _pj_wasmer_version_line
+    REGEX "^#define WASMER_VERSION ")
+  if(NOT _pj_wasmer_version_line MATCHES "\"7\\.0\\.1\"")
+    message(FATAL_ERROR
+      "Wasm parser-module loader requires Wasmer 7.0.1; found '${_pj_wasmer_version_line}'")
+  endif()
+  find_package(Threads REQUIRED)
+  add_library(pj_wasmer_static UNKNOWN IMPORTED)
+  set_target_properties(pj_wasmer_static PROPERTIES
+    IMPORTED_LOCATION "${_pj_wasmer_library}"
+    INTERFACE_INCLUDE_DIRECTORIES "${_pj_wasmer_include}"
+  )
+  set(PJ_WASMER_AVAILABLE ON)
+  message(STATUS "Wasm parser-module loader enabled with Wasmer 7.0.1: ${PJ_WASMER_ROOT}")
+
+  add_library(pj_wasm_parser_module_host STATIC
+    src/wasm_parser_module.cpp
+    src/wasm_parser_module_runtime.cpp
+  )
+  target_include_directories(pj_wasm_parser_module_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_compile_features(pj_wasm_parser_module_host PUBLIC cxx_std_20)
+  target_compile_options(pj_wasm_parser_module_host PRIVATE ${PJ_WARNING_FLAGS})
+  set_target_properties(pj_wasm_parser_module_host PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries(pj_wasm_parser_module_host
+    PUBLIC
+      pj_parser_module_host
+    PRIVATE
+      pj_wasmer_static
+      Threads::Threads
+      ${CMAKE_DL_LIBS}
+  )
+  if(UNIX)
+    target_link_libraries(pj_wasm_parser_module_host PRIVATE m)
+  endif()
+endif()
+
 if(NOT PJ_BUILD_TESTS)
   return()
 endif()
 
-foreach(test_name parser_module_abi_test parser_module_manifest_test)
+foreach(test_name parser_module_abi_test parser_module_manifest_test parser_module_wasm_test)
   add_executable(${test_name} tests/${test_name}.cpp)
   target_link_libraries(${test_name} PRIVATE pj_parser_module_abi GTest::gtest_main)
   add_test(NAME ${test_name} COMMAND ${test_name})
@@ -62,6 +130,11 @@ add_executable(parser_module_claims_test tests/parser_module_claims_test.cpp)
 target_compile_options(parser_module_claims_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(parser_module_claims_test PRIVATE pj_parser_module_host GTest::gtest_main)
 add_test(NAME parser_module_claims_test COMMAND parser_module_claims_test)
+
+add_executable(parser_module_session_budget_test tests/parser_module_session_budget_test.cpp)
+target_compile_options(parser_module_session_budget_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(parser_module_session_budget_test PRIVATE pj_parser_module_host GTest::gtest_main)
+add_test(NAME parser_module_session_budget_test COMMAND parser_module_session_budget_test)
 
 # C++17 standalone authoring-kit gate. This target intentionally does not
 # link pj_base; GTest is test infrastructure only.
@@ -81,8 +154,9 @@ target_compile_options(parser_module_object_writer_test PRIVATE ${PJ_WARNING_FLA
 target_link_libraries(parser_module_object_writer_test PRIVATE pj_parser_module pj_parser_module_abi GTest::gtest_main)
 add_test(NAME parser_module_object_writer_test COMMAND parser_module_object_writer_test)
 
-# Static wasm ABI conformance. The authoring source is compiled directly by
-# wasi-sdk, then a host-side auditor embeds and validates the final module.
+# Static wasm ABI conformance. The production authoring helper compiles the
+# fixture through wasi-sdk, embeds its manifest, and audits the result.
+set(_pj_build_toy_wasm OFF)
 set(PJ_WASI_SDK_ROOT "$ENV{PJ_WASI_SDK_ROOT}" CACHE PATH
   "wasi-sdk 27 root used for parser-module conformance tests")
 set(_pj_wasi_clang "${PJ_WASI_SDK_ROOT}/bin/clang++")
@@ -101,73 +175,71 @@ else()
   endif()
   message(STATUS
     "Parser-module WASI conformance enabled with wasi-sdk ${_pj_wasi_version}: ${PJ_WASI_SDK_ROOT}")
+  set(_pj_build_toy_wasm ON)
+endif()
 
-  add_executable(parser_module_wasm_audit tests/parser_module_wasm_audit.cpp)
-  target_compile_options(parser_module_wasm_audit PRIVATE ${PJ_WARNING_FLAGS})
-  target_link_libraries(parser_module_wasm_audit PRIVATE pj_parser_module_abi)
-
-  file(GLOB _pj_parser_module_headers CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/pj_base/parser_module/*.hpp")
-  set(_pj_wasm_dir "${CMAKE_CURRENT_BINARY_DIR}/parser_module_wasm_conformance")
-  set(_pj_wasm_raw "${_pj_wasm_dir}/toy_cdr_pointcloud.raw.wasm")
-  set(_pj_wasm_embedded "${_pj_wasm_dir}/toy_cdr_pointcloud.wasm")
-  set(_pj_wasm_source "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud_module.cpp")
+set(_pj_toy_targets native)
+if(_pj_build_toy_wasm)
+  list(APPEND _pj_toy_targets wasm)
+endif()
+pj_add_parser_module(toy_cdr_pointcloud_module
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud_module.cpp"
+  MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud.module.json"
+  TARGETS ${_pj_toy_targets}
+)
+if(_pj_build_toy_wasm)
+  get_property(_pj_wasm_embedded TARGET toy_cdr_pointcloud_module_wasm PROPERTY PJ_PARSER_MODULE_WASM_PATH)
   set(_pj_wasm_manifest "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud.module.json")
-
-  add_custom_command(
-    OUTPUT "${_pj_wasm_raw}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${_pj_wasm_dir}"
-    COMMAND "${_pj_wasi_clang}"
-      --target=wasm32-wasip1
-      --sysroot=${_pj_wasi_sysroot}
-      -mexec-model=reactor
-      -std=c++17
-      -fno-exceptions
-      -fno-rtti
-      -fvisibility=hidden
-      -O1
-      -Wall -Wextra -Werror
-      -DPJ_PARSER_MODULE_CLAIM_COUNT=2
-      -I${CMAKE_CURRENT_SOURCE_DIR}/include
-      -I${PROJECT_SOURCE_DIR}/pj_base/include
-      "${_pj_wasm_source}"
-      -Wl,--export=pj_module_abi
-      -Wl,--export=pj_module_create
-      -Wl,--export=pj_module_destroy
-      -Wl,--export=pj_module_bind
-      -Wl,--export=pj_module_parse
-      -Wl,--export=pj_module_last_error
-      -Wl,--export=pj_module_alloc
-      -Wl,--export=pj_module_free
-      -o "${_pj_wasm_raw}"
-    DEPENDS "${_pj_wasm_source}" ${_pj_parser_module_headers}
-      "${PROJECT_SOURCE_DIR}/pj_base/include/pj_base/time_math.hpp"
-    COMMENT "Compiling C++17 parser-module WASI reactor fixture"
-    VERBATIM
-  )
-  add_custom_command(
-    OUTPUT "${_pj_wasm_embedded}"
-    COMMAND ${CMAKE_COMMAND} -E env ASAN_OPTIONS=detect_leaks=0
-      $<TARGET_FILE:parser_module_wasm_audit>
-      --embed "${_pj_wasm_raw}" "${_pj_wasm_manifest}" "${_pj_wasm_embedded}"
-    DEPENDS "${_pj_wasm_raw}" "${_pj_wasm_manifest}" parser_module_wasm_audit
-    COMMENT "Embedding parser-module wasm manifest with the shared codec"
-    VERBATIM
-  )
-  add_custom_target(parser_module_wasm_conformance_fixture ALL
-    DEPENDS "${_pj_wasm_embedded}")
+  add_custom_target(parser_module_wasm_conformance_fixture ALL DEPENDS toy_cdr_pointcloud_module_wasm)
   add_test(NAME parser_module_wasm_conformance_test
-    COMMAND parser_module_wasm_audit --audit "${_pj_wasm_embedded}" "${_pj_wasm_manifest}")
+    COMMAND pj_wasm_embed_manifest verify "${_pj_wasm_embedded}" "${_pj_wasm_manifest}")
   set_tests_properties(parser_module_wasm_conformance_test PROPERTIES
     LABELS "parser_module;wasi"
     REQUIRED_FILES "${_pj_wasm_embedded}")
 endif()
 
-pj_add_parser_module(toy_cdr_pointcloud_module
-  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud_module.cpp"
-  MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/tests/toy_cdr_pointcloud.module.json"
-  TARGETS native
-)
+# Wasm execution through Wasmer: an isolated Wasmer prototype, the toy module
+# end to end, and adversarial guests against the hardening limits.
+if(PJ_WASMER_AVAILABLE)
+  add_executable(wasmer_shared_module_prototype_test tests/wasmer_shared_module_prototype_test.cpp)
+  target_compile_options(wasmer_shared_module_prototype_test PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(wasmer_shared_module_prototype_test PRIVATE
+    pj_wasmer_static Threads::Threads ${CMAKE_DL_LIBS} GTest::gtest_main)
+  if(UNIX)
+    target_link_libraries(wasmer_shared_module_prototype_test PRIVATE m)
+  endif()
+  add_test(NAME wasmer_shared_module_prototype_test COMMAND wasmer_shared_module_prototype_test)
+  set_tests_properties(wasmer_shared_module_prototype_test PROPERTIES LABELS "parser_module;wasmer")
+
+  if(_pj_build_toy_wasm)
+    add_executable(wasm_parser_module_test tests/wasm_parser_module_test.cpp)
+    add_dependencies(wasm_parser_module_test parser_module_wasm_conformance_fixture)
+    target_compile_definitions(wasm_parser_module_test PRIVATE
+      PJ_TOY_CDR_POINTCLOUD_WASM_PATH="${_pj_wasm_embedded}")
+    target_compile_options(wasm_parser_module_test PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(wasm_parser_module_test PRIVATE pj_wasm_parser_module_host GTest::gtest_main)
+    add_test(NAME wasm_parser_module_test COMMAND wasm_parser_module_test)
+    set_tests_properties(wasm_parser_module_test PROPERTIES LABELS "parser_module;wasmer;wasi")
+
+    pj_add_parser_module(adversarial_wasm_parser_module
+      SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/adversarial_wasm_parser_module.cpp"
+      MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/tests/adversarial_wasm_parser_module.module.json"
+      TARGETS wasm
+    )
+    get_property(_pj_adversarial_wasm_path TARGET adversarial_wasm_parser_module_wasm
+      PROPERTY PJ_PARSER_MODULE_WASM_PATH)
+    add_executable(wasm_parser_module_hardening_test tests/wasm_parser_module_hardening_test.cpp)
+    add_dependencies(wasm_parser_module_hardening_test adversarial_wasm_parser_module_wasm)
+    target_compile_definitions(wasm_parser_module_hardening_test PRIVATE
+      PJ_ADVERSARIAL_WASM_PATH="${_pj_adversarial_wasm_path}")
+    target_compile_options(wasm_parser_module_hardening_test PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(wasm_parser_module_hardening_test PRIVATE pj_wasm_parser_module_host GTest::gtest_main)
+    add_test(NAME wasm_parser_module_hardening_test COMMAND wasm_parser_module_hardening_test)
+    set_tests_properties(wasm_parser_module_hardening_test PROPERTIES LABELS "parser_module;wasmer;wasi")
+  else()
+    message(STATUS "Wasm parser-module E2E skipped: the wasi-sdk fixture target is unavailable")
+  endif()
+endif()
 
 # ---------------------------------------------------------------------------
 # Native functional parser-module fixtures (real shared libraries)

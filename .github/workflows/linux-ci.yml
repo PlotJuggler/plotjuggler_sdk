@@ -161,6 +161,25 @@ jobs:
           echo "PJ_WASI_SDK_ROOT=${install_dir}" >> "${GITHUB_ENV}"
           "${install_dir}/bin/clang++" --version
 
+      - name: Install Wasmer C API 7.0.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="7.0.1"
+          archive="${RUNNER_TEMP}/wasmer-${version}.tar.gz"
+          install_dir="${RUNNER_TEMP}/wasmer-${version}"
+          url="https://github.com/wasmerio/wasmer/releases/download/v${version}/wasmer-linux-amd64.tar.gz"
+
+          curl -fsSL --retry 5 --retry-all-errors "${url}" -o "${archive}"
+          mkdir -p "${install_dir}"
+          tar -xzf "${archive}" -C "${install_dir}"
+          test -f "${install_dir}/include/wasm.h"
+          test -f "${install_dir}/include/wasmer.h"
+          test -f "${install_dir}/lib/libwasmer.a"
+          nm -g --defined-only "${install_dir}/lib/libwasmer.a" > "${RUNNER_TEMP}/wasmer-symbols.txt"
+          grep -q wasmer_metering_set_remaining_points "${RUNNER_TEMP}/wasmer-symbols.txt"
+          echo "PJ_WASMER_ROOT=${install_dir}" >> "${GITHUB_ENV}"
+
       - name: Configure ccache
         # Compiler-output cache for our own C++ — complementary to the Conan
         # cache (which holds prebuilt third-party packages, not our objects).
@@ -223,6 +242,7 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DPJ_WASI_SDK_ROOT=${PJ_WASI_SDK_ROOT}
+          -DPJ_WASMER_ROOT=${PJ_WASMER_ROOT}
           -DPJ_ENABLE_ABI_CHECK=ON
 
       - name: Build
@@ -232,6 +252,9 @@ jobs:
         run: |
           cmake --build build --target parser_module_wasm_conformance_fixture
           ctest --test-dir build -L wasi --output-on-failure
+
+      - name: Wasmer parser-module execution
+        run: ctest --test-dir build -L wasmer --output-on-failure
 
       - name: ABI drift gate
         # Mechanically enforces the Release Versioning policy (CLAUDE.md): a non-MAJOR
