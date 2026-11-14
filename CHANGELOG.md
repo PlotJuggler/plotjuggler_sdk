@@ -216,6 +216,18 @@ Three changes that could not be made after the freeze:
   `kind`. Size, alignment and every offset are unchanged. No bit is defined: a host built against
   1.0 or later writes 0, and a host built earlier leaves the bytes unset.
 
+Contract text (docs only, no code change):
+
+- **Spatial conventions are now written down**, at the top of `Geometry.proto` and in
+  `docs/builtin_type.md`: metres, right-handed frames, quaternions as `(x, y, z, w)` with
+  `v' = q * v * conjugate(q)`, and `p_parent = R(rotation) * p_child + translation` for a
+  `FrameTransform`. They describe what the decoders and PlotJuggler's transform code already do.
+  The worked example in `FrameTransforms.proto` gave `(-1, 3, 0)` where the result is `(1, 3, 0)`.
+- **Descriptor import:** the header said no job callback may occur before `start_import` returns
+  true. No provider can guarantee that, since a worker thread cannot be ordered against the return
+  itself. The rule is now what `ProviderJob` does: no callback before `out_job` is populated, none
+  when `start_import` returns false, and the host has its callback state ready before it calls.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,

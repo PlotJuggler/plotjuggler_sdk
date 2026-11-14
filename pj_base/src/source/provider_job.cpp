@@ -32,8 +32,8 @@ struct JobState {
   void* callback_ctx = nullptr;
 
   // The worker's FIRST action is start_gate.acquire(): the ABI forbids any job
-  // callback before start_import returns, and start() releases the gate as
-  // its last action, after out_job is fully populated.
+  // callback before out_job is populated, and start() releases the gate as
+  // its last action, after that.
   std::binary_semaphore start_gate{0};
   std::atomic<bool> cancelled{false};
   std::atomic<bool> dataset_notified{false};

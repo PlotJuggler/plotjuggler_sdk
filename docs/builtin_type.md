@@ -346,8 +346,22 @@ reference frames. It is used for TF-style data where consumers need to place
 objects, point clouds, camera frustums, or markers in a shared frame graph.
 
 Use `FrameTransforms` when the semantic value is a parent/child frame
-relationship: a translation vector and quaternion rotation from
-`parent_frame_id` to `child_frame_id` at a specific timestamp.
+relationship at a specific timestamp. Each transform places the child frame in
+its parent: a point known in the child frame is
+`p_parent = R(rotation) * p_child + translation`.
+
+**Spatial conventions, for every builtin type.** They are normative and stated
+once, at the top of `pj_base/proto/pj/Geometry.proto`:
+
+- Positions and lengths are in metres unless a field says otherwise (image
+  annotations are in pixels; a depth image names its unit in `encoding`).
+- Frames are right-handed. The meaning of the axes belongs to the frame named
+  by `frame_id`.
+- A quaternion is `(x, y, z, w)` with `w` the scalar part, and rotates a vector
+  as `v' = q * v * conjugate(q)`. It must have unit length; all zeros is read
+  as the identity.
+- A `Pose` places an object in its frame:
+  `p_frame = R(orientation) * p_local + position`.
 
 | Field | Type | Notes |
 |-------|------|-------|

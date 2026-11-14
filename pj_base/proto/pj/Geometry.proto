@@ -9,6 +9,20 @@ syntax = "proto3";
 
 package PJ;
 
+// Spatial conventions for every PJ message that uses the types in this file.
+//
+// - Positions and lengths are in metres. A field in another unit says so: image annotations are in pixels, a depth
+//   image names its unit in `encoding`, and some scene sizes are in screen pixels when `scale_invariant` is set.
+//   Scale factors and ratios have no unit.
+// - Coordinate frames are right-handed. What the axes mean belongs to the frame named by `frame_id`; this schema fixes
+//   no "forward" or "up".
+// - A Quaternion is a rotation written (x, y, z, w), with w the scalar part (Hamilton convention). It rotates a vector
+//   as v' = q * v * conjugate(q), so a positive angle turns counter-clockwise when seen from the tip of the axis. It
+//   must have unit length. All four components at zero is not a rotation: it is what a producer writes when it leaves
+//   the orientation unset, and it is read as the identity.
+// - A Pose places an object in its frame: p_frame = R(orientation) * p_local + position.
+// - A FrameTransform places a child frame in its parent: p_parent = R(rotation) * p_child + translation.
+
 // A point representing a position in 2D space
 message Point2 {
   // x coordinate position
@@ -51,7 +65,7 @@ message Vector3 {
   double z = 3;
 }
 
-// A quaternion representing a rotation in 3D space
+// A unit quaternion representing a rotation in 3D space; see the conventions at the top of this file
 message Quaternion {
   // x value
   double x = 1;
@@ -62,7 +76,7 @@ message Quaternion {
   // z value
   double z = 3;
 
-  // w value
+  // w value (the scalar part)
   double w = 4;
 }
 
