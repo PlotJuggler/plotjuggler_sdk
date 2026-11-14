@@ -163,6 +163,7 @@ if(PJ_BUILD_TESTS)
     tests/abi_layout_sentinels_test.cpp
     tests/platform_test.cpp
     tests/arrow_holders_test.cpp
+    tests/materialized_series_view_test.cpp
     tests/builtin_object_test.cpp
     tests/builtin_object_codec_test.cpp
     tests/frame_transforms_codec_test.cpp

@@ -81,6 +81,10 @@ yet. Additive: no existing struct, slot, or wire format changes.
 
 DepthImage:
 
+- `MaterializedSeriesView` (what `ToolboxHostView::readSeries` returns) gains `nullCount()` and `isNull(row)`. The
+  value column's validity bitmap was always there, but the view gave no way to read it, so a null sample (an empty
+  CSV cell, an absent optional field) read as the zero the host puts in its slot. Client-side helpers only: no host
+  contract change, no feature floor.
 - `sdk::DepthImage` gains `frame_id` (proto field 9 of `PJ.DepthImage`), the coordinate frame of the camera that
   produced the depth, so a consumer can pair it with a `CameraInfo` by id. Additive; readers built before this release
   skip the unknown field.
