@@ -32,9 +32,11 @@ Functional parser modules leave the installed SDK:
 
 Log:
 
-- `PJ::sdk::Log` gains an optional `category` (proto field 5 of `PJ.Log`): a source-defined grouping
+- `PJ::sdk::Log` gains an optional `category` (proto field 7 of `PJ.Log`): a source-defined grouping
   (a tag, a subsystem) a log viewer can show and filter on. The codec writes it only when non-empty;
-  readers built before this release skip the unknown field.
+  readers built before this release skip the unknown field. Fields 5 and 6 are reserved: they are
+  `file` and `line` in `foxglove.Log`, so a Foxglove-encoded log decodes with both skipped.
+  (`1.0.0-dev.1` wrote `category` as field 5; a log encoded by a `dev.1` build loses its category.)
 - **Breaking (source):** `PJ::sdk::Log::name` is renamed `source`; proto field 4 keeps its number, so
   the wire format and binaries built against 0.x are unaffected. Code that reads or sets the field
   must be updated. This rename is why the release is 1.0.0.
@@ -79,6 +81,10 @@ yet. Additive: no existing struct, slot, or wire format changes.
 
 DepthImage:
 
+- `MaterializedSeriesView` (what `ToolboxHostView::readSeries` returns) gains `nullCount()` and `isNull(row)`. The
+  value column's validity bitmap was always there, but the view gave no way to read it, so a null sample (an empty
+  CSV cell, an absent optional field) read as the zero the host puts in its slot. Client-side helpers only: no host
+  contract change, no feature floor.
 - `sdk::DepthImage` gains `frame_id` (proto field 9 of `PJ.DepthImage`), the coordinate frame of the camera that
   produced the depth, so a consumer can pair it with a `CameraInfo` by id. Additive; readers built before this release
   skip the unknown field.
@@ -143,6 +149,64 @@ Fixes:
   string (a label read from a binary log) used to make the whole dialog update vanish silently.
 - The Conan package now propagates `PJ_ASSERT_THROWS` to consumers when built with
   `assert_throws=True`; consumers compiled `PJ_ASSERT` as `assert` against archives built to throw.
+
+The direct C++ parser bridge (docs only, no code change):
+
+- The docs said SDK 1.0 removes the bridge through which a host casts a parser's context to
+  `MessageParserPluginBase*`. It does not: PlotJuggler 4 reads objects that way for every parser.
+  The bridge is now documented as deprecated but supported through 1.x, with the rule that follows
+  from it (`pj_plugins/docs/ARCHITECTURE.md`, section 0a): the `MessageParserPluginBase` prefix,
+  `sdk::ObjectRecord`, `sdk::BuiltinObject`, `PJ::Expected` and every builtin object struct are
+  frozen layouts, and a member change in any of them is a MAJOR. A 1.x release lifts the freeze once
+  the host reads objects through `pj.parser_functional.v2` only.
+- 1.0.0 itself changes two of those layouts: `sdk::Log` (`category`) and `sdk::DepthImage`
+  (`frame_id`). A parser built against 0.x that returns either type must be rebuilt for a 1.0 host.
+  In pj-official-plugins no parser returns `DepthImage`, and `parser_ros` returns `Log` only from
+  1.4.0, which is built against the 1.0 layout. Both members are appended at the tail, so a 0.x
+  host reading an object from a 1.0 parser sees the members it knows at their old offsets.
+
+Builtin decoders:
+
+- An unknown varint field inside a `PJ.PointField` no longer breaks the decode of the `PointCloud`,
+  `GridMap` or `VoxelGrid` that holds it. The decoder read the value and then skipped a second
+  field, so a field added to `PointField` by a later SDK would have been unreadable by every 1.0.0
+  host. The shared field loop now has one rule for every codec: an unknown field is skipped, a known
+  field that is malformed fails the decode. Before, a malformed nested message could skip the bytes
+  that followed it and decode as something else.
+- **Behaviour (wire):** fields absent from the wire now decode as the proto3 zero value where the
+  C++ struct default differs. A standard protobuf encoder omits a zero, so `PointCloud.is_dense =
+  false` decoded as `true`, `PointCloud.height = 0` as `1`, `PointField.count = 0` as `1`, and a cone
+  (`CylinderPrimitive.top_scale = 0`) as a cylinder. Bytes written by the SDK's own serializers are
+  unaffected: they write every one of these fields. `GridMap` rejects a `PointField` whose `count` is
+  absent, as it already rejected an explicit `0`. The empty `PointCloud` payload decodes to the same
+  zero values.
+- **Behaviour (wire):** a colour inside an `ImageAnnotations` message decodes like every other
+  `PJ.Color`: a channel absent from a colour that is present is 0. Alpha used to default to 1 there,
+  so a "no fill" colour written as `{r, g, b, a = 0}` by a standard encoder came back opaque. A
+  colour message that is absent altogether keeps its documented default. The annotation scalars
+  follow the same rule: an absent `thickness`, circle `diameter` or `font_size` is 0, where it used
+  to decode as 2, 1 and 14. A consumer that wants a default for 0 applies it when drawing.
+- `deserializeBuiltinObject(kMeshMap, ...)` rejects the empty payload. It returned a
+  default-constructed `MeshMap` with `position_type` FLOAT32, while any other payload that omits
+  the field is rejected.
+- A NaN colour channel decodes as 0; it used to reach an undefined float-to-integer conversion.
+
+Three changes that could not be made after the freeze:
+
+- **Breaking (source, scripts):** the timestamp member of four builtin structs is renamed from
+  `timestamp` to `timestamp_ns`, the name the other sixteen already use: `sdk::ImageAnnotations`,
+  `sdk::FrameTransform`, `sdk::SceneEntity` and `sdk::SceneEntityDeletion`. Their field-table name
+  changes with it, so a script reads `timestamp_ns` on these types too. The wire format is
+  unchanged (the proto field is still `timestamp`); only code and scripts that name the member must
+  be updated.
+- Dialog tree events no longer have to be the only top-level key of their event. `DialogPluginTyped`
+  dispatched a tree event only when its key was alone, and that check is compiled into each plugin,
+  so no later host could have added a key to the envelope. A valid tree key now claims the event and
+  other keys are ignored, as beside a file-picker result. Two tree keys, or a malformed tree
+  payload, still fail closed.
+- `PJ_widget_value_t` gains `uint32_t flags`, naming the 4 bytes that were alignment padding after
+  `kind`. Size, alignment and every offset are unchanged. No bit is defined: a host built against
+  1.0 or later writes 0, and a host built earlier leaves the bytes unset.
 
 ## [0.40.0]
 

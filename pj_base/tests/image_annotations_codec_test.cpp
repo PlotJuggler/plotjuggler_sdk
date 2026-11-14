@@ -303,7 +303,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_PerVertexColors) {
 
 TEST(ImageAnnotationCodecTest, RoundTrip_TimestampAndImageTopic) {
   sdk::ImageAnnotations in;
-  in.timestamp = 5'250'000'000;  // 5s, 250000000ns
+  in.timestamp_ns = 5'250'000'000;  // 5s, 250000000ns
   in.image_topic = "/camera/image_raw";
 
   CircleAnnotation ca;
@@ -315,7 +315,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_TimestampAndImageTopic) {
   in.circles.push_back(std::move(ca));
 
   auto out = roundTrip(in);
-  EXPECT_EQ(out.timestamp, in.timestamp);
+  EXPECT_EQ(out.timestamp_ns, in.timestamp_ns);
   EXPECT_EQ(out.image_topic, in.image_topic);
   ASSERT_EQ(out.circles.size(), 1u);
   EXPECT_DOUBLE_EQ(out.circles[0].radius, 3.0);
@@ -334,7 +334,7 @@ TEST(ImageAnnotationCodecTest, TimestampZeroAndEmptyTopicEmitNothing) {
   with_defaults.circles.push_back(ca);
 
   sdk::ImageAnnotations explicit_zero = with_defaults;
-  explicit_zero.timestamp = 0;
+  explicit_zero.timestamp_ns = 0;
   explicit_zero.image_topic.clear();
 
   EXPECT_EQ(serializeImageAnnotations(with_defaults), serializeImageAnnotations(explicit_zero));
@@ -356,19 +356,19 @@ TEST(ImageAnnotationCodecTest, OldPayloadWithoutTheFieldsDecodesToDefaults) {
   auto bytes = serializeImageAnnotations(in);
   auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->timestamp, 0);
+  EXPECT_EQ(result->timestamp_ns, 0);
   EXPECT_TRUE(result->image_topic.empty());
 }
 
 TEST(ImageAnnotationCodecTest, GoldenBytes_TimestampAndImageTopic) {
   sdk::ImageAnnotations ia;
-  ia.timestamp = 5'250'000'000;  // 5s, 250000000ns
+  ia.timestamp_ns = 5'250'000'000;  // 5s, 250000000ns
   ia.image_topic = "/camera/image_raw";
 
   // Field 5: Timestamp submessage (seconds=5, nanos=250000000).
   std::vector<uint8_t> expected;
   pb::appendTag(expected, 5, 2);
-  pb::appendLenDelim(expected, pb::encodeTimestamp(ia.timestamp));
+  pb::appendLenDelim(expected, pb::encodeTimestamp(ia.timestamp_ns));
 
   // Field 6: image_topic string.
   pb::appendTag(expected, 6, 2);
@@ -386,8 +386,8 @@ TEST(ImageAnnotationCodecTest, RoundTrip_TimestampExtremes) {
         std::numeric_limits<Timestamp>::max(), std::numeric_limits<Timestamp>::max() - 1, Timestamp{-1},
         Timestamp{-1'000'000'000}}) {
     sdk::ImageAnnotations in;
-    in.timestamp = timestamp;
-    EXPECT_EQ(roundTrip(in).timestamp, timestamp) << timestamp;
+    in.timestamp_ns = timestamp;
+    EXPECT_EQ(roundTrip(in).timestamp_ns, timestamp) << timestamp;
   }
 }
 
@@ -410,6 +410,76 @@ TEST(ImageAnnotationCodecTest, TimestampOutsideInt64NanosIsRejected) {
   EXPECT_TRUE(decodes(9223372036, 854775807));    // INT64_MAX
   EXPECT_FALSE(decodes(9223372036, 854775808));   // INT64_MAX + 1
   EXPECT_FALSE(decodes(9223372037, 0));
+}
+
+// A colour that is present with its alpha omitted is transparent: a standard
+// proto3 encoder omits a zero channel. A "no fill" colour written as
+// {r, g, b, a = 0} must not come back as an opaque fill.
+TEST(ImageAnnotationCodecTest, OmittedAlphaInAPresentColorIsTransparent) {
+  std::vector<uint8_t> red_no_alpha;
+  pb::appendTag(red_no_alpha, 1, 1);
+  pb::appendDouble(red_no_alpha, 1.0);
+
+  std::vector<uint8_t> circle;
+  pb::appendTag(circle, 5, 2);  // fill_color
+  pb::appendLenDelim(circle, red_no_alpha);
+  pb::appendTag(circle, 6, 2);  // color: present and empty, so every channel is 0
+  pb::appendLenDelim(circle, {});
+
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 1, 2);
+  pb::appendLenDelim(bytes, circle);
+
+  auto out = deserializeImageAnnotations(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->circles.size(), 1u);
+  EXPECT_EQ(out->circles[0].fill_color, (sdk::ColorRGBA{255, 0, 0, 0}));
+  EXPECT_EQ(out->circles[0].color, (sdk::ColorRGBA{0, 0, 0, 0}));
+}
+
+// A NaN channel decodes as 0 instead of reaching an undefined float-to-integer cast.
+TEST(ImageAnnotationCodecTest, NaNColorChannelDecodesAsZero) {
+  std::vector<uint8_t> color;
+  pb::appendTag(color, 1, 1);
+  pb::appendDouble(color, std::numeric_limits<double>::quiet_NaN());
+  pb::appendTag(color, 4, 1);
+  pb::appendDouble(color, 1.0);
+
+  std::vector<uint8_t> circle;
+  pb::appendTag(circle, 6, 2);
+  pb::appendLenDelim(circle, color);
+
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 1, 2);
+  pb::appendLenDelim(bytes, circle);
+
+  auto out = deserializeImageAnnotations(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->circles.size(), 1u);
+  EXPECT_EQ(out->circles[0].color, (sdk::ColorRGBA{0, 0, 0, 255}));
+}
+
+// The scalar fields of an annotation follow the proto3 rule too: absent is 0,
+// whatever the struct default. An outline thickness of 0 is a real value (a
+// filled shape with no outline), and a standard encoder omits it.
+TEST(ImageAnnotationCodecTest, OmittedAnnotationScalarsDecodeAsZero) {
+  const std::vector<uint8_t> bytes = {
+      0x0A, 0x00,  // one empty CircleAnnotation
+      0x12, 0x00,  // one empty PointsAnnotation
+      0x1A, 0x00,  // one empty TextAnnotation
+  };
+  auto out = deserializeImageAnnotations(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->circles.size(), 1u);
+  ASSERT_EQ(out->points.size(), 1u);
+  ASSERT_EQ(out->texts.size(), 1u);
+  EXPECT_EQ(out->circles[0].radius, 0.0);
+  EXPECT_EQ(out->circles[0].thickness, 0.0);
+  EXPECT_EQ(out->points[0].thickness, 0.0);
+  EXPECT_EQ(out->texts[0].font_size, 0.0);
+  // The colours were absent as whole messages, so they keep their defaults.
+  EXPECT_EQ(out->circles[0].color, (sdk::ColorRGBA{0, 255, 0, 255}));
+  EXPECT_EQ(out->texts[0].color, (sdk::ColorRGBA{255, 255, 255, 255}));
 }
 
 }  // namespace

@@ -191,7 +191,7 @@ FrameTransforms makeSampleFrameTransforms() {
   FrameTransforms ft;
   ft.transforms.push_back(
       FrameTransform{
-          .timestamp = 1'234'567'890'123'456,
+          .timestamp_ns = 1'234'567'890'123'456,
           .parent_frame_id = "map",
           .child_frame_id = "base_link",
           .translation = {.x = 1.0, .y = 2.0, .z = 3.0},
@@ -199,7 +199,7 @@ FrameTransforms makeSampleFrameTransforms() {
       });
   ft.transforms.push_back(
       FrameTransform{
-          .timestamp = -42,
+          .timestamp_ns = -42,
           .parent_frame_id = "odom",
           .child_frame_id = "map",
           .translation = {.x = -1.5, .y = 2.5, .z = -3.5},
@@ -210,7 +210,7 @@ FrameTransforms makeSampleFrameTransforms() {
 
 ImageAnnotations makeSampleImageAnnotations() {
   ImageAnnotations ia;
-  ia.timestamp = 9'007'199'254'740'993;  // > 2^53: would lose precision as a double.
+  ia.timestamp_ns = 9'007'199'254'740'993;  // > 2^53: would lose precision as a double.
   ia.image_topic = "/camera/image";
 
   PointsAnnotation pa;
@@ -244,7 +244,7 @@ ImageAnnotations makeSampleImageAnnotations() {
 // metadata; the batch also carries one deletion.
 SceneEntities makeSampleSceneEntities() {
   SceneEntity e;
-  e.timestamp = 1'000'000'000'000'123;  // > 2^53.
+  e.timestamp_ns = 1'000'000'000'000'123;  // > 2^53.
   e.frame_id = "map";
   e.id = "entity-1";
   e.lifetime_ns = 5'000'000'000;
@@ -348,7 +348,7 @@ SceneEntities makeSampleSceneEntities() {
   entities.deletions.push_back(
       SceneEntityDeletion{
           .type = SceneEntityDeletion::Type::kAll,  // non-default (kMatchingId == 0)
-          .timestamp = 999,
+          .timestamp_ns = 999,
           .id = "",
       });
   return entities;
@@ -824,7 +824,7 @@ TEST(FieldTableTest, ImageCompressedBufferLayoutHasNoStaticRecordSize) {
 TEST(FieldTableTest, Int64FieldsAreNotNumbers) {
   constexpr int64_t kBig = (int64_t{1} << 55) + 12345;  // > 2^53: exact only as int64.
 
-  const FieldDescriptor* ft_timestamp = findField(FieldTable<FrameTransform>::view, "timestamp");
+  const FieldDescriptor* ft_timestamp = findField(FieldTable<FrameTransform>::view, "timestamp_ns");
   ASSERT_NE(ft_timestamp, nullptr);
   EXPECT_EQ(ft_timestamp->kind, FieldKind::kInt64);
   EXPECT_EQ(ft_timestamp->get_number, nullptr);
@@ -834,10 +834,10 @@ TEST(FieldTableTest, Int64FieldsAreNotNumbers) {
 
   FrameTransform ft;
   ft_timestamp->set_int64(&ft, kBig);
-  EXPECT_EQ(ft.timestamp, kBig);
+  EXPECT_EQ(ft.timestamp_ns, kBig);
   EXPECT_EQ(ft_timestamp->get_int64(&ft), kBig);
 
-  const FieldDescriptor* ia_timestamp = findField(FieldTable<ImageAnnotations>::view, "timestamp");
+  const FieldDescriptor* ia_timestamp = findField(FieldTable<ImageAnnotations>::view, "timestamp_ns");
   ASSERT_NE(ia_timestamp, nullptr);
   EXPECT_EQ(ia_timestamp->kind, FieldKind::kInt64);
   EXPECT_EQ(ia_timestamp->get_number, nullptr);
@@ -845,7 +845,7 @@ TEST(FieldTableTest, Int64FieldsAreNotNumbers) {
 
   ImageAnnotations ia;
   ia_timestamp->set_int64(&ia, kBig);
-  EXPECT_EQ(ia.timestamp, kBig);
+  EXPECT_EQ(ia.timestamp_ns, kBig);
   EXPECT_EQ(ia_timestamp->get_int64(&ia), kBig);
 }
 

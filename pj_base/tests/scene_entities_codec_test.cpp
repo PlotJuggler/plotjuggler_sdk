@@ -68,7 +68,7 @@ TEST(SceneEntitiesCodecTest, EmptyBufferDeserializesAsError) {
 TEST(SceneEntitiesCodecTest, RoundTripOneEntityWithEachPrimitive) {
   SceneEntities in;
   SceneEntity e;
-  e.timestamp = 100'000'000LL;
+  e.timestamp_ns = 100'000'000LL;
   e.frame_id = "world";
   e.id = "mixed_demo";
   e.lifetime_ns = 5'000'000'000LL;
@@ -146,7 +146,7 @@ TEST(SceneEntitiesCodecTest, RoundTripOneEntityWithEachPrimitive) {
   const auto& src = in.entities.front();
   const auto& dst = out->entities.front();
 
-  EXPECT_EQ(dst.timestamp, src.timestamp);
+  EXPECT_EQ(dst.timestamp_ns, src.timestamp_ns);
   EXPECT_EQ(dst.frame_id, src.frame_id);
   EXPECT_EQ(dst.id, src.id);
   EXPECT_EQ(dst.lifetime_ns, src.lifetime_ns);
@@ -316,8 +316,8 @@ TEST(SceneEntitiesCodecTest, RoundTripEntitiesAndDeletions) {
           .pose = makePose(0.0, 0.0, 0.0), .size = {.x = 1.0, .y = 1.0, .z = 1.0}, .color = {255, 255, 255, 255}});
   in.entities.push_back(std::move(e));
   in.deletions.push_back(
-      SceneEntityDeletion{.type = SceneEntityDeletion::Type::kMatchingId, .timestamp = 42, .id = "gone"});
-  in.deletions.push_back(SceneEntityDeletion{.type = SceneEntityDeletion::Type::kAll, .timestamp = 99, .id = ""});
+      SceneEntityDeletion{.type = SceneEntityDeletion::Type::kMatchingId, .timestamp_ns = 42, .id = "gone"});
+  in.deletions.push_back(SceneEntityDeletion{.type = SceneEntityDeletion::Type::kAll, .timestamp_ns = 99, .id = ""});
 
   const auto bytes = serializeSceneEntities(in);
   auto out = deserializeSceneEntities(bytes.data(), bytes.size());
@@ -325,15 +325,15 @@ TEST(SceneEntitiesCodecTest, RoundTripEntitiesAndDeletions) {
   ASSERT_EQ(out->entities.size(), 1u);
   ASSERT_EQ(out->deletions.size(), 2u);
   EXPECT_EQ(out->deletions[0].type, SceneEntityDeletion::Type::kMatchingId);
-  EXPECT_EQ(out->deletions[0].timestamp, 42);
+  EXPECT_EQ(out->deletions[0].timestamp_ns, 42);
   EXPECT_EQ(out->deletions[0].id, "gone");
   EXPECT_EQ(out->deletions[1].type, SceneEntityDeletion::Type::kAll);
-  EXPECT_EQ(out->deletions[1].timestamp, 99);
+  EXPECT_EQ(out->deletions[1].timestamp_ns, 99);
 }
 
 TEST(SceneEntitiesCodecTest, DeletionsOnlyBatchRoundTrips) {
   SceneEntities in;
-  in.deletions.push_back(SceneEntityDeletion{.type = SceneEntityDeletion::Type::kAll, .timestamp = 7, .id = ""});
+  in.deletions.push_back(SceneEntityDeletion{.type = SceneEntityDeletion::Type::kAll, .timestamp_ns = 7, .id = ""});
   EXPECT_FALSE(in.empty());
 
   const auto bytes = serializeSceneEntities(in);
@@ -342,6 +342,44 @@ TEST(SceneEntitiesCodecTest, DeletionsOnlyBatchRoundTrips) {
   EXPECT_TRUE(out->entities.empty());
   ASSERT_EQ(out->deletions.size(), 1u);
   EXPECT_EQ(out->deletions[0].type, SceneEntityDeletion::Type::kAll);
+}
+
+// A cone is a cylinder whose top_scale is 0. A standard proto3 encoder omits a
+// zero, so an absent scale means 0 and not the struct default of 1.
+TEST(SceneEntitiesCodecTest, ConeDecodesFromAnOmittedTopScale) {
+  std::vector<uint8_t> cylinder;
+  pb::appendTag(cylinder, 3, 1);
+  pb::appendDouble(cylinder, 1.0);  // bottom_scale; top_scale (field 4) omitted
+
+  std::vector<uint8_t> entity;
+  pb::appendTag(entity, 10, 2);
+  pb::appendLenDelim(entity, cylinder);
+
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 2, 2);
+  pb::appendLenDelim(bytes, entity);
+
+  auto out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->entities.size(), 1u);
+  ASSERT_EQ(out->entities[0].cylinders.size(), 1u);
+  EXPECT_EQ(out->entities[0].cylinders[0].bottom_scale, 1.0);
+  EXPECT_EQ(out->entities[0].cylinders[0].top_scale, 0.0);
+
+  // And the other way up: only top_scale is written.
+  cylinder.clear();
+  pb::appendTag(cylinder, 4, 1);
+  pb::appendDouble(cylinder, 1.0);
+  entity.clear();
+  pb::appendTag(entity, 10, 2);
+  pb::appendLenDelim(entity, cylinder);
+  bytes.clear();
+  pb::appendTag(bytes, 2, 2);
+  pb::appendLenDelim(bytes, entity);
+  out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  EXPECT_EQ(out->entities[0].cylinders[0].bottom_scale, 0.0);
+  EXPECT_EQ(out->entities[0].cylinders[0].top_scale, 1.0);
 }
 
 }  // namespace

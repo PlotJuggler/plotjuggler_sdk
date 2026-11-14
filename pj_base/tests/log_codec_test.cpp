@@ -73,7 +73,7 @@ TEST(LogCodecTest, EmptyCategoryIsNotWritten) {
 
   const auto bytes = serializeLog(in);
   for (uint8_t b : bytes) {
-    EXPECT_NE(b, 0x2A);  // field 5, length-delimited
+    EXPECT_NE(b, 0x3A);  // field 7, length-delimited
   }
   auto out = deserializeLog(bytes.data(), bytes.size());
   ASSERT_TRUE(out.has_value());
@@ -82,8 +82,8 @@ TEST(LogCodecTest, EmptyCategoryIsNotWritten) {
 }
 
 TEST(LogCodecTest, UnknownFieldIsSkipped) {
-  // field 8 (varint) = 1, then field 3 "hi", field 5 "net".
-  const std::vector<uint8_t> bytes = {0x40, 0x01, 0x1A, 0x02, 'h', 'i', 0x2A, 0x03, 'n', 'e', 't'};
+  // field 8 (varint) = 1, then field 3 "hi", field 7 "net".
+  const std::vector<uint8_t> bytes = {0x40, 0x01, 0x1A, 0x02, 'h', 'i', 0x3A, 0x03, 'n', 'e', 't'};
   auto out = deserializeLog(bytes.data(), bytes.size());
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->message, "hi");
@@ -91,12 +91,27 @@ TEST(LogCodecTest, UnknownFieldIsSkipped) {
 }
 
 TEST(LogCodecTest, WrongWireTypeForCategoryIsSkippedLikeAnyKnownField) {
-  // Field 5 sent as a varint: the handler declines it and parseFields skips it,
+  // Field 7 sent as a varint: the handler declines it and parseFields skips it,
   // as it does for every other known field. category stays empty.
-  const std::vector<uint8_t> bytes = {0x1A, 0x02, 'h', 'i', 0x28, 0x07};
+  const std::vector<uint8_t> bytes = {0x1A, 0x02, 'h', 'i', 0x38, 0x07};
   auto out = deserializeLog(bytes.data(), bytes.size());
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->message, "hi");
+  EXPECT_TRUE(out->category.empty());
+}
+
+// foxglove.Log uses field 5 for `file` (string) and field 6 for `line`
+// (fixed32). PJ.Log omits both, so a Foxglove-encoded log decodes with them
+// skipped: the file path must not turn up as the category.
+TEST(LogCodecTest, FoxgloveFileAndLineAreNotTheCategory) {
+  const std::vector<uint8_t> bytes = {0x1A, 0x02, 'h',  'i',         // message = "hi"
+                                      0x2A, 0x03, 'a',  '.',  'c',   // file = "a.c"
+                                      0x35, 0x2A, 0x00, 0x00, 0x00,  // line = 42
+                                      0x22, 0x01, 'n'};              // name / source = "n"
+  auto out = deserializeLog(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->message, "hi");
+  EXPECT_EQ(out->source, "n");
   EXPECT_TRUE(out->category.empty());
 }
 

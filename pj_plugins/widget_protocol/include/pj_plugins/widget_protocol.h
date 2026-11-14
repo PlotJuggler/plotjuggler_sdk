@@ -129,6 +129,8 @@ typedef enum {
  *
  * ABI-FROZEN: layout permanent; growth goes through a new tail slot (e.g.
  * on_update_v2), never by appending a field, because these travel in arrays.
+ * `flags` names the 4 bytes that were alignment padding after `kind`; it
+ * changes neither the size nor any offset.
  *
  * Every pointer inside (text, bytes, type_name, label) is valid only for the
  * duration of the call that delivers it (on_update, or the history sink); a
@@ -138,6 +140,10 @@ typedef struct {
   uint32_t input;              /* index into the array last returned by inputs() */
   uint32_t slot;               /* 0 for a non-`multiple` input; stable per wire for `multiple` ones */
   PJ_widget_value_kind_t kind; /* selects the payload below */
+  uint32_t flags;              /* reserved, no bit defined: a host built against SDK 1.0 or later writes
+                                  0. These 4 bytes were padding before 1.0, so an older host leaves them
+                                  unset: a widget reads a bit only once a later SDK defines one, together
+                                  with the way to tell that the host sets it */
   double time;                 /* time of the sample, in the host's display time axis, seconds */
   double number;               /* valid when kind == NUMBER */
   PJ_string_view_t text;       /* valid when kind == TEXT */

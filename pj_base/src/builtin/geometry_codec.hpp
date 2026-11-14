@@ -16,6 +16,7 @@
 // Inline-only; not exposed through the public include path.
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 #include "pj_base/builtin/frame_transforms.hpp"   // Vector2, Vector3, Quaternion, Pose
@@ -251,7 +252,7 @@ inline bool readPoseMessage(Reader& reader, sdk::Pose& out) {
 // ---------- Color (uint8 RGBA <-> double 0..1) ----------
 
 inline uint8_t normalizedToByte(double value) {
-  value = std::clamp(value, 0.0, 1.0);
+  value = std::isnan(value) ? 0.0 : std::clamp(value, 0.0, 1.0);  // a NaN would make the cast undefined
   return static_cast<uint8_t>(value * 255.0 + 0.5);
 }
 

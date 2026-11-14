@@ -53,7 +53,7 @@ message PointField {
   // Scalar data type of one element of this channel
   Datatype datatype = 3;
 
-  // Number of elements of `datatype` per point (typically 1)
+  // Number of elements of `datatype` per point (typically 1). Absent means 0, which is not a usable channel: write it.
   uint32 count = 4;
 }
 

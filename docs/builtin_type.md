@@ -98,6 +98,14 @@ frozen eligible bulk field as a splice into the input payload; the host still
 reconstructs a canonical SDK object. The schema and wire-format details stay
 private; public SDK headers expose only SDK structs.
 
+**A struct member is binary interface for now.** PlotJuggler 4 does not use that
+boundary yet: it reads the C++ struct a parser returns directly. Until it moves
+to functional v2, adding, removing or reordering a member of a builtin struct
+breaks a parser and a host built from different SDK releases, and is released
+as a MAJOR. A new builtin type, or a proto field the struct does not expose, is
+unaffected. See
+[the direct C++ parser bridge](../pj_plugins/docs/ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5).
+
 ## Serialization Families
 
 Builtin objects fall into two serialization families:
@@ -119,6 +127,21 @@ The codecs do not expose generated Protobuf types in public SDK headers. The
 current implementation does not require generated Protobuf code or a Protobuf
 runtime dependency; it uses private field-tagged wire primitives and maps only
 between bytes and SDK structs.
+
+Two decode rules hold for every codec, so that bytes from a standard Protobuf
+encoder and from a later SDK both read correctly:
+
+- **An absent field is the proto3 zero value**, even where the C++ struct
+  default differs (`PointCloud::is_dense`, `PointCloud::height`,
+  `PointField::count`, `CylinderPrimitive::bottom_scale` / `top_scale`, an
+  annotation's `thickness`, `radius` and `font_size`, a colour channel). A standard encoder omits a zero, so a decoder that kept the struct
+  default would turn `is_dense = false` into `true`. The SDK's own serializers
+  write these fields explicitly. A whole submessage that is absent may keep a
+  documented default (an annotation's colour, for example).
+- **An unknown field is skipped; a known field that is malformed fails the
+  decode.** A field added by a later SDK must be readable by an older one. A
+  field handler therefore decides whether it knows a field before it reads any
+  byte of it.
 
 ## Type Erasure and Classification
 
@@ -291,7 +314,7 @@ stream.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `timestamp` | `Timestamp` | Timestamp associated with the annotation set. |
+| `timestamp_ns` | `Timestamp` | Timestamp associated with the annotation set. |
 | `image_topic` | `std::string` | Topic of the image these annotations overlay. |
 | `points` | `std::vector<PointsAnnotation>` | Points, line lists, line strips, and line loops. |
 | `circles` | `std::vector<CircleAnnotation>` | Filled or stroked circles in image-pixel space. |
@@ -334,7 +357,7 @@ Each `FrameTransform` contains:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `timestamp` | `Timestamp` | Timestamp associated with the transform. |
+| `timestamp_ns` | `Timestamp` | Timestamp associated with the transform. |
 | `parent_frame_id` | `std::string` | Name of the parent reference frame. |
 | `child_frame_id` | `std::string` | Name of the child reference frame. |
 | `translation` | `Vector3` | Child-frame origin in parent-frame coordinates. |
@@ -480,10 +503,10 @@ axes glyphs, or model (mesh asset) references.
 
 | Field on `SceneEntity` | Type | Notes |
 |------------------------|------|-------|
-| `timestamp` | `Timestamp` | Stamp used together with `lifetime_ns` to control expiry. |
+| `timestamp_ns` | `Timestamp` | Stamp used together with `lifetime_ns` to control expiry. |
 | `frame_id` | `std::string` | Frame the entity's primitives are expressed in. |
 | `id` | `std::string` | Republishing with the same `(topic, id)` replaces the previous entity. |
-| `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp`. |
+| `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp_ns`. |
 | `frame_locked` | `bool` | When true, track `frame_id` as it moves; when false, stamp into the fixed frame at publish time. |
 | `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` / `models` | `std::vector<…Primitive>` | Heterogeneous primitive lists. `models` references a mesh asset by `url` or inline `data`. |
 

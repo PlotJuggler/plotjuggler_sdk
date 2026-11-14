@@ -1214,7 +1214,8 @@ template <class ListSlot>
 /// reimplementing the Arrow-format walk every time.
 ///
 /// Column layout: children[0] = int64 timestamp (ns epoch),
-/// children[1] = typed field value. Validity bitmap is per Arrow spec.
+/// children[1] = typed field value. Validity bitmap is per Arrow spec:
+/// `nullCount()` / `isNull()` read it, the `valuesAs*()` pointers do not.
 class MaterializedSeriesView {
  public:
   MaterializedSeriesView() = default;
@@ -1280,7 +1281,50 @@ class MaterializedSeriesView {
 
 #undef PJ_SDK_VALUES_AS
 
+  /// Number of null samples in the value column: samples the source did not provide (an empty CSV
+  /// cell, an absent optional field). The `valuesAs*()` slot of a null is unspecified (hosts zero
+  /// it), so a caller that computes over the values must leave those rows out; 0 means none to
+  /// leave out.
+  [[nodiscard]] size_t nullCount() const noexcept {
+    const uint8_t* bits = validityBits();
+    if (bits == nullptr) {
+      return 0;
+    }
+    const auto* col = array_.get()->children[1];
+    if (col->null_count >= 0) {
+      return static_cast<size_t>(col->null_count);
+    }
+    size_t nulls = 0;  // the producer did not count them
+    for (size_t row = 0; row < rowCount(); ++row) {
+      nulls += isNull(row) ? 1 : 0;
+    }
+    return nulls;
+  }
+
+  /// Whether sample `row` is null (see nullCount()). False for a row past the end.
+  [[nodiscard]] bool isNull(size_t row) const noexcept {
+    const uint8_t* bits = validityBits();
+    if (bits == nullptr || row >= rowCount()) {
+      return false;
+    }
+    const size_t bit = row + static_cast<size_t>(array_.get()->children[1]->offset);
+    return ((bits[bit >> 3] >> (bit & 7)) & 1) == 0;
+  }
+
  private:
+  /// The value column's validity bitmap (bit set: the sample holds a value), or nullptr when the
+  /// column has none, which per the Arrow spec means no sample is null.
+  [[nodiscard]] const uint8_t* validityBits() const noexcept {
+    if (!valid()) {
+      return nullptr;
+    }
+    const auto* col = array_.get()->children[1];
+    if (col == nullptr || col->n_buffers < 1 || col->null_count == 0) {
+      return nullptr;
+    }
+    return static_cast<const uint8_t*>(col->buffers[0]);
+  }
+
   ArrowSchemaHolder schema_;
   ArrowArrayHolder array_;
 };

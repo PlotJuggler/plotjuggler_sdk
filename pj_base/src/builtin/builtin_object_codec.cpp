@@ -117,6 +117,14 @@ Expected<sdk::BuiltinObject> deserializeBuiltinObject(sdk::BuiltinObjectType typ
     case sdk::BuiltinObjectType::kImage:
       return deserializeAs<sdk::Image>(data, size, deserializeImage);
     case sdk::BuiltinObjectType::kPointCloud:
+      if (size == 0) {
+        // The empty message holds the proto3 zero values, which are not
+        // PointCloud's struct defaults (height 1, is_dense true).
+        sdk::PointCloud cloud;
+        cloud.height = 0;
+        cloud.is_dense = false;
+        return sdk::BuiltinObject(std::move(cloud));
+      }
       return deserializeAs<sdk::PointCloud>(data, size, deserializePointCloud);
     case sdk::BuiltinObjectType::kDepthImage:
       return deserializeAs<sdk::DepthImage>(data, size, deserializeDepthImage);
@@ -151,7 +159,10 @@ Expected<sdk::BuiltinObject> deserializeBuiltinObject(sdk::BuiltinObjectType typ
     case sdk::BuiltinObjectType::kGridMap:
       return deserializeAs<sdk::GridMap>(data, size, deserializeGridMap);
     case sdk::BuiltinObjectType::kMeshMap:
-      return deserializeAs<sdk::MeshMap>(data, size, deserializeMeshMap);
+      // Not deserializeAs: the empty message has position_type UNKNOWN, which
+      // is not a valid mesh, so it is rejected like any other payload that
+      // omits the field instead of becoming a default-constructed MeshMap.
+      return eraseDecoded(deserializeMeshMap(data, size));
     case sdk::BuiltinObjectType::kMeshMapUpdate:
       return deserializeAs<sdk::MeshMapUpdate>(data, size, deserializeMeshMapUpdate);
     case sdk::BuiltinObjectType::kNone:

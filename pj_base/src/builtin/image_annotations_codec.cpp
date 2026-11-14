@@ -14,7 +14,6 @@
 namespace PJ {
 namespace {
 
-using builtin_wire::normalizedToByte;
 using builtin_wire::Reader;
 using builtin_wire::Tag;
 using builtin_wire::WireType;
@@ -117,57 +116,15 @@ bool decodePoint2(Reader& reader, Point2& out) {
   return true;
 }
 
-// Not builtin_wire::decodeColor: annotation colours default alpha to 1 and skip unknown fields.
-bool decodeAnnotationColor(Reader& reader, ColorRGBA& out) {
-  double r = 0.0;
-  double g = 0.0;
-  double b = 0.0;
-  double a = 1.0;
-
-  while (!reader.eof()) {
-    Tag tag;
-    if (!reader.readTag(tag)) {
-      return false;
-    }
-
-    if (tag.type == WireType::kFixed64 && tag.field >= 1 && tag.field <= 4) {
-      double value = 0.0;
-      if (!reader.readDouble(value)) {
-        return false;
-      }
-      switch (tag.field) {
-        case 1:
-          r = value;
-          break;
-        case 2:
-          g = value;
-          break;
-        case 3:
-          b = value;
-          break;
-        case 4:
-          a = value;
-          break;
-        default:
-          break;
-      }
-    } else if (!reader.skip(tag.type)) {
-      return false;
-    }
-  }
-
-  out = {normalizedToByte(r), normalizedToByte(g), normalizedToByte(b), normalizedToByte(a)};
-  return true;
-}
-
 bool readPoint2Message(Reader& reader, Point2& out) {
   Reader nested;
   return reader.readMessage(nested) && decodePoint2(nested, out);
 }
 
+// A colour that is present decodes like every other PJ.Color: an omitted
+// channel is 0, alpha included, because a standard encoder omits a zero.
 bool readAnnotationColorMessage(Reader& reader, ColorRGBA& out) {
-  Reader nested;
-  return reader.readMessage(nested) && decodeAnnotationColor(nested, out);
+  return builtin_wire::readColorMessage(reader, out);
 }
 
 bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
@@ -247,10 +204,13 @@ bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
 }
 
 bool decodeCircleAnnotation(Reader& reader, CircleAnnotation& out) {
+  // Colours keep their default while the whole colour message is absent. The
+  // scalars start from the proto3 zero value, which a standard encoder omits:
+  // a thickness of 0 (a filled circle with no outline) must stay 0.
   out.color = {0, 255, 0, 255};
   out.fill_color = {0, 0, 0, 0};
-  out.thickness = 2.0;
-  out.radius = 1.0;
+  out.thickness = 0.0;
+  out.radius = 0.0;
 
   while (!reader.eof()) {
     Tag tag;
@@ -315,7 +275,7 @@ bool decodeCircleAnnotation(Reader& reader, CircleAnnotation& out) {
 
 bool decodeTextAnnotation(Reader& reader, TextAnnotation& out) {
   out.color = {255, 255, 255, 255};
-  out.font_size = 14.0;
+  out.font_size = 0.0;  // the proto3 zero value; the struct default is 14
 
   while (!reader.eof()) {
     Tag tag;
@@ -383,8 +343,8 @@ std::vector<uint8_t> serializeImageAnnotations(const ImageAnnotations& annotatio
     writer.message(3, [&](Writer& nested) { writeTextAnnotation(nested, text); });
   }
 
-  if (annotations.timestamp != 0) {
-    writer.message(5, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, annotations.timestamp); });
+  if (annotations.timestamp_ns != 0) {
+    writer.message(5, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, annotations.timestamp_ns); });
   }
   if (!annotations.image_topic.empty()) {
     writer.string(6, annotations.image_topic);
@@ -442,7 +402,7 @@ Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data,
       case 2: {
         PointsAnnotation points;
         points.color = {0, 255, 0, 255};
-        points.thickness = 2.0;
+        points.thickness = 0.0;  // the proto3 zero value; the struct default is 2
         if (!decodePointsAnnotation(nested, points)) {
           return unexpected(std::string("ImageAnnotations wire: PointsAnnotation decode failed"));
         }
@@ -458,7 +418,7 @@ Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data,
         break;
       }
       case 5: {
-        if (!builtin_wire::decodeTimestamp(nested, annotations.timestamp)) {
+        if (!builtin_wire::decodeTimestamp(nested, annotations.timestamp_ns)) {
           return unexpected(std::string("ImageAnnotations wire: Timestamp decode failed"));
         }
         break;

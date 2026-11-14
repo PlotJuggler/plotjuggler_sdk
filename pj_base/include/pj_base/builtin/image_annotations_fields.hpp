@@ -78,8 +78,10 @@ struct FieldTable<TextAnnotation> {
 template <>
 struct FieldTable<ImageAnnotations> {
   static constexpr std::array fields{
-      field<&ImageAnnotations::timestamp>("timestamp"), field<&ImageAnnotations::image_topic>("image_topic"),
-      field<&ImageAnnotations::points>("points"),       field<&ImageAnnotations::circles>("circles"),
+      field<&ImageAnnotations::timestamp_ns>("timestamp_ns"),
+      field<&ImageAnnotations::image_topic>("image_topic"),
+      field<&ImageAnnotations::points>("points"),
+      field<&ImageAnnotations::circles>("circles"),
       field<&ImageAnnotations::texts>("texts"),
   };
   static constexpr FieldTableView view{"ImageAnnotations", Span<const FieldDescriptor>(fields)};

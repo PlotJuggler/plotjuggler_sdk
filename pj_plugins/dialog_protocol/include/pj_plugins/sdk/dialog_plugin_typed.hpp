@@ -283,7 +283,9 @@ class DialogPluginTyped : public DialogPluginBase {
     const int tree_channel_count = static_cast<int>(has_tree_selection) + static_cast<int>(has_tree_activation) +
                                    static_cast<int>(has_tree_expansion) + static_cast<int>(has_tree_check_state);
     if (tree_channel_count != 0) {
-      if (tree_channel_count != 1 || event.raw().size() != 1) {
+      // Two tree keys are ambiguous and fail closed. Any other top-level key is
+      // tolerated and ignored, so a later host can add one to the envelope.
+      if (tree_channel_count != 1) {
         return false;
       }
       if (has_tree_selection) {

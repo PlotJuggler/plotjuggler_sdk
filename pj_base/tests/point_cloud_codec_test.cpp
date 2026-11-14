@@ -67,6 +67,101 @@ TEST(PointCloudCodecTest, RoundTripXYZIntensity) {
   EXPECT_EQ(std::memcmp(out->data.data(), payload.data(), payload.size()), 0);
 }
 
+// A PointField body: name, then `extra` (bytes spliced in verbatim), then offset / datatype / count.
+std::vector<uint8_t> pointFieldBody(const std::vector<uint8_t>& extra) {
+  std::vector<uint8_t> body;
+  pb::appendTag(body, 1, 2);
+  pb::appendString(body, "x");
+  body.insert(body.end(), extra.begin(), extra.end());
+  pb::appendTag(body, 2, 0);
+  pb::appendVarint(body, 4);
+  pb::appendTag(body, 3, 0);
+  pb::appendVarint(body, 7);  // FLOAT32
+  pb::appendTag(body, 4, 0);
+  pb::appendVarint(body, 3);
+  return body;
+}
+
+// A PointCloud holding one PointField (field 8) followed by frame_id (field 10).
+std::vector<uint8_t> cloudWithField(const std::vector<uint8_t>& field_body) {
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 8, 2);
+  pb::appendLenDelim(bytes, field_body);
+  pb::appendTag(bytes, 10, 2);
+  pb::appendString(bytes, "lidar");
+  return bytes;
+}
+
+// A later SDK may add a field of any wire type to PointField. This decoder has
+// to skip it and stay in sync: the fields after it, and the cloud's own fields
+// after the PointField, must still decode.
+TEST(PointCloudCodecTest, UnknownFieldsInsideAPointFieldAreSkipped) {
+  std::vector<uint8_t> varint_field;
+  pb::appendTag(varint_field, 9, 0);
+  pb::appendVarint(varint_field, 300);
+
+  std::vector<uint8_t> fixed64_field;
+  pb::appendTag(fixed64_field, 10, 1);
+  pb::appendFixed64(fixed64_field, 0x0102030405060708ULL);
+
+  std::vector<uint8_t> bytes_field;
+  pb::appendTag(bytes_field, 11, 2);
+  pb::appendString(bytes_field, "later");
+
+  std::vector<uint8_t> fixed32_field;
+  pb::appendTag(fixed32_field, 12, 5);
+  pb::appendFixed32(fixed32_field, 0x01020304U);
+
+  for (const auto& extra : {varint_field, fixed64_field, bytes_field, fixed32_field}) {
+    const auto bytes = cloudWithField(pointFieldBody(extra));
+    auto out = deserializePointCloud(bytes.data(), bytes.size());
+    ASSERT_TRUE(out.has_value()) << "unknown field with first byte " << int{extra.front()} << ": " << out.error();
+    ASSERT_EQ(out->fields.size(), 1u);
+    EXPECT_EQ(out->fields[0].name, "x");
+    EXPECT_EQ(out->fields[0].offset, 4u);
+    EXPECT_EQ(out->fields[0].datatype, PointField::Datatype::kFloat32);
+    EXPECT_EQ(out->fields[0].count, 3u);
+    EXPECT_EQ(out->frame_id, "lidar");
+  }
+}
+
+// A known field that is malformed fails the decode. The bytes after the bad
+// PointField are chosen so that skipping a second field over them would land
+// exactly on the end of the buffer and report success.
+TEST(PointCloudCodecTest, MalformedPointFieldFailsTheDecode) {
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 8, 2);
+  pb::appendLenDelim(bytes, {0x10, 0x80});  // offset: a varint cut short
+  bytes.insert(bytes.end(), {0x02, 0x10, 0x07});
+  EXPECT_FALSE(deserializePointCloud(bytes.data(), bytes.size()).has_value());
+
+  // The same bad PointField followed by a well-formed field is rejected too.
+  const auto valid_suffix = cloudWithField({0x10, 0x80});
+  EXPECT_FALSE(deserializePointCloud(valid_suffix.data(), valid_suffix.size()).has_value());
+}
+
+// A standard proto3 encoder omits every field equal to its zero value, so a
+// missing field means zero, whatever the C++ struct's own default is.
+TEST(PointCloudCodecTest, AbsentFieldsDecodeAsTheProto3ZeroValues) {
+  std::vector<uint8_t> name_only;
+  pb::appendTag(name_only, 1, 2);
+  pb::appendString(name_only, "x");
+
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 2, 0);
+  pb::appendVarint(bytes, 3);  // width
+  pb::appendTag(bytes, 8, 2);
+  pb::appendLenDelim(bytes, name_only);
+
+  auto out = deserializePointCloud(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  EXPECT_EQ(out->width, 3u);
+  EXPECT_EQ(out->height, 0u);
+  EXPECT_FALSE(out->is_dense);
+  ASSERT_EQ(out->fields.size(), 1u);
+  EXPECT_EQ(out->fields[0].count, 0u);
+}
+
 TEST(PointCloudCodecTest, FrameIdAbsentRoundTrips) {
   PointCloud in;
   in.width = 1;

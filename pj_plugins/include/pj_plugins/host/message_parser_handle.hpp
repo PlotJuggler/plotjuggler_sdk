@@ -135,8 +135,9 @@ class MessageParserHandle {
   }
 
   /// True when this parser exposes the pure-functional C extension (v2, SDK
-  /// 0.22 and later). Older parsers return false and can be handled through the deprecated
-  /// in-process C++ compatibility bridge until the next SDK major version.
+  /// 0.22 and later). Older parsers return false; a host can only read their
+  /// objects through the deprecated in-process C++ bridge
+  /// (pj_plugins/docs/ARCHITECTURE.md, section 0a).
   [[nodiscard]] bool supportsFunctionalParsing() const {
     return functionalExtension() != nullptr;
   }

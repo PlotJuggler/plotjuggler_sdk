@@ -179,6 +179,10 @@ void writeCylinderPrimitive(Writer& writer, const CylinderPrimitive& p) {
 }
 
 bool decodeCylinderPrimitive(Reader& reader, CylinderPrimitive& out) {
+  // The proto3 zero values, which a standard encoder omits: a cone has
+  // top_scale 0. The struct defaults are 1.
+  out.bottom_scale = 0.0;
+  out.top_scale = 0.0;
   return parseFields(reader, [&](Tag tag, Reader& r) {
     switch (tag.field) {
       case 1:
@@ -438,7 +442,7 @@ bool decodeModelPrimitive(Reader& reader, ModelPrimitive& out) {
 
 void writeSceneEntityDeletion(Writer& writer, const SceneEntityDeletion& d) {
   // Duration/Timestamp share the seconds+nanos wire shape.
-  writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, d.timestamp); });
+  writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, d.timestamp_ns); });
   writer.varint(2, static_cast<uint64_t>(d.type));
   writer.string(3, d.id);
 }
@@ -447,7 +451,7 @@ bool decodeSceneEntityDeletion(Reader& reader, SceneEntityDeletion& out) {
   return parseFields(reader, [&](Tag tag, Reader& r) {
     switch (tag.field) {
       case 1:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readTimestampMessage(r, out.timestamp);
+        return tag.type == WireType::kLengthDelimited && builtin_wire::readTimestampMessage(r, out.timestamp_ns);
       case 2: {
         if (tag.type != WireType::kVarint) {
           return false;
@@ -509,7 +513,7 @@ bool readPrimitiveIntoVector(Reader& reader, std::vector<Primitive>& out, Decode
 // ---------- SceneEntity ----------
 
 void writeSceneEntity(Writer& writer, const SceneEntity& e) {
-  writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, e.timestamp); });
+  writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, e.timestamp_ns); });
   writer.string(2, e.frame_id);
   writer.string(3, e.id);
   // Duration shares the seconds+nanos wire shape with Timestamp.
@@ -552,7 +556,7 @@ bool decodeSceneEntity(Reader& reader, SceneEntity& out) {
   return parseFields(reader, [&](Tag tag, Reader& r) {
     switch (tag.field) {
       case 1:
-        return tag.type == WireType::kLengthDelimited && builtin_wire::readTimestampMessage(r, out.timestamp);
+        return tag.type == WireType::kLengthDelimited && builtin_wire::readTimestampMessage(r, out.timestamp_ns);
       case 2:
         return tag.type == WireType::kLengthDelimited && r.readString(out.frame_id);
       case 3:
