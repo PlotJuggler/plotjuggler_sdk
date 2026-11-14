@@ -47,8 +47,13 @@
  *    until the NEXT query_descriptor call on the same plugin instance — the
  *    caller copies immediately.
  *  - start_import copies the request contents and the callback function
- *    pointers before returning; no job callback may occur before it returns
- *    true.
+ *    pointers before returning. No job callback runs before out_job is
+ *    populated, and none runs at all when start_import returns false. A
+ *    callback MAY run before start_import has returned to its caller: the
+ *    provider releases its worker as its last step, and a thread cannot be
+ *    ordered against the return itself. The host therefore has everything
+ *    its callbacks use (callback_ctx and what it points to) ready BEFORE it
+ *    calls start_import, and must not wait for the return to set it up.
  *  - Job callbacks are serialized but may arrive off the main thread; the
  *    host marshals. on_dataset is zero-or-one and precedes the dataset's
  *    progress_start, first publication, promotion, and on_terminal.

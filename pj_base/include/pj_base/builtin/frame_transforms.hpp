@@ -33,7 +33,8 @@ struct Vector3 {
   bool operator==(const Vector3&) const = default;
 };
 
-/// Unit quaternion representing 3D orientation.
+/// Unit quaternion representing a 3D rotation, written (x, y, z, w) with w the
+/// scalar part (Hamilton convention): v' = q * v * conjugate(q).
 struct Quaternion {
   double x = 0.0;
   double y = 0.0;
@@ -42,7 +43,8 @@ struct Quaternion {
   bool operator==(const Quaternion&) const = default;
 };
 
-/// Rigid transform in 3D space: position + orientation.
+/// Rigid transform in 3D space: position + orientation, in metres, in a
+/// right-handed frame. p_frame = R(orientation) * p_local + position.
 /// Used by Mesh3D, OccupancyGrid, SceneEntities, and other types that
 /// place data in a frame of reference.
 struct Pose {
@@ -51,7 +53,8 @@ struct Pose {
   bool operator==(const Pose&) const = default;
 };
 
-/// Transform from `parent_frame_id` to `child_frame_id`.
+/// Places the child frame in its parent: a point known in the child frame is
+/// p_parent = R(rotation) * p_child + translation.
 struct FrameTransform {
   Timestamp timestamp_ns = 0;
   std::string parent_frame_id;

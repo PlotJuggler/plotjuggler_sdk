@@ -73,9 +73,10 @@ class ScopedLeakSanitizerDisable {
 //   - force_unknown_trust / force_unknown_outcome: make the thunks hand back
 //     out-of-range C enum values, pinning the view's fail-closed mapping.
 //   - releaseStart(): the started job's worker thread blocks on a start gate
-//     as its FIRST action (conforming to the ABI's "no job callback may
-//     occur before start_import returns" rule deterministically, rather than
-//     racing a background thread against the caller). Tests release it once
+//     as its FIRST action (so no job callback runs until the test says so,
+//     which is stricter than the ABI's "none before out_job is populated"
+//     and deterministic, rather than racing a background thread against the
+//     caller). Tests release it once
 //     they've observed whatever pre-release state they need to pin.
 class FakeImportToolbox : public PJ::ToolboxPluginBase {
  public:
@@ -185,7 +186,7 @@ class FakeImportToolbox : public PJ::ToolboxPluginBase {
     }
     state->worker = std::thread([state, on_dataset, on_terminal, callback_ctx, force_unknown_outcome] {
       // FIRST action: block until the test explicitly releases us. This
-      // makes "no job callback before start_import returns" a deterministic,
+      // makes "no job callback before the gate is released" a deterministic,
       // assertable property (see NoJobCallbackBeforeStartGateReleased) rather
       // than a race the test would have to get lucky to catch.
       state->start_gate.acquire();
@@ -494,7 +495,7 @@ TEST(DescriptorImportExtension, MoveWhileRunningTransfersOwnershipSafely) {
 }
 
 TEST(DescriptorImportExtension, NoJobCallbackBeforeStartGateReleased) {
-  // Pins "no job callback may occur before start_import returns" using the
+  // Pins "no job callback before the start gate is released" using the
   // fake's deterministic start gate: right after startImport returns, the
   // worker is guaranteed still blocked, so zero callbacks having happened
   // yet is assertable synchronously instead of racy.

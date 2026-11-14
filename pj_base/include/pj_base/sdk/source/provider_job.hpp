@@ -102,9 +102,9 @@ class ProviderJob {
   /// populated and this call is returning. Make `return ProviderJob::start(
   /// ...)` the LAST statement of start_import — callback delivery from a
   /// spawned thread cannot be ordered against the ABI call's own return
-  /// instruction, so a host that finishes its callback bookkeeping before
-  /// calling start_import (as the protocol requires) observes exactly the
-  /// documented "no callback before start_import returns".
+  /// instruction. The protocol says so: a callback may run before
+  /// start_import has returned, and the host has its callback state ready
+  /// before it calls.
   [[nodiscard]] static bool start(
       Body body, const PJ_descriptor_import_callbacks_v1_t* callbacks, void* callback_ctx, PJ_joinable_job_t* out_job,
       PJ_error_t* out_error);
