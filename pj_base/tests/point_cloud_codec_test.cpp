@@ -134,6 +134,10 @@ TEST(PointCloudCodecTest, MalformedPointFieldFailsTheDecode) {
   pb::appendLenDelim(bytes, {0x10, 0x80});  // offset: a varint cut short
   bytes.insert(bytes.end(), {0x02, 0x10, 0x07});
   EXPECT_FALSE(deserializePointCloud(bytes.data(), bytes.size()).has_value());
+
+  // The same bad PointField followed by a well-formed field is rejected too.
+  const auto valid_suffix = cloudWithField({0x10, 0x80});
+  EXPECT_FALSE(deserializePointCloud(valid_suffix.data(), valid_suffix.size()).has_value());
 }
 
 // A standard proto3 encoder omits every field equal to its zero value, so a

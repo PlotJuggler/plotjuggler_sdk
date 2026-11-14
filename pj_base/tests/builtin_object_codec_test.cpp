@@ -155,4 +155,12 @@ TEST(BuiltinObjectCodec, EmptyPointCloudPayloadHoldsTheProto3ZeroValues) {
   EXPECT_FALSE(cloud->is_dense);
 }
 
+// The empty MeshMap message has position_type UNKNOWN, which no mesh may have.
+// It is rejected, like a payload that carries other fields and omits that one.
+TEST(BuiltinObjectCodec, EmptyMeshMapPayloadIsRejectedLikeAnyOtherWithoutAPositionType) {
+  EXPECT_FALSE(PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kMeshMap, nullptr, 0));
+  const uint8_t frame_id_only[] = {0x12, 0x00};
+  EXPECT_FALSE(PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kMeshMap, frame_id_only, 2));
+}
+
 }  // namespace

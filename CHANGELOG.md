@@ -171,7 +171,12 @@ Builtin decoders:
 - **Behaviour (wire):** a colour inside an `ImageAnnotations` message decodes like every other
   `PJ.Color`: a channel absent from a colour that is present is 0. Alpha used to default to 1 there,
   so a "no fill" colour written as `{r, g, b, a = 0}` by a standard encoder came back opaque. A
-  colour message that is absent altogether keeps its documented default.
+  colour message that is absent altogether keeps its documented default. The annotation scalars
+  follow the same rule: an absent `thickness`, circle `diameter` or `font_size` is 0, where it used
+  to decode as 2, 1 and 14. A consumer that wants a default for 0 applies it when drawing.
+- `deserializeBuiltinObject(kMeshMap, ...)` rejects the empty payload. It returned a
+  default-constructed `MeshMap` with `position_type` FLOAT32, while any other payload that omits
+  the field is rejected.
 - A NaN colour channel decodes as 0; it used to reach an undefined float-to-integer conversion.
 
 ## [0.40.0]

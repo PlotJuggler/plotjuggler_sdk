@@ -365,6 +365,21 @@ TEST(SceneEntitiesCodecTest, ConeDecodesFromAnOmittedTopScale) {
   ASSERT_EQ(out->entities[0].cylinders.size(), 1u);
   EXPECT_EQ(out->entities[0].cylinders[0].bottom_scale, 1.0);
   EXPECT_EQ(out->entities[0].cylinders[0].top_scale, 0.0);
+
+  // And the other way up: only top_scale is written.
+  cylinder.clear();
+  pb::appendTag(cylinder, 4, 1);
+  pb::appendDouble(cylinder, 1.0);
+  entity.clear();
+  pb::appendTag(entity, 10, 2);
+  pb::appendLenDelim(entity, cylinder);
+  bytes.clear();
+  pb::appendTag(bytes, 2, 2);
+  pb::appendLenDelim(bytes, entity);
+  out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  EXPECT_EQ(out->entities[0].cylinders[0].bottom_scale, 0.0);
+  EXPECT_EQ(out->entities[0].cylinders[0].top_scale, 1.0);
 }
 
 }  // namespace

@@ -133,8 +133,8 @@ encoder and from a later SDK both read correctly:
 
 - **An absent field is the proto3 zero value**, even where the C++ struct
   default differs (`PointCloud::is_dense`, `PointCloud::height`,
-  `PointField::count`, `CylinderPrimitive::bottom_scale` / `top_scale`, a colour
-  channel). A standard encoder omits a zero, so a decoder that kept the struct
+  `PointField::count`, `CylinderPrimitive::bottom_scale` / `top_scale`, an
+  annotation's `thickness`, `radius` and `font_size`, a colour channel). A standard encoder omits a zero, so a decoder that kept the struct
   default would turn `is_dense = false` into `true`. The SDK's own serializers
   write these fields explicitly. A whole submessage that is absent may keep a
   documented default (an annotation's colour, for example).

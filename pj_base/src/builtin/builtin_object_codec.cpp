@@ -159,7 +159,10 @@ Expected<sdk::BuiltinObject> deserializeBuiltinObject(sdk::BuiltinObjectType typ
     case sdk::BuiltinObjectType::kGridMap:
       return deserializeAs<sdk::GridMap>(data, size, deserializeGridMap);
     case sdk::BuiltinObjectType::kMeshMap:
-      return deserializeAs<sdk::MeshMap>(data, size, deserializeMeshMap);
+      // Not deserializeAs: the empty message has position_type UNKNOWN, which
+      // is not a valid mesh, so it is rejected like any other payload that
+      // omits the field instead of becoming a default-constructed MeshMap.
+      return eraseDecoded(deserializeMeshMap(data, size));
     case sdk::BuiltinObjectType::kMeshMapUpdate:
       return deserializeAs<sdk::MeshMapUpdate>(data, size, deserializeMeshMapUpdate);
     case sdk::BuiltinObjectType::kNone:

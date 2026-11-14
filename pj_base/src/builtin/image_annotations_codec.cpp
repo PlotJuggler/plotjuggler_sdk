@@ -204,10 +204,13 @@ bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
 }
 
 bool decodeCircleAnnotation(Reader& reader, CircleAnnotation& out) {
+  // Colours keep their default while the whole colour message is absent. The
+  // scalars start from the proto3 zero value, which a standard encoder omits:
+  // a thickness of 0 (a filled circle with no outline) must stay 0.
   out.color = {0, 255, 0, 255};
   out.fill_color = {0, 0, 0, 0};
-  out.thickness = 2.0;
-  out.radius = 1.0;
+  out.thickness = 0.0;
+  out.radius = 0.0;
 
   while (!reader.eof()) {
     Tag tag;
@@ -272,7 +275,7 @@ bool decodeCircleAnnotation(Reader& reader, CircleAnnotation& out) {
 
 bool decodeTextAnnotation(Reader& reader, TextAnnotation& out) {
   out.color = {255, 255, 255, 255};
-  out.font_size = 14.0;
+  out.font_size = 0.0;  // the proto3 zero value; the struct default is 14
 
   while (!reader.eof()) {
     Tag tag;
@@ -399,7 +402,7 @@ Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data,
       case 2: {
         PointsAnnotation points;
         points.color = {0, 255, 0, 255};
-        points.thickness = 2.0;
+        points.thickness = 0.0;  // the proto3 zero value; the struct default is 2
         if (!decodePointsAnnotation(nested, points)) {
           return unexpected(std::string("ImageAnnotations wire: PointsAnnotation decode failed"));
         }

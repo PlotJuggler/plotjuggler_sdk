@@ -459,5 +459,28 @@ TEST(ImageAnnotationCodecTest, NaNColorChannelDecodesAsZero) {
   EXPECT_EQ(out->circles[0].color, (sdk::ColorRGBA{0, 0, 0, 255}));
 }
 
+// The scalar fields of an annotation follow the proto3 rule too: absent is 0,
+// whatever the struct default. An outline thickness of 0 is a real value (a
+// filled shape with no outline), and a standard encoder omits it.
+TEST(ImageAnnotationCodecTest, OmittedAnnotationScalarsDecodeAsZero) {
+  const std::vector<uint8_t> bytes = {
+      0x0A, 0x00,  // one empty CircleAnnotation
+      0x12, 0x00,  // one empty PointsAnnotation
+      0x1A, 0x00,  // one empty TextAnnotation
+  };
+  auto out = deserializeImageAnnotations(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->circles.size(), 1u);
+  ASSERT_EQ(out->points.size(), 1u);
+  ASSERT_EQ(out->texts.size(), 1u);
+  EXPECT_EQ(out->circles[0].radius, 0.0);
+  EXPECT_EQ(out->circles[0].thickness, 0.0);
+  EXPECT_EQ(out->points[0].thickness, 0.0);
+  EXPECT_EQ(out->texts[0].font_size, 0.0);
+  // The colours were absent as whole messages, so they keep their defaults.
+  EXPECT_EQ(out->circles[0].color, (sdk::ColorRGBA{0, 255, 0, 255}));
+  EXPECT_EQ(out->texts[0].color, (sdk::ColorRGBA{255, 255, 255, 255}));
+}
+
 }  // namespace
 }  // namespace PJ
