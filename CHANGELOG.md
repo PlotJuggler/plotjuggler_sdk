@@ -138,6 +138,19 @@ Fixes:
 - The Conan package now propagates `PJ_ASSERT_THROWS` to consumers when built with
   `assert_throws=True`; consumers compiled `PJ_ASSERT` as `assert` against archives built to throw.
 
+The direct C++ parser bridge (docs only, no code change):
+
+- The docs said SDK 1.0 removes the bridge through which a host casts a parser's context to
+  `MessageParserPluginBase*`. It does not: PlotJuggler 4 reads objects that way for every parser.
+  The bridge is now documented as deprecated but supported through 1.x, with the rule that follows
+  from it (`pj_plugins/docs/ARCHITECTURE.md`, section 0a): the `MessageParserPluginBase` prefix,
+  `sdk::ObjectRecord`, `sdk::BuiltinObject`, `PJ::Expected` and every builtin object struct are
+  frozen layouts, and a member change in any of them is a MAJOR. A 1.x release lifts the freeze once
+  the host reads objects through `pj.parser_functional.v2` only.
+- 1.0.0 itself changes two of those layouts: `sdk::Log` (`category`) and `sdk::DepthImage`
+  (`frame_id`). A parser built against 0.x that returns either type must be rebuilt for a 1.0 host.
+  No parser in pj-official-plugins returns them.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,

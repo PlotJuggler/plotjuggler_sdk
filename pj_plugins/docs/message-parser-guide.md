@@ -683,9 +683,18 @@ Do not bypass it with direct C++ calls.
 
 Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
 builds expose none, and 0.21 builds expose only the retired v1. New host code
-negotiates v2 and may use a deprecated, isolated direct-C++ bridge only when v2
-is absent. It must not otherwise cast an opaque parser context; SDK 1.0 removes
-the bridge.
+negotiates v2.
+
+PlotJuggler 4 has not made that move: it reads objects from every parser by
+casting the opaque context to `MessageParserPluginBase*` and calling
+`parseObject()`. That direct C++ bridge is deprecated but supported through
+1.x. For a parser author it has one consequence: a parser and the host must
+agree on the layout of the builtin struct the parser returns, so a parser that
+emits a type whose struct changed in an SDK release has to be rebuilt against
+that release. The SDK treats such a change as a MAJOR for exactly that reason
+(see [ABI rules](ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5)).
+Nothing in a parser's source depends on the bridge, and nothing changes for
+it when the host moves to v2.
 
 Builtin types and their canonical codecs live under `pj_base/builtin/`, one
 header per type. `serializeBuiltinObject()` / `deserializeBuiltinObject()`

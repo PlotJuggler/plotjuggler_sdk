@@ -86,13 +86,16 @@ struct MessageParserPluginBaseLayoutSentinel;
 /**
  * Base class for MessageParser plugins (protocol v4).
  *
- * TRANSITIONAL ABI LAYOUT CONTRACT: hosts use the
- * `pj.parser_functional.v2` C extension and never cast a newly-built plugin's
- * opaque context to this class. Hosts may retain a deprecated direct-C++
- * bridge only for pre-0.22 plugins that do not expose the extension. Therefore
- * the existing member prefix remains frozen within PJ_ABI_VERSION 5: members
- * must not move, and additions are tail-only. SDK 1.0 may remove that bridge
- * and this layout constraint together.
+ * ABI LAYOUT CONTRACT (the direct C++ parser bridge): the intended host path
+ * is the `pj.parser_functional.v2` C extension, which shares no C++ type with
+ * the plugin. PlotJuggler 4 does not use it yet: it casts every parser's
+ * opaque context to this class and calls parseObject(). While a host does
+ * that, this class is binary interface: the existing member prefix and the
+ * order of its virtual functions are frozen (members must not move, additions
+ * are tail-only), and so are the layouts of sdk::ObjectRecord,
+ * sdk::BuiltinObject, PJ::Expected and every builtin object struct. A 1.x
+ * release lifts the constraint once the host has moved to v2. Full rule:
+ * pj_plugins/docs/ARCHITECTURE.md, section 0a.
  */
 class MessageParserPluginBase {
  public:
