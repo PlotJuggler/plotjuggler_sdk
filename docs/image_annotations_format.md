@@ -84,6 +84,8 @@ Circles are stored in the wire schema as `diameter`; the SDK stores `radius`.
 The codec converts between `diameter` and `radius * 2.0`.
 
 Colors are stored in the schema as normalized `double` channels in `[0, 1]`.
+A channel absent from a colour that is present is 0, alpha included; a NaN
+channel decodes as 0.
 The SDK stores RGBA `uint8_t` channels. Decode clamps normalized values to
 `[0, 1]` and rounds to the nearest byte, so a round trip may differ by one
 channel value because of floating-point rounding.

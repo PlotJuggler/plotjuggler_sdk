@@ -344,5 +344,43 @@ TEST(SceneEntitiesCodecTest, DeletionsOnlyBatchRoundTrips) {
   EXPECT_EQ(out->deletions[0].type, SceneEntityDeletion::Type::kAll);
 }
 
+// A cone is a cylinder whose top_scale is 0. A standard proto3 encoder omits a
+// zero, so an absent scale means 0 and not the struct default of 1.
+TEST(SceneEntitiesCodecTest, ConeDecodesFromAnOmittedTopScale) {
+  std::vector<uint8_t> cylinder;
+  pb::appendTag(cylinder, 3, 1);
+  pb::appendDouble(cylinder, 1.0);  // bottom_scale; top_scale (field 4) omitted
+
+  std::vector<uint8_t> entity;
+  pb::appendTag(entity, 10, 2);
+  pb::appendLenDelim(entity, cylinder);
+
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 2, 2);
+  pb::appendLenDelim(bytes, entity);
+
+  auto out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->entities.size(), 1u);
+  ASSERT_EQ(out->entities[0].cylinders.size(), 1u);
+  EXPECT_EQ(out->entities[0].cylinders[0].bottom_scale, 1.0);
+  EXPECT_EQ(out->entities[0].cylinders[0].top_scale, 0.0);
+
+  // And the other way up: only top_scale is written.
+  cylinder.clear();
+  pb::appendTag(cylinder, 4, 1);
+  pb::appendDouble(cylinder, 1.0);
+  entity.clear();
+  pb::appendTag(entity, 10, 2);
+  pb::appendLenDelim(entity, cylinder);
+  bytes.clear();
+  pb::appendTag(bytes, 2, 2);
+  pb::appendLenDelim(bytes, entity);
+  out = deserializeSceneEntities(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  EXPECT_EQ(out->entities[0].cylinders[0].bottom_scale, 0.0);
+  EXPECT_EQ(out->entities[0].cylinders[0].top_scale, 1.0);
+}
+
 }  // namespace
 }  // namespace PJ

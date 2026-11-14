@@ -37,6 +37,10 @@ message Log {
   // Who emitted it: a process, node or logger name.
   string source = 4;
 
+  // 5 and 6 are `file` and `line` in foxglove.Log. They stay unused here so a
+  // Foxglove-encoded log decodes with those two fields skipped.
+  reserved 5, 6;
+
   // Source-defined grouping of the message (a tag, a subsystem); may be empty.
-  string category = 5;
+  string category = 7;
 }

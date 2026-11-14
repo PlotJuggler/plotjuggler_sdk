@@ -4,6 +4,7 @@
 #include "pj_base/builtin/plot_markers_codec.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -87,7 +88,7 @@ MarkerSeverity mapSeverity(uint64_t v) {
 }
 
 uint8_t normalizedToByte(double value) {
-  value = std::clamp(value, 0.0, 1.0);
+  value = std::isnan(value) ? 0.0 : std::clamp(value, 0.0, 1.0);  // a NaN would make the cast undefined
   return static_cast<uint8_t>(value * 255.0 + 0.5);
 }
 

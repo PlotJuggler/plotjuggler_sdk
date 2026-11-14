@@ -143,4 +143,24 @@ TEST(BuiltinObjectCodec, LargePayloadIsNotCopiedTwice) {
   EXPECT_LT(encoded->capacity(), points.size() + 4096);
 }
 
+// The empty message is every field at its proto3 zero value. For PointCloud
+// those are not the struct defaults, and the empty payload must agree with a
+// payload that carries any one field.
+TEST(BuiltinObjectCodec, EmptyPointCloudPayloadHoldsTheProto3ZeroValues) {
+  const auto decoded = PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kPointCloud, nullptr, 0);
+  ASSERT_TRUE(decoded) << decoded.error();
+  const auto* cloud = decoded->get<PJ::sdk::PointCloud>();
+  ASSERT_NE(cloud, nullptr);
+  EXPECT_EQ(cloud->height, 0u);
+  EXPECT_FALSE(cloud->is_dense);
+}
+
+// The empty MeshMap message has position_type UNKNOWN, which no mesh may have.
+// It is rejected, like a payload that carries other fields and omits that one.
+TEST(BuiltinObjectCodec, EmptyMeshMapPayloadIsRejectedLikeAnyOtherWithoutAPositionType) {
+  EXPECT_FALSE(PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kMeshMap, nullptr, 0));
+  const uint8_t frame_id_only[] = {0x12, 0x00};
+  EXPECT_FALSE(PJ::deserializeBuiltinObject(PJ::sdk::BuiltinObjectType::kMeshMap, frame_id_only, 2));
+}
+
 }  // namespace

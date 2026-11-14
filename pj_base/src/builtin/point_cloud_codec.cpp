@@ -77,6 +77,9 @@ Expected<sdk::PointCloud> decodePointCloud(const uint8_t* data, size_t size, con
 
   Reader reader(data, size);
   sdk::PointCloud cloud;
+  // The proto3 zero values, which a standard encoder omits; the struct defaults differ.
+  cloud.height = 0;
+  cloud.is_dense = false;
 
   const bool ok = parseFields(reader, [&](Tag tag, Reader& r) {
     switch (tag.field) {
