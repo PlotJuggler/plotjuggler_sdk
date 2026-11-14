@@ -49,6 +49,7 @@ static_assert(alignof(PJ_widget_input_t) == 8, "ABI-FROZEN alignment: NEVER CHAN
 static_assert(offsetof(PJ_widget_value_t, input) == 0, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, slot) == 4, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, kind) == 8, "layout pinned");
+static_assert(offsetof(PJ_widget_value_t, flags) == 12, "layout pinned: names the former padding after kind");
 static_assert(offsetof(PJ_widget_value_t, time) == 16, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, number) == 24, "layout pinned");
 static_assert(offsetof(PJ_widget_value_t, text) == 32, "layout pinned");

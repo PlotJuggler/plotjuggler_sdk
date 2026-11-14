@@ -151,7 +151,9 @@ The direct C++ parser bridge (docs only, no code change):
   the host reads objects through `pj.parser_functional.v2` only.
 - 1.0.0 itself changes two of those layouts: `sdk::Log` (`category`) and `sdk::DepthImage`
   (`frame_id`). A parser built against 0.x that returns either type must be rebuilt for a 1.0 host.
-  No parser in pj-official-plugins returns them.
+  In pj-official-plugins no parser returns `DepthImage`, and `parser_ros` returns `Log` only from
+  1.4.0, which is built against the 1.0 layout. Both members are appended at the tail, so a 0.x
+  host reading an object from a 1.0 parser sees the members it knows at their old offsets.
 
 Builtin decoders:
 
@@ -178,6 +180,23 @@ Builtin decoders:
   default-constructed `MeshMap` with `position_type` FLOAT32, while any other payload that omits
   the field is rejected.
 - A NaN colour channel decodes as 0; it used to reach an undefined float-to-integer conversion.
+
+Three changes that could not be made after the freeze:
+
+- **Breaking (source, scripts):** the timestamp member of four builtin structs is renamed from
+  `timestamp` to `timestamp_ns`, the name the other sixteen already use: `sdk::ImageAnnotations`,
+  `sdk::FrameTransform`, `sdk::SceneEntity` and `sdk::SceneEntityDeletion`. Their field-table name
+  changes with it, so a script reads `timestamp_ns` on these types too. The wire format is
+  unchanged (the proto field is still `timestamp`); only code and scripts that name the member must
+  be updated.
+- Dialog tree events no longer have to be the only top-level key of their event. `DialogPluginTyped`
+  dispatched a tree event only when its key was alone, and that check is compiled into each plugin,
+  so no later host could have added a key to the envelope. A valid tree key now claims the event and
+  other keys are ignored, as beside a file-picker result. Two tree keys, or a malformed tree
+  payload, still fail closed.
+- `PJ_widget_value_t` gains `uint32_t flags`, naming the 4 bytes that were alignment padding after
+  `kind`. Size, alignment and every offset are unchanged. No bit is defined: a host built against
+  1.0 or later writes 0, and a host built earlier leaves the bytes unset.
 
 ## [0.40.0]
 

@@ -53,7 +53,7 @@ struct Pose {
 
 /// Transform from `parent_frame_id` to `child_frame_id`.
 struct FrameTransform {
-  Timestamp timestamp = 0;
+  Timestamp timestamp_ns = 0;
   std::string parent_frame_id;
   std::string child_frame_id;
   Vector3 translation;

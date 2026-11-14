@@ -314,7 +314,7 @@ stream.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `timestamp` | `Timestamp` | Timestamp associated with the annotation set. |
+| `timestamp_ns` | `Timestamp` | Timestamp associated with the annotation set. |
 | `image_topic` | `std::string` | Topic of the image these annotations overlay. |
 | `points` | `std::vector<PointsAnnotation>` | Points, line lists, line strips, and line loops. |
 | `circles` | `std::vector<CircleAnnotation>` | Filled or stroked circles in image-pixel space. |
@@ -357,7 +357,7 @@ Each `FrameTransform` contains:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `timestamp` | `Timestamp` | Timestamp associated with the transform. |
+| `timestamp_ns` | `Timestamp` | Timestamp associated with the transform. |
 | `parent_frame_id` | `std::string` | Name of the parent reference frame. |
 | `child_frame_id` | `std::string` | Name of the child reference frame. |
 | `translation` | `Vector3` | Child-frame origin in parent-frame coordinates. |
@@ -503,10 +503,10 @@ axes glyphs, or model (mesh asset) references.
 
 | Field on `SceneEntity` | Type | Notes |
 |------------------------|------|-------|
-| `timestamp` | `Timestamp` | Stamp used together with `lifetime_ns` to control expiry. |
+| `timestamp_ns` | `Timestamp` | Stamp used together with `lifetime_ns` to control expiry. |
 | `frame_id` | `std::string` | Frame the entity's primitives are expressed in. |
 | `id` | `std::string` | Republishing with the same `(topic, id)` replaces the previous entity. |
-| `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp`. |
+| `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp_ns`. |
 | `frame_locked` | `bool` | When true, track `frame_id` as it moves; when false, stamp into the fixed frame at publish time. |
 | `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` / `models` | `std::vector<…Primitive>` | Heterogeneous primitive lists. `models` references a mesh asset by `url` or inline `data`. |
 

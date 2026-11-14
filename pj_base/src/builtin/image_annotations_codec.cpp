@@ -343,8 +343,8 @@ std::vector<uint8_t> serializeImageAnnotations(const ImageAnnotations& annotatio
     writer.message(3, [&](Writer& nested) { writeTextAnnotation(nested, text); });
   }
 
-  if (annotations.timestamp != 0) {
-    writer.message(5, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, annotations.timestamp); });
+  if (annotations.timestamp_ns != 0) {
+    writer.message(5, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, annotations.timestamp_ns); });
   }
   if (!annotations.image_topic.empty()) {
     writer.string(6, annotations.image_topic);
@@ -418,7 +418,7 @@ Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data,
         break;
       }
       case 5: {
-        if (!builtin_wire::decodeTimestamp(nested, annotations.timestamp)) {
+        if (!builtin_wire::decodeTimestamp(nested, annotations.timestamp_ns)) {
           return unexpected(std::string("ImageAnnotations wire: Timestamp decode failed"));
         }
         break;

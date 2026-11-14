@@ -423,9 +423,10 @@ if that channel is malformed, dispatch returns `false` without falling through.
    an object with a non-empty string `reason` and string `kind`/`topic`/`dataset` when
    present; otherwise dispatch fails closed. Unknown keys inside it are tolerated.
 3. In the absence of picker and scene-view-error keys, any tree event key claims the event.
-   Exactly one of the four tree keys must be the sole top-level key and its
-   payload must validate atomically. Multiple tree keys or any tree/other-key
-   mixture fails closed.
+   Exactly one of the four tree keys must be present and its payload must
+   validate atomically; two tree keys, or a malformed payload, fail closed.
+   Other top-level keys are tolerated and do not receive callbacks, stacked and
+   legacy keys included.
 4. In the absence of picker and tree keys, either stacked key claims the event.
    Both `stacked_index` and `stacked_page` are required; the index must decode
    losslessly in `0..INT_MAX` and the page name must be non-empty. Invalid or
