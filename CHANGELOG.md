@@ -101,6 +101,20 @@ SceneEntities and PlotMarkers:
 - `PlotMarkers`: the decoder drops a marker whose `kind` it does not know instead of drawing it as
   a time region; wire numbers unchanged.
 
+Plugin catalog and source cache, errors that threw instead of being returned:
+
+- On Windows, a plugin path that the active code page cannot represent no longer makes
+  `inspectPluginDso` or `scanPluginDsos` throw. They formatted their own error text with
+  `path.string()`, and the scan checked each file's suffix the same way, so one such file anywhere
+  under the plugin folder made the whole scan throw. Paths in these messages are now UTF-8 on
+  Windows whatever the code page; a consumer that decoded them as the local code page must decode
+  UTF-8.
+- `scanPluginDsos` reports a subdirectory it cannot read and goes on with the rest. It threw
+  (`recursive_directory_iterator cannot pop`) on the first unreadable directory, on every platform.
+- The source request cache has the same Windows fix for its lock and flush errors. "Lock is held
+  elsewhere", an ordinary outcome during cleanup and eviction, threw under a cache root the code
+  page cannot represent.
+
 Removed:
 
 - **Breaking (source):** the `pj.colormap.v1` service: `PJ_colormap_registry_vtable_t`,

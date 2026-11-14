@@ -434,6 +434,23 @@ TEST_F(RequestCacheTest, UnicodeCacheRootRoundTripsAndCleans) {
   EXPECT_FALSE(fs::exists(ucache.pathFor(identityFor(kHexA))));
 }
 
+TEST_F(RequestCacheTest, UnicodeCacheRootReportsContentionInsteadOfThrowing) {
+  // "Lock is held elsewhere" is an ordinary outcome, and its message names the
+  // lock file. On Windows that name went through path.string(), which throws
+  // for a root the active code page cannot represent.
+  const fs::path uroot = root() / fs::path(u8"пж-缓存-ü");
+  fs::create_directories(uroot);
+  RequestArtifactCache ucache(CacheSpec{uroot, kSuffix, IdentityScheme{kPrefix, 32}}, acceptAll());
+  auto first = ucache.beginWrite(identityFor(kHexA));
+  ASSERT_TRUE(first) << first.error().message;
+  auto second = ucache.beginWrite(identityFor(kHexA));
+  ASSERT_FALSE(second);
+  EXPECT_TRUE(second.error().retryable);
+  const std::u8string u8root = uroot.filename().u8string();
+  EXPECT_NE(second.error().message.find(std::string(u8root.begin(), u8root.end())), std::string::npos)
+      << second.error().message;
+}
+
 TEST_F(RequestCacheTest, OutOfRangeDigestWidthStillRoundTrips) {
   // The spec's scheme normalizes the width exactly like identity minting, so
   // a provider that misconfigures digest_hex_chars still gets a coherent

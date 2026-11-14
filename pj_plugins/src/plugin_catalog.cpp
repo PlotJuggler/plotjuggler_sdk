@@ -43,8 +43,10 @@ struct ManifestCandidate {
   std::string manifest_json;
 };
 
+// Compared as paths, so no file name is ever narrowed: a name that cannot be
+// converted must not make the scan throw.
 bool hasDsoSuffix(const std::filesystem::path& path) {
-  return path.extension().string() == kDsoSuffix;
+  return path.extension() == std::filesystem::path(kDsoSuffix);
 }
 
 bool nativeSymbolPresent(void* handle, const char* symbol) noexcept {
@@ -402,13 +404,13 @@ std::string_view toString(PluginFamily family) noexcept {
 
 Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
-    return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
+    return unexpected(fmt::format("not a platform plugin DSO: {}", detail::pathForLegacyAccessor(dso_path)));
   }
 
   detail::LibraryPathIdentity recorded_path;
   auto raw_handle = detail::loadLibraryHandle(dso_path, &recorded_path);
   if (!raw_handle) {
-    return unexpected(fmt::format("{}: {}", dso_path.string(), raw_handle.error()));
+    return unexpected(fmt::format("{}: {}", detail::pathForLegacyAccessor(dso_path), raw_handle.error()));
   }
   return inspectPluginDso(detail::adoptLibraryHandle(*raw_handle), recorded_path.load_path);
 }
@@ -416,9 +418,11 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
 Expected<PluginDescriptor> inspectPluginDso(
     const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
-    return unexpected(fmt::format("not a platform plugin DSO: {}", dso_path.string()));
+    return unexpected(fmt::format("not a platform plugin DSO: {}", detail::pathForLegacyAccessor(dso_path)));
   }
-  auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", dso_path.string(), error); };
+  auto with_path = [&](const std::string& error) {
+    return fmt::format("{}: {}", detail::pathForLegacyAccessor(dso_path), error);
+  };
   if (handle == nullptr) {
     return unexpected(with_path("library not loaded"));
   }
@@ -487,10 +491,10 @@ Expected<std::vector<PluginFamily>> exportedPluginFamilies(
 Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory) {
   std::error_code ec;
   if (!std::filesystem::exists(directory, ec)) {
-    return unexpected(fmt::format("plugin directory not found: {}", directory.string()));
+    return unexpected(fmt::format("plugin directory not found: {}", detail::pathForLegacyAccessor(directory)));
   }
   if (!std::filesystem::is_directory(directory, ec)) {
-    return unexpected(fmt::format("plugin path is not a directory: {}", directory.string()));
+    return unexpected(fmt::format("plugin path is not a directory: {}", detail::pathForLegacyAccessor(directory)));
   }
 
   PluginScanResult result;
@@ -518,12 +522,25 @@ Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory
       result.diagnostics.push_back({entry.path(), fmt::format("stat failed: {}", entry_ec.message())});
     }
 
+    // increment() descends into a directory entry, and when that fails the
+    // iterator is left at the end: the scan is over. So a directory that
+    // cannot be opened is found here, reported, and not descended into.
+    std::error_code type_ec;
+    if (it.recursion_pending() && entry.is_directory(type_ec) && !entry.is_symlink(type_ec)) {
+      std::error_code open_ec;
+      const std::filesystem::directory_iterator probe(entry.path(), open_ec);
+      if (open_ec) {
+        result.diagnostics.push_back({entry.path(), fmt::format("directory iteration failed: {}", open_ec.message())});
+        it.disable_recursion_pending();
+      }
+    }
+
     std::error_code inc_ec;
     it.increment(inc_ec);
     if (inc_ec) {
+      // The iterator is at the end now; pop() on it would throw.
       result.diagnostics.push_back({entry.path(), fmt::format("directory iteration failed: {}", inc_ec.message())});
-      // Skip the unreadable subtree but continue with the rest of the scan.
-      it.pop();
+      break;
     }
   }
 
