@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -21,6 +22,20 @@ void appendSection(std::vector<uint8_t>* wasm, uint8_t id, const std::vector<uin
   ASSERT_LT(payload.size(), 128U);
   wasm->push_back(id);
   wasm->push_back(static_cast<uint8_t>(payload.size()));
+  wasm->insert(wasm->end(), payload.begin(), payload.end());
+}
+
+void appendVarUint32(std::vector<uint8_t>* bytes, uint32_t value) {
+  do {
+    const auto low = static_cast<uint8_t>(value & 0x7FU);
+    value >>= 7U;
+    bytes->push_back(value == 0 ? low : static_cast<uint8_t>(low | 0x80U));
+  } while (value != 0);
+}
+
+void appendLargeSection(std::vector<uint8_t>* wasm, uint8_t id, const std::vector<uint8_t>& payload) {
+  wasm->push_back(id);
+  appendVarUint32(wasm, static_cast<uint32_t>(payload.size()));
   wasm->insert(wasm->end(), payload.begin(), payload.end());
 }
 
@@ -108,6 +123,58 @@ TEST(ParserModuleWasm, ParsesAndBoundsTableSections) {
   auto no_tables = validateParserModuleWasmTables(*inspected_none, 0);
   ASSERT_TRUE(no_tables.has_value());
   EXPECT_EQ(*no_tables, 0U);
+}
+
+TEST(ParserModuleWasm, SharesOneSignatureAcrossEveryExportOfAFunction) {
+  // One 64 KiB-parameter signature exported under 4096 names: copying it per
+  // export would expand a ~100 KiB artifact into 256 MiB during inspection.
+  constexpr uint32_t kParameters = 64 * 1024;
+  constexpr uint32_t kExports = 4096;
+  std::vector<uint8_t> types{1, 0x60};
+  appendVarUint32(&types, kParameters);
+  types.insert(types.end(), kParameters, kWasmValueI32);
+  types.push_back(0);
+  std::vector<uint8_t> exports;
+  appendVarUint32(&exports, kExports);
+  for (uint32_t index = 0; index < kExports; ++index) {
+    const std::string name = "e" + std::to_string(index);
+    appendVarUint32(&exports, static_cast<uint32_t>(name.size()));
+    exports.insert(exports.end(), name.begin(), name.end());
+    exports.insert(exports.end(), {0x00, 0x00});  // function 0
+  }
+  auto wasm = module();
+  appendLargeSection(&wasm, 1, types);
+  appendSection(&wasm, 3, {1, 0});
+  appendLargeSection(&wasm, 7, exports);
+
+  auto inspected = inspectWasmModule(wasm);
+  ASSERT_TRUE(inspected.has_value()) << inspected.error();
+  ASSERT_EQ(inspected->exports.size(), kExports);
+  const WasmFunctionSignature* first = inspected->functionSignature(inspected->exports.front());
+  ASSERT_NE(first, nullptr);
+  EXPECT_EQ(first->parameters.size(), kParameters);
+  EXPECT_EQ(inspected->functionSignature(inspected->exports.back()), first);
+}
+
+TEST(ParserModuleWasm, RejectsDuplicateExportNamesAndOverLimitEntryCounts) {
+  auto duplicate = module();
+  appendSection(&duplicate, 1, {1, 0x60, 0, 0});
+  appendSection(&duplicate, 3, {1, 0});
+  appendSection(&duplicate, 7, {2, 1, 'f', 0, 0, 1, 'f', 0, 0});
+  expectRejected(std::move(duplicate), "duplicate wasm export name: f");
+
+  // The count is checked before any entry, so filler bytes suffice.
+  for (const auto& [id, limit, minimum_entry_bytes] :
+       {std::tuple<uint8_t, uint32_t, size_t>{1, kWasmMaximumTypes, 3},
+        {2, kWasmMaximumImports, 4},
+        {7, kWasmMaximumExports, 3}}) {
+    std::vector<uint8_t> payload;
+    appendVarUint32(&payload, limit + 1);
+    payload.resize(payload.size() + (size_t{limit} + 1) * minimum_entry_bytes, 0);
+    auto over_limit = module();
+    appendLargeSection(&over_limit, id, payload);
+    expectRejected(std::move(over_limit), "count exceeds the limit of " + std::to_string(limit));
+  }
 }
 
 }  // namespace

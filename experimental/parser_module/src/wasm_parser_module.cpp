@@ -10,6 +10,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <new>
 #include <string>
 #include <utility>
 #include <vector>
@@ -137,63 +138,69 @@ Expected<WasmParserModule> WasmParserModule::load(std::string_view path, const W
     return unexpected(std::move(message));
   };
 
-  const WasmParserModuleLimits& limits = options.limits;
-  if (limits.maximum_artifact_bytes == 0 || limits.maximum_linear_memory_bytes == 0 ||
-      limits.metering_points_per_call == 0) {
-    return reject("wasm parser-module limits must all be nonzero");
-  }
-  auto bytes = readFile(path, limits.maximum_artifact_bytes);
-  if (!bytes) {
-    return reject(bytes.error());
-  }
-
-  auto audited = parser_module::validateParserModuleWasmArtifact(
-      *bytes, parser_module::ParserModuleWasmLimits{
-                  .maximum_linear_memory_bytes = limits.maximum_linear_memory_bytes,
-                  .maximum_table_elements = limits.maximum_table_elements,
-              });
-  if (!audited) {
-    return reject(audited.error());
-  }
-  const char* manifest_data =
-      audited->manifest_json.empty() ? "" : reinterpret_cast<const char*>(audited->manifest_json.data());
-  const std::string_view manifest_json(manifest_data, audited->manifest_json.size());
-  auto decoded_manifest = decodeParserModuleManifest(manifest_json, ParserClaimProvenance::kFolderDrop);
-  if (!decoded_manifest) {
-    return reject("invalid wasm parser-module manifest: " + decoded_manifest.error());
-  }
-
-  auto state = std::make_shared<detail::WasmParserModuleState>();
-  state->path = path;
-  state->manifest_json.assign(manifest_json);
-  state->claim_count = decoded_manifest->claims.size();
-  state->artifact_size = bytes->size();
-  state->declared_linear_memory_maximum = audited->declared_linear_memory_maximum;
-  state->declared_table_elements = audited->declared_table_elements;
-  state->metering_points_per_call = limits.metering_points_per_call;
-  if (options.budget != nullptr) {
-    auto admission = options.budget->admitModule(
-        bytes->size(), decoded_manifest->claims.size(), audited->declared_linear_memory_maximum);
-    if (!admission.accepted()) {
-      return reject(std::move(admission.diagnostic));
+  // Every host allocation is bounded by the limits and the manifest bounds,
+  // but the process may still be short of memory: report it as a rejection.
+  try {
+    const WasmParserModuleLimits& limits = options.limits;
+    if (limits.maximum_artifact_bytes == 0 || limits.maximum_linear_memory_bytes == 0 ||
+        limits.metering_points_per_call == 0) {
+      return reject("wasm parser-module limits must all be nonzero");
     }
-    state->session_budget = options.budget;
-    state->module_reservation = admission.reservation;
+    auto bytes = readFile(path, limits.maximum_artifact_bytes);
+    if (!bytes) {
+      return reject(bytes.error());
+    }
+
+    auto audited = parser_module::validateParserModuleWasmArtifact(
+        *bytes, parser_module::ParserModuleWasmLimits{
+                    .maximum_linear_memory_bytes = limits.maximum_linear_memory_bytes,
+                    .maximum_table_elements = limits.maximum_table_elements,
+                });
+    if (!audited) {
+      return reject(audited.error());
+    }
+    const char* manifest_data =
+        audited->manifest_json.empty() ? "" : reinterpret_cast<const char*>(audited->manifest_json.data());
+    const std::string_view manifest_json(manifest_data, audited->manifest_json.size());
+    auto decoded_manifest = decodeParserModuleManifest(manifest_json, ParserClaimProvenance::kFolderDrop);
+    if (!decoded_manifest) {
+      return reject("invalid wasm parser-module manifest: " + decoded_manifest.error());
+    }
+
+    auto state = std::make_shared<detail::WasmParserModuleState>();
+    state->path = path;
+    state->manifest_json.assign(manifest_json);
+    state->claim_count = decoded_manifest->claims.size();
+    state->artifact_size = bytes->size();
+    state->declared_linear_memory_maximum = audited->declared_linear_memory_maximum;
+    state->declared_table_elements = audited->declared_table_elements;
+    state->metering_points_per_call = limits.metering_points_per_call;
+    if (options.budget != nullptr) {
+      auto admission = options.budget->admitModule(
+          bytes->size(), decoded_manifest->claims.size(), audited->declared_linear_memory_maximum);
+      if (!admission.accepted()) {
+        return reject(std::move(admission.diagnostic));
+      }
+      state->session_budget = options.budget;
+      state->module_reservation = admission.reservation;
+    }
+    auto engine = createMeteredEngine(limits.metering_points_per_call);
+    if (!engine) {
+      return reject(engine.error());
+    }
+    state->engine = *engine;
+    const wasm_byte_vec_t binary{
+        .size = bytes->size(),
+        .data = reinterpret_cast<wasm_byte_t*>(bytes->data()),
+    };
+    state->module = wasmer_module_new(state->engine, &binary);
+    if (state->module == nullptr) {
+      return reject(wasmerFailure("Wasmer rejected parser module"));
+    }
+    return WasmParserModule(std::move(state));
+  } catch (const std::bad_alloc&) {
+    return reject("allocation failed while loading the wasm parser module");
   }
-  auto engine = createMeteredEngine(limits.metering_points_per_call);
-  if (!engine) {
-    return reject(engine.error());
-  }
-  state->engine = *engine;
-  const wasm_byte_vec_t binary{
-      .size = bytes->size(),
-      .data = reinterpret_cast<wasm_byte_t*>(bytes->data()),
-  };
-  state->module = wasmer_module_new(state->engine, &binary);
-  if (state->module == nullptr) {
-    return reject(wasmerFailure("Wasmer rejected parser module"));
-  }
-  return WasmParserModule(std::move(state));
 }
 
 std::string_view WasmParserModule::path() const noexcept {

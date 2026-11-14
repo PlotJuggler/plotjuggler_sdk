@@ -148,6 +148,18 @@ TEST(ParserModuleRuntime, ClassifiesDataErrorsSeparatelyFromContractViolations) 
   EXPECT_NE(mismatch_result->message.find("does not match"), std::string::npos);
 }
 
+TEST(ParserModuleRuntime, RejectsScalarNamesAliasedPastTheHostCopyLimit) {
+  // Every field name passes its own range check, but together they would make
+  // the host copy 256 MiB from a ~100 KiB descriptor.
+  auto module = loadFixture();
+  auto instance = createBound(module, kAliasedScalarNames, parser_module::Route::kScalar);
+  auto result = instance.parse(input());
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_EQ(result->fault, ParserModuleFaultKind::kContractViolation);
+  EXPECT_FALSE(result->output.has_value());
+  EXPECT_NE(result->message.find("malformed output descriptor"), std::string::npos) << result->message;
+}
+
 TEST(ParserModuleRuntime, AcceptsEligibleSpliceAndRejectsInvalidReferences) {
   auto module = loadFixture();
 

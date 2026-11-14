@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -123,8 +124,8 @@ struct WasmParserModuleInstanceState {
     if (store != nullptr) {
       wasm_store_delete(store);
     }
-    if (instance_budget_reserved && module->session_budget != nullptr) {
-      module->session_budget->releaseInstance(module->module_reservation);
+    if (instance_reservation != 0 && module->session_budget != nullptr) {
+      module->session_budget->releaseInstance(instance_reservation);
     }
   }
 
@@ -262,7 +263,7 @@ struct WasmParserModuleInstanceState {
   parser_module::Route bound_route = parser_module::Route::kScalar;
   uint16_t expected_object_type = 0;
   bool bound = false;
-  bool instance_budget_reserved = false;
+  uint64_t instance_reservation = 0;  // nonzero while a session-budget instance is held
   std::string lifecycle_diagnostic;
 };
 
@@ -404,7 +405,7 @@ Expected<WasmParserModuleInstance, WasmParserModuleCreateError> WasmParserModule
           std::move(admission.diagnostic), ParserModuleFaultKind::kNone,
           WasmParserModuleCreateOutcome::kAdmissionDecline);
     }
-    state->instance_budget_reserved = true;
+    state->instance_reservation = admission.reservation;
   }
   state->store = wasm_store_new(state->module->engine);
   if (state->store == nullptr) {
@@ -665,7 +666,20 @@ Expected<ParserModuleParseResult> WasmParserModuleInstance::parse(const parser_m
     };
   };
 
-  auto result = parse_once();
+  // Descriptor limits bound what the host copies, so running out of memory
+  // within them is the host's condition, not a module fault: a strike-free
+  // data error, like the authoring kit's own allocation failures.
+  Expected<ParserModuleParseResult> result = ParserModuleParseResult{};
+  try {
+    result = parse_once();
+  } catch (const std::bad_alloc&) {
+    result = ParserModuleParseResult{
+        .fault = ParserModuleFaultKind::kDataError,
+        .result_code = PJ_MODULE_ERR_ALLOCATION_FAILURE,
+        .message = "host allocation failed while consuming the parse output",
+        .output = std::nullopt,
+    };
+  }
   if (result && result->fault == ParserModuleFaultKind::kContractViolation) {
     state_->noteContractViolation(result->message);
   }

@@ -512,12 +512,19 @@ Expected<OutputDescriptorV1> readOutputDescriptorV1(Span<const uint8_t> bytes) {
   if (field_count > reader.remaining() / (kScalarFieldPrefixSize + 1)) {
     return malformed<OutputDescriptorV1>("scalar output field count exceeds the block");
   }
+  if (field_count > kMaximumScalarOutputFields) {
+    return malformed<OutputDescriptorV1>(
+        "scalar output has more than " + std::to_string(kMaximumScalarOutputFields) + " fields");
+  }
 
   struct DecodedField {
     uint32_t name_offset;
     uint32_t name_length;
     ScalarValueV1 value;
   };
+  // Names may alias one range, so their sum is bounded explicitly: it is what
+  // the host copies when it takes ownership of the output.
+  uint64_t copied_bytes = 0;
   std::vector<DecodedField> decoded_fields;
   decoded_fields.reserve(field_count);
   for (uint32_t index = 0; index < field_count; ++index) {
@@ -568,6 +575,7 @@ Expected<OutputDescriptorV1> readOutputDescriptorV1(Span<const uint8_t> bytes) {
         if (!reader.u32(&length) || !reader.take(length, &decoded)) {
           return malformed<OutputDescriptorV1>("truncated scalar string value");
         }
+        copied_bytes += length;  // string values never alias, so this stays within the block size
         value = asStringView(decoded);
         break;
       }
@@ -588,6 +596,12 @@ Expected<OutputDescriptorV1> readOutputDescriptorV1(Span<const uint8_t> bytes) {
     const size_t name_length = field.name_length;
     if (name_offset > bytes.size() || name_length > bytes.size() - name_offset) {
       return malformed<OutputDescriptorV1>("scalar field name range is outside the block");
+    }
+    // At most 2^20 names of 2^32 bytes each, so the uint64 sum cannot overflow.
+    copied_bytes += name_length;
+    if (copied_bytes > kMaximumScalarOutputBytes) {
+      return malformed<OutputDescriptorV1>(
+          "scalar output names and strings exceed " + std::to_string(kMaximumScalarOutputBytes) + " bytes");
     }
     scalar.fields.push_back(
         ScalarFieldV1{

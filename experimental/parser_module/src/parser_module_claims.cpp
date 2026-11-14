@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <limits>
+#include <new>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <set>
@@ -22,6 +23,11 @@ namespace {
   const auto it = object.find(std::string(key));
   if (it == object.end() || !it->is_string() || it->get_ref<const std::string&>().empty()) {
     return unexpected(std::string(context) + " missing required non-empty string key: " + std::string(key));
+  }
+  if (it->get_ref<const std::string&>().size() > kMaximumParserModuleManifestStringBytes) {
+    return unexpected(
+        std::string(context) + " " + std::string(key) + " exceeds " +
+        std::to_string(kMaximumParserModuleManifestStringBytes) + " bytes");
   }
   return it->get<std::string>();
 }
@@ -80,22 +86,32 @@ namespace {
     return unexpected(
         "parser module manifest claim " + std::to_string(claim_index) + " schema_digests must be an array");
   }
+  if (values->size() > kMaximumParserModuleClaimSchemaDigests) {
+    return unexpected(
+        "parser module manifest claim " + std::to_string(claim_index) + " schema_digests has more than " +
+        std::to_string(kMaximumParserModuleClaimSchemaDigests) + " entries");
+  }
   for (const auto& value : *values) {
-    if (!value.is_string()) {
+    if (!value.is_string() || value.get_ref<const std::string&>().size() > kMaximumParserModuleManifestStringBytes) {
       return unexpected(
-          "parser module manifest claim " + std::to_string(claim_index) + " schema_digests must contain strings");
+          "parser module manifest claim " + std::to_string(claim_index) +
+          " schema_digests must contain strings of at most " + std::to_string(kMaximumParserModuleManifestStringBytes) +
+          " bytes");
     }
     digests.insert(value.get<std::string>());
   }
   return digests;
 }
 
-}  // namespace
-
-Expected<ParserModuleManifest> decodeParserModuleManifest(
+// Every bound runs before the claims are built: each claim copies the module
+// id, and the scratch-catalog validation copies the claims again.
+[[nodiscard]] Expected<ParserModuleManifest> decodeBoundedManifest(
     std::string_view manifest_json, ParserClaimProvenance provenance) {
   if (manifest_json.empty()) {
     return unexpected("parser module manifest is empty");
+  }
+  if (manifest_json.size() > kMaximumParserModuleManifestBytes) {
+    return unexpected("parser module manifest exceeds " + std::to_string(kMaximumParserModuleManifestBytes) + " bytes");
   }
 
   nlohmann::json json;
@@ -141,6 +157,10 @@ Expected<ParserModuleManifest> decodeParserModuleManifest(
   const auto claims_json = json.find("claims");
   if (claims_json == json.end() || !claims_json->is_array()) {
     return unexpected("parser module manifest requires a claims array");
+  }
+  if (claims_json->size() > kMaximumParserModuleManifestClaims) {
+    return unexpected(
+        "parser module manifest has more than " + std::to_string(kMaximumParserModuleManifestClaims) + " claims");
   }
 
   ParserModuleManifest manifest{.id = *id, .name = *name, .version = *version, .claims = {}};
@@ -218,6 +238,17 @@ Expected<ParserModuleManifest> decodeParserModuleManifest(
     manifest.claims.push_back(entry.claim);
   }
   return manifest;
+}
+
+}  // namespace
+
+Expected<ParserModuleManifest> decodeParserModuleManifest(
+    std::string_view manifest_json, ParserClaimProvenance provenance) {
+  try {
+    return decodeBoundedManifest(manifest_json, provenance);
+  } catch (const std::bad_alloc&) {
+    return unexpected("allocation failed while decoding the parser module manifest");
+  }
 }
 
 Expected<ParserModuleManifest> ingestParserModuleManifest(

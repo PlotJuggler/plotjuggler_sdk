@@ -191,22 +191,30 @@ function(pj_add_parser_module TARGET)
     set(_wasm_dir "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}_parser_module_wasm")
     set(_wasm_raw "${_wasm_dir}/${TARGET}.raw.wasm")
     set(_wasm_output "${_wasm_dir}/${TARGET}.wasm")
+    set(_wasm_depfile "${_wasm_dir}/${TARGET}.raw.wasm.d")
+    set(_wasm_compile_flags
+      --target=wasm32-wasip1
+      --sysroot=${_wasi_sysroot}
+      -std=c++17
+      -fno-exceptions
+      -fno-rtti
+      -fvisibility=hidden
+      -O1
+      -Wall -Wextra -Werror
+      -DPJ_PARSER_MODULE_CLAIM_COUNT=${_claim_count}
+      ${_kit_include_flags})
 
+    # The depfile covers every header the author source includes (kit, the
+    # shared pj_base/time_math.hpp, and the author's own). It comes from a
+    # separate -M pass because clang keeps only the last input's dependencies
+    # when one -MD command compiles two sources.
     add_custom_command(
       OUTPUT "${_wasm_raw}"
       COMMAND ${CMAKE_COMMAND} -E make_directory "${_wasm_dir}"
-      COMMAND "${_wasi_clang}"
-        --target=wasm32-wasip1
-        --sysroot=${_wasi_sysroot}
+      COMMAND "${_wasi_clang}" ${_wasm_compile_flags}
+        -M -MF "${_wasm_depfile}" -MT "${_wasm_raw}" "${_module_source}"
+      COMMAND "${_wasi_clang}" ${_wasm_compile_flags}
         -mexec-model=reactor
-        -std=c++17
-        -fno-exceptions
-        -fno-rtti
-        -fvisibility=hidden
-        -O1
-        -Wall -Wextra -Werror
-        -DPJ_PARSER_MODULE_CLAIM_COUNT=${_claim_count}
-        ${_kit_include_flags}
         "${_module_source}"
         "${_no_io_stubs}"
         -Wl,--export=pj_module_abi
@@ -223,6 +231,7 @@ function(pj_add_parser_module TARGET)
         -Wl,--stack-first
         -o "${_wasm_raw}"
       DEPENDS "${_module_source}" "${_no_io_stubs}" ${_parser_module_headers}
+      DEPFILE "${_wasm_depfile}"
       COMMENT "Compiling ${TARGET} as a C++17 WASI reactor"
       VERBATIM
     )

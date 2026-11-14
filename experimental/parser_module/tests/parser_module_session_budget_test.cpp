@@ -77,12 +77,13 @@ TEST(ParserModuleSessionBudget, AppliesInstanceAndDeclaredMemoryBudgetsIndepende
   const auto large = tracker.admitModule(100, 1, 250);
   ASSERT_TRUE(small.accepted());
   ASSERT_TRUE(large.accepted());
-  ASSERT_TRUE(tracker.admitInstance(large.reservation).accepted());
+  const auto large_instance = tracker.admitInstance(large.reservation);
+  ASSERT_TRUE(large_instance.accepted());
 
   expectDecline(
       tracker.admitInstance(small.reservation), ParserModuleBudgetKind::kTotalLinearMemory, "total_linear_memory");
   EXPECT_EQ(tracker.usage().active_instances, 1U);
-  tracker.releaseInstance(large.reservation);
+  tracker.releaseInstance(large_instance.reservation);
   ASSERT_TRUE(tracker.admitInstance(small.reservation).accepted());
   ASSERT_TRUE(tracker.admitInstance(small.reservation).accepted());
   expectDecline(tracker.admitInstance(small.reservation), ParserModuleBudgetKind::kActiveInstances, "active_instances");
@@ -101,21 +102,58 @@ TEST(ParserModuleSessionBudget, ReleasesAreIdempotentAndRestoreCapacity) {
       });
   const auto module = tracker.admitModule(10, 1, 20);
   ASSERT_TRUE(module.accepted());
-  ASSERT_TRUE(tracker.admitInstance(module.reservation).accepted());
-  tracker.releaseInstance(module.reservation);
-  tracker.releaseInstance(module.reservation);  // ignored
+  const auto instance = tracker.admitInstance(module.reservation);
+  ASSERT_TRUE(instance.accepted());
+  tracker.releaseInstance(instance.reservation);
+  tracker.releaseInstance(instance.reservation);  // ignored
   EXPECT_EQ(tracker.usage().active_instances, 0U);
   EXPECT_EQ(tracker.usage().declared_linear_memory_bytes, 0U);
 
-  ASSERT_TRUE(tracker.admitInstance(module.reservation).accepted());
-  tracker.releaseModule(module.reservation);    // gives back the live instance too
-  tracker.releaseModule(module.reservation);    // ignored
-  tracker.releaseInstance(module.reservation);  // ignored: module is gone
+  const auto live = tracker.admitInstance(module.reservation);
+  ASSERT_TRUE(live.accepted());
+  tracker.releaseModule(module.reservation);  // gives back the live instance too
+  tracker.releaseModule(module.reservation);  // ignored
+  tracker.releaseInstance(live.reservation);  // ignored: module is gone
   EXPECT_EQ(tracker.usage().modules, 0U);
   EXPECT_EQ(tracker.usage().claims, 0U);
   EXPECT_EQ(tracker.usage().active_instances, 0U);
   EXPECT_EQ(tracker.usage().declared_linear_memory_bytes, 0U);
   ASSERT_TRUE(tracker.admitModule(10, 1, 20).accepted());
+}
+
+TEST(ParserModuleSessionBudget, InstanceReleaseConsumesOnlyItsOwnReservation) {
+  ParserModuleSessionBudgetTracker tracker(
+      ParserModuleSessionBudgetLimits{
+          .maximum_modules = 1,
+          .maximum_artifact_bytes = 10,
+          .maximum_claims = 1,
+          .maximum_active_instances = 2,
+          .maximum_linear_memory_bytes = 40,
+      });
+  const auto module = tracker.admitModule(10, 1, 20);
+  ASSERT_TRUE(module.accepted());
+  const auto a = tracker.admitInstance(module.reservation);
+  const auto b = tracker.admitInstance(module.reservation);
+  ASSERT_TRUE(a.accepted());
+  ASSERT_TRUE(b.accepted());
+  EXPECT_NE(a.reservation, b.reservation);
+
+  tracker.releaseInstance(a.reservation);
+  tracker.releaseInstance(a.reservation);  // ignored: must not release B
+  EXPECT_EQ(tracker.usage().active_instances, 1U);
+  EXPECT_EQ(tracker.usage().declared_linear_memory_bytes, 20U);
+  // B still holds its charge, so only one more instance fits both caps.
+  const auto c = tracker.admitInstance(module.reservation);
+  ASSERT_TRUE(c.accepted());
+  expectDecline(
+      tracker.admitInstance(module.reservation), ParserModuleBudgetKind::kActiveInstances, "active_instances");
+  tracker.releaseInstance(module.reservation);  // a module id is not an instance id
+  EXPECT_EQ(tracker.usage().active_instances, 2U);
+
+  tracker.releaseInstance(b.reservation);
+  tracker.releaseInstance(c.reservation);
+  EXPECT_EQ(tracker.usage().active_instances, 0U);
+  EXPECT_EQ(tracker.usage().declared_linear_memory_bytes, 0U);
 }
 
 TEST(ParserModuleSessionBudget, TracksConcurrentAdmissionAndReleaseFromManyThreads) {
@@ -133,7 +171,7 @@ TEST(ParserModuleSessionBudget, TracksConcurrentAdmissionAndReleaseFromManyThrea
         ASSERT_TRUE(module.accepted());
         const auto instance = tracker.admitInstance(module.reservation);
         ASSERT_TRUE(instance.accepted());
-        tracker.releaseInstance(module.reservation);
+        tracker.releaseInstance(instance.reservation);
         tracker.releaseModule(module.reservation);
       }
     });

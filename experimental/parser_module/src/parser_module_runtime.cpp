@@ -58,7 +58,7 @@ NativeParserModuleInstance::NativeParserModuleInstance(NativeParserModuleInstanc
       bound_route_(other.bound_route_),
       expected_object_type_(other.expected_object_type_),
       bound_(other.bound_),
-      instance_budget_reserved_(std::exchange(other.instance_budget_reserved_, false)) {
+      instance_reservation_(std::exchange(other.instance_reservation_, 0)) {
   other.bound_ = false;
 }
 
@@ -71,7 +71,7 @@ NativeParserModuleInstance& NativeParserModuleInstance::operator=(NativeParserMo
     bound_route_ = other.bound_route_;
     expected_object_type_ = other.expected_object_type_;
     bound_ = other.bound_;
-    instance_budget_reserved_ = std::exchange(other.instance_budget_reserved_, false);
+    instance_reservation_ = std::exchange(other.instance_reservation_, 0);
     other.bound_ = false;
   }
   return *this;
@@ -83,22 +83,24 @@ Expected<NativeParserModuleInstance> NativeParserModuleInstance::create(
     return unexpected("cannot create an instance from an invalid native parser module");
   }
   const auto& budget = module.state_->session_budget;
+  uint64_t instance_reservation = 0;
   if (budget != nullptr) {
     auto admission = budget->admitInstance(module.state_->module_reservation);
     if (!admission.accepted()) {
       return unexpected(std::move(admission.diagnostic));
     }
+    instance_reservation = admission.reservation;
   }
   const uint64_t token = module.state_->create(claim_index);
   if (token == PJ_MODULE_CREATION_ERROR_TOKEN) {
     if (budget != nullptr) {
-      budget->releaseInstance(module.state_->module_reservation);
+      budget->releaseInstance(instance_reservation);
     }
     auto message = copyLastError(*module.state_, PJ_MODULE_CREATION_ERROR_TOKEN);
     return unexpected(message ? *message : message.error());
   }
   NativeParserModuleInstance instance(module.state_, token, claim_index);
-  instance.instance_budget_reserved_ = budget != nullptr;
+  instance.instance_reservation_ = instance_reservation;
   return instance;
 }
 
@@ -234,12 +236,12 @@ void NativeParserModuleInstance::reset() noexcept {
   if (module_ != nullptr && token_ != PJ_MODULE_CREATION_ERROR_TOKEN) {
     module_->destroy(token_);
   }
-  if (module_ != nullptr && instance_budget_reserved_) {
-    module_->session_budget->releaseInstance(module_->module_reservation);
+  if (module_ != nullptr && instance_reservation_ != 0) {
+    module_->session_budget->releaseInstance(instance_reservation_);
   }
   token_ = PJ_MODULE_CREATION_ERROR_TOKEN;
   bound_ = false;
-  instance_budget_reserved_ = false;
+  instance_reservation_ = 0;
   module_.reset();
 }
 

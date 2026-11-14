@@ -23,6 +23,13 @@ inline constexpr uint8_t kWasmValueI32 = UINT8_C(0x7F);
 inline constexpr uint8_t kWasmValueI64 = UINT8_C(0x7E);
 inline constexpr uint64_t kWasmMemoryPageBytes = UINT64_C(65536);
 
+/// Entry counts inspection accepts per section: the WebAssembly JS-API
+/// implementation limits, which every module a browser can load already meets.
+/// They bound the host structures built from a 64 MiB artifact.
+inline constexpr uint32_t kWasmMaximumTypes = 1000000;
+inline constexpr uint32_t kWasmMaximumImports = 100000;
+inline constexpr uint32_t kWasmMaximumExports = 100000;
+
 enum class WasmExternalKind : uint8_t {
   kFunction = 0,
   kTable = 1,
@@ -52,22 +59,26 @@ struct WasmTableLimits {
   bool operator==(const WasmTableLimits&) const = default;
 };
 
+// Functions refer to their signature by index into
+// WasmModuleInfo::function_types: one type can back any number of imports and
+// exports, so copying it into each would let a small artifact expand.
 struct WasmImport {
   std::string module;
   std::string name;
   WasmExternalKind kind = WasmExternalKind::kFunction;
-  std::optional<WasmFunctionSignature> function_signature;
+  std::optional<uint32_t> function_type;
 };
 
 struct WasmExport {
   std::string name;
   WasmExternalKind kind = WasmExternalKind::kFunction;
   uint32_t index = 0;
-  std::optional<WasmFunctionSignature> function_signature;
+  std::optional<uint32_t> function_type;
   std::optional<WasmMemoryLimits> memory_limits;
 };
 
 struct WasmModuleInfo {
+  std::vector<WasmFunctionSignature> function_types;
   std::vector<WasmImport> imports;
   std::vector<WasmExport> exports;
   std::vector<WasmMemoryLimits> memories;
@@ -78,13 +89,16 @@ struct WasmModuleInfo {
   size_t function_count = 0;
 
   [[nodiscard]] const WasmExport* findExport(std::string_view name) const noexcept;
+  /// The resolved signature of a function export, or nullptr for other kinds.
+  [[nodiscard]] const WasmFunctionSignature* functionSignature(const WasmExport& exported) const noexcept;
 };
 
 /** Inspect the sections needed for parser-module admission.
  *
- * Every section and variable-length integer is bounds-checked. Function
- * signatures are resolved for imported and exported functions. Malformed,
- * truncated, duplicate, or unsupported binary constructs return an error.
+ * Every section and variable-length integer is bounds-checked. Imported and
+ * exported functions carry a validated index into `function_types`. Malformed,
+ * truncated, duplicate, over-limit, or unsupported binary constructs return an
+ * error.
  */
 [[nodiscard]] Expected<WasmModuleInfo> inspectWasmModule(Span<const uint8_t> wasm);
 

@@ -11,6 +11,7 @@
 #include <new>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -86,11 +87,6 @@ class Cursor {
   size_t position_ = 0;
 };
 
-struct PendingImport {
-  WasmImport value;
-  std::optional<uint32_t> function_type;
-};
-
 struct ModuleBuilder {
   std::vector<WasmFunctionSignature> types;
   std::vector<uint32_t> imported_function_types;
@@ -98,7 +94,7 @@ struct ModuleBuilder {
   std::vector<WasmMemoryLimits> imported_memories;
   std::vector<WasmMemoryLimits> defined_memories;
   std::vector<WasmTableLimits> tables;
-  std::vector<PendingImport> imports;
+  std::vector<WasmImport> imports;
   std::vector<WasmExport> exports;
   bool has_start_section = false;
   size_t section_count = 0;
@@ -120,9 +116,14 @@ struct ModuleBuilder {
 }
 
 [[nodiscard]] Expected<void> requireCountFits(
-    uint32_t count, size_t remaining, size_t minimum_entry_size, std::string_view section) {
+    uint32_t count, size_t remaining, size_t minimum_entry_size, std::string_view section,
+    uint32_t maximum_count = std::numeric_limits<uint32_t>::max()) {
   if (minimum_entry_size == 0 || static_cast<uint64_t>(count) > remaining / minimum_entry_size) {
     return unexpected(std::string("wasm ") + std::string(section) + " count exceeds the remaining section bytes");
+  }
+  if (count > maximum_count) {
+    return unexpected(
+        std::string("wasm ") + std::string(section) + " count exceeds the limit of " + std::to_string(maximum_count));
   }
   return {};
 }
@@ -163,7 +164,7 @@ struct ModuleBuilder {
   if (!count) {
     return unexpected(count.error());
   }
-  auto bounded = requireCountFits(*count, cursor.remaining(), 3, "type-section entry");
+  auto bounded = requireCountFits(*count, cursor.remaining(), 3, "type-section entry", kWasmMaximumTypes);
   if (!bounded) {
     return unexpected(bounded.error());
   }
@@ -214,7 +215,7 @@ struct ModuleBuilder {
   if (!count) {
     return unexpected(count.error());
   }
-  auto bounded = requireCountFits(*count, cursor.remaining(), 4, "import-section entry");
+  auto bounded = requireCountFits(*count, cursor.remaining(), 4, "import-section entry", kWasmMaximumImports);
   if (!bounded) {
     return unexpected(bounded.error());
   }
@@ -227,17 +228,13 @@ struct ModuleBuilder {
       return unexpected(std::string("truncated or invalid wasm import entry"));
     }
 
-    PendingImport imported{
-        .value =
-            WasmImport{
-                .module = std::move(*module_name),
-                .name = std::move(*field_name),
-                .kind = static_cast<WasmExternalKind>(*kind),
-                .function_signature = std::nullopt,
-            },
+    WasmImport imported{
+        .module = std::move(*module_name),
+        .name = std::move(*field_name),
+        .kind = static_cast<WasmExternalKind>(*kind),
         .function_type = std::nullopt,
     };
-    switch (imported.value.kind) {
+    switch (imported.kind) {
       case WasmExternalKind::kFunction: {
         auto type_index = cursor.varUint32();
         if (!type_index) {
@@ -365,11 +362,13 @@ struct ModuleBuilder {
   if (!count) {
     return unexpected(count.error());
   }
-  auto bounded = requireCountFits(*count, cursor.remaining(), 3, "export-section entry");
+  auto bounded = requireCountFits(*count, cursor.remaining(), 3, "export-section entry", kWasmMaximumExports);
   if (!bounded) {
     return unexpected(bounded.error());
   }
   module->exports.reserve(*count);
+  std::unordered_set<std::string> names;
+  names.reserve(*count);
   for (uint32_t index = 0; index < *count; ++index) {
     auto name = cursor.name();
     auto kind = cursor.byte();
@@ -377,9 +376,7 @@ struct ModuleBuilder {
     if (!name || !kind || !item_index || *kind > static_cast<uint8_t>(WasmExternalKind::kTag)) {
       return unexpected(std::string("truncated or invalid wasm export entry"));
     }
-    if (std::any_of(module->exports.begin(), module->exports.end(), [&](const WasmExport& item) {
-          return item.name == *name;
-        })) {
+    if (!names.insert(*name).second) {
       return unexpected(std::string("duplicate wasm export name: ") + *name);
     }
     module->exports.push_back(
@@ -387,7 +384,7 @@ struct ModuleBuilder {
             .name = std::move(*name),
             .kind = static_cast<WasmExternalKind>(*kind),
             .index = *item_index,
-            .function_signature = std::nullopt,
+            .function_type = std::nullopt,
             .memory_limits = std::nullopt,
         });
   }
@@ -408,9 +405,10 @@ struct ModuleBuilder {
   }
 
   WasmModuleInfo result;
+  result.function_types = std::move(builder.types);
   result.has_start_section = builder.has_start_section;
   result.section_count = builder.section_count;
-  result.function_type_count = builder.types.size();
+  result.function_type_count = result.function_types.size();
   result.function_count = function_types.size();
   result.memories.reserve(builder.imported_memories.size() + builder.defined_memories.size());
   result.memories.insert(result.memories.end(), builder.imported_memories.begin(), builder.imported_memories.end());
@@ -418,13 +416,10 @@ struct ModuleBuilder {
   result.tables = std::move(builder.tables);
   result.imports.reserve(builder.imports.size());
   for (auto& imported : builder.imports) {
-    if (imported.function_type.has_value()) {
-      if (*imported.function_type >= builder.types.size()) {
-        return unexpected(std::string("wasm function import references an invalid type index"));
-      }
-      imported.value.function_signature = builder.types[*imported.function_type];
+    if (imported.function_type.has_value() && *imported.function_type >= result.function_types.size()) {
+      return unexpected(std::string("wasm function import references an invalid type index"));
     }
-    result.imports.push_back(std::move(imported.value));
+    result.imports.push_back(std::move(imported));
   }
   result.exports.reserve(builder.exports.size());
   for (auto& exported : builder.exports) {
@@ -432,7 +427,7 @@ struct ModuleBuilder {
       if (exported.index >= function_types.size()) {
         return unexpected(std::string("wasm function export references an invalid function index"));
       }
-      exported.function_signature = builder.types[function_types[exported.index]];
+      exported.function_type = function_types[exported.index];
     } else if (exported.kind == WasmExternalKind::kMemory) {
       if (exported.index >= result.memories.size()) {
         return unexpected(std::string("wasm memory export references an invalid memory index"));
@@ -519,6 +514,14 @@ const WasmExport* WasmModuleInfo::findExport(std::string_view name) const noexce
   return found == exports.end() ? nullptr : &*found;
 }
 
+const WasmFunctionSignature* WasmModuleInfo::functionSignature(const WasmExport& exported) const noexcept {
+  if (exported.kind != WasmExternalKind::kFunction || !exported.function_type.has_value() ||
+      *exported.function_type >= function_types.size()) {
+    return nullptr;
+  }
+  return &function_types[*exported.function_type];
+}
+
 Expected<WasmModuleInfo> inspectWasmModule(Span<const uint8_t> wasm) {
   try {
     return inspectWasmModuleImpl(wasm);
@@ -558,10 +561,11 @@ Expected<void> validateParserModuleWasmAbi(const WasmModuleInfo& module) {
     if (exported == nullptr) {
       return unexpected(std::string("missing function export: ") + std::string(entry.name));
     }
-    if (exported->kind != WasmExternalKind::kFunction || !exported->function_signature.has_value()) {
+    const WasmFunctionSignature* signature = module.functionSignature(*exported);
+    if (signature == nullptr) {
       return unexpected(std::string("export is not a valid function: ") + std::string(entry.name));
     }
-    if (*exported->function_signature != entry.signature) {
+    if (*signature != entry.signature) {
       return unexpected(std::string("function export has the wrong wasm signature: ") + std::string(entry.name));
     }
   }

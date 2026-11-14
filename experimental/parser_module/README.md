@@ -214,6 +214,21 @@ replays create/bind and disables through the shared `ParserModuleStrikeTracker`.
 | Artifact size | 64 MiB | `WasmParserModuleLimits::maximum_artifact_bytes` |
 | Declared linear-memory maximum | 256 MiB | `ParserModuleWasmLimits::maximum_linear_memory_bytes` |
 | Declared table elements (host memory outside the linear-memory budget) | 65536 | `ParserModuleWasmLimits::maximum_table_elements` |
+| Type / import / export entries inspected (WebAssembly JS-API limits) | 1,000,000 / 100,000 / 100,000 | `parser_module::kWasmMaximumTypes`, `kWasmMaximumImports`, `kWasmMaximumExports` |
+| Manifest JSON size | 4 MiB | `kMaximumParserModuleManifestBytes` |
+| Claims per manifest | 4096 | `kMaximumParserModuleManifestClaims` |
+| Bytes in each manifest string (`id`, `name`, `version`, `claim_id`, `encoding`, `type_name`, each schema digest) | 1024 | `kMaximumParserModuleManifestStringBytes` |
+| Schema digests per claim | 64 | `kMaximumParserModuleClaimSchemaDigests` |
+| Fields in one scalar output | 1,048,576 | `parser_module::kMaximumScalarOutputFields` |
+| Field-name plus string-value bytes in one scalar output (names may alias) | 64 MiB | `parser_module::kMaximumScalarOutputBytes` |
+
+The fixed limits bound what the host allocates while reading untrusted
+metadata, which guest memory caps and metering do not cover. The entry counts
+apply to wasm inspection; the manifest bounds apply to every manifest decode,
+native or wasm, as do the scalar output bounds (`readOutputDescriptorV1` rejects an over-limit descriptor, so it
+is a contract violation). Host allocation failure inside the limits is not a
+module fault: `load()` rejects, and a wasm `parse()` returns a strike-free data
+error with `PJ_MODULE_ERR_ALLOCATION_FAILURE`.
 
 Metering is an instruction budget, not a wall-clock deadline: bulk operators
 such as `memory.copy` cost one point regardless of size, and the pinned archive
@@ -223,8 +238,9 @@ guarded default.
 The optional, thread-safe `ParserModuleSessionBudgetTracker` bounds a whole
 session: module count (64), artifact bytes (64 MiB each), total claims (4096),
 active instances (128) and aggregate per-instance declared memory (4 GiB). It
-counts resources under opaque reservation ids and never keys on manifest
-identity, which remains catalog policy. Both loaders accept a null budget and
+counts resources under opaque reservation ids (one per module and one per
+instance, each consumed once on release) and never keys on manifest identity,
+which remains catalog policy. Both loaders accept a null budget and
 then perform no admission accounting; `NativeParserModule::load(path, sink)`
 keeps its budget-free behaviour.
 

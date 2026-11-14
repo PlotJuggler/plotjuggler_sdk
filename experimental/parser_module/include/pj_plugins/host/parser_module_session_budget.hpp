@@ -76,13 +76,15 @@ class ParserModuleSessionBudgetTracker {
       uint64_t artifact_bytes, uint64_t claim_count, uint64_t declared_linear_memory_maximum);
 
   /// Reserve one instance of an admitted module. Every instance owns an
-  /// independent store, so the module's declared memory is charged again.
+  /// independent store, so the module's declared memory is charged again. The
+  /// returned reservation is a new id naming this instance alone.
   [[nodiscard]] ParserModuleAdmissionDecision admitInstance(uint64_t module_reservation);
 
-  /// Releases are idempotent-safe: unknown or already-released ids are ignored.
-  void releaseInstance(uint64_t module_reservation);
-  /// A module reservation is released even when instances are still live;
-  /// their later releases then find no module and are ignored.
+  /// Releases are idempotent-safe: each id is consumed once, and unknown or
+  /// already-released ids (including module ids) are ignored.
+  void releaseInstance(uint64_t instance_reservation);
+  /// A module reservation is released even when instances are still live: it
+  /// gives back their charges too, and their later releases are ignored.
   void releaseModule(uint64_t module_reservation);
 
   [[nodiscard]] const ParserModuleSessionBudgetLimits& limits() const noexcept;
@@ -100,6 +102,8 @@ class ParserModuleSessionBudgetTracker {
   ParserModuleSessionBudgetUsage usage_;
   uint64_t next_reservation_ = 1;
   std::map<uint64_t, ModuleReservation> modules_;
+  /// Live instance reservation -> its module reservation.
+  std::map<uint64_t, uint64_t> instances_;
 };
 
 }  // namespace PJ

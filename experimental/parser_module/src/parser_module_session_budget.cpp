@@ -4,6 +4,7 @@
 #include "pj_plugins/host/parser_module_session_budget.hpp"
 
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -73,19 +74,24 @@ ParserModuleAdmissionDecision ParserModuleSessionBudgetTracker::admitInstance(ui
     return declineBudget(ParserModuleBudgetKind::kTotalLinearMemory, "total_linear_memory");
   }
 
+  const uint64_t reservation = next_reservation_++;
+  instances_.emplace(reservation, module_reservation);
   ++module->second.active_instances;
   ++usage_.active_instances;
   usage_.declared_linear_memory_bytes += module->second.declared_linear_memory_maximum;
   return ParserModuleAdmissionDecision{
-      .reservation = module_reservation, .exhausted_budget = ParserModuleBudgetKind::kNone, .diagnostic = {}};
+      .reservation = reservation, .exhausted_budget = ParserModuleBudgetKind::kNone, .diagnostic = {}};
 }
 
-void ParserModuleSessionBudgetTracker::releaseInstance(uint64_t module_reservation) {
+void ParserModuleSessionBudgetTracker::releaseInstance(uint64_t instance_reservation) {
   const std::scoped_lock lock(mutex_);
-  auto module = modules_.find(module_reservation);
-  if (module == modules_.end() || module->second.active_instances == 0) {
+  const auto instance = instances_.find(instance_reservation);
+  if (instance == instances_.end()) {
     return;
   }
+  // releaseModule erases its instances, so a live instance's module exists.
+  auto module = modules_.find(instance->second);
+  instances_.erase(instance);
   --module->second.active_instances;
   --usage_.active_instances;
   usage_.declared_linear_memory_bytes -= module->second.declared_linear_memory_maximum;
@@ -97,8 +103,9 @@ void ParserModuleSessionBudgetTracker::releaseModule(uint64_t module_reservation
   if (module == modules_.end()) {
     return;
   }
-  // Live instances of a dropped module still hold their store; their memory
-  // and instance counts are given back when each of them is released.
+  // Live instances give back their charges with the module; erasing their
+  // reservations makes their later releases no-ops.
+  std::erase_if(instances_, [module_reservation](const auto& entry) { return entry.second == module_reservation; });
   usage_.active_instances -= module->second.active_instances;
   usage_.declared_linear_memory_bytes -=
       module->second.active_instances * module->second.declared_linear_memory_maximum;
