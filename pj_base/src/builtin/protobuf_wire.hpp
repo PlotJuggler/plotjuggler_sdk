@@ -322,10 +322,15 @@ class Reader {
 };
 
 /// Drives the standard tag-read / field-dispatch / skip-unknown loop used
-/// by every per-message decoder. `handler(tag, reader)` consumes the field
-/// and returns true when handled (including its own wire-type validation),
-/// false to let the loop skip the field via reader.skip(). Returns false on
-/// truncation / malformed input.
+/// by every per-message decoder. `handler(tag, reader)` returns:
+///   - true: it consumed the field;
+///   - false, having read nothing: the field is unknown to it (or has a wire
+///     type it does not expect), and the loop skips it. This is what keeps a
+///     field added by a later SDK readable, so a handler decides whether it
+///     knows the field BEFORE it reads;
+///   - false, having read something: a known field is malformed, and the
+///     decode fails. Skipping here would skip a second field.
+/// Returns false on truncation / malformed input.
 template <typename FieldHandler>
 [[nodiscard]] inline bool parseFields(Reader& reader, FieldHandler&& handler) {
   while (!reader.eof()) {
@@ -333,7 +338,11 @@ template <typename FieldHandler>
     if (!reader.readTag(tag)) {
       return false;
     }
-    if (!handler(tag, reader) && !reader.skip(tag.type)) {
+    const size_t before = reader.remaining();
+    if (handler(tag, reader)) {
+      continue;
+    }
+    if (reader.remaining() != before || !reader.skip(tag.type)) {
       return false;
     }
   }

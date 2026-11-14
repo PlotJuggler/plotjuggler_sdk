@@ -48,7 +48,7 @@ std::vector<uint8_t> serializeLog(const Log& log) {
   writer.string(3, log.message);
   writer.string(4, log.source);
   if (!log.category.empty()) {
-    writer.string(5, log.category);
+    writer.string(7, log.category);
   }
 
   return out;
@@ -81,7 +81,7 @@ Expected<sdk::Log> deserializeLog(const uint8_t* data, size_t size) {
         return tag.type == WireType::kLengthDelimited && r.readString(log.message);
       case 4:
         return tag.type == WireType::kLengthDelimited && r.readString(log.source);
-      case 5:
+      case 7:
         return tag.type == WireType::kLengthDelimited && r.readString(log.category);
       default:
         return false;

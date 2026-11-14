@@ -59,12 +59,13 @@ inline void writePointField(Writer& writer, const sdk::PointField& field) {
 }
 
 inline bool decodePointField(Reader& reader, sdk::PointField& out) {
+  out.count = 0;  // the proto3 zero value, omitted by encoders; the struct default is 1
   return parseFields(reader, [&](Tag tag, Reader& r) {
     if (tag.field == 1) {
       return tag.type == WireType::kLengthDelimited && r.readString(out.name);
     }
-    if (tag.type != WireType::kVarint) {
-      return false;
+    if (tag.field < 2 || tag.field > 4 || tag.type != WireType::kVarint) {
+      return false;  // unknown, or an unexpected wire type: skipped, nothing read yet
     }
     uint64_t v = 0;
     if (!r.readVarint(v)) {

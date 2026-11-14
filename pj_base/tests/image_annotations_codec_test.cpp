@@ -412,5 +412,52 @@ TEST(ImageAnnotationCodecTest, TimestampOutsideInt64NanosIsRejected) {
   EXPECT_FALSE(decodes(9223372037, 0));
 }
 
+// A colour that is present with its alpha omitted is transparent: a standard
+// proto3 encoder omits a zero channel. A "no fill" colour written as
+// {r, g, b, a = 0} must not come back as an opaque fill.
+TEST(ImageAnnotationCodecTest, OmittedAlphaInAPresentColorIsTransparent) {
+  std::vector<uint8_t> red_no_alpha;
+  pb::appendTag(red_no_alpha, 1, 1);
+  pb::appendDouble(red_no_alpha, 1.0);
+
+  std::vector<uint8_t> circle;
+  pb::appendTag(circle, 5, 2);  // fill_color
+  pb::appendLenDelim(circle, red_no_alpha);
+  pb::appendTag(circle, 6, 2);  // color: present and empty, so every channel is 0
+  pb::appendLenDelim(circle, {});
+
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 1, 2);
+  pb::appendLenDelim(bytes, circle);
+
+  auto out = deserializeImageAnnotations(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->circles.size(), 1u);
+  EXPECT_EQ(out->circles[0].fill_color, (sdk::ColorRGBA{255, 0, 0, 0}));
+  EXPECT_EQ(out->circles[0].color, (sdk::ColorRGBA{0, 0, 0, 0}));
+}
+
+// A NaN channel decodes as 0 instead of reaching an undefined float-to-integer cast.
+TEST(ImageAnnotationCodecTest, NaNColorChannelDecodesAsZero) {
+  std::vector<uint8_t> color;
+  pb::appendTag(color, 1, 1);
+  pb::appendDouble(color, std::numeric_limits<double>::quiet_NaN());
+  pb::appendTag(color, 4, 1);
+  pb::appendDouble(color, 1.0);
+
+  std::vector<uint8_t> circle;
+  pb::appendTag(circle, 6, 2);
+  pb::appendLenDelim(circle, color);
+
+  std::vector<uint8_t> bytes;
+  pb::appendTag(bytes, 1, 2);
+  pb::appendLenDelim(bytes, circle);
+
+  auto out = deserializeImageAnnotations(bytes.data(), bytes.size());
+  ASSERT_TRUE(out.has_value()) << out.error();
+  ASSERT_EQ(out->circles.size(), 1u);
+  EXPECT_EQ(out->circles[0].color, (sdk::ColorRGBA{0, 0, 0, 255}));
+}
+
 }  // namespace
 }  // namespace PJ

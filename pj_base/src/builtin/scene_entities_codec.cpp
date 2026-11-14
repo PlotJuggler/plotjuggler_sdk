@@ -179,6 +179,10 @@ void writeCylinderPrimitive(Writer& writer, const CylinderPrimitive& p) {
 }
 
 bool decodeCylinderPrimitive(Reader& reader, CylinderPrimitive& out) {
+  // The proto3 zero values, which a standard encoder omits: a cone has
+  // top_scale 0. The struct defaults are 1.
+  out.bottom_scale = 0.0;
+  out.top_scale = 0.0;
   return parseFields(reader, [&](Tag tag, Reader& r) {
     switch (tag.field) {
       case 1:

@@ -14,7 +14,6 @@
 namespace PJ {
 namespace {
 
-using builtin_wire::normalizedToByte;
 using builtin_wire::Reader;
 using builtin_wire::Tag;
 using builtin_wire::WireType;
@@ -117,57 +116,15 @@ bool decodePoint2(Reader& reader, Point2& out) {
   return true;
 }
 
-// Not builtin_wire::decodeColor: annotation colours default alpha to 1 and skip unknown fields.
-bool decodeAnnotationColor(Reader& reader, ColorRGBA& out) {
-  double r = 0.0;
-  double g = 0.0;
-  double b = 0.0;
-  double a = 1.0;
-
-  while (!reader.eof()) {
-    Tag tag;
-    if (!reader.readTag(tag)) {
-      return false;
-    }
-
-    if (tag.type == WireType::kFixed64 && tag.field >= 1 && tag.field <= 4) {
-      double value = 0.0;
-      if (!reader.readDouble(value)) {
-        return false;
-      }
-      switch (tag.field) {
-        case 1:
-          r = value;
-          break;
-        case 2:
-          g = value;
-          break;
-        case 3:
-          b = value;
-          break;
-        case 4:
-          a = value;
-          break;
-        default:
-          break;
-      }
-    } else if (!reader.skip(tag.type)) {
-      return false;
-    }
-  }
-
-  out = {normalizedToByte(r), normalizedToByte(g), normalizedToByte(b), normalizedToByte(a)};
-  return true;
-}
-
 bool readPoint2Message(Reader& reader, Point2& out) {
   Reader nested;
   return reader.readMessage(nested) && decodePoint2(nested, out);
 }
 
+// A colour that is present decodes like every other PJ.Color: an omitted
+// channel is 0, alpha included, because a standard encoder omits a zero.
 bool readAnnotationColorMessage(Reader& reader, ColorRGBA& out) {
-  Reader nested;
-  return reader.readMessage(nested) && decodeAnnotationColor(nested, out);
+  return builtin_wire::readColorMessage(reader, out);
 }
 
 bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {

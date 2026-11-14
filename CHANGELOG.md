@@ -32,9 +32,11 @@ Functional parser modules leave the installed SDK:
 
 Log:
 
-- `PJ::sdk::Log` gains an optional `category` (proto field 5 of `PJ.Log`): a source-defined grouping
+- `PJ::sdk::Log` gains an optional `category` (proto field 7 of `PJ.Log`): a source-defined grouping
   (a tag, a subsystem) a log viewer can show and filter on. The codec writes it only when non-empty;
-  readers built before this release skip the unknown field.
+  readers built before this release skip the unknown field. Fields 5 and 6 are reserved: they are
+  `file` and `line` in `foxglove.Log`, so a Foxglove-encoded log decodes with both skipped.
+  (`1.0.0-dev.1` wrote `category` as field 5; a log encoded by a `dev.1` build loses its category.)
 - **Breaking (source):** `PJ::sdk::Log::name` is renamed `source`; proto field 4 keeps its number, so
   the wire format and binaries built against 0.x are unaffected. Code that reads or sets the field
   must be updated. This rename is why the release is 1.0.0.
@@ -150,6 +152,27 @@ The direct C++ parser bridge (docs only, no code change):
 - 1.0.0 itself changes two of those layouts: `sdk::Log` (`category`) and `sdk::DepthImage`
   (`frame_id`). A parser built against 0.x that returns either type must be rebuilt for a 1.0 host.
   No parser in pj-official-plugins returns them.
+
+Builtin decoders:
+
+- An unknown varint field inside a `PJ.PointField` no longer breaks the decode of the `PointCloud`,
+  `GridMap` or `VoxelGrid` that holds it. The decoder read the value and then skipped a second
+  field, so a field added to `PointField` by a later SDK would have been unreadable by every 1.0.0
+  host. The shared field loop now has one rule for every codec: an unknown field is skipped, a known
+  field that is malformed fails the decode. Before, a malformed nested message could skip the bytes
+  that followed it and decode as something else.
+- **Behaviour (wire):** fields absent from the wire now decode as the proto3 zero value where the
+  C++ struct default differs. A standard protobuf encoder omits a zero, so `PointCloud.is_dense =
+  false` decoded as `true`, `PointCloud.height = 0` as `1`, `PointField.count = 0` as `1`, and a cone
+  (`CylinderPrimitive.top_scale = 0`) as a cylinder. Bytes written by the SDK's own serializers are
+  unaffected: they write every one of these fields. `GridMap` rejects a `PointField` whose `count` is
+  absent, as it already rejected an explicit `0`. The empty `PointCloud` payload decodes to the same
+  zero values.
+- **Behaviour (wire):** a colour inside an `ImageAnnotations` message decodes like every other
+  `PJ.Color`: a channel absent from a colour that is present is 0. Alpha used to default to 1 there,
+  so a "no fill" colour written as `{r, g, b, a = 0}` by a standard encoder came back opaque. A
+  colour message that is absent altogether keeps its documented default.
+- A NaN colour channel decodes as 0; it used to reach an undefined float-to-integer conversion.
 
 ## [0.40.0]
 

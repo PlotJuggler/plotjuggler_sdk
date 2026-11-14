@@ -128,6 +128,21 @@ current implementation does not require generated Protobuf code or a Protobuf
 runtime dependency; it uses private field-tagged wire primitives and maps only
 between bytes and SDK structs.
 
+Two decode rules hold for every codec, so that bytes from a standard Protobuf
+encoder and from a later SDK both read correctly:
+
+- **An absent field is the proto3 zero value**, even where the C++ struct
+  default differs (`PointCloud::is_dense`, `PointCloud::height`,
+  `PointField::count`, `CylinderPrimitive::bottom_scale` / `top_scale`, a colour
+  channel). A standard encoder omits a zero, so a decoder that kept the struct
+  default would turn `is_dense = false` into `true`. The SDK's own serializers
+  write these fields explicitly. A whole submessage that is absent may keep a
+  documented default (an annotation's colour, for example).
+- **An unknown field is skipped; a known field that is malformed fails the
+  decode.** A field added by a later SDK must be readable by an older one. A
+  field handler therefore decides whether it knows a field before it reads any
+  byte of it.
+
 ## Type Erasure and Classification
 
 `BuiltinObjectType` is the a-priori tag a parser reports for a schema. It lets
