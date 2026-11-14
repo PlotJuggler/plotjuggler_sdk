@@ -43,8 +43,10 @@ struct ManifestCandidate {
   std::string manifest_json;
 };
 
+// Compared as paths, so no file name is ever narrowed: a name that cannot be
+// converted must not make the scan throw.
 bool hasDsoSuffix(const std::filesystem::path& path) {
-  return detail::pathForLegacyAccessor(path.extension()) == kDsoSuffix;
+  return path.extension() == std::filesystem::path(kDsoSuffix);
 }
 
 bool nativeSymbolPresent(void* handle, const char* symbol) noexcept {
@@ -520,12 +522,25 @@ Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory
       result.diagnostics.push_back({entry.path(), fmt::format("stat failed: {}", entry_ec.message())});
     }
 
+    // increment() descends into a directory entry, and when that fails the
+    // iterator is left at the end: the scan is over. So a directory that
+    // cannot be opened is found here, reported, and not descended into.
+    std::error_code type_ec;
+    if (it.recursion_pending() && entry.is_directory(type_ec) && !entry.is_symlink(type_ec)) {
+      std::error_code open_ec;
+      const std::filesystem::directory_iterator probe(entry.path(), open_ec);
+      if (open_ec) {
+        result.diagnostics.push_back({entry.path(), fmt::format("directory iteration failed: {}", open_ec.message())});
+        it.disable_recursion_pending();
+      }
+    }
+
     std::error_code inc_ec;
     it.increment(inc_ec);
     if (inc_ec) {
+      // The iterator is at the end now; pop() on it would throw.
       result.diagnostics.push_back({entry.path(), fmt::format("directory iteration failed: {}", inc_ec.message())});
-      // Skip the unreadable subtree but continue with the rest of the scan.
-      it.pop();
+      break;
     }
   }
 

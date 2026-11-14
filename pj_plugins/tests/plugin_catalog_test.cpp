@@ -26,6 +26,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 namespace PJ {
@@ -99,9 +101,18 @@ TEST_F(PluginCatalogTest, UnicodeFailureDiagnosticsPreservePath) {
   auto unopened = inspectPluginDso(std::shared_ptr<void>{}, broken);
   ASSERT_FALSE(unopened.has_value());
   EXPECT_NE(unopened.error().find(expected), std::string::npos);
-  auto unsupported = inspectPluginDso(directory / std::filesystem::path(u8"file.\U0001f680"));
+  // A suffix made of a supplementary-plane character is refused as "not a
+  // plugin", by both overloads, before anything is loaded.
+  const auto not_a_plugin = directory / std::filesystem::path(u8"file.\U0001f680");
+  auto unsupported = inspectPluginDso(not_a_plugin);
   ASSERT_FALSE(unsupported.has_value());
+  EXPECT_NE(unsupported.error().find("not a platform plugin DSO"), std::string::npos) << unsupported.error();
   EXPECT_NE(unsupported.error().find(expected), std::string::npos);
+  auto unsupported_handle = inspectPluginDso(std::shared_ptr<void>{}, not_a_plugin);
+  ASSERT_FALSE(unsupported_handle.has_value());
+  EXPECT_NE(unsupported_handle.error().find("not a platform plugin DSO"), std::string::npos)
+      << unsupported_handle.error();
+  EXPECT_NE(unsupported_handle.error().find(expected), std::string::npos);
   auto scan = scanPluginDsos(directory);
   ASSERT_TRUE(scan.has_value()) << scan.error();
   EXPECT_TRUE(scan->plugins.empty());
@@ -225,6 +236,42 @@ TEST_F(PluginCatalogTest, ForwardedEntryPointIsRejected) {
   auto descriptor = inspectPluginDso(PJ_ENTRY_POINT_FORWARDER_PLUGIN_PATH);
   ASSERT_FALSE(descriptor.has_value());
   EXPECT_NE(descriptor.error().find("resolved from dependency"), std::string::npos) << descriptor.error();
+}
+#endif
+
+#if !defined(_WIN32)
+// A subdirectory the scan cannot read (an extension folder owned by another
+// user) is reported and skipped. It must not end the scan, and it must not
+// throw: the scan's contract is to return diagnostics.
+TEST_F(PluginCatalogTest, ScanReportsAnUnreadableSubdirectoryAndContinues) {
+  if (::geteuid() == 0) {
+    GTEST_SKIP() << "root can read every directory";
+  }
+  const std::filesystem::path locked = dir_ / "a_locked";
+  const std::filesystem::path later = dir_ / "z_later";
+  std::filesystem::create_directories(locked);
+  std::filesystem::create_directories(later);
+  std::ofstream(later / pluginFileName("broken")) << "not a shared library";
+  std::filesystem::permissions(locked, std::filesystem::perms::none);
+  struct Restore {
+    std::filesystem::path path;
+    ~Restore() {
+      std::error_code ec;  // so TearDown can remove the tree whatever the test did
+      std::filesystem::permissions(path, std::filesystem::perms::owner_all, ec);
+    }
+  } restore{locked};
+
+  auto scan = scanPluginDsos(dir_);
+  ASSERT_TRUE(scan.has_value()) << scan.error();
+  EXPECT_TRUE(scan->plugins.empty());
+  bool reported_locked = false;
+  bool reached_later = false;
+  for (const auto& diagnostic : scan->diagnostics) {
+    reported_locked = reported_locked || diagnostic.path == locked;
+    reached_later = reached_later || diagnostic.path == later / pluginFileName("broken");
+  }
+  EXPECT_TRUE(reported_locked) << "the unreadable directory is named in a diagnostic";
+  EXPECT_TRUE(reached_later) << "the scan went on to the entries after it";
 }
 #endif
 
