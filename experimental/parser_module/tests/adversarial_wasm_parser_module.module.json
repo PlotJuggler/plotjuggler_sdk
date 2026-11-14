@@ -1,0 +1,16 @@
+{
+  "module_abi": 1,
+  "id": "org.plotjuggler.test.adversarial-wasm",
+  "name": "Adversarial wasm parser-module fixture",
+  "version": "1.0.0",
+  "claims": [
+    {
+      "claim_id": "adversarial",
+      "encoding": "ros2msg",
+      "type_name": "test_msgs/msg/Adversarial",
+      "routes": ["object"],
+      "object_type": "kPointCloud",
+      "priority": 0
+    }
+  ]
+}

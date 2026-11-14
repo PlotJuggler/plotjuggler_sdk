@@ -100,6 +100,17 @@ namespace PJ::parser_module {
 inline constexpr uint16_t kBindingInfoVersionV1 = PJ_MODULE_BINDING_INFO_VERSION_V1;
 inline constexpr uint16_t kOutputDescriptorVersionV1 = PJ_MODULE_OUTPUT_DESCRIPTOR_VERSION_V1;
 
+/** Host limits on one decoded scalar output; readOutputDescriptorV1 rejects a
+ * descriptor that exceeds either as malformed. Field names may alias a single
+ * range of the block, so the bytes the host copies are bounded here, not by the
+ * block size. A legitimate message flattens to thousands of fields (array
+ * clamping defaults to 500 elements) with names under a hundred bytes; both
+ * limits sit orders of magnitude above that.
+ */
+inline constexpr uint32_t kMaximumScalarOutputFields = UINT32_C(1) << 20U;
+/// Cumulative bytes of field names plus string values in one scalar output.
+inline constexpr uint64_t kMaximumScalarOutputBytes = UINT64_C(64) * 1024U * 1024U;
+
 enum class Route : uint8_t {
   kScalar = PJ_MODULE_ROUTE_SCALAR,
   kObject = PJ_MODULE_ROUTE_OBJECT,

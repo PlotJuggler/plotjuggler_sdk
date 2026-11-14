@@ -48,7 +48,8 @@ constexpr char kManifest[] = R"({
     {"claim_id":"route-mismatch","encoding":"protobuf","type_name":"fixture.RouteMismatch","routes":["scalar"],"priority":0},
     {"claim_id":"type-mismatch","encoding":"protobuf","type_name":"fixture.TypeMismatch","routes":["object"],"object_type":"kPointCloud","priority":0},
     {"claim_id":"splice-grid-map","encoding":"protobuf","type_name":"fixture.SpliceGridMap","routes":["object"],"object_type":"kGridMap","priority":0},
-    {"claim_id":"splice-grid-map-short","encoding":"protobuf","type_name":"fixture.SpliceGridMapShort","routes":["object"],"object_type":"kGridMap","priority":0}
+    {"claim_id":"splice-grid-map-short","encoding":"protobuf","type_name":"fixture.SpliceGridMapShort","routes":["object"],"object_type":"kGridMap","priority":0},
+    {"claim_id":"aliased-scalar-names","encoding":"protobuf","type_name":"fixture.AliasedScalarNames","routes":["scalar"],"priority":0}
   ]
 })";
 
@@ -94,6 +95,33 @@ int32_t storeOutput(Instance& instance, PJ::parser_module::OutputDescriptorV1 de
   }
   instance.output = std::move(*output);
   return PJ_MODULE_OK;
+}
+
+// A scalar descriptor whose 4096 field names all alias one 64 KiB range: a
+// ~100 KiB block that names 256 MiB of host copies. writeOutputDescriptorV1
+// cannot alias names, so the bytes are laid out by hand.
+void writeAliasedScalarNames(std::vector<uint8_t>& output) {
+  constexpr size_t kFields = 4096;
+  constexpr size_t kNameBytes = size_t{64} * 1024U;
+  constexpr size_t kFieldBytes = 10;  // name offset, name length, kind, bool value
+  constexpr size_t kNameOffset = 24 + kFields * kFieldBytes;
+  output.assign(kNameOffset + kNameBytes, uint8_t{'n'});
+  const auto put = [&output](size_t at, uint64_t value, size_t width) {
+    for (size_t index = 0; index < width; ++index) {
+      output[at + index] = static_cast<uint8_t>(value >> (8U * index));
+    }
+  };
+  put(0, PJ_MODULE_OUTPUT_DESCRIPTOR_VERSION_V1, 2);
+  put(2, PJ_MODULE_ROUTE_SCALAR, 1);
+  put(3, 0, 17);  // reserved, has_timestamp, padding and timestamp
+  put(20, kFields, 4);
+  for (size_t field = 0; field < kFields; ++field) {
+    const size_t at = 24 + field * kFieldBytes;
+    put(at, kNameOffset, 4);
+    put(at + 4, kNameBytes, 4);
+    put(at + 8, PJ_MODULE_SCALAR_VALUE_BOOL, 1);
+    put(at + 9, 0, 1);
+  }
 }
 
 }  // namespace
@@ -182,6 +210,8 @@ PJ_FIXTURE_EXPORT int32_t pj_module_parse(
   if (instance->claim_index == kMalformed) {
     // Deliberately not a decodable output descriptor.
     instance->output = {1, 2, 3};
+  } else if (instance->claim_index == kAliasedScalarNames) {
+    writeAliasedScalarNames(instance->output);
   } else {
     // ObjectOutputV1::wire is a borrowed span, so its storage must outlive the
     // storeOutput call that serializes it.

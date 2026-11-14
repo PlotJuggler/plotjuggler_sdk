@@ -148,6 +148,18 @@ TEST(ParserModuleRuntime, ClassifiesDataErrorsSeparatelyFromContractViolations) 
   EXPECT_NE(mismatch_result->message.find("does not match"), std::string::npos);
 }
 
+TEST(ParserModuleRuntime, RejectsScalarNamesAliasedPastTheHostCopyLimit) {
+  // Every field name passes its own range check, but together they would make
+  // the host copy 256 MiB from a ~100 KiB descriptor.
+  auto module = loadFixture();
+  auto instance = createBound(module, kAliasedScalarNames, parser_module::Route::kScalar);
+  auto result = instance.parse(input());
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_EQ(result->fault, ParserModuleFaultKind::kContractViolation);
+  EXPECT_FALSE(result->output.has_value());
+  EXPECT_NE(result->message.find("malformed output descriptor"), std::string::npos) << result->message;
+}
+
 TEST(ParserModuleRuntime, AcceptsEligibleSpliceAndRejectsInvalidReferences) {
   auto module = loadFixture();
 
@@ -241,6 +253,26 @@ TEST(ParserModuleRuntime, StrikeTrackerQuarantinesReplaysAndThenDisables) {
   EXPECT_FALSE(tracker.markRecreated(key));
   EXPECT_EQ(tracker.state(key).health, ParserModuleClaimHealth::kDisabled);
   EXPECT_EQ(tracker.state(key).quarantine_count, 2U);
+}
+
+TEST(ParserModuleRuntime, StrikeTrackerDisablesWhenTheReplayItselfFaults) {
+  const ParserModuleClaimKey key{"org.plotjuggler.test.native-module", "malformed"};
+  ParserModuleStrikeTracker tracker;
+  for (int strike = 1; strike <= 3; ++strike) {
+    (void)tracker.recordFault(key, ParserModuleFaultKind::kContractViolation);
+  }
+  ASSERT_EQ(tracker.state(key).health, ParserModuleClaimHealth::kQuarantined);
+
+  // A data error during replay is still not a strike.
+  EXPECT_EQ(tracker.recordFault(key, ParserModuleFaultKind::kDataError).health, ParserModuleClaimHealth::kQuarantined);
+  // A contract violation during replay (create/bind trapping again) is the
+  // repeat the policy disables on; the claim can never be stuck quarantined.
+  const auto disabled = tracker.recordFault(key, ParserModuleFaultKind::kContractViolation);
+  EXPECT_EQ(disabled.health, ParserModuleClaimHealth::kDisabled);
+  EXPECT_EQ(disabled.quarantine_count, 2U);
+  EXPECT_FALSE(tracker.markRecreated(key));
+  EXPECT_EQ(
+      tracker.recordFault(key, ParserModuleFaultKind::kContractViolation).health, ParserModuleClaimHealth::kDisabled);
 }
 
 }  // namespace

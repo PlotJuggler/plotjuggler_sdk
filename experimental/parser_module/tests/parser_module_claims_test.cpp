@@ -118,5 +118,86 @@ TEST(ParserModuleClaims, ModuleManifestCannotForgeProvenance) {
   EXPECT_NE(result.error().find("provenance"), std::string::npos);
 }
 
+std::string claimJson(size_t index) {
+  return R"({"claim_id":"c)" + std::to_string(index) + R"(","encoding":"protobuf","type_name":"t.T)" +
+         std::to_string(index) + R"(","routes":["scalar"],"priority":0})";
+}
+
+std::string manifestJson(std::string_view id, const std::vector<std::string>& claims) {
+  std::string json = R"({"module_abi":1,"id":")" + std::string(id) + R"(","name":"N","version":"1.0.0","claims":[)";
+  for (size_t index = 0; index < claims.size(); ++index) {
+    json += (index == 0 ? "" : ",") + claims[index];
+  }
+  return json + "]}";
+}
+
+void expectBoundRejected(const std::string& json, std::string_view expected) {
+  const auto decoded = decodeParserModuleManifest(json, ParserClaimProvenance::kFolderDrop);
+  ASSERT_FALSE(decoded.has_value());
+  EXPECT_NE(decoded.error().find(expected), std::string::npos) << decoded.error();
+}
+
+TEST(ParserModuleClaims, ModuleManifestBoundsMetadataBeforeExpandingClaims) {
+  const std::string long_string(kMaximumParserModuleManifestStringBytes, 'x');
+  const std::string digest = "sha256:" + std::string(64, 'a');
+
+  // At every limit at once: maximum claims, maximum-length id, claim id and
+  // type name, and the maximum number of schema digests.
+  std::vector<std::string> claims;
+  for (size_t index = 0; index + 1 < kMaximumParserModuleManifestClaims; ++index) {
+    claims.push_back(claimJson(index));
+  }
+  std::string digests;
+  for (size_t index = 0; index < kMaximumParserModuleClaimSchemaDigests; ++index) {
+    std::string unique = digest;
+    unique.replace(unique.size() - 4, 4, std::to_string(1000 + index));
+    digests += (index == 0 ? "\"" : ",\"") + unique + "\"";
+  }
+  const std::string long_type = "t." + std::string(kMaximumParserModuleManifestStringBytes - 2, 'T');
+  claims.push_back(
+      R"({"claim_id":")" + long_string + R"(","encoding":"protobuf","type_name":")" + long_type +
+      R"(","routes":["scalar"],"priority":0,"schema_digests":[)" + digests + "]}");
+  const std::string at_limits = manifestJson(long_string, claims);
+  ASSERT_LE(at_limits.size(), kMaximumParserModuleManifestBytes);
+  const auto accepted = decodeParserModuleManifest(at_limits, ParserClaimProvenance::kFolderDrop);
+  ASSERT_TRUE(accepted.has_value()) << accepted.error();
+  EXPECT_EQ(accepted->claims.size(), kMaximumParserModuleManifestClaims);
+  EXPECT_EQ(accepted->claims.back().schema_digests.size(), kMaximumParserModuleClaimSchemaDigests);
+
+  const std::string too_long = long_string + "x";
+  expectBoundRejected(manifestJson(too_long, {claimJson(0)}), "id exceeds");
+
+  claims.push_back(claimJson(kMaximumParserModuleManifestClaims));
+  expectBoundRejected(manifestJson("m", claims), "claims");
+
+  expectBoundRejected(
+      manifestJson(
+          "m", {R"({"claim_id":")" + too_long +
+                R"(","encoding":"protobuf","type_name":"t.T",)"
+                R"("routes":["scalar"],"priority":0})"}),
+      "claim_id exceeds");
+  expectBoundRejected(
+      manifestJson(
+          "m", {R"({"claim_id":"c","encoding":")" + too_long +
+                R"(","type_name":"t.T",)"
+                R"("routes":["scalar"],"priority":0})"}),
+      "encoding exceeds");
+  expectBoundRejected(
+      manifestJson(
+          "m", {R"({"claim_id":"c","encoding":"protobuf","type_name":"t.)" + too_long +
+                R"(","routes":["scalar"],"priority":0})"}),
+      "type_name exceeds");
+  expectBoundRejected(
+      manifestJson(
+          "m", {R"({"claim_id":"c","encoding":"protobuf","type_name":"t.T","routes":["scalar"],)"
+                R"("priority":0,"schema_digests":[)" +
+                digests + ",\"" + digest + "\"]}"}),
+      "schema_digests");
+
+  std::string oversized = manifestJson("m", {claimJson(0)});
+  oversized.insert(1, kMaximumParserModuleManifestBytes, ' ');
+  expectBoundRejected(oversized, "bytes");
+}
+
 }  // namespace
 }  // namespace PJ

@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <variant>
 #include <vector>
@@ -279,6 +280,52 @@ TEST(ParserModuleAbi, OutputReaderRejectsTruncationAndMalformedDescriptors) {
   malformed_scalar = kScalarOutputGolden;
   malformed_scalar[24] = 0xFF;
   EXPECT_FALSE(PJ::parser_module::readOutputDescriptorV1(malformed_scalar));
+}
+
+// A scalar descriptor of `field_count` bool fields whose names all alias one
+// `name_bytes` range; writeOutputDescriptorV1 cannot alias names.
+std::vector<uint8_t> aliasedScalarOutput(size_t field_count, size_t name_bytes) {
+  const size_t name_offset = 24 + field_count * 10;
+  std::vector<uint8_t> block(name_offset + name_bytes, uint8_t{'n'});
+  const auto put = [&block](size_t at, uint64_t value, size_t width) {
+    for (size_t index = 0; index < width; ++index) {
+      block[at + index] = static_cast<uint8_t>(value >> (8U * index));
+    }
+  };
+  put(0, PJ_MODULE_OUTPUT_DESCRIPTOR_VERSION_V1, 2);
+  put(2, PJ_MODULE_ROUTE_SCALAR, 1);
+  put(3, 0, 17);
+  put(20, field_count, 4);
+  for (size_t field = 0; field < field_count; ++field) {
+    const size_t at = 24 + field * 10;
+    put(at, name_offset, 4);
+    put(at + 4, name_bytes, 4);
+    put(at + 8, PJ_MODULE_SCALAR_VALUE_BOOL, 1);
+    put(at + 9, 0, 1);
+  }
+  return block;
+}
+
+TEST(ParserModuleAbi, OutputReaderBoundsScalarFieldsAndCopiedBytes) {
+  using PJ::parser_module::kMaximumScalarOutputBytes;
+  using PJ::parser_module::kMaximumScalarOutputFields;
+  constexpr size_t kAliases = 64;
+  constexpr size_t kNameAtLimit = kMaximumScalarOutputBytes / kAliases;
+
+  const auto at_byte_limit = PJ::parser_module::readOutputDescriptorV1(aliasedScalarOutput(kAliases, kNameAtLimit));
+  ASSERT_TRUE(at_byte_limit) << at_byte_limit.error();
+  const auto over_byte_limit =
+      PJ::parser_module::readOutputDescriptorV1(aliasedScalarOutput(kAliases, kNameAtLimit + 1));
+  ASSERT_FALSE(over_byte_limit);
+  EXPECT_NE(over_byte_limit.error().find("bytes"), std::string::npos) << over_byte_limit.error();
+
+  const auto at_field_limit =
+      PJ::parser_module::readOutputDescriptorV1(aliasedScalarOutput(kMaximumScalarOutputFields, 1));
+  ASSERT_TRUE(at_field_limit) << at_field_limit.error();
+  const auto over_field_limit =
+      PJ::parser_module::readOutputDescriptorV1(aliasedScalarOutput(size_t{kMaximumScalarOutputFields} + 1, 1));
+  ASSERT_FALSE(over_field_limit);
+  EXPECT_NE(over_field_limit.error().find("fields"), std::string::npos) << over_field_limit.error();
 }
 
 TEST(BuiltinObjectSpliceTable, ContainsOnlyUnambiguousTopLevelBulkByteFields) {

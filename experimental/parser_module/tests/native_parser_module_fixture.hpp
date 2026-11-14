@@ -24,7 +24,8 @@ enum ClaimIndex : uint32_t {
   kTypeMismatch = 11,
   kSpliceGridMap = 12,
   kSpliceGridMapShort = 13,
-  kClaimCount = 14,
+  kAliasedScalarNames = 14,
+  kClaimCount = 15,
 };
 
 }  // namespace pj_fixture
