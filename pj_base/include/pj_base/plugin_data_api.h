@@ -49,8 +49,9 @@ extern "C" {
  * pre-v5 parser DSOs because the C++ MessageParserPluginBase
  * pure-functional contract changed parseScalars()/parseObject() return
  * types to ScalarRecord/ObjectRecord. SDK 0.21 subsequently placed those
- * results behind an additive C extension, now `pj.parser_functional.v2`; direct
- * host calls on the C++ base remain only as a temporary old-plugin bridge.
+ * results behind an additive C extension, now `pj.parser_functional.v2`. Direct
+ * host calls on the C++ base remain supported through 1.x as a deprecated
+ * bridge (pj_plugins/docs/ARCHITECTURE.md, section 0a).
  *
  * The C data-plane layout remains the v4 layout:
  *   - Arrow C Data Interface replaces Arrow IPC bytes at the boundary

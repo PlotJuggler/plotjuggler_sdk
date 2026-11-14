@@ -98,6 +98,14 @@ frozen eligible bulk field as a splice into the input payload; the host still
 reconstructs a canonical SDK object. The schema and wire-format details stay
 private; public SDK headers expose only SDK structs.
 
+**A struct member is binary interface for now.** PlotJuggler 4 does not use that
+boundary yet: it reads the C++ struct a parser returns directly. Until it moves
+to functional v2, adding, removing or reordering a member of a builtin struct
+breaks a parser and a host built from different SDK releases, and is released
+as a MAJOR. A new builtin type, or a proto field the struct does not expose, is
+unaffected. See
+[the direct C++ parser bridge](../pj_plugins/docs/ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5).
+
 ## Serialization Families
 
 Builtin objects fall into two serialization families:

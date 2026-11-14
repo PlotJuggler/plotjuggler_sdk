@@ -80,6 +80,10 @@ Propose a release only according to plugin impact:
 Tail-append optional slots and gate them by `struct_size`; keep minimum vtable
 sizes frozen. `abidiff` must show additions only for a MINOR.
 
+A member change in a builtin object struct (`pj_base/builtin/`) is a MAJOR while
+PlotJuggler reads parser objects through the direct C++ bridge; `abidiff` does
+not see it. See [ABI evolution rules](pj_plugins/docs/ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5).
+
 The SDK version is **build identity only** — it names what a plugin compiled
 against, never what host it runs on. A release that only adds client-side
 helpers (static-library code compiled into the plugin) does NOT change runtime

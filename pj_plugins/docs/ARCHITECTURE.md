@@ -13,6 +13,31 @@ diffs the extracted host-surface inventory against the checked-in snapshot),
 and the installed copy of the table is what downstream plugin repositories
 validate `min_sdk_required` against.
 
+**The direct C++ parser bridge is a second, temporary ABI.** PlotJuggler 4
+reads objects from a MessageParser by casting the plugin's opaque context to
+`MessageParserPluginBase*` and calling `parseObject()`. It does this for every
+parser, not only for the pre-0.22 ones that lack `pj.parser_functional.v2`.
+Until the host reads objects through v2 only, these C++ layouts cross the
+plugin boundary and are frozen like a C struct:
+
+- the member prefix of `MessageParserPluginBase` and the order of its virtual
+  functions (members do not move, additions are tail-only);
+- `sdk::ObjectRecord`, `sdk::BuiltinObject` and `PJ::Expected`;
+- every builtin object struct under `pj_base/builtin/` (`sdk::Image`,
+  `sdk::PointCloud`, ...), including the structs nested in them.
+
+Adding, removing, reordering or retyping a member of any of them breaks a
+parser and a host built from different SDK releases. Nothing detects it:
+`PJ_ABI_VERSION` covers the C structs, and the `abidiff` gate checks a
+DataSource canary. Such a change is therefore released as a MAJOR. A new
+builtin type is not affected (it adds a struct; it changes none), and neither
+is a new proto field that the C++ struct does not expose.
+
+The freeze ends in a 1.x release, once the host no longer casts. That release
+states it in its changelog. Lifting it changes nothing for a plugin's sources
+or binary, except that a parser built before SDK 0.22, which has no v2
+extension, can no longer emit objects.
+
 1. **Boot-level ABI symbol.** Every plugin .so exports
    `pj_plugin_abi_version` as a `uint32_t` symbol independent of any
    vtable. The host `dlsym`s it BEFORE fetching the family vtable;
@@ -837,10 +862,10 @@ when the separate type tag is known. Concrete builtins and codecs live under
 `pj_base/builtin/`; see `docs/builtin_type.md` for the catalog.
 
 Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
-builds expose none, and 0.21 builds expose only the retired v1. The host keeps a
-clearly isolated, deprecated direct-C++ bridge for those binaries. New plugins
-and new host code use v2; SDK 1.0 can remove the bridge and the frozen
-`MessageParserPluginBase` layout constraint.
+builds expose none, and 0.21 builds expose only the retired v1. New plugins and
+new host code use v2. PlotJuggler 4 still reads objects through the direct C++
+bridge for every parser; section 0a states what that freezes and when the
+freeze ends.
 
 ## Per-topic pause (demand-driven subscription)
 

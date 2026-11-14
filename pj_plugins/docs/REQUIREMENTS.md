@@ -137,9 +137,13 @@ Independent decoder, typically driven by a DataSource via the host.
   parser that still overrides only legacy `parse()` must not advertise the
   functional extension. Hosts query after `bind_schema` and do not cache an
   earlier absence.
-- Until SDK 1.0, a host may use an isolated deprecated direct-C++ bridge for a
-  pre-0.22 parser, which exposes no v2 extension. The bridge and its
-  class-layout constraint are removed together at 1.0.
+- A host may read objects through the deprecated direct-C++ bridge (a cast of
+  the parser context to `MessageParserPluginBase*`) instead of v2. The bridge
+  is supported through 1.x. While any supported host uses it, the layouts it
+  shares with the plugin are frozen: the `MessageParserPluginBase` member
+  prefix and virtual order, `sdk::ObjectRecord`, `sdk::BuiltinObject`,
+  `PJ::Expected` and every builtin object struct. A 1.x release lifts the
+  freeze once the host reads objects through v2 only.
 
 ### Dialog
 
