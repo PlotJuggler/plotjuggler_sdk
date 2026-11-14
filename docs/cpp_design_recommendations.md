@@ -248,27 +248,15 @@ Avoid template metaprogramming when `concepts` + `constexpr if` suffices.
 
 ## 13. Library Dependencies
 
-The project uses a small set of third-party libraries alongside the C++20 standard library.
-
-### String Formatting
-
-Use `fmt` for all string formatting and concatenation:
-
-| Task | Use |
-|---|---|
-| Formatting / concatenation | `fmt::format("prefix: {}", value)` |
-| Joining containers | `fmt::join(container, ", ")` inside `fmt::format` |
+The SDK's public headers depend only on the C++20 standard library;
+nlohmann/json is a public dependency of `pj_source` and `pj_plugins`.
+fast_float and fmt are private build details of the SDK's own `.cpp` files and
+do not reach plugins, so public headers never include them.
 
 ### Hash Containers
 
-**In `.cpp` files:** use `tsl::robin_map` / `tsl::robin_set` for performance-critical hash containers.
-
-**In `.hpp` headers:** use `std::unordered_map` / `std::unordered_set` to avoid leaking dependencies.
-
-| Need | Use (in `.cpp`) | Use (in `.hpp`) |
-|---|---|---|
-| Hash map (default) | `tsl::robin_map` | `std::unordered_map` |
-| Hash set (default) | `tsl::robin_set` | `std::unordered_set` |
+Use `std::unordered_map` / `std::unordered_set`; the SDK carries no
+third-party hash container.
 
 ### Error Handling
 
@@ -384,7 +372,7 @@ Practical tips for robust API design:
 
 - **Return by value for cheap types** -- Avoid returning `const T&` to internal data when `T` is cheap to copy (e.g., `string_view`, `int`). Return by value instead -- this decouples callers from internal representation and preserves optimization freedom.
 
-- **Avoid unnecessarily strong guarantees** -- Weaker guarantees (e.g., no iterator stability) can enable significantly better performance. Open-addressing hash maps like `tsl::robin_map` outperform `std::unordered_map` precisely because they trade iterator stability for cache locality.
+- **Avoid unnecessarily strong guarantees** -- Weaker guarantees (e.g., no iterator stability) can enable significantly better performance, as open-addressing hash maps show by trading iterator stability for cache locality.
 
 ---
 
@@ -423,17 +411,17 @@ Pick the simplest container that fits the access pattern.
 
 ### Associative (key lookup)
 
-| Need | Container (`.cpp`) | Container (`.hpp`) |
-|---|---|---|
-| Ordered, unique keys | `std::map` | `std::map` |
-| Unordered (faster), unique keys | `tsl::robin_map` | `std::unordered_map` |
+| Need | Container |
+|---|---|
+| Ordered, unique keys | `std::map` |
+| Unordered (faster), unique keys | `std::unordered_map` |
 
 ### Sets
 
-| Need | Container (`.cpp`) | Container (`.hpp`) |
-|---|---|---|
-| Ordered | `std::set` | `std::set` |
-| Unordered (fastest) | `tsl::robin_set` | `std::unordered_set` |
+| Need | Container |
+|---|---|
+| Ordered | `std::set` |
+| Unordered (fastest) | `std::unordered_set` |
 
 ### Adaptors
 
@@ -449,47 +437,12 @@ Pick the simplest container that fits the access pattern.
 
 ## Compiler Flags
 
-### GCC / Clang
-
-```
--std=c++20
--Wall -Wextra
--Wcast-qual
--Wconversion
--Wdouble-promotion
--Wformat=2
--Wmissing-declarations
--Wnon-virtual-dtor
--Wold-style-cast
--Woverloaded-virtual
--Wpointer-arith
--Wshadow
--Wunused-result
--Wvla
--Werror              # in CI; optional locally
-```
-
-Clang additional:
-```
--Wmost
--Wthread-safety      # thread-safety static analysis
-```
-
-Debug/test builds:
-```
--fsanitize=address,undefined
-```
-
-### MSVC
-
-```
-/std:c++20
-/W4
-/WX              # in CI; treat warnings as errors
-/permissive-
-/DNOMINMAX
-/DWIN32_LEAN_AND_MEAN
-```
+The root `CMakeLists.txt` owns the warning set; read it there rather than here.
+It is strict on every compiler (GCC/Clang: `-Wall -Wextra -Wshadow
+-Wold-style-cast -Wconversion -Wpedantic` and more; MSVC: `/W4 /permissive-`),
+and warnings are errors unless `PJ_WARNINGS_AS_ERRORS` is turned off.
+`./build.sh --debug` adds AddressSanitizer (`PJ_ENABLE_SANITIZERS`);
+`PJ_ENABLE_TSAN` selects ThreadSanitizer instead.
 
 ---
 
@@ -517,7 +470,6 @@ When reviewing code, classify issues by severity:
 - `bool` parameter where `enum class` would be clearer
 - Function with > 3 parameters that could use a struct
 - Missing `constexpr` on a function that could be constexpr
-- Using `std::unordered_map` in `.cpp` files where `tsl::robin_map` would be better
 
 ### Suggestion (optional improvement)
 - Opportunity to use ranges for cleaner pipeline
@@ -532,8 +484,6 @@ When reviewing code, classify issues by severity:
 - [Qt API Design Principles](https://wiki.qt.io/API_Design_Principles)
 - [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/)
 - Scott Meyers, *Effective C++* Item 18; [How Non-Member Functions Improve Encapsulation](https://www.aristeia.com/Papers/CUJ_Feb_2000.pdf)
-- [fmt library](https://fmt.dev/) -- type-safe formatting
-- [tsl::robin_map](https://github.com/Tessil/robin-map) -- fast open-addressing hash map
 - [Strong Types for Strong Interfaces](https://www.fluentcpp.com/2016/12/08/strong-types-for-strong-interfaces/) -- Fluent C++
 - [When SOLID Breaks: Choose CLARITY](https://krossovochkin.com/posts/2025_05_05_when_solid_breaks_choose_clarity/)
 - [CppCon 2024: The Most Important C++ Design Guideline is Testability](https://www.classcentral.com/course/youtube-the-most-important-c-design-guideline-is-testability-jody-hagins-cppcon-2024-419955) -- Jody Hagins

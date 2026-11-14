@@ -84,8 +84,8 @@ span points at the bytes; the anchor keeps the underlying allocation alive while
 consumers use it.
 
 **Keep small objects owned.** `ImageAnnotations` and `FrameTransforms` own
-their vectors, strings, and scalar fields directly. Future marker types should
-follow the same pattern unless they grow payload-sized byte arrays. These values
+their vectors, strings, and scalar fields directly. Small value types follow the
+same pattern unless they grow payload-sized byte arrays. These values
 are small enough that the zero-copy anchor pattern is unnecessary.
 
 **Serialize only at an explicit boundary.** Large byte-backed types remain
@@ -116,8 +116,10 @@ Builtin objects fall into two serialization families:
 | Owned values | `ImageAnnotations`, `FrameTransforms`, `SceneEntities`, `RobotDescription`, `CameraInfo`, `Log`, `PosesInFrame`, `PlotMarkers` | SDK structs own their vectors/strings/scalars directly. | Canonical codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. `RobotDescription.text` remains raw URDF/SDF/MJCF source inside its small canonical envelope. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
-format contract. One file per top-level message, each named after its message
-(`Image.proto`, `SceneEntities.proto`, `FrameTransforms.proto`, …). Shared
+format contract. One file per builtin type, named after it (`Image.proto`,
+`SceneEntities.proto`, `FrameTransforms.proto`, …); a file also holds the nested
+messages its type needs (`PointCloud.proto` has `PointField`, `SceneEntities.proto`
+the primitives and `SceneEntity`). Shared
 geometry primitives are grouped in `Geometry.proto`: `Point2`, `Point3`,
 `Vector2`, `Vector3`, `Quaternion`, and `Pose`. See
 [`pj_base/proto/pj/README.md`](../pj_base/proto/pj/README.md) for the family
@@ -149,29 +151,34 @@ encoder and from a later SDK both read correctly:
 the host decide that a topic produces images, point clouds, depth images, image
 annotations, frame transforms, or no builtin object.
 
-| Type | Concrete type | Purpose |
-|------|---------------|---------|
-| `kNone` | none | Scalar-only schema or unknown object. |
-| `kImage` | `PJ::sdk::Image` | Raw or compressed image data. |
-| `kPointCloud` | `PJ::sdk::PointCloud` | Packed 3D point records. |
-| `kDepthImage` | `PJ::sdk::DepthImage` | Depth pixels plus camera intrinsics. |
-| `kImageAnnotations` | `PJ::sdk::ImageAnnotations` | Pixel-space overlay primitives. |
-| `kFrameTransforms` | `PJ::sdk::FrameTransforms` | Named 3D frame relationships. |
-| `kOccupancyGrid` | `PJ::sdk::OccupancyGrid` | 2D metric occupancy grid (maps, costmaps) in world coordinates. |
-| `kCompressedPointCloud` | `PJ::sdk::CompressedPointCloud` | Point cloud delivered in a format-specific compressed binary (e.g. Draco). |
-| `kMesh3D` | `PJ::sdk::Mesh3D` | 3D mesh asset in its native binary format (GLTF/GLB/STL/PLY/OBJ/USD/DAE). |
-| `kVideoFrame` | `PJ::sdk::VideoFrame` | One frame of an inter-frame-coded video stream (h264/h265/vp9/av1). |
-| `kSceneEntities` | `PJ::sdk::SceneEntities` | Procedural 3D scene primitives (arrows, cubes, lines, text, …). |
-| `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
-| `kCameraInfo` | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
-| `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
-| `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + source). |
-| `kPosesInFrame` | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
-| `kVoxelGrid` | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
-| `kGridMap` | `PJ::sdk::GridMap` | 2D grid of per-cell channels (elevation maps, layered costmaps) in world coordinates. |
-| `kMeshMap` | `PJ::sdk::MeshMap` | Triangle mesh whose vertices and faces carry named data channels, one array per channel (navigation, cost, semantic meshes). |
-| `kMeshMapUpdate` | `PJ::sdk::MeshMapUpdate` | Channel patches (dense or sparse) for a previously-published `MeshMap`. |
-| `kPlotMarkers` | `PJ::sdk::PlotMarkers` | Findings on a time-series plot (regions, events, bands, and labels). |
+| Type | Tag | Concrete type | Purpose |
+|------|-----|---------------|---------|
+| `kNone` | 0 | none | Scalar-only schema or unknown object. |
+| `kImage` | 1 | `PJ::sdk::Image` | Raw or compressed image data. |
+| `kPointCloud` | 3 | `PJ::sdk::PointCloud` | Packed 3D point records. |
+| `kDepthImage` | 4 | `PJ::sdk::DepthImage` | Depth pixels plus camera intrinsics. |
+| `kImageAnnotations` | 5 | `PJ::sdk::ImageAnnotations` | Pixel-space overlay primitives. |
+| `kFrameTransforms` | 6 | `PJ::sdk::FrameTransforms` | Named 3D frame relationships. |
+| `kOccupancyGrid` | 7 | `PJ::sdk::OccupancyGrid` | 2D metric occupancy grid (maps, costmaps) in world coordinates. |
+| `kCompressedPointCloud` | 8 | `PJ::sdk::CompressedPointCloud` | Point cloud delivered in a format-specific compressed binary (e.g. Draco). |
+| `kMesh3D` | 9 | `PJ::sdk::Mesh3D` | 3D mesh asset in its native binary format (GLTF/GLB/STL/PLY/OBJ/USD/DAE). |
+| `kVideoFrame` | 10 | `PJ::sdk::VideoFrame` | One frame of an inter-frame-coded video stream (h264/h265/vp9/av1). |
+| `kSceneEntities` | 11 | `PJ::sdk::SceneEntities` | Procedural 3D scene primitives (arrows, cubes, lines, text, …). |
+| `kRobotDescription` | 13 | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
+| `kCameraInfo` | 14 | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
+| `kOccupancyGridUpdate` | 15 | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
+| `kLog` | 16 | `PJ::sdk::Log` | Textual log message (severity level + text + source). |
+| `kPosesInFrame` | 17 | `PJ::sdk::PosesInFrame` | Array of poses in one frame (PoseArray / particle clouds); styling is viewer-side. |
+| `kVoxelGrid` | 18 | `PJ::sdk::VoxelGrid` | Dense 3D voxel grid (occupancy/cost/ESDF/semantic); the volumetric sibling of `OccupancyGrid`. |
+| `kGridMap` | 20 | `PJ::sdk::GridMap` | 2D grid of per-cell channels (elevation maps, layered costmaps) in world coordinates. |
+| `kMeshMap` | 21 | `PJ::sdk::MeshMap` | Triangle mesh whose vertices and faces carry named data channels, one array per channel (navigation, cost, semantic meshes). |
+| `kMeshMapUpdate` | 22 | `PJ::sdk::MeshMapUpdate` | Channel patches (dense or sparse) for a previously-published `MeshMap`. |
+| `kPlotMarkers` | 19 | `PJ::sdk::PlotMarkers` | Findings on a time-series plot (regions, events, bands, and labels). |
+
+The tag is the `PJ_builtin_object_type_t` value (`builtin_object_abi.h`). Tags `2` and `12`
+are reserved and never reused. `kMeshMap` and `kMeshMapUpdate` are a hard floor: a plugin that
+emits either must declare `min_sdk_required` of at least 1.0.0 (see
+`pj_base/feature_floors.json`).
 
 ### Object-topic renderer metadata
 
@@ -263,7 +270,9 @@ pixel size, 2 bytes for `16UC1` and 4 for `32FC1`), and the field table reports 
 ```
 
 Helpers in `pj_base/builtin/depth_image_utils.hpp` derive common matrices such as
-rectification rotation and projection matrix when a consumer wants them.
+rectification rotation and projection matrix when a consumer wants them, and
+back-project pixels: `PinholeIntrinsics::fromK` inverts `K` once per image
+(rejecting a non-finite or singular `K`) and `unprojectPixel` is its one-pixel form.
 
 ## PointCloud
 
@@ -522,6 +531,7 @@ axes glyphs, or model (mesh asset) references.
 | `id` | `std::string` | Republishing with the same `(topic, id)` replaces the previous entity. |
 | `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp_ns`. |
 | `frame_locked` | `bool` | When true, track `frame_id` as it moves; when false, stamp into the fixed frame at publish time. |
+| `metadata` | `std::vector<KeyValuePair>` | Arbitrary user-attached key/value pairs; keys should be unique within an entity. |
 | `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` / `models` | `std::vector<…Primitive>` | Heterogeneous primitive lists. `models` references a mesh asset by `url` or inline `data`. |
 
 The `SceneEntities` batch also carries `deletions` (`std::vector<SceneEntityDeletion>`):
@@ -530,7 +540,11 @@ stateful stream (e.g. ROS Marker `DELETE` / `DELETEALL`). A deletion is either
 `kMatchingId` (remove the entity with the given `id`) or `kAll` (clear the topic).
 
 Each primitive carries its own `Pose`, geometry-specific size or shape
-fields, and color (or per-vertex colors, where applicable). See
+fields, and color (or per-vertex colors, where applicable). A `ModelPrimitive`
+has `pose`, `scale`, `color` plus `override_color` (tint only when true), and
+either a `url` or inline `data` with its MIME `media_type`. The line topology
+(`LinePrimitive.Type`, C++ `LineType`) uses Foxglove's numbering (`LINE_STRIP` = 0,
+`LINE_LOOP` = 1, `LINE_LIST` = 2). See
 `pj_base/include/pj_base/builtin/scene_entities.hpp` for the per-primitive
 fields and `pj_base/proto/pj/SceneEntities.proto` for the wire contract.
 
@@ -616,6 +630,8 @@ plus an optional `category`.
 | `category` | `std::string` | Source-defined grouping (a tag, a subsystem); may be empty. |
 
 The source-location fields (`file`, `function`, `line`) are intentionally omitted.
+On the wire `source` is field 4 and fields 5 and 6 are reserved (they are `file` and
+`line` in `foxglove.Log`), so a Foxglove-encoded log decodes with those two skipped.
 `pj_base/builtin/log_codec.hpp` serializes and deserializes this type using the
 canonical `PJ.Log` protobuf wire format.
 

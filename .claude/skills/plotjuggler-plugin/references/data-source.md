@@ -86,7 +86,7 @@ class MyUdpSource : public PJ::StreamSourceBase {
     return PJ::okStatus();
   }
 
-  PJ::Status onPoll() override {        // host thread — the only place you touch the host
+  PJ::Status onPoll() override {        // host thread — hand the buffered data to the host here
     auto batch = pending_.drain();      // swaps the whole queue out under a brief lock
     auto topic = writeHost().ensureTopic("udp/data");
     if (!topic) return PJ::unexpected(topic.error());
@@ -131,8 +131,8 @@ For **delegated** ingest (let a MessageParser decode the bytes): declare
 header). In `onPoll()`:
 
 ```cpp
-PJ::sdk::ParserBindingRequest req{.topic_name = topic, .parser_encoding = encoding_,
-                                  .parser_config_json = parser_config_};
+PJ::ParserBindingRequest req{.topic_name = topic, .parser_encoding = encoding_,
+                             .parser_config_json = parser_config_};
 auto r = ingest_.push(runtimeHost(), /*cache_key=*/topic, req, ts, std::move(bytes));
 if (!r) return PJ::unexpected(r.error());               // a failed push IS an error
 // r == kBindingUnavailable: no parser for that encoding yet — skipped, retried next poll
@@ -184,10 +184,12 @@ extension (`pluginExtension(PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1)` returning a liv
   the hand-off point.
 - **`FileSourceBase` calls `progressFinish()` for you.** Do not call it yourself
   from `importData()`; a manual `DataSourcePluginBase` must call it itself.
-- **Notify state transitions.** With the raw `DataSourcePluginBase`, call
-  `runtimeHost().notifyState(state)` on every transition you make, and never
-  `resume()` from a terminal (`stopped`/`failed`) state — the host makes a new
-  instance instead.
+- **State reports are advisory.** `runtimeHost().notifyState(state)` and
+  `currentState()` may be ignored by a host: report them, do not depend on
+  them. An instance is started at most once; the host makes a new instance to
+  restart, so never `resume()` from a terminal (`stopped`/`failed`) state.
+- **An empty cell is a null, not a zero.** Write `PJ::kNull` (or a
+  `PJ::TypedNull` to create the column on its first row) as the field value.
 - **Timestamps: ns since epoch** (see SKILL.md rule 3). A row counter is not a
   timestamp.
 

@@ -72,7 +72,7 @@ enum class BuiltinObjectType : uint16_t {
   kRobotDescription = 13,     ///< sdk::RobotDescription — raw URDF/SDF/MJCF text + format hint.
   kCameraInfo = 14,           ///< sdk::CameraInfo — pinhole camera calibration (K/D/R/P).
   kOccupancyGridUpdate = 15,  ///< sdk::OccupancyGridUpdate — incremental sub-rectangle patch for an OccupancyGrid.
-  kLog = 16,                  ///< sdk::Log — textual log message (level + text + name).
+  kLog = 16,                  ///< sdk::Log — textual log message (level + text + source).
   kPosesInFrame = 17,         ///< sdk::PosesInFrame — array of poses in one reference frame.
   kVoxelGrid = 18,            ///< sdk::VoxelGrid — dense 3D voxel grid (occupancy/cost/ESDF/semantic).
   kPlotMarkers = 19,          ///< sdk::PlotMarkers — findings on a time-series plot (regions, events, bands, labels).

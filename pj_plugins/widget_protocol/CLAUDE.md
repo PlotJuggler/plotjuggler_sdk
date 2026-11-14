@@ -44,5 +44,8 @@ Local traps not visible from the headers:
   `plugin_id/type`.
 - ABI layout pins live in `tests/widget_abi_layout_sentinels_test.cpp` (not in
   `pj_base`: the family is a `pj_plugins` module).
+- Plugin tests use `PJ::sdk::testing::FakeWidgetHost`
+  (`include/pj_plugins/sdk/testing/fake_widget_host.hpp`), an in-memory
+  `pj.widget_host.v1`; extend it rather than writing a second fake host.
 
 See ../CLAUDE.md for module context.

@@ -257,7 +257,7 @@ jobs:
         run: ctest --test-dir build -L wasmer --output-on-failure
 
       - name: ABI drift gate
-        # Mechanically enforces the Release Versioning policy (CLAUDE.md): a non-MAJOR
+        # Mechanically enforces the versioning policy (docs/RELEASING.md): a non-MAJOR
         # change must not break ABI. Diffs the mock_data_source_plugin canary DSO against
         # the checked-in pj_base/abi/baseline.abi via libabigail and FAILS on an
         # ABI-INCOMPATIBLE change (bit 8). Backward-compatible additions (bit 4) pass with

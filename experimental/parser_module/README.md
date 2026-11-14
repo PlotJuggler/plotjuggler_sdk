@@ -128,13 +128,14 @@ concerns.
 
 Module authors use the standalone C++17 headers under
 `include/pj_base/parser_module/` through the zero-linkage
-`plotjuggler_sdk::parser_module` target. The readers compile ROS 2 concatenated
+`plotjuggler_sdk::parser_module` target, an in-tree ALIAS only (nothing here is
+installed or packaged). The readers compile ROS 2 concatenated
 `.msg` bundles or protobuf `FileDescriptorSet` field paths at bind time; the
 CDR locator supports fixed arrays, bounded and unbounded sequences, bounded
 strings, and string arrays/sequences, while cyclic or over-depth schemas fail at
 bind. The typed `ObjectWriter` emits Image, PointCloud, DepthImage,
 OccupancyGrid, CompressedPointCloud, Mesh3D, VideoFrame, OccupancyGridUpdate,
-and VoxelGrid descriptors, including each type's eligible single-splice form.
+VoxelGrid and GridMap descriptors, including each type's eligible single-splice form.
 Module parse callbacks receive the per-message `pj::Timestamp` alongside the
 payload. `BindingInfo` views expire when `bind()` returns; `owningCopy()` is the
 fallible retention path. Bulk storage uses nothrow allocation, and protobuf

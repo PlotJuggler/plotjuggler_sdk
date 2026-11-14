@@ -145,6 +145,8 @@ has no entry, a `multiple` input has one per wired series (`slot`). Entries are
 ordered by `input` index, then `slot`, but dispatch on `v.input` (and `v.slot`),
 never on the position in `values`. `kind == PJ_WIDGET_VALUE_NONE` where the wire
 has no sample at or before `time`. `time` is on the host's display axis, in seconds.
+`flags` is reserved and no bit is defined: a host built against SDK 1.0 or later
+writes 0, an older host leaves it unset, so a widget ignores it.
 `label` is the host's display name of the series behind the wire (for example
 `topic/field`), set for every kind so a widget that lists its wires, like a
 table of values, can name each row; it may be empty. Every pointer in a value
@@ -229,9 +231,7 @@ Because the SDK stores `settings` as raw JSON, the manifest decoder
 (`PluginDescriptor::widgets[].settings_json`) checks only that it is an array.
 The host interprets the entries.
 
-The form is declarative on purpose. A widget that outgrows it is not stuck: a
-later tail slot (`create_settings_qwidget`, a settings editor the plugin builds)
-or a dynamic `settings_schema` can be added without touching protocol v1.
+The form is declarative on purpose: the plugin builds no settings editor.
 
 ## Qt rules
 
@@ -271,6 +271,20 @@ or a dynamic `settings_schema` can be added without touching protocol v1.
   `buildInfo()` pointers stay valid. Install adds a library in place; update
   and removal take effect at the next start.
 - A widget only consumes. It creates no series and no datasets.
+
+## Testing
+
+`PJ::sdk::testing::FakeWidgetHost` (`pj_plugins/sdk/testing/fake_widget_host.hpp`)
+is an in-memory `pj.widget_host.v1` host for unit tests, served through the real
+`WidgetHostBridge`, so the widget sees the C ABI. Register `makeHost()` as
+`sdk::WidgetHostService`. Add samples per wire with `wire()` and `insert()`;
+`values(tracker)` builds the array `on_update` would carry at a display time.
+`query_history` follows the protocol (display-time seconds, inclusive range,
+ascending order, `max_samples == 0` meaning `default_cap`, `out_total` before
+any cap). Samples are stored at integer nanoseconds as a real host stores them,
+so put them at epoch nanoseconds to test history reads at epoch-scale display
+times. `queries`, `messages` and `inputs_changed_calls` record what the widget
+asked for and reported. The fake must outlive the handle made from it.
 
 ## Host side
 

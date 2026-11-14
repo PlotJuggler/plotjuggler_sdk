@@ -3,7 +3,7 @@
 ## 0a. ABI stability and evolution rules (v5)
 
 Seven rules the loader and every plugin author rely on. Breaking any of
-these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
+these is an ABI break and requires a `PJ_ABI_VERSION` bump.
 
 One classification obligation rides alongside these rules: **a new host
 surface — a host-vtable tail slot, a versioned service/extension id, a
@@ -108,19 +108,21 @@ extension, can no longer emit objects.
    |---|---|
    | `"pj.<name>.v<N>"` | Stable. Frozen for ≥3 releases before deprecation. |
    | `"pj.experimental.<name>/draft-<N>"` | Unstable. No guarantees. |
-   `sdk/service_traits.hpp` calls `detail::isValidServiceName()` in a
-   `static_assert` at every trait's `kName`. Requesting a
-   `pj.experimental.*` service should log a runtime warning through the
-   `pj.runtime.v1` log channel.
+   `sdk/service_traits.hpp` (and `sdk/descriptor_import.hpp`) call
+   `detail::isValidServiceName()` in a `static_assert` at the `kName` of the
+   traits they define. `ToolboxRuntimeHostService` and `WidgetHostService` name
+   their ids without that check, so keep them in the grammar by hand. The SDK
+   does not log a warning for a `pj.experimental.*` service; accepting one is host
+   policy.
 
 7. **Exception discipline at the ABI boundary.** Every C ABI entry
    point (SDK trampolines and host-side service trampolines) must
    catch all exceptions and convert to a `PJ_error_t` out-param (or a
    safe default for non-fallible calls). C++ exceptions across
-   `dlopen` boundaries are undefined behaviour in practice. The
-   `data_source_trampolines.hpp` / `message_parser_trampolines.hpp` /
-   `toolbox_trampolines.hpp` files centralize this pattern — mirror it
-   exactly in any new trampoline.
+   `dlopen` boundaries are undefined behaviour in practice. The trampolines in
+   `pj_base/src/data_source_trampolines.cpp`, `pj_base/src/toolbox_trampolines.cpp`
+   and `pj_plugins/include/pj_plugins/sdk/detail/message_parser_trampolines.hpp`
+   centralize this pattern — mirror it exactly in any new trampoline.
 
 ### abidiff drift gate
 
@@ -132,7 +134,7 @@ libabigail) against a checked-in baseline at
 | Target | Purpose |
 |---|---|
 | `abi_check` | Diff the current build's `mock_data_source_plugin` DSO against `baseline.abi`. Fatal on incompatible changes (libabigail bit 8); warning on backward-compatible additions (bit 4). |
-| `abi_update_baseline` | Regenerate `pj_base/abi/baseline.abi` via `abidw` only for an intentional MAJOR break; retain it for compatible tail-slot additions. |
+| `abi_update_baseline` | Regenerate `pj_base/abi/baseline.abi` via `abidw`. Run it only for an intentional MAJOR break; a compatible tail-slot addition leaves the baseline untouched. |
 
 Adding `PJ_BUILD_TESTS=ON` also registers `abi_check_test` with CTest
 so `./test.sh` picks it up. The plumbing lives in
@@ -164,15 +166,17 @@ covers the extension wiring.
 
 Stable MessageParser-specific examples are `"pj.parser_functional.v2"`
 (`PJ_parser_functional_v2_t` in `pj_base/parser_functional_protocol.h`) plus the
-exact route classifier `"pj.parser_route_claims.v1"`. A handler-registering
-`MessageParserPluginBase` exposes both automatically. Functional v2 may carry
+exact route classifier `"pj.parser_route_claims.v1"`. `MessageParserPluginBase`
+always answers the route-claims id (a type without a handler is reported as
+declined). It answers the functional id only when the bound type has a handler,
+or, before binding, when any handler is registered. Functional v2 may carry
 one eligible object-field splice. The id `"pj.parser_functional.v1"` is retired
 and never negotiated. Route classification reports exact handler
 coverage only, and the host synthesizes the universal wildcard scalar claim.
 Hosts must query after `bind_schema` and must not cache an earlier absence
 because schema-generic plugins may register their handler while binding. A
-parser that still implements only legacy `parse()` does not advertise the
-functional extensions merely because it was rebuilt.
+parser that still implements only legacy `parse()` does not advertise
+functional v2 merely because it was rebuilt.
 
 ### Functional parser modules (experimental)
 
@@ -183,17 +187,15 @@ not covered by the compatibility promise; no host loads modules yet.
 
 ## 0. C protocol v4 (current under ABI v5)
 
-All four plugin families (DataSource, MessageParser, Toolbox, Dialog) keep
-the v4 C protocol layouts under the v5 boot ABI. Key v4 distinguishing
-features (a superset of everything the
-previously-circulated pre-v4 design included):
+All four plugin families (DataSource, MessageParser, Toolbox, Dialog) use the
+v4 C protocol layouts under the v5 boot ABI. Its defining features:
 
 - **Arrow C Data Interface at the data boundary.** The write-host
   vtables expose `append_arrow_stream(ArrowArrayStream*)` as the
   canonical bulk path; per-record `append_record` / `append_bound_record`
   remain for streaming producers. Toolbox read-side returns host-owned
-  `ArrowSchema` + `ArrowArray` via `read_series_arrow` (no more
-  materialised `std::vector` at the boundary).
+  `ArrowSchema` + `ArrowArray` via `read_series_arrow` (no materialised
+  `std::vector` at the boundary).
 - **PJ_NOEXCEPT on every vtable slot.** Exceptions across `extern "C"`
   are UB; the noexcept specifier is part of the C++17 function type and
   enforced at compile time. Trampolines catch and translate internally.
@@ -202,24 +204,24 @@ previously-circulated pre-v4 design included):
   `[thread-safe]` comment (DataSource `start`/`stop` state their rule in
   words). Each family's plugin vtable also carries a normative per-slot
   threading table (`data_source_protocol.h`, `toolbox_protocol.h`).
-  Host-side runtime checking is optional
-  (reserved for a future `"pj.thread_check.v1"` service).
+  The SDK does no runtime thread checking.
 - **Embedded-manifest plugin discovery.** Each DSO exports a
   family-specific protocol vtable with embedded metadata (`manifest_json`
-  for data sources, parsers, toolboxes, and newly built dialogs; legacy v4.0
-  dialogs fall back to `create()` + `get_manifest()` during inspection).
+  for data sources, parsers, toolboxes, and dialogs exported with the manifest
+  macro form; a dialog exported without a manifest literal falls back to
+  `create()` + `get_manifest()` during inspection).
   Host-side `PJ::scanPluginDsos(dir)` (in
   `pj_plugins/host/plugin_catalog.hpp`) walks platform plugin libraries,
   loads each candidate, validates the ABI and protocol vtable, and parses
   `id`, `name`, `version`, the optional compatibility fields
   `min_sdk_required` and `min_plotjuggler_version`, family-specific fields,
   and optional metadata directly from the embedded manifest. The former is a
-  concrete SemVer SDK-contract floor and the latter retains its distinct
-  application-release meaning; see `REQUIREMENTS.md` section 2.1 for the full
-  compatibility vocabulary and manifest rules. Broken or incompatible
+  concrete SemVer SDK-contract floor; the latter is deprecated (decoded, never a
+  gate). See `REQUIREMENTS.md` section 2.1 for the full compatibility vocabulary
+  and manifest rules. Broken or incompatible
   candidates are reported as diagnostics while discovery continues.
-- **No more RTLD_DEEPBIND.** The loader uses `RTLD_NOW | RTLD_LOCAL`
-  only (DEEPBIND was a documented ASAN/allocator-interposition trap).
+- **No `RTLD_DEEPBIND`.** The loader uses `RTLD_NOW | RTLD_LOCAL`
+  only (DEEPBIND is a documented ASAN/allocator-interposition trap).
   Plugin-local symbol isolation is the plugin build's job: `pj_configure_plugin`
   (`cmake/PjPlugin.cmake`, shipped with `plugin_sdk`) applies hidden visibility,
   `-Wl,-Bsymbolic-functions`, and a version-script export allowlist gated
@@ -229,8 +231,7 @@ previously-circulated pre-v4 design included):
   manifest-format change. Shared handle ownership controls lifetime, while
   candidate-file provenance is checked directly at each boot-level symbol.
 
-Structural shape inherited from the pre-v4 design work (carries the
-service registry, error out-params, and typed borrowed-dialog patterns):
+Structural shape (service registry, error out-params, typed borrowed dialog):
 
 - **Service registry as the sole binding mechanism.** Plugin vtables expose
   a single `bind(ctx, registry, err)` slot. The host registers all services
@@ -262,10 +263,9 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   share is addressed rather than guessed — rules are normative in
   `plugin_data_api.h` (DATASET-QUALIFIED NAMES), shared parser/composer in
   `pj_base/sdk/dataset_qualified_name.hpp`. The script payload is **binary-safe**
-  (`PJ_string_view_t {data,size}`), so the native "door" is WASM bytes through
-  this same data-only surface (a future host-owned WASM/Python backend is purely
-  additive and survives plugin unload) — deliberately *not* a C++ kernel vtable
-  that would dangle on unload. The plugin sees a Qt-free
+  (`PJ_string_view_t {data,size}`), so a host-owned backend can take bytecode
+  through this same data-only surface and keep the node alive after the plugin
+  unloads — deliberately *not* a C++ kernel vtable that would dangle on unload. The plugin sees a Qt-free
   `sdk::DataProcessorsHostView`.
   `"pj.settings.v1"` (optional) is a QSettings-like key/value store any plugin
   family can use for persistent state — the plugin sees a Qt-free
@@ -318,8 +318,8 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   are in `toolbox-guide.md` under "Playback, viewport, and owned tabs" and
   "Dataset-qualified processor inputs".
 - **Structured errors everywhere.** All fallible ABI calls take a
-  `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
-  slot is gone.
+  `PJ_error_t* out_error` out-parameter; there is no per-plugin
+  `get_last_error` slot.
 - **Shared write contract, typed ABI services.** DataSource, MessageParser,
   and Toolbox all write through the same datastore backend and follow the same
   scalar/Arrow ownership rules, but the ABI keeps three distinct service
@@ -328,9 +328,8 @@ service registry, error out-params, and typed borrowed-dialog patterns):
   The service name selects the family-specific type (`"pj.source_write.v1"`,
   `"pj.parser_write.v1"`, `"pj.toolbox_write.v1"`), so the compiler prevents
   a parser from calling source/toolbox-only operations.
-- **Typed borrowed dialog.** `get_dialog_context()` returning `void*` is
-  replaced by `get_dialog()` returning a `PJ_borrowed_dialog_t` fat pointer
-  `{ctx, const PJ_dialog_vtable_t* vtable}`.
+- **Typed borrowed dialog.** `get_dialog()` returns a `PJ_borrowed_dialog_t` fat
+  pointer `{ctx, const PJ_dialog_vtable_t* vtable}`, not a bare `void*`.
 - **Family-specific plugin vtables after the common prefix.** DataSource,
   MessageParser, and Toolbox vtables share
   `protocol_version, struct_size, create, destroy, manifest_json`; subsequent
@@ -458,7 +457,7 @@ pj_datastore/
 **Dependency direction:** Installed plugin authors consume
 `plotjuggler_sdk::plugin_sdk`, which combines `pj_base` with the MessageParser,
 dialog and widget authoring headers from `pj_plugins`. Host
-libraries in `pj_plugins` depend on `pj_base`. `pj_datastore` — now a module in
+libraries in `pj_plugins` depend on `pj_base`. `pj_datastore` — a module in
 the PlotJuggler application repo, not part of this SDK — provides the concrete
 data-host implementations that bridge plugin writes to the columnar storage
 engine.
@@ -510,10 +509,9 @@ All SDK base classes:
 **Trampoline pattern:** Each base class has a private set of `static`
 trampoline functions (e.g. `trampoline_start`) that cast the `void* ctx` to
 the concrete class, call the virtual, and wrap the result for C ABI return.
-MessageParser and Dialog implementations live in `sdk/detail/*_trampolines.hpp`;
+The MessageParser implementation lives in `sdk/detail/message_parser_trampolines.hpp`;
 DataSource and Toolbox implementations live in `pj_base/src/*_trampolines.cpp`;
-`WidgetPluginBase` defines its trampolines in its header (the Widget SDK is
-header-only).
+`DialogPluginBase` and `WidgetPluginBase` define theirs in their own headers.
 
 ## 5. Host Loaders
 
@@ -549,29 +547,27 @@ process working directory changes, or dyld reports a symlink-resolved filename.
 
 ### 5.1 Host-side diagnostic propagation
 
-Host code that loads plugins accepts an
-optional `PJ::DiagnosticSink` (`pj_base/include/pj_base/diagnostic_sink.hpp`)
-in its constructor. The sink is a `std::function<void(const PJ::Diagnostic&)>`
-the host invokes for every plugin-load lifecycle event — failed `dlopen`,
-missing required manifest fields, malformed JSON, successful loads,
-hot-reload detection, etc. Each event carries a level
+`PJ::DiagnosticSink` (`pj_base/include/pj_base/diagnostic_sink.hpp`) is a
+`std::function<void(const PJ::Diagnostic&)>`. Each event carries a level
 (`kInfo`/`kWarning`/`kError`), a `source` string, an optional plugin id, a
-message, and a timestamp.
+message, and a timestamp. A default-constructed sink discards events at zero
+cost; `teeSink(a, b)` forwards to two sinks.
 
-Embedding apps wire one sink into their host loaders and any application-level
-extension services so the GUI can show one chronological diagnostic stream.
-Pure-C++ host loaders remain toolkit-free; GUI hosts provide any event-loop
-adapter needed to marshal diagnostics onto their UI thread.
-
-A default-constructed sink discards events at zero cost, so loaders that
-take no sink behave as before.
+Only `ParserClaimCatalog` and `ParserRouteResolver` take a sink (constructor
+argument or `setDiagnosticSink`); they report claim-admission and route-resolution
+events through it. The `*Library::load(path)` loaders return `Expected` with the
+failure text, and `scanPluginDsos` reports each unusable candidate in
+`PluginScanResult::diagnostics` while discovery continues. An embedding host
+forwards these into one sink so the GUI can show a single chronological
+diagnostic stream. The host classes stay toolkit-free; GUI hosts provide any
+event-loop adapter needed to marshal diagnostics onto their UI thread.
 
 ### 5.2 Parser claim catalog and route resolver
 
 `ParserClaimCatalog` is the host-side parser dispatch catalog. It admits
-transactional claim batches from module manifests or synthesized parser-plugin
-coverage, validates stable `(provider_id, claim_id)` identities, and attaches
-host-supplied provenance and provider generations. The SDK-owned encoding
+transactional claim batches (`admitClaims`) or synthesized parser-plugin
+coverage (`admitParserPlugin`), validates stable `(provider_id, claim_id)`
+identities, and attaches host-supplied provenance and provider generations. The SDK-owned encoding
 registry and normalization helpers keep matching case-sensitive and canonical.
 
 `ParserRouteResolver` independently selects scalar and object providers. It
@@ -703,7 +699,7 @@ All three share a common internal `WriteCore` that handles:
   route canonical media (images, point clouds, annotations) into the
   session `ObjectStore` rather than the columnar engine. They forward to
   the same `ObjectStore::registerTopic` / `pushOwned` the DataSource and
-  Parser object-write hosts use, so the toolbox host now requires an
+  Parser object-write hosts use, so the toolbox host requires an
   `ObjectStore&` at construction alongside the `DataEngine&`. These are
   **tail slots** appended to `PJ_toolbox_host_vtable_t` under ABI v5 (no
   version bump): existing slot offsets are unchanged, and `struct_size`
@@ -766,30 +762,20 @@ out_array, err)`:
 | `mock_dialog.cpp` (in `dialog_protocol/examples/`, not `pj_plugins/examples/`) | Standalone dialog: QLineEdit, QSpinBox, QCheckBox, config persistence |
 | `mock_widget.cpp` (in `widget_protocol/examples/`) | Qt-free widget library: two types, inputs, `on_update`, history, config, fake widget pointer |
 
-### Test files (`pj_plugins/tests/`)
+### Tests
 
-| Test | Coverage |
-|---|---|
-| `data_source_library_test.cpp` | Library loading, vtable validation |
-| `file_source_integration_test.cpp` | FileSourceBase end-to-end |
-| `delegated_ingest_integration_test.cpp` | _Disabled (pending v3-port: uses removed `bindWriteHost`/`bindRuntimeHost`/`get_last_error`; CMake target commented out). Coverage currently provided by `data_source_library_test.cpp` + `message_parser_library_test.cpp`._ |
-| `source_dialog_integration_test.cpp` | DataSource dialog |
-| `message_parser_library_test.cpp` | Parser library loading |
-| `toolbox_plugin_test.cpp` | Toolbox loading, host binding, read+write flow |
-| `dialog_handle_test.cpp` | Owned and borrowed handle lifecycle |
-| `dialog_library_test.cpp` | Dialog library loading |
-| `dialog_plugin_typed_test.cpp` | Typed event dispatch |
-| `widget_data_test.cpp` | WidgetData builder |
-| `widget_data_view_test.cpp` | WidgetDataView JSON parsing |
-| `widget_event_builder_test.cpp` | Event JSON generation |
-| `widget_event_test.cpp` | Event parsing |
-| `plugin_lifecycle_test.cpp` | Plugin create/destroy lifecycle |
+Host-side and plugin-side tests live in `pj_plugins/tests/`,
+`pj_plugins/dialog_protocol/tests/` and `pj_plugins/widget_protocol/tests/`;
+`pj_base/tests/` holds the ABI layout sentinels. The
+`delegated_ingest_integration_test` target is disabled in
+`pj_plugins/CMakeLists.txt` (it still uses the removed `bindWriteHost` /
+`bindRuntimeHost` / `get_last_error` API); `data_source_library_test` and
+`message_parser_library_test` cover delegated ingest instead.
 
-## Builtin-object pipeline (PR #86)
+## Builtin-object pipeline
 
-The v4 DataSource runtime host adds a tail slot `push_message`
-(offset 88 in `PJ_data_source_runtime_host_vtable_t`) that takes a
-deferred byte-fetch callable instead of bytes:
+The DataSource runtime host's `push_message` tail slot takes a deferred
+byte-fetch callable instead of bytes:
 
 ```c
 typedef struct PJ_message_data_fetcher_t {
@@ -820,10 +806,11 @@ that cascades `topic > source > type > default`:
   ObjectStore entry only.
 
 Parsers participate through `classifySchema`, `parseScalars`, and
-`parseObject`, backed by the per-schema `SchemaHandler` table. Those C++
-methods and their `ScalarRecord` / `ObjectRecord` / `BuiltinObject` values stay
-inside the plugin DSO. The base exposes `pj.parser_functional.v2`, which
-`MessageParserHandle` negotiates:
+`parseObject`, backed by the per-schema `SchemaHandler` table. The base exposes
+`pj.parser_functional.v2`, which `MessageParserHandle` negotiates, so those C++
+methods and their `ScalarRecord` / `ObjectRecord` / `BuiltinObject` values need
+not cross the DSO boundary. A host may still call them directly through the
+deprecated C++ bridge (section 0a); new host code uses v2:
 
 - `parse_scalars` calls one caller-owned sink exactly once. Field/name/string
   views are borrowed only for that callback; the host copies anything it
@@ -850,22 +837,21 @@ This deliberately pays one canonical serialization at the DSO boundary and a
 host-side decode. It avoids the more fragile alternative of sharing STL object
 layouts, allocators, destructors, or release callbacks for each concrete C++
 type. Large input buffers need not be copied before parsing when the host has a
-`PayloadView` anchor. Benchmark the serialize/decode cost for image and point
-cloud workloads before removing the deprecated fallback; a future optimization
-must preserve the same C ownership boundary rather than reintroduce C++ object
-sharing.
+`PayloadView` anchor. The serialize/decode cost is measurable for image and
+point-cloud workloads; an optimization must preserve the same C ownership
+boundary rather than reintroduce C++ object sharing.
 
 `serializeBuiltinObject` / `deserializeBuiltinObject` dispatch every stable
-builtin type, including the newly canonicalized `RobotDescription`. A
-zero-length canonical payload is accepted as the valid proto3 default message
+builtin type. A zero-length canonical payload is accepted as the valid proto3 default message
 when the separate type tag is known. Concrete builtins and codecs live under
 `pj_base/builtin/`; see `docs/builtin_type.md` for the catalog.
 
 Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
 builds expose none, and 0.21 builds expose only the retired v1. New plugins and
-new host code use v2. PlotJuggler 4 still reads objects through the direct C++
-bridge for every parser; section 0a states what that freezes and when the
-freeze ends.
+new host code use v2. The direct C++ bridge (a host casting the parser context
+to `MessageParserPluginBase*`) is deprecated but supported through 1.x, and
+PlotJuggler 4 still reads objects through it for every parser; section 0a states
+what it freezes.
 
 ## Per-topic pause (demand-driven subscription)
 
@@ -876,8 +862,7 @@ whole-source pause. Two independent additions, both `struct_size`/
 `PJ_HAS_TAIL_SLOT`-gated so an old plugin or an old host degrades cleanly:
 
 - **Plugin → host advertise.** A second tail slot on the runtime host,
-  `notify_available_topics(ctx, topics, count, out_error)` (offset 96,
-  growing `sizeof(PJ_data_source_runtime_host_vtable_t)` 96 → 104), carrying
+  `notify_available_topics(ctx, topics, count, out_error)`, carrying
   `PJ_available_topic_t{topic_name, parser_encoding, type_name, schema}` —
   the same parser-identifying fields as `PJ_parser_binding_request_t` minus
   `parser_config_json` (not yet known pre-subscription), so the host can
@@ -896,14 +881,14 @@ whole-source pause. Two independent additions, both `struct_size`/
   call matters). `DataSourceHandle::setActiveTopics` is a no-op when the
   plugin does not expose the extension.
 
-See `docs/data-source-guide.md` → "Per-topic pause (demand-driven
+See [data-source-guide.md](data-source-guide.md) → "Per-topic pause (demand-driven
 subscription)" for the plugin-author walkthrough.
 
 ## Source-cache attachment
 
-SDK 0.28 appends `attach_source_record(ctx, descriptor_json, out_error)` to
-the runtime-host vtable at offset 104, growing its size 104 → 112. Providers
-call it on the stream thread at download start. The host copies and stores
+The runtime-host tail slot `attach_source_record(ctx, descriptor_json, out_error)`
+(SDK 0.28.0) lets providers declare their request descriptor. They call it on
+the stream thread at download start. The host copies and stores
 the descriptor bytes verbatim, keys its cache on its own digest, and scopes
 the record by the provider id from the binding. Matching is byte-exact;
 the host bounds and parses the descriptor and rejects unknown fields.
@@ -919,10 +904,10 @@ are detected with `PJ_HAS_TAIL_SLOT` and reported as an error (no caching).
 
 ## Ingest completion and rollback
 
-SDK 0.30 appends `complete_ingest(ctx, completion, out_error)` to the
-runtime-host vtable at offset 112 (size 112 → 120). A finite source reports
-its terminal outcome — `FAILED` / `CANCELLED` / `COMPLETED` — on the stream
-thread once every producer and `push_message` has quiesced.
+The runtime-host tail slot `complete_ingest(ctx, completion, out_error)`
+(SDK 0.30.0) is how a finite source reports its terminal outcome — `FAILED` /
+`CANCELLED` / `COMPLETED` — on the stream thread once every producer and
+`push_message` has quiesced.
 
 `COMPLETED` attests the ENTIRE declared request: the completion carries the full
 requested-topic set from the request snapshot (never assembled from the pulls
@@ -938,8 +923,8 @@ the host's coverage checks.
 Cancellation goes through the host's thread-safe stop path first; completion is
 what the stream thread reports afterwards.
 
-Contexts that never call the slot ingest exactly as before and are simply
-never cacheable — cacheability is negotiated from slot presence, not a
+A context that never calls the slot ingests normally and is never
+cacheable — cacheability is negotiated from slot presence, not a
 manifest flag.
 
 `pj_base/sdk/ingest_completion.hpp` provides the shared fail-closed validator (`copyIngestCompletion`) hosts use to copy the borrowed
@@ -950,9 +935,8 @@ and empty. It does not override host failures or authorize an empty requested
 set or an entirely empty capture. Reuse `IngestOutcomeLedger` and the
 [provider guide](../../docs/provider-guide.md) to compute the terminal.
 
-The same release also formalizes `discard_parser_ingest` (toolbox runtime
-host, offset 40, size 40 → 48): the rollback twin of `release_parser_ingest`
-— abort a provisional ingest without committing, dropping staged source
-records and vetoing publication. Previously a private plugin-side
-compatibility extension; `PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST` lets plugins
-drop their local struct-size probes.
+`discard_parser_ingest` (toolbox runtime host tail slot, 0.30.0) is the
+rollback twin of `release_parser_ingest`: it aborts a provisional ingest without
+committing, dropping staged source records and vetoing publication.
+`PJ_TOOLBOX_HAS_DISCARD_PARSER_INGEST` is defined by the public header that
+declares the slot.

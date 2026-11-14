@@ -5,11 +5,17 @@ the SDK as a Conan package or source checkout; SDK changes belong in this repo.
 
 ## Read path
 
-Before implementing a helper, consult [Existing SDK utilities](docs/sdk-utilities.md)
-and read the matching header. If no entry matches, search the public headers and
-`cmake/` before adding an implementation. Then read the relevant module
-instructions and task-specific guide. Source providers must also follow
-[the provider contract](docs/provider-guide.md).
+- **Writing a plugin against the SDK:** the
+  [plotjuggler-plugin skill](.claude/skills/plotjuggler-plugin/SKILL.md).
+- **Changing the SDK:** before implementing a helper, consult
+  [Existing SDK utilities](docs/sdk-utilities.md) and read the matching header.
+  If no entry matches, search the public headers and `cmake/` before adding an
+  implementation. Then read the module instructions and the task's guide from
+  the table below. Source providers also follow
+  [the provider contract](docs/provider-guide.md).
+- **Changing an ABI struct, vtable, service id, builtin type or wire schema:**
+  read the [ABI evolution rules](pj_plugins/docs/ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5)
+  and [Versioning and releasing](docs/RELEASING.md) first.
 
 The metadata query language and `PJ::common::RollingTransferRate` live in
 **pj-official-plugins `common/query/` and `common/transfer_rate/`**, respectively.
@@ -28,21 +34,23 @@ ownership or storage formats change. Read only the relevant reference sections.
 | Provider descriptors, origins, artifacts, jobs, limits, completion and Stop | [docs/provider-guide.md](docs/provider-guide.md) |
 | Plugin authoring, host loaders, discovery and parser routing | [pj_plugins/CLAUDE.md](pj_plugins/CLAUDE.md) |
 | Canonical object types and codecs | [docs/builtin_type.md](docs/builtin_type.md) |
-| ObjectStore services and ownership | [V4_STORE.md](V4_STORE.md) |
+| ObjectStore services and ownership | [docs/object_store.md](docs/object_store.md) |
 | Dialog setters/events | [docs/dialog-sdk-reference.md](docs/dialog-sdk-reference.md) |
 | Widget plugins (panels with a plugin-created Qt widget) | [pj_plugins/docs/widget-guide.md](pj_plugins/docs/widget-guide.md), [pj_plugins/widget_protocol/CLAUDE.md](pj_plugins/widget_protocol/CLAUDE.md) |
 | Image annotation / plot marker wire formats | [image_annotations_format.md](docs/image_annotations_format.md), [plot_markers_format.md](docs/plot_markers_format.md) |
 | C++ style and error handling | [docs/cpp_design_recommendations.md](docs/cpp_design_recommendations.md) |
-| Release planning and consumer migration gates | [docs/BACKLOG.md](docs/BACKLOG.md) |
+| Versions, host-contract floors, changelog, releases | [docs/RELEASING.md](docs/RELEASING.md) |
+| Open SDK items and consumer migration gates | [docs/BACKLOG.md](docs/BACKLOG.md) |
 
-`pj_source` (`plotjuggler_sdk::source`, `PJ::sdk::source`) and `pj_plugins`
-depend on `pj_base`; both use nlohmann/json. Provider headers live under
-`pj_base/sdk/source/`.
+`pj_source` (target `plotjuggler_sdk::source`, namespace `PJ::sdk::source`) is
+built from `pj_base/`, with headers under `pj_base/include/pj_base/sdk/source/`.
+It and `pj_plugins` depend on `pj_base`; both use nlohmann/json.
 
 DataSource/MessageParser/Toolbox C protocols live in `pj_base`; the Dialog
 protocol lives in `pj_plugins/dialog_protocol/` and the Widget protocol in
-`pj_plugins/widget_protocol/`. A Widget plugin links Qt; the SDK never does. The datastore and duplicate
-plugin-resolution catalog belong to the application, not this SDK.
+`pj_plugins/widget_protocol/`. A Widget plugin links Qt; the SDK never does.
+The datastore and duplicate plugin-resolution catalog belong to the
+application, not this SDK.
 
 The installed `cmake/` helpers (`pj_configure_plugin`, `pj_embed_file`,
 `pj_harden_plugin_exports`, `pj_add_sdk_test_fixture`) are public API and follow
@@ -56,17 +64,25 @@ holds functional parser modules: see
 ## Build and test
 
 ```bash
-./build.sh            # RelWithDebInfo
-./build.sh --debug    # Debug + ASAN
-./test.sh             # all discovered build directories
+./build.sh            # RelWithDebInfo into build/
+./build.sh --debug    # Debug + ASAN into build/debug_asan
+./test.sh             # every build directory that exists; takes no arguments
+ctest --test-dir build/debug_asan -R <regex> --output-on-failure   # a subset
 ./test_sdk_install.sh # installed-package consumer
+pre-commit run --all-files
 ```
 
 Dependencies come from `conanfile.py`. Before committing, run
 `./build.sh --debug && ./test.sh` and pre-commit (clang-format 22.1.0).
 Packaging changes also require `./test_sdk_install.sh`.
 
-## Release Versioning
+CI builds and tests on Linux, Windows (MSVC) and macOS, so module code stays
+portable: platform code goes behind `#ifdef` or CMake. Linux CI also runs two
+gates `build.sh` does not enable: the ABI drift check (see
+[Versioning and releasing](docs/RELEASING.md#abi-and-api-changes)) and the WASI
+parser-module conformance (`-DPJ_WASI_SDK_ROOT=<wasi-sdk>`, then `ctest -L wasi`).
+
+## Versioning
 
 Propose a release only according to plugin impact:
 
@@ -77,63 +93,20 @@ Propose a release only according to plugin impact:
 | Consumer-visible bug fix | PATCH |
 | Docs, comments, tests or implementation changes invisible to consumers | No bump |
 
-Tail-append optional slots and gate them by `struct_size`; keep minimum vtable
-sizes frozen. `abidiff` must show additions only for a MINOR.
+- A member change in a builtin object struct is a MAJOR even though `abidiff`
+  does not see it: PlotJuggler reads parser objects through the direct C++ bridge.
+- A new host-contract surface (host-vtable tail slot, service id, wire flag,
+  dialog host capability, builtin object type) is classified in
+  `pj_base/feature_floors.json` in the same PR; the `feature_floors_check` test
+  fails otherwise.
+- Changelog entries go under `## [X.Y.Z] — Unreleased`, with one
+  `Host contract:` line per release.
+- `VERSION` is the only version to edit. In-progress work that PlotJuggler needs
+  early ships as a `X.Y.Z-dev.N` pre-release.
+- Tagging or pushing a release requires explicit user authorization.
 
-A member change in a builtin object struct (`pj_base/builtin/`) is a MAJOR while
-PlotJuggler reads parser objects through the direct C++ bridge; `abidiff` does
-not see it. See [ABI evolution rules](pj_plugins/docs/ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5).
-
-The SDK version is **build identity only** — it names what a plugin compiled
-against, never what host it runs on. A release that only adds client-side
-helpers (static-library code compiled into the plugin) does NOT change runtime
-host compatibility and never mints a `pj_base/feature_floors.json` entry; only
-host-contract extensions (host-vtable tail slots, versioned service ids, wire
-contracts) do, and those MUST be classified there in the same PR (CI-enforced
-by `tools/feature_floors/check_feature_floors.py`). The version stays one
-monotonic identity; `feature_floors.json` carries the per-release compatibility
-semantics; `PJ_ABI_VERSION` remains the orthogonal hard-break counter.
-The plugin compatibility contract is `min_sdk_required` (the functioning
-floor, the only admission gate) plus the informational
-`suggested_sdk_version` (full-feature floor) and `abi_major` for hard
-breaks; `min_plotjuggler_version` is deprecated — the decoder keeps reading
-it for back-compat, and the host-side gate removal happens in PJ4.
-Changelog convention: every release section carries one `Host contract:` line —
-either `unchanged (no floor impact)` or `extended: <identifiers> (floor X.Y.Z)`;
-the floor checker requires the `extended` form whenever a surface newer than
-the last released version exists.
-`pj_base/abi/baseline.abi` is refreshed only for an intentional MAJOR break.
-See [ABI evolution rules](pj_plugins/docs/ARCHITECTURE.md#0a-abi-stability-and-evolution-rules-v5).
-
-Consumers pin `plotjuggler_sdk/[>=X.Y.Z <(X+1).0.0]`, explicitly: the lower
-bound is the newest feature actually used, the upper bound the next MAJOR.
-Pre-1.0 has the same no-breaks guarantee: `[>=0.Y.Z <1.0.0]`.
-
-`VERSION` is the only hand-maintained version; Conan, CMake and conda derive
-theirs from it. Release tags must agree. Tagging or pushing a release requires
-explicit user authorization.
-
-### Development pre-releases
-
-In-progress SDK work that PJ4 needs before its contract is complete ships as
-`X.Y.Z-dev.N` (`VERSION` and the tag `vX.Y.Z-dev.N` agree), not as a public
-release. The real `X.Y.Z` is cut once, when the feature's contract is complete.
-
-- **Publishes:** the tag runs `release.yml` like any release (same matrix, JFrog
-  upload) and creates a GitHub release marked pre-release; `conda-release.yml`
-  skips it. PJ4 pins it exactly (`plotjuggler_sdk/0.37.0-dev.1`): Conan version
-  ranges skip pre-releases unless told to resolve them.
-- **No ABI promise between two dev builds.** The MINOR/MAJOR rules above bind
-  only the final `X.Y.Z`.
-- **Names the final version:** `@since`, `feature_floors.json` and the changelog
-  `Host contract:` floor say `X.Y.Z`, never `X.Y.Z-dev.N`.
-- **Ordering is SemVer:** `0.37.0-dev.1 < 0.37.0-dev.2 < 0.37.0`, so a host built
-  from `0.37.0-dev.1` rejects a plugin whose `min_sdk_required` is `0.37.0`; a
-  plugin made for a dev host declares `0.37.0-dev.N`. `PJ_SDK_VERSION_*` and the
-  CMake package version carry `X.Y.Z`; `PJ::sdkVersion()` keeps the full string,
-  so gate admission with `PJ::SemVer`, not the macros.
-- Changelog entries go under `## [Unreleased]`, renamed to `## [X.Y.Z]` at the
-  final release.
+The full rules (floors, plugin compatibility fields, consumer pins,
+pre-releases, cutting a release) are in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Coding conventions
 
@@ -141,14 +114,19 @@ release. The real `X.Y.Z` is cut once, when the feature's contract is complete.
 - `CamelCase` types, `camelBack` functions, `lower_case` variables,
   `lower_case_` members, `kCamelCase` constants.
 - Match module ownership: vocabulary in `PJ`, SDK helpers in `PJ::sdk`,
-  provider helpers in `PJ::sdk::source`, experimental parser modules in `pj`.
+  provider helpers in `PJ::sdk::source`; the experimental parser-module
+  authoring kit uses `pj`.
 - Fallible operations use `PJ::Expected<T>` / `PJ::Status`; invariants use
-  `PJ_ASSERT`. Warnings: `-Wall -Wextra -Werror`.
+  `PJ_ASSERT`.
+- Warnings are strict (`-Wall -Wextra -Wshadow -Wold-style-cast -Wconversion
+  -Wpedantic` and more; `/W4` on MSVC) and errors by default
+  (`PJ_WARNINGS_AS_ERRORS`). The root `CMakeLists.txt` holds the list.
 
 ## Documentation requests
 
 - "Read all documentation": include every tracked `.md`, including `.claude/`.
 - "Update documentation": fix outdated claims and add guidance whose absence
-  caused a bug.
+  caused a bug. Docs describe the current state; finished plans and historical
+  analyses go to `docs/archive/`, which is not a reference.
 - "Check documentation": verify the affected contracts against the code;
   report discrepancies when edits are outside the authorized task.

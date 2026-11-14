@@ -73,7 +73,7 @@ struct FieldTable<TextAnnotation> {
   static constexpr FieldTableView view{"TextAnnotation", Span<const FieldDescriptor>(fields)};
 };
 
-/// Fields of `ImageAnnotations`: `timestamp` (int64), `image_topic`
+/// Fields of `ImageAnnotations`: `timestamp_ns` (int64), `image_topic`
 /// (string), `points`, `circles`, `texts` (lists of the primitive structs above).
 template <>
 struct FieldTable<ImageAnnotations> {

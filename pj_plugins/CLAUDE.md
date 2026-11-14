@@ -3,13 +3,14 @@
 Before adding a helper, use [Existing SDK utilities](../docs/sdk-utilities.md).
 Provider work also follows [the provider contract](../docs/provider-guide.md).
 
-`pj_plugins` owns host loaders, discovery, parser routing and the MessageParser
-Dialog and Widget authoring APIs. The `plotjuggler_sdk::plugin_sdk` umbrella combines
-those headers with `pj_base`. Compiled providers also link `source`.
+`pj_plugins` owns host loaders, discovery, parser routing and the MessageParser,
+Dialog and Widget authoring APIs. The `plotjuggler_sdk::plugin_sdk` umbrella
+combines those headers with `pj_base`; the loaders are the separate
+`plotjuggler_sdk::plugin_host` component. Compiled providers also link `source`.
 
 Host libraries depend on `pj_base`, never Qt. Datastore bridges and duplicate
-plugin-resolution policy belong to the application. Follow the root reading
-order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relevant.
+plugin-resolution policy belong to the application (`pj_runtime`,
+`PluginRuntimeCatalog`).
 
 ## Layout
 - `include/pj_plugins/host/` — DataSource/MessageParser/Toolbox loaders and RAII
@@ -17,8 +18,6 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
   `inspectPluginDso`). `ParserClaimCatalog` and `ParserRouteResolver` handle
   parser claim admission and per-route resolution. Also contains
   `ServiceRegistryBuilder`.
-  The DSO catalog that resolves duplicates and composes loaded plugin families
-  is **host policy**. It lives in the app (`pj_runtime`, `PluginRuntimeCatalog`).
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:
   `MessageParserPluginBase`, ingest/timestamp/array policies, streaming source
   and dialog helpers, endpoint composition, parser trampolines, and the
@@ -46,8 +45,8 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
   modules (authoring kit, native loader and runtime) are experimental and live
   outside the installed SDK, under `../experimental/parser_module/`.
 - **Handles keep the DSO mapped.** Every handle holds a `shared_ptr<void>`
-  library token, exposed via `libraryOwner()`. Destroying or hot-reloading the
-  loader therefore cannot `dlclose` a live plugin. A lazy ObjectStore payload
+  library token (`DataSourceHandle` exposes it as `libraryOwner()`). Destroying
+  or hot-reloading the loader therefore cannot `dlclose` a live plugin. A lazy ObjectStore payload
   anchor can capture the token to stay safe after the handle dies; its `release`
   function is plugin code. Dialog handles provide non-owning `borrowed()` handles
   for source/toolbox embedded dialogs. These must not outlive the owning handle.
@@ -59,7 +58,7 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
 | Source-provider lifecycle and delegated-ingest tests | [Provider contract](../docs/provider-guide.md) |
 | Family roles, capabilities, permission matrix, config contract | `docs/REQUIREMENTS.md` |
 | ABI rules, three-level design, loaders, RAII, data-host bridge | `docs/ARCHITECTURE.md` |
-| Writing each family | `docs/data-source-guide.md`, `docs/message-parser-guide.md`, `docs/toolbox-guide.md`, `docs/dialog-plugin-guide.md` |
+| Writing each family | `docs/data-source-guide.md`, `docs/message-parser-guide.md`, `docs/toolbox-guide.md`, `docs/dialog-plugin-guide.md`, `docs/widget-guide.md` |
 | Host loader + factory pattern | `include/pj_plugins/host/data_source_library.hpp`, `…/data_source_handle.hpp` |
 | Discovery from embedded manifests | `include/pj_plugins/host/plugin_catalog.hpp` (the duplicate-resolution catalog is host-side in `pj_runtime`) |
 | Parser claim admission and route selection | `include/pj_plugins/host/parser_claim_catalog.hpp`, `parser_route_resolver.hpp` |

@@ -60,7 +60,7 @@ class MyParser : public PJ::MessageParserPluginBase {
     return {
         .object_type = PJ::sdk::BuiltinObjectType::kNone,   // declare what you emit
         .parse_scalars =
-            [this](PJ::Timestamp ts, PJ::Span<const uint8_t> payload)
+            [](PJ::Timestamp /*transport_ts*/, PJ::Span<const uint8_t> payload)
                 -> PJ::Expected<PJ::sdk::ScalarRecord> {
               std::string_view text(reinterpret_cast<const char*>(payload.data()), payload.size());
               auto value = PJ::parseNumber<double>(text);       // locale-independent
@@ -97,8 +97,8 @@ Key pieces:
 
 ## Route claims and functional extensions
 
-Recompile a handler-registering parser against SDK 0.22 and the base class
-automatically exposes both host-facing tables:
+A parser that registers `SchemaHandler`s gets both host-facing tables from the
+base class, with no code of its own:
 
 - `pj.parser_route_claims.v1` reports exact claims from the handler table. It
   never reports a wildcard. The host synthesizes one universal wildcard scalar
@@ -125,6 +125,7 @@ the base class derives these extensions.
 
   PJ::Status loadConfig(std::string_view json) override {
     auto cfg = nlohmann::json::parse(json, nullptr, false);
+    if (!cfg.is_object()) cfg = nlohmann::json::object();   // empty or invalid config: defaults
     limit_ = PJ::sdk::arrayLimitFromJson(cfg);       // never throws; defaults 500 / clamp
     use_embedded_ts_ = cfg.value("use_embedded_timestamp", false);
     return PJ::okStatus();
@@ -134,7 +135,7 @@ the base class derives these extensions.
     PJ::sdk::arrayLimitToJson(cfg, limit_);           // writes canonical + legacy keys
     return cfg.dump();
   }
-  // in the flatten loop:  if (n > limit_.max_size) { if (!limit_.clamp()) skip field; else n = limit_.max_size; }
+  // in the flatten loop (max_size 0 = unlimited):  if (limit_.max_size != 0 && n > limit_.max_size) { if (!limit_.clamp()) skip field; else n = limit_.max_size; }
   PJ::sdk::ArrayLimit limit_;
   ```
 - `parse()` — legacy direct route; only touch it when porting old code. Plugins
@@ -142,9 +143,15 @@ the base class derives these extensions.
 
 ## Traps specific to MessageParser
 
-- **`encoding` in the manifest is mandatory and case-sensitive.** The host routes
-  payloads to your parser by matching these names. `"json"` ≠ `"JSON"`. If it is
-  missing or mismatched, your parser is never invoked and the plugin looks dead.
+- **`encoding` in the manifest is mandatory, case-sensitive and from a closed
+  list.** The host routes payloads to your parser by matching these names.
+  `"json"` ≠ `"JSON"`, and a name outside `PJ::registeredParserEncodings()`
+  (`pj_plugins/host/parser_claim_catalog.hpp`) is refused. If it is missing,
+  mismatched or unregistered, your parser is never invoked and the plugin looks dead.
+- **A parser that returns builtin objects is tied to the SDK MAJOR it was built
+  with.** The host reads the returned struct directly, so a change to a builtin
+  struct (1.0.0 changed `Log`, `DepthImage` and the `timestamp_ns` members)
+  needs a rebuild against the host's MAJOR.
 - **Never name a topic.** The write path is pre-scoped to the bound topic; your
   records' field names become `<topic>/<field>` automatically.
 - **Do not require `bindSchema()`.** Schema-less encodings never receive it —

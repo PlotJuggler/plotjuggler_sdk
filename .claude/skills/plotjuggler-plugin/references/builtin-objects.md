@@ -8,7 +8,7 @@ faking it with scalar fields. This is the shim that keeps ROS/protobuf/vendor
 specifics out of PlotJuggler's viewers and storage.
 
 Reference: `docs/builtin_type.md`, headers in `pj_base/include/pj_base/builtin/`,
-object store ABI in `V4_STORE.md`.
+object store ABI in `docs/object_store.md`.
 
 ## Decision: builtin type or raw scalars?
 
@@ -20,6 +20,9 @@ object store ABI in `V4_STORE.md`.
    - 2D overlays on an image → `ImageAnnotations`
    - 3D frame graph → `FrameTransforms`; camera calibration → `CameraInfo`
    - occupancy/cost/ESDF → `OccupancyGrid` (+`OccupancyGridUpdate`) or `VoxelGrid`
+   - 2D grid with several per-cell channels (elevation, layered costmap) → `GridMap`
+   - triangle mesh with per-vertex / per-face channels → `MeshMap`
+     (+`MeshMapUpdate`); both need `min_sdk_required` ≥ 1.0.0, a hard floor
    - marker-style 3D primitives → `SceneEntities`; pose arrays → `PosesInFrame`
    - mesh asset → `Mesh3D`; inter-frame video → `VideoFrame`
    - URDF/SDF/MJCF text → `RobotDescription`; log line → `Log`
@@ -30,7 +33,7 @@ object store ABI in `V4_STORE.md`.
    custom payload as a builtin. `BuiltinObjectType::kNone` means
    "scalar/unknown classification", not "storage forbidden".
 
-The full list (18 concrete types) and their exact fields are in
+The full list (20 concrete types) and their exact fields are in
 `docs/builtin_type.md` and one header each under
 `pj_base/include/pj_base/builtin/` (the `builtin_object.hpp` enum is the
 authoritative roster — trust it over prose that may lag behind newer additions).
@@ -92,7 +95,8 @@ into the returned object so large payloads stay zero-copy. See
 
 - **`pushOwned(topic, ts, bytes)`** — the host copies immediately; you may free your
   buffer as soon as the call returns.
-- **`pushLazy(topic, ts, fetch)`** — the host keeps your closure and calls it only
+- **`pushLazy(topic, ts, fetch)`** (DataSource and MessageParser views only; a
+  Toolbox has `pushOwnedObject` alone) — the host keeps your closure and calls it only
   when a consumer reads that entry. Capture heavy state **by value** (e.g. a
   `shared_ptr<FileReader>`), so it stays alive as long as the entry does. Use this
   for large payloads you would rather read from a file on demand than hold in RAM.
@@ -114,8 +118,9 @@ exactly once. Do not keep a raw pointer into anything the closure captured.
 - `ImageAnnotations.image_topic` explicitly names the base image topic; camera
   calibration correlates by **name convention** (`<ns>/camera_info` ↔
   `<ns>/image_raw`), not by a reference.
-- The annotations codec carries the top-level `timestamp` (only when non-zero) and
-  `image_topic` (only when non-empty); see `docs/image_annotations_format.md`.
+- The annotations codec carries `ImageAnnotations::timestamp_ns` (wire field
+  `timestamp`, only when non-zero) and `image_topic` (only when non-empty); see
+  `docs/image_annotations_format.md`.
 
 ## Codec round-trips are not bit-exact
 

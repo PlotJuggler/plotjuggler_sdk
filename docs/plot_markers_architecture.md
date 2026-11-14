@@ -18,7 +18,7 @@ The **producer owns the set and republishes the whole blob** on each change
 per-id deletes, payload IDs and read-modify-write races.
 
 ```
- Producer (toolbox plugin / future Lua / in-process host)
+ Producer (plugin / host data processor)
         │  build PlotMarkers set  →  serialize (PlotMarkers codec)
         │  register object topic  "__markers__/<topic>"  on the dataset
         │  push the whole serialized set  (republish)
@@ -61,17 +61,17 @@ Design notes:
 - **`ColorRGBA`** is already shared by including `image_annotations.hpp`; do not
   create another color type.
 - `BuiltinObjectType::kPlotMarkers`, `PJ_builtin_object_type_t`'s matching tag
-  and `plot_markers_codec` already ship. Future compatible type additions are
-  append-only MINOR changes. Refresh `pj_base/abi/baseline.abi` only for an
-  intentional MAJOR break; see [release versioning](../CLAUDE.md#release-versioning).
+  and `plot_markers_codec` ship. New builtin types are append-only MINOR changes, and
+  each new `PJ_builtin_object_type_t` enumerator must be classified in
+  `pj_base/feature_floors.json` (a plugin emitting it needs that floor). Refresh
+  `pj_base/abi/baseline.abi` only for an intentional MAJOR break; see
+  [Versioning and releasing](RELEASING.md#abi-and-api-changes).
 
 ## 3. Why ObjectStore + republish (not a dedicated store, not DataEngine)
 
-Markers were originally planned in a dedicated mutable store keyed on "delete one
-specific marker". With the in-process `pj_scripting` Lua engine becoming the primary
-producer, the model flipped to **producer-owns-the-set + republish**, which removes the
-need for store-side per-marker mutation — and that makes the existing **ObjectStore**
-the right home (markers become just another builtin object).
+The model is **producer-owns-the-set + republish**, which removes the need for
+store-side per-marker mutation — and that makes the existing **ObjectStore** the right
+home (markers are just another builtin object).
 
 - **`DataEngine` (columnar) — no.** Strictly numeric columns (`PrimitiveType`),
   append-only immutable chunks. A marker is a structured record over a span; it fits
@@ -103,25 +103,36 @@ push the whole serialized PlotMarkers set            (republish, last-writer win
 - **Producers creating their own dataset** use `registerObjectTopic(source, …)`.
   **Producers annotating an existing dataset** (a compiled toolbox over loaded data)
   use `registerObjectTopicOnDataset(DatasetId, …)` — a tail-appended, **idempotent**
-  toolbox-host slot that re-resolves the topic on each republish. In-process producers
-  (host / future Lua) can equally call `ObjectStore` directly.
+  toolbox-host slot that re-resolves the topic on each republish.
 - **Per-series read is direct** (one object topic per series). Cross-series aggregation
   ("all `warning+` markers in the dataset") enumerates the dataset's marker topics
   (a known limitation, acceptable at marker scale).
 
 ## 5. Producers
 
-All produce the **same** `PlotMarkers` set and publish it the same way; they differ
-only in where the markers come from:
-- **In-process host (today).** The Help → Add Demo Markers action builds a set and
-  publishes it via `ObjectStore` directly — the simplest exercise of the path.
-- **Toolbox plugin (today).** Analysis over already-loaded series → republish its set
-  via `registerObjectTopicOnDataset` + `pushOwnedObject`.
-- **Lua scripting / AI agent (future, `pj_scripting`).** The primary producer: an
-  in-process script regenerates and republishes its set; the agent most naturally emits
-  Lua. No new ABI — it rides the same path.
-- **Ingestion parser (future).** Markers already present in a recording decode into
-  `PlotMarkers` — the same role an image parser plays for `ImageAnnotations`.
+Every producer publishes the **same** `PlotMarkers` set; they differ in where the markers
+come from:
+- **Plugins (object-topic writes).** A toolbox or data source builds its set and republishes
+  it via `registerObjectTopicOnDataset` / `registerObjectTopic` + `pushOwnedObject`, as in §4.
+- **Derived markers (`pj.data_processors.v1`).** A plugin, script or agent submits a
+  `kind="markers"` data processor (`DataProcessorsHostView::createMarkers` in
+  `pj_base/sdk/plugin_data_api.hpp`): the host runs the script, owns the lifecycle and
+  publishes the serialized set under `markerObjectTopicName(key)`. With
+  `PJ_DATA_PROCESSOR_FLAG_EPHEMERAL` the node is a live preview, never persisted.
+
+### Marker metadata and preview topics
+
+A marker set is recognized and routed by its object-topic **metadata**, never by name
+(`pj_base/sdk/object_topic_metadata.hpp`): `kDerivedMetadataKey` = `kDerivedMarkersValue`
+marks a host-published set, `kMarkerScopeMetadataKey` (`kMarkerScopeSeries` /
+`kMarkerScopeDataset` / `kMarkerScopeAll`) says which plots draw it,
+`kMarkerTargetMetadataKey` names the series a series-scoped set annotates, and
+`kMarkerOwnerMetadataKey` names the generator that publishes it.
+
+`plot_markers.hpp` also defines the helpers producer and overlay share: `markerSeriesKey`
+(per-series marker topic from a curve's topic and field names), `kPreviewMarkerTopic`
+(marker-topic prefix of an ephemeral preview set) and `isPreviewMarkerTopic` (true for the
+bare or object-topic form).
 
 ## 6. Rendering (PJ4 host)
 
@@ -134,15 +145,11 @@ only in where the markers come from:
   marker draws on every plot of its dataset.
 - **Repaint** on `SessionManager::markersChanged` (a store-agnostic signal a producer
   fires after republishing) and on time/zoom changes.
-- A **markers panel** in `pj_app` (filterable list, click-row → seek) is optional/future.
 - This is the **`pj_plotting` Qwt path, not the scene2D image path** — markers
   annotate time-series plots, not image frames.
 
-## 7. Open / deferred
+## 7. Limits
 
-- **Headless CLI.** PJ4 is GUI-only today (`pj_app/src/main.cpp` always opens a
-  window). The data model is headless-ready (Qt-free `pj_runtime`/store), but a true
-  no-GUI runner is a separate effort; v1 exposes JSON export as a host action.
 - **Cross-series aggregate query** enumerates topics (per-series read is direct).
 - **Concurrent writers** to the same topic: the republish model assumes a single owner
   per marker topic; two live writers to one topic would clobber (last-writer wins).

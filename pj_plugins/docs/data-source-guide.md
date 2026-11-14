@@ -20,8 +20,8 @@
 
 A DataSource plugin is a shared library (`.so` / `.dylib` / `.dll`) that
 acquires data — from files, network streams, hardware, etc. — and feeds it
-into PlotJuggler. Plugins link only against `pj_base` (no Qt, no host
-internals) and communicate through a stable C ABI.
+into PlotJuggler. Plugins link only the SDK (`plotjuggler_sdk::plugin_sdk`: no
+Qt, no host internals) and communicate through a stable C ABI.
 
 ## Choosing a Base Class
 
@@ -42,7 +42,8 @@ only when the supplied state machines do not fit.
 1. Pick a base class from the table above.
 2. Implement the required virtuals (see Common Patterns below).
 3. Export with `PJ_DATA_SOURCE_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
-4. Build as a shared library linking `pj_base`
+4. Build as a shared library linking `plotjuggler_sdk::plugin_sdk` and call
+   `pj_configure_plugin(...)` on it (see Build below)
 
 For a namespaced class in a static build, provide the getter-symbol token
 separately: `PJ_DATA_SOURCE_PLUGIN_NAMED(my::Source, MySource, kManifest)`.
@@ -58,8 +59,8 @@ prevent runtime failures and confusing host behaviour.
 **MUST**
 - Return `PJ::okStatus()` on success and `PJ::unexpected("reason")` on failure
   from every fallible method.
-- Call `[stream-thread]` host methods (`writeHost()`, and `runtimeHost()`
-  except `reportMessage`/`requestStop`/`isStopRequested`/`notifyState`) only
+- Call `[stream-thread]` host methods (`writeHost()`, and the `runtimeHost()`
+  methods tagged `[stream-thread]` in the table under *Runtime host*) only
   while the host is inside `start()`/`poll()`/`stop()` — i.e. from
   `onStart`/`onPoll`/`onStop`/`importData`, one thread at a time.
 - Make `onStop()` idempotent, and release what a failed `onStart()` acquired:
@@ -146,16 +147,20 @@ can read it without creating an instance.
 ### 4. Build
 
 ```cmake
+find_package(plotjuggler_sdk REQUIRED COMPONENTS plugin_sdk)
+
 add_library(my_source_plugin SHARED my_source.cpp)
-target_link_libraries(my_source_plugin PRIVATE pj_base)
+target_link_libraries(my_source_plugin PRIVATE plotjuggler_sdk::plugin_sdk)
+pj_configure_plugin(my_source_plugin FAMILIES data_source)
 ```
 
-No other dependencies are needed for headless sources. If your source includes
-a configuration dialog (see Dialog Integration below), also link `pj_dialog_sdk`:
-
-```cmake
-target_link_libraries(my_source_plugin PRIVATE pj_base pj_dialog_sdk)
-```
+`pj_configure_plugin` applies symbol isolation and the export allowlist and
+validates `manifest.json` (see `examples/sdk_consumer/CMakeLists.txt`; add
+`MANIFEST_HEADER` to embed it in the source). No other dependencies are needed,
+including for a configuration dialog (see Dialog Integration below), whose SDK
+`plugin_sdk` also provides. Source providers also link `plotjuggler_sdk::source`.
+`pj_base`, `pj_dialog_sdk` and `pj_source` are the in-tree names of the targets
+behind these.
 
 ## Common Patterns
 
@@ -241,7 +246,11 @@ class CsvFileLoader : public PJ::FileSourceBase {
       auto row_values = splitString(line, ',');
       for(size_t index = 0; index < row_values.size(); index++) {
         // if we fail to parse the value string, use PJ::kNull
-        row_fields[index].value = parseToDouble(row_values[index]).value_or(PJ::kNull);
+        if (auto parsed = parseToDouble(row_values[index])) {
+          row_fields[index].value = *parsed;
+        } else {
+          row_fields[index].value = PJ::kNull;
+        }
       }
        // Push data. Timestamps are nanoseconds since Unix epoch.
       // Here we use row number for simplicity — real plugins should
@@ -405,7 +414,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
   int fd_ = -1;
   std::string config_;
   std::string encoding_ = "json";
-  PJ::Expected<PJ::sdk::ParserBindingHandle> binding_ =
+  PJ::Expected<PJ::ParserBindingHandle> binding_ =
       PJ::unexpected("unset");
 
   std::atomic<bool> running_{false};
@@ -467,21 +476,25 @@ engine.
 ### Runtime host — control plane
 
 Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
+The thread tag of each method is normative in `data_source_protocol.h`.
 
-| Method | Purpose |
-|---|---|
-| `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
-| `progressStart(label, total, cancellable)` | Begin a progress bar. |
-| `progressUpdate(step)` | Advance progress. Returns false if cancelled. |
-| `progressFinish()` | End the progress sequence. |
-| `notifyState(state)` | Tell the host your state changed. Advisory: a host may ignore it. |
-| `requestStop(terminal_state, reason)` | Ask the host to stop you (self-terminate). |
-| `isStopRequested()` | Check if the host wants you to stop. |
-| `ensureParserBinding(request)` | Bind a parser for delegated ingest (see below). |
-| `pushMessage(handle, timestamp, fetch_message_data)` | Push a message through a parser binding via a deferred fetcher callable; the host invokes it per the active ObjectIngestPolicy (eager/lazy). |
-| `notifyAvailableTopics(topics)` | Advertise the full set of topics you *can* stream but have not subscribed, so the host lists and a-priori classifies them with no data flowing. See *Per-topic pause* below. |
-| `attachSourceRecord(descriptor_json)` | On the stream thread, declare the request descriptor for the host's source cache. The host stores the bytes verbatim and derives its cache key. Last attach before this context's first `pushMessage` wins; byte-identical repeats before ingest are idempotent. Errors after ingest begins or on hosts that predate the slot never affect ingest. See [Source-cache attachment](ARCHITECTURE.md#source-cache-attachment). |
-| `setDatasetMetadata(metadata_json)` | Attach one descriptive JSON object about the loaded artifact (embedded manifests, recording timestamps, file facts) for the host to display generically. Observations, never request identity: it does not affect caching, restore, or trust. Each successful call replaces the whole document; `"{}"` clears it. Old hosts (no slot) return an error and the load proceeds without metadata. |
+| Method | Thread | Purpose |
+|---|---|---|
+| `reportMessage(level, text)` | `[thread-safe]` | Send info/warning/error to the host UI log. |
+| `progressStart(label, total, cancellable)` | `[stream-thread]` | Begin a progress bar. |
+| `progressUpdate(step)` | `[stream-thread]` | Advance progress. Returns false if cancelled. |
+| `progressFinish()` | `[stream-thread]` | End the progress sequence. |
+| `notifyState(state)` | `[thread-safe]` | Tell the host your state changed. Advisory: a host may ignore it. |
+| `requestStop(terminal_state, reason)` | `[thread-safe]` | Ask the host to stop you (self-terminate). |
+| `isStopRequested()` | `[thread-safe]` | Check if the host wants you to stop. |
+| `showMessageBox(type, title, message, buttons)` | `[thread-safe]` | Modal message box (`showInfo`/`showWarning`/`showError`/`askContinue`/`askYesNo` wrap it). Blocks until the user answers; the host marshals to its UI thread. A host without modal dialogs answers `kOk`. |
+| `listAvailableEncodings()` | `[main-thread]` | JSON array of the parser encodings the host has loaded; empty when none. |
+| `ensureParserBinding(request)` | `[stream-thread]` | Bind a parser for delegated ingest (see below). |
+| `pushMessage(handle, timestamp, fetch_message_data)` | `[stream-thread]` | Push a message through a parser binding via a deferred fetcher callable; the host invokes it per the active ObjectIngestPolicy (eager/lazy). |
+| `notifyAvailableTopics(topics)` | `[stream-thread]` | Advertise the full set of topics you *can* stream but have not subscribed, so the host lists and a-priori classifies them with no data flowing. See *Per-topic pause* below. |
+| `attachSourceRecord(descriptor_json)` | `[stream-thread]` | Declare the request descriptor for the host's source cache. The host stores the bytes verbatim and derives its cache key. Last attach before this context's first `pushMessage` wins; byte-identical repeats before ingest are idempotent. Errors after ingest begins or on hosts that predate the slot never affect ingest. See [Source-cache attachment](ARCHITECTURE.md#source-cache-attachment). |
+| `completeIngest(outcome, requested_topics, flags)` | `[stream-thread]` | Report a finite ingest's terminal outcome for caching, after every producer and `pushMessage` has quiesced. See [Ingest completion and rollback](ARCHITECTURE.md#ingest-completion-and-rollback). |
+| `setDatasetMetadata(metadata_json)` | `[stream-thread]` | Attach one descriptive JSON object about the loaded artifact (embedded manifests, recording timestamps, file facts) for the host to display generically. Observations, never request identity: it does not affect caching, restore, or trust. Each successful call replaces the whole document; `"{}"` clears it. Old hosts (no slot) return an error and the load proceeds without metadata. |
 
 ## Optional Features
 
@@ -654,8 +667,8 @@ The host acts on these signals only:
   `reason` as the failure.
 - **`runtimeHost().isStopRequested()`** tells you the host (user stop, cancel)
   wants you to stop. Check it during long operations.
-- **`completeIngest()`** reports a finite ingest's terminal outcome for
-  caching (see *Ingest completion and rollback* in ARCHITECTURE.md).
+- **`runtimeHost().completeIngest()`** reports a finite ingest's terminal outcome
+  for caching (see *Ingest completion and rollback* in ARCHITECTURE.md).
 
 `notifyState()`, `currentState()` and the `PJ_data_source_state_t` states
 (`idle`, `starting`, `running`, `paused`, `stopped`, `failed`, ...) are
@@ -689,6 +702,10 @@ it without instantiating the plugin.
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
 | `file_extensions` | string[] | no | File extensions this source handles, e.g. `[".csv", ".tsv"]`. Plugins declaring `kCapabilityFiniteImport` SHOULD include this so the host can build file-dialog filters. |
+
+`min_sdk_required`, `suggested_sdk_version` (with a `floor_test`) and the
+deprecated `min_plotjuggler_version` are optional compatibility keys common to
+every family; see [REQUIREMENTS.md §2.1](REQUIREMENTS.md#21-compatibility-vocabulary).
 
 Example:
 ```json
@@ -762,8 +779,8 @@ host synthesise a monotonic timestamp per row.
 
 For an Arrow **IPC** byte buffer (file or Flight wire format), use nanoarrow's
 `ArrowIpcArrayStreamReaderInit` to obtain an `ArrowArrayStream*`.
-Pass it to `appendArrowStream()`. v4 no longer exposes a separate IPC-bytes
-write slot.
+Pass it to `appendArrowStream()`. The write host has no separate IPC-bytes
+slot.
 
 The raw-pointer overload (`appendArrowStream(topic, ArrowArrayStream*, ...)`)
 remains an ABI escape hatch. The rvalue-reference form is the documented default.
@@ -785,8 +802,9 @@ The normative per-slot table is on `PJ_data_source_vtable_t` in
 - `[stream-thread]` host methods (`appendRecord()`, `ensureParserBinding()`,
   `pushMessage()`, progress, ...) only while a `start()`/`poll()`/`stop()` call
   is in progress, one thread at a time. `[thread-safe]` ones
-  (`reportMessage()`, `requestStop()`, `isStopRequested()`, `notifyState()`)
-  from any thread.
+  (`reportMessage()`, `requestStop()`, `isStopRequested()`, `notifyState()`,
+  `showMessageBox()`) from any thread; `listAvailableEncodings()` is
+  `[main-thread]`.
 
 If your plugin needs internal threading (e.g. a network receive thread), you
 must synchronize access to shared state yourself and hand data to `onPoll()`.
@@ -873,7 +891,8 @@ with no JSON serialization needed at runtime.
 │    (business logic)                  │
 │    getDialog() → borrowDialog(...)   │
 │                                      │
-│  PJ_DATA_SOURCE_PLUGIN(MySource)     │  → exports DataSource vtable
+│  PJ_DATA_SOURCE_PLUGIN(MySource,     │  → exports DataSource vtable
+│                         kManifest)   │
 │  PJ_DIALOG_PLUGIN(MyDialog,          │  → exports Dialog vtable
 │                   kManifestJson)     │
 └──────────────────────────────────────┘
@@ -985,11 +1004,11 @@ See `pj_plugins/docs/dialog-plugin-guide.md` for the dialog protocol itself.
   DataSource-owned dialog pattern: a combined `.so` with two vtables, shared
   state via member ownership, and dialog read-only accessors.
 
-## Builtin-object pipeline (PR #86) — `pushMessage` + FetchMessageData
+## `pushMessage` and FetchMessageData
 
 For sources that fan out raw bytes to a `MessageParser` (MCAP, topic
-bridges, future ROS-bag streamers), the runtime host exposes a v2 ingest
-slot that takes a deferred callable instead of bytes. The plugin builds
+bridges, ROS-bag streamers), the runtime host's `pushMessage` takes a deferred
+callable instead of bytes. The plugin builds
 a closure that knows how to materialise the payload, hands it to the
 host, and stays policy-agnostic:
 
@@ -1033,10 +1052,11 @@ the ingest thread (`kEager`) or from consumer threads (lazy pulls).
 Capture file readers / decompressed chunks by `shared_ptr` so the
 source survives every pending pull.
 
-Reference implementation: `pj_ported_plugins/data_load_mcap` — closure
-captures the open `mcap::McapReader` and the message offset, reads the
-bytes on demand. See `PLUGIN_DEVELOPMENT.md` in that repo for the
-catalog-side companion (`parser_ros`) and a top-down walkthrough.
+Reference implementation: `data_load_mcap` in the official plugins repository
+(pj-official-plugins) — its closure captures the open `mcap::McapReader` and
+the message offset, and reads the bytes on demand. `PLUGIN_DEVELOPMENT.md` in
+that repository covers the parser-side companion (`parser_ros`) and gives a
+top-down walkthrough.
 
 ## Common Mistakes
 
