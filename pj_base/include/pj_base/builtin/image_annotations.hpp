@@ -85,7 +85,7 @@ struct TextAnnotation {
 /// All annotations for one image at one timestamp. References its base image
 /// explicitly via `image_topic` so the renderer knows which frame to overlay.
 struct ImageAnnotations {
-  Timestamp timestamp = 0;
+  Timestamp timestamp_ns = 0;
   std::string image_topic;
   std::vector<PointsAnnotation> points;
   std::vector<CircleAnnotation> circles;

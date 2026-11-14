@@ -63,7 +63,7 @@ struct FieldTable<Pose> {
 template <>
 struct FieldTable<FrameTransform> {
   static constexpr std::array fields{
-      field<&FrameTransform::timestamp>("timestamp"),
+      field<&FrameTransform::timestamp_ns>("timestamp_ns"),
       field<&FrameTransform::parent_frame_id>("parent_frame_id"),
       field<&FrameTransform::child_frame_id>("child_frame_id"),
       field<&FrameTransform::translation>("translation"),

@@ -168,7 +168,7 @@ struct FieldTable<ModelPrimitive> {
 template <>
 struct FieldTable<SceneEntity> {
   static constexpr std::array fields{
-      field<&SceneEntity::timestamp>("timestamp"),
+      field<&SceneEntity::timestamp_ns>("timestamp_ns"),
       field<&SceneEntity::frame_id>("frame_id"),
       field<&SceneEntity::id>("id"),
       field<&SceneEntity::lifetime_ns>("lifetime_ns"),
@@ -192,7 +192,7 @@ template <>
 struct FieldTable<SceneEntityDeletion> {
   static constexpr std::array fields{
       field<&SceneEntityDeletion::type>("type"),
-      field<&SceneEntityDeletion::timestamp>("timestamp"),
+      field<&SceneEntityDeletion::timestamp_ns>("timestamp_ns"),
       field<&SceneEntityDeletion::id>("id"),
   };
   static constexpr FieldTableView view{"SceneEntityDeletion", Span<const FieldDescriptor>(fields)};

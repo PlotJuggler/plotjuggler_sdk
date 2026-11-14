@@ -151,12 +151,12 @@ struct KeyValuePair {
 /// same id on the same topic replaces the previous entity.
 ///
 /// Lifetime: zero means persist until replaced or deleted; otherwise the
-/// entity is removed `lifetime_ns` after `timestamp`.
+/// entity is removed `lifetime_ns` after `timestamp_ns`.
 ///
 /// frame_locked: when true, the entity tracks `frame_id` as it moves; when
 /// false, it is stamped into the fixed frame at publish time.
 struct SceneEntity {
-  Timestamp timestamp = 0;
+  Timestamp timestamp_ns = 0;
   std::string frame_id;
   std::string id;
   int64_t lifetime_ns = 0;  ///< 0 means persist until replaced.
@@ -190,8 +190,8 @@ struct SceneEntityDeletion {
     kAll = 1,         ///< Delete every entity on this topic.
   };
   Type type = Type::kMatchingId;
-  Timestamp timestamp = 0;  ///< Bounds the deletion to entities at or before this time.
-  std::string id;           ///< Entity id to match when `type == kMatchingId`.
+  Timestamp timestamp_ns = 0;  ///< Bounds the deletion to entities at or before this time.
+  std::string id;              ///< Entity id to match when `type == kMatchingId`.
   bool operator==(const SceneEntityDeletion&) const = default;
 };
 

@@ -20,7 +20,7 @@ namespace pb = ::PJ::test_pb;
 std::vector<uint8_t> encodeFrameTransform(const FrameTransform& transform) {
   std::vector<uint8_t> body;
   pb::appendTag(body, 1, 2);
-  pb::appendLenDelim(body, pb::encodeTimestamp(transform.timestamp));
+  pb::appendLenDelim(body, pb::encodeTimestamp(transform.timestamp_ns));
   pb::appendTag(body, 2, 2);
   pb::appendString(body, transform.parent_frame_id);
   pb::appendTag(body, 3, 2);
@@ -45,7 +45,7 @@ TEST(FrameTransformsCodecTest, GoldenBytesSingleTransform) {
   FrameTransforms transforms;
   transforms.transforms.push_back(
       FrameTransform{
-          .timestamp = 1'234'567'890'123,
+          .timestamp_ns = 1'234'567'890'123,
           .parent_frame_id = "map",
           .child_frame_id = "base_link",
           .translation = {.x = 1.0, .y = 2.0, .z = 3.0},
@@ -63,7 +63,7 @@ TEST(FrameTransformsCodecTest, RoundTripMultipleTransforms) {
   FrameTransforms input;
   input.transforms.push_back(
       FrameTransform{
-          .timestamp = 42,
+          .timestamp_ns = 42,
           .parent_frame_id = "map",
           .child_frame_id = "odom",
           .translation = {.x = 1.0, .y = 0.0, .z = 0.0},
@@ -71,7 +71,7 @@ TEST(FrameTransformsCodecTest, RoundTripMultipleTransforms) {
       });
   input.transforms.push_back(
       FrameTransform{
-          .timestamp = -1,
+          .timestamp_ns = -1,
           .parent_frame_id = "odom",
           .child_frame_id = "base_link",
           .translation = {.x = -1.5, .y = 2.5, .z = 3.5},

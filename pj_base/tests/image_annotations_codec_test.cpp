@@ -303,7 +303,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_PerVertexColors) {
 
 TEST(ImageAnnotationCodecTest, RoundTrip_TimestampAndImageTopic) {
   sdk::ImageAnnotations in;
-  in.timestamp = 5'250'000'000;  // 5s, 250000000ns
+  in.timestamp_ns = 5'250'000'000;  // 5s, 250000000ns
   in.image_topic = "/camera/image_raw";
 
   CircleAnnotation ca;
@@ -315,7 +315,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_TimestampAndImageTopic) {
   in.circles.push_back(std::move(ca));
 
   auto out = roundTrip(in);
-  EXPECT_EQ(out.timestamp, in.timestamp);
+  EXPECT_EQ(out.timestamp_ns, in.timestamp_ns);
   EXPECT_EQ(out.image_topic, in.image_topic);
   ASSERT_EQ(out.circles.size(), 1u);
   EXPECT_DOUBLE_EQ(out.circles[0].radius, 3.0);
@@ -334,7 +334,7 @@ TEST(ImageAnnotationCodecTest, TimestampZeroAndEmptyTopicEmitNothing) {
   with_defaults.circles.push_back(ca);
 
   sdk::ImageAnnotations explicit_zero = with_defaults;
-  explicit_zero.timestamp = 0;
+  explicit_zero.timestamp_ns = 0;
   explicit_zero.image_topic.clear();
 
   EXPECT_EQ(serializeImageAnnotations(with_defaults), serializeImageAnnotations(explicit_zero));
@@ -356,19 +356,19 @@ TEST(ImageAnnotationCodecTest, OldPayloadWithoutTheFieldsDecodesToDefaults) {
   auto bytes = serializeImageAnnotations(in);
   auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->timestamp, 0);
+  EXPECT_EQ(result->timestamp_ns, 0);
   EXPECT_TRUE(result->image_topic.empty());
 }
 
 TEST(ImageAnnotationCodecTest, GoldenBytes_TimestampAndImageTopic) {
   sdk::ImageAnnotations ia;
-  ia.timestamp = 5'250'000'000;  // 5s, 250000000ns
+  ia.timestamp_ns = 5'250'000'000;  // 5s, 250000000ns
   ia.image_topic = "/camera/image_raw";
 
   // Field 5: Timestamp submessage (seconds=5, nanos=250000000).
   std::vector<uint8_t> expected;
   pb::appendTag(expected, 5, 2);
-  pb::appendLenDelim(expected, pb::encodeTimestamp(ia.timestamp));
+  pb::appendLenDelim(expected, pb::encodeTimestamp(ia.timestamp_ns));
 
   // Field 6: image_topic string.
   pb::appendTag(expected, 6, 2);
@@ -386,8 +386,8 @@ TEST(ImageAnnotationCodecTest, RoundTrip_TimestampExtremes) {
         std::numeric_limits<Timestamp>::max(), std::numeric_limits<Timestamp>::max() - 1, Timestamp{-1},
         Timestamp{-1'000'000'000}}) {
     sdk::ImageAnnotations in;
-    in.timestamp = timestamp;
-    EXPECT_EQ(roundTrip(in).timestamp, timestamp) << timestamp;
+    in.timestamp_ns = timestamp;
+    EXPECT_EQ(roundTrip(in).timestamp_ns, timestamp) << timestamp;
   }
 }
 

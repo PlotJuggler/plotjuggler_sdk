@@ -23,7 +23,7 @@ using sdk::FrameTransform;
 using sdk::FrameTransforms;
 
 void writeFrameTransform(Writer& writer, const FrameTransform& transform) {
-  writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, transform.timestamp); });
+  writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, transform.timestamp_ns); });
   writer.string(2, transform.parent_frame_id);
   writer.string(3, transform.child_frame_id);
   writer.message(4, [&](Writer& nested) { builtin_wire::writeVector3(nested, transform.translation); });
@@ -37,7 +37,7 @@ bool decodeFrameTransform(Reader& reader, FrameTransform& out) {
     }
     switch (tag.field) {
       case 1:
-        return builtin_wire::readTimestampMessage(r, out.timestamp);
+        return builtin_wire::readTimestampMessage(r, out.timestamp_ns);
       case 2:
         return r.readString(out.parent_frame_id);
       case 3:

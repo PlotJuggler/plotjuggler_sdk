@@ -179,6 +179,23 @@ Builtin decoders:
   the field is rejected.
 - A NaN colour channel decodes as 0; it used to reach an undefined float-to-integer conversion.
 
+Three changes that could not be made after the freeze:
+
+- **Breaking (source, scripts):** the timestamp member of four builtin structs is renamed from
+  `timestamp` to `timestamp_ns`, the name the other sixteen already use: `sdk::ImageAnnotations`,
+  `sdk::FrameTransform`, `sdk::SceneEntity` and `sdk::SceneEntityDeletion`. Their field-table name
+  changes with it, so a script reads `timestamp_ns` on these types too. The wire format is
+  unchanged (the proto field is still `timestamp`); only code and scripts that name the member must
+  be updated.
+- Dialog tree events no longer have to be the only top-level key of their event. `DialogPluginTyped`
+  dispatched a tree event only when its key was alone, and that check is compiled into each plugin,
+  so no later host could have added a key to the envelope. A valid tree key now claims the event and
+  other keys are ignored, as beside a file-picker result. Two tree keys, or a malformed tree
+  payload, still fail closed.
+- `PJ_widget_value_t` gains `uint32_t flags`, naming the 4 bytes that were alignment padding after
+  `kind`. Size, alignment and every offset are unchanged. No bit is defined: a host built against
+  1.0 or later writes 0, and a host built earlier leaves the bytes unset.
+
 ## [0.40.0]
 
 Host contract: extended: pj.mcp_endpoint.v1, PJ_mcp_endpoint_host_vtable_t::acquire_endpoint,
