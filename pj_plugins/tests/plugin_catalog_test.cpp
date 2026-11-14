@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include "detail/library_loader.hpp"
@@ -76,7 +77,15 @@ TEST_F(PluginCatalogTest, UnicodeFailureDiagnosticsPreservePath) {
   auto missing = scanPluginDsos(directory);
   ASSERT_FALSE(missing.has_value());
   EXPECT_NE(missing.error().find(expected), std::string::npos);
-  std::filesystem::create_directories(directory);
+  // Some filesystems cannot store this name (no supplementary-plane characters,
+  // or a non-Unicode encoding). That is not a catalog failure: skip the cases
+  // that need the directory, but still fail on any other I/O error.
+  std::error_code created;
+  std::filesystem::create_directories(directory, created);
+  if (created == std::errc::illegal_byte_sequence || created == std::errc::invalid_argument) {
+    GTEST_SKIP() << "filesystem cannot store the Unicode test name: " << created.message();
+  }
+  ASSERT_FALSE(created) << created.message();
   const auto broken = directory / pluginFileName("broken");
   {
     std::ofstream output(broken);
