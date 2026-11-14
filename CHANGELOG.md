@@ -6,11 +6,29 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 ## [1.0.0] — Unreleased
 
 Host contract: extended: builtin object types kMeshMap (21) and kMeshMapUpdate (22) (floor 1.0.0).
-Builtin object types are not among the surfaces `feature_floors.json` classifies, so the floor
-checker cannot see them: a plugin that emits either type raises its `min_sdk_required` to 1.0.0
-by hand, because an older host cannot decode the object. `Log` gains an optional field and renames
+`feature_floors.json` now classifies the `PJ_builtin_object_type_t` enumerators (the types that
+shipped before 1.0.0 as baseline), so the floor checker flags a plugin that uses either new type
+with a `min_sdk_required` below 1.0.0: the floor is hard, not negotiated, because an older host
+cannot decode the object. `Log` gains an optional field and renames
 one on the same wire, and the widget-protocol changes are documentation only; `pj.playback.v1`
 already has its floor in `feature_floors.json`.
+
+Functional parser modules leave the installed SDK:
+
+- **Breaking (source, packaging):** the parser-module kit is no longer installed or packaged. It
+  moves to `experimental/parser_module/`, where it is still built and tested but carries no
+  compatibility promise; no host loads modules yet, so its export ABI and manifest schema are not
+  frozen by 1.0. Removed from the package: the `plotjuggler_sdk::parser_module` component and
+  `pj_add_parser_module()` (`PjParserModule.cmake`), the headers `pj_base/parser_module/*.hpp`,
+  `pj_base/parser_module_abi.h`, `pj_base/parser_module_manifest.hpp`,
+  `pj_plugins/host/native_parser_module.hpp` and `pj_plugins/host/parser_module_runtime.hpp`, and
+  the `pj_parser_module_host` archive that `plotjuggler_sdk::plugin_host` linked. The
+  `PJ::parser_module` block codecs leave the `pj_base` archive.
+- **Breaking (source):** `ParserClaimCatalog::ingestModuleManifest`, `decodeParserModuleManifest`
+  and `ParserModuleManifest` leave `pj_plugins/host/parser_claim_catalog.hpp`. Claim admission,
+  `synthesizeParserPluginClaims` and `ParserRouteResolver` are unchanged.
+- `PJ_MODULE_PARSE_INPUT_FLAG_HAS_TIMESTAMP` leaves the `feature_floors.json` baseline with the
+  header that declared it.
 
 Log:
 
@@ -82,6 +100,49 @@ Plugin catalog:
 - Preserve Unicode paths in plugin catalog failure diagnostics on Windows without
   converting through the active code page. Invalid plugins and directories now
   return their intended errors instead of throwing during path formatting.
+
+Removed:
+
+- **Breaking (source):** the `pj.colormap.v1` service: `PJ_colormap_registry_vtable_t`,
+  `PJ_colormap_registry_t`, `sdk::ColorMapRegistryView`, `sdk::ColorMapRegistryService` and
+  `ToolboxPluginBase::colorMapRegistry()` / `colorMapRegistryBound()`. No replacement; no host
+  served it. The id `pj.colormap.v1` is retired and never reused (a future service would be
+  `pj.colormap.v2`).
+- **Breaking (source):** `PJ::ConfigEnvelope` (`pj_plugins/host/config_envelope.hpp`). No
+  replacement; the host never used it.
+- **Breaking (source):** the `descriptor_import_support` compatibility surface: the
+  `plotjuggler_sdk::descriptor_import_support` CMake target and Conan component, and the forwarding
+  headers under `pj_base/sdk/descriptor_import/` with their `PJ::sdk::descriptor_import` namespace
+  alias. Use `plotjuggler_sdk::source`, `pj_base/sdk/source/` and `PJ::sdk::source`.
+  `pj_base/sdk/descriptor_import.hpp` and the `pj.descriptor_import.v1` protocol are unchanged.
+- **Breaking (source):** the `pj.parser_functional.v1` extension: `PJ_PARSER_FUNCTIONAL_EXTENSION_V1`,
+  `PJ_parser_functional_v1_t`, `PJ_parser_object_sink_v1_t`, `PJ_parser_parse_object_fn_t` and
+  their `*_V1_MIN_SIZE` macros. `MessageParserPluginBase` no longer answers the v1 id and
+  `MessageParserHandle` negotiates only `pj.parser_functional.v2`, treating a v1-only parser like one
+  without a functional extension. Use v2. The id `pj.parser_functional.v1` is retired and never
+  reused.
+- **Breaking (source):** `PJ::sdk::MediaMetadataBuilder` (`pj_base/sdk/media_metadata.hpp`). Use
+  `ObjectTopicMetadataBuilder` (`pj_base/sdk/object_topic_metadata.hpp`).
+
+Fixes:
+
+- A `PJ_string_view_t` with null data and a non-zero size is now an empty string everywhere the SDK
+  converts one: `sdk::toStringView`, the service-registry lookup, and the `saveConfig()` readers of
+  the DataSource, MessageParser and Toolbox handles. They used to read `size` bytes past a one-byte
+  literal, on views supplied by a plugin.
+- `WidgetDataView::chartMarkers()`, `markerTimelineMarks()` and `WidgetEvent::markerTimelineChanged()`
+  skip a marker entry that is not an object or has a wrong-typed field; they used to throw
+  `nlohmann::json::type_error`, so one malformed plugin update could take the host down. An integer
+  field must now hold a JSON integer: a float there (`"start": 3.0`) skips the entry instead of being
+  truncated.
+  `WidgetDataView::ChartMarkerView` is now an alias of `PJ::ChartMarker` (same fields).
+- `DialogHandle` gains `valid()`; when the plugin's `create()` returns null (its constructor threw),
+  every method returns empty / false or does nothing instead of passing the null context to the
+  plugin.
+- `WidgetData::toJson()` and `WidgetEventBuilder` replace invalid UTF-8 with U+FFFD; one non-UTF-8
+  string (a label read from a binary log) used to make the whole dialog update vanish silently.
+- The Conan package now propagates `PJ_ASSERT_THROWS` to consumers when built with
+  `assert_throws=True`; consumers compiled `PJ_ASSERT` as `assert` against archives built to throw.
 
 ## [0.40.0]
 

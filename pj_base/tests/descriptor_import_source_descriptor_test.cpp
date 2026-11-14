@@ -9,16 +9,16 @@
 
 #include <string>
 
-#include "pj_base/sdk/descriptor_import/source_descriptor.hpp"
+#include "pj_base/sdk/source/source_descriptor.hpp"
 
 namespace {
 
-using PJ::sdk::descriptor_import::canonicalSourceDescriptorJson;
-using PJ::sdk::descriptor_import::IdentityScheme;
-using PJ::sdk::descriptor_import::parseSourceDescriptor;
-using PJ::sdk::descriptor_import::sha256Hex;
-using PJ::sdk::descriptor_import::sourceDescriptorIdentity;
-using PJ::sdk::descriptor_import::SourceDescriptorPolicy;
+using PJ::sdk::source::canonicalSourceDescriptorJson;
+using PJ::sdk::source::IdentityScheme;
+using PJ::sdk::source::parseSourceDescriptor;
+using PJ::sdk::source::sha256Hex;
+using PJ::sdk::source::sourceDescriptorIdentity;
+using PJ::sdk::source::SourceDescriptorPolicy;
 
 SourceDescriptorPolicy mosaicoPolicy() {
   SourceDescriptorPolicy policy;
@@ -131,7 +131,7 @@ TEST(SourceDescriptor, DeniedKeysRejectAtAnyDepth) {
   policy.denied_keys = {"password"};
   const auto denied = parseSourceDescriptor(R"({"topics":[{"nested":{"password":"x"}}]})", policy);
   ASSERT_FALSE(denied);
-  EXPECT_EQ(denied.error(), std::string(PJ::sdk::descriptor_import::kDeniedKeyViolationPrefix) + "password");
+  EXPECT_EQ(denied.error(), std::string(PJ::sdk::source::kDeniedKeyViolationPrefix) + "password");
   // Exact, case-sensitive key match only; values are never inspected.
   EXPECT_TRUE(parseSourceDescriptor(R"({"topics":[{"Password":"x","value":"password"}]})", policy));
 }

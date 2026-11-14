@@ -4,12 +4,12 @@
 
 /**
  * @file parser_claim_catalog.hpp
- * @brief Host-owned parser claims, admission, and manifest decoding.
+ * @brief Host-owned parser claims and admission.
  *
- * Claims from parser plugins and functional modules share one validated value
- * model. Artifact metadata supplies identity and coverage; the host supplies
- * provenance and provider generation when it admits a batch. Batch admission
- * is transactional so one invalid or duplicate claim rejects the whole batch.
+ * Every parser provider shares one validated claim model. Artifact metadata
+ * supplies identity and coverage; the host supplies provenance and provider
+ * generation when it admits a batch. Batch admission is transactional so one
+ * invalid or duplicate claim rejects the whole batch.
  */
 
 #include <cstdint>
@@ -53,14 +53,6 @@ struct ParserClaimEntry {
   uint64_t provider_generation = 0;
 };
 
-/// Parsed module metadata. Claim order remains manifest order.
-struct ParserModuleManifest {
-  std::string id;
-  std::string name;
-  std::string version;
-  std::vector<ParserClaim> claims;
-};
-
 /// One successful route-classification result supplied by a parser-plugin host.
 struct ParserPluginExactClaim {
   std::string encoding;
@@ -83,11 +75,6 @@ struct ParserPluginExactClaim {
 /// spelling `*` is preserved for every encoding.
 [[nodiscard]] Expected<std::string> normalizeParserTypeName(std::string_view encoding, std::string_view type_name);
 
-/// Decode and validate one complete parser-module manifest. Provenance is
-/// supplied by the host and is never read from JSON.
-[[nodiscard]] Expected<ParserModuleManifest> decodeParserModuleManifest(
-    std::string_view manifest_json, ParserClaimProvenance provenance);
-
 /// Synthesize the frozen wildcard and exact parser-plugin claim identities.
 /// Declined classifications add no exact claim. Malformed classification
 /// records reject the complete synthesized batch.
@@ -107,10 +94,6 @@ class ParserClaimCatalog {
   /// argument overwrites every input value; artifacts cannot choose their tier.
   [[nodiscard]] Status admitClaims(
       std::vector<ParserClaim> claims, ParserClaimProvenance provenance, uint64_t provider_generation);
-
-  /// Decode and atomically admit a complete module manifest.
-  [[nodiscard]] Expected<ParserModuleManifest> ingestModuleManifest(
-      std::string_view manifest_json, ParserClaimProvenance provenance, uint64_t provider_generation);
 
   /// Synthesize and atomically admit all claims for one parser plugin.
   [[nodiscard]] Status admitParserPlugin(

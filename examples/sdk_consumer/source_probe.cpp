@@ -1,19 +1,19 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: Apache-2.0
 //
-// Install-test probe for the descriptor_import_support component: exercises
+// Install-test probe for the source component: exercises
 // one symbol from each public header through the exported CMake target.
 
 #include <cstdio>
 #include <filesystem>
-#include <pj_base/sdk/descriptor_import/origin.hpp>
-#include <pj_base/sdk/descriptor_import/provider_job.hpp>
-#include <pj_base/sdk/descriptor_import/request_cache.hpp>
-#include <pj_base/sdk/descriptor_import/source_descriptor.hpp>
+#include <pj_base/sdk/source/origin.hpp>
+#include <pj_base/sdk/source/provider_job.hpp>
+#include <pj_base/sdk/source/request_cache.hpp>
+#include <pj_base/sdk/source/source_descriptor.hpp>
 #include <string>
 
 int main() {
-  namespace di = PJ::sdk::descriptor_import;
+  namespace di = PJ::sdk::source;
 
   di::OriginPolicy origin_policy;
   origin_policy.allowed_schemes = {"grpc", "grpc+tls"};

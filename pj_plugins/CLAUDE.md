@@ -15,10 +15,8 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
 - `include/pj_plugins/host/` — DataSource/MessageParser/Toolbox loaders and RAII
   handles. `plugin_catalog` scans embedded manifests (`scanPluginDsos` /
   `inspectPluginDso`). `ParserClaimCatalog` and `ParserRouteResolver` handle
-  parser claim admission and per-route resolution. Native parser-module
-  loading/execution uses `NativeParserModule`, `NativeParserModuleInstance`
-  and `ParserModuleStrikeTracker`. Also contains `ServiceRegistryBuilder`
-  and `ConfigEnvelope`.
+  parser claim admission and per-route resolution. Also contains
+  `ServiceRegistryBuilder`.
   The DSO catalog that resolves duplicates and composes loaded plugin families
   is **host policy**. It lives in the app (`pj_runtime`, `PluginRuntimeCatalog`).
 - `include/pj_plugins/sdk/` — SDK pieces that live here, not in `pj_base`:
@@ -44,19 +42,15 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
 - **The SDK is split across two modules.** `DataSourcePluginBase` /
   `ToolboxPluginBase` / `data_source_patterns.hpp` live in **`pj_base/sdk/`**;
   parser/dialog authoring and shared plugin policies live under
-  `pj_plugins/sdk/`. Functional parser-module authoring headers and the native
-  CMake helper live under `pj_base`; claim resolution and native module
-  loading/runtime live here.
+  `pj_plugins/sdk/`. Parser claim resolution lives here. Functional parser
+  modules (authoring kit, native loader and runtime) are experimental and live
+  outside the installed SDK, under `../experimental/parser_module/`.
 - **Handles keep the DSO mapped.** Every handle holds a `shared_ptr<void>`
   library token, exposed via `libraryOwner()`. Destroying or hot-reloading the
   loader therefore cannot `dlclose` a live plugin. A lazy ObjectStore payload
   anchor can capture the token to stay safe after the handle dies; its `release`
   function is plugin code. Dialog handles provide non-owning `borrowed()` handles
   for source/toolbox embedded dialogs. These must not outlive the owning handle.
-- **Native parser modules never unload in v1.** `NativeParserModule` resolves
-  the complete per-handle export set and retains every opened DSO for the
-  process session, including rejected artifacts. Instance wrappers still call
-  `pj_module_destroy`. Only the code mapping has session lifetime.
 
 ## Read deeper
 | For | Read |
@@ -69,7 +63,6 @@ order, then read this file or [pj_base/CLAUDE.md](../pj_base/CLAUDE.md) as relev
 | Host loader + factory pattern | `include/pj_plugins/host/data_source_library.hpp`, `…/data_source_handle.hpp` |
 | Discovery from embedded manifests | `include/pj_plugins/host/plugin_catalog.hpp` (the duplicate-resolution catalog is host-side in `pj_runtime`) |
 | Parser claim admission and route selection | `include/pj_plugins/host/parser_claim_catalog.hpp`, `parser_route_resolver.hpp` |
-| Native functional parser modules | `include/pj_plugins/host/native_parser_module.hpp`, `parser_module_runtime.hpp` |
-| Authoring native functional parser modules | `../pj_base/include/pj_base/parser_module/README.md`, `module.hpp`, `../.claude/skills/plotjuggler-plugin/references/parser-module.md` |
+| Functional parser modules (experimental, not installed) | `../experimental/parser_module/README.md`, `AUTHORING.md` |
 | Service wiring into `bind()` | `include/pj_plugins/host/service_registry_builder.hpp` |
 | Builtin-object ingest policy | `include/pj_plugins/sdk/object_ingest_policy.hpp` |

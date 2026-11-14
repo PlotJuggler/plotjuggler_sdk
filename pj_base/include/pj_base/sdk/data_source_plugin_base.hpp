@@ -10,7 +10,7 @@
  *   - Optional: `bind()`, `pause()`, `resume()`, `poll()`, `saveConfig()`,
  *     `loadConfig()`, `getDialog()`.
  *   - Default `bind()` acquires the write host and runtime host from the
- *     service registry. Override to acquire extra services (colormap, etc.)
+ *     service registry. Override to acquire extra services
  *     or to relax the mandatory set.
  *   - Use `writeHost()` and `runtimeHost()` inside `start()`/`poll()` to
  *     interact with the host. Both return view classes that null-check and
@@ -65,7 +65,7 @@ class DataSourcePluginBase {
   ///
   /// Plugins that don't write to ObjectStore simply leave `objectWriteHost()`
   /// unused; hosts without an ObjectStore bound simply don't register it.
-  /// Override to request additional services (e.g. colormap), or to relax
+  /// Override to request additional services, or to relax
   /// the default requirement.
   virtual Status bind(sdk::ServiceRegistry services);
 

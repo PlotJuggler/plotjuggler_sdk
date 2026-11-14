@@ -53,17 +53,45 @@
       },
       "acquireMcpEndpoint": "PJ_mcp_endpoint_host_vtable_t::acquire_endpoint",
       "releaseMcpEndpoint": "PJ_mcp_endpoint_host_vtable_t::release_endpoint"
+    },
+    "1.0.0": {
+      "kMeshMap": {
+        "declaration": "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_MESH_MAP",
+        "negotiated": false,
+        "aliases": ["MeshMap", "serializeMeshMap"]
+      },
+      "kMeshMapUpdate": {
+        "declaration": "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_MESH_MAP_UPDATE",
+        "negotiated": false,
+        "aliases": ["MeshMapUpdate", "serializeMeshMapUpdate"]
+      }
     }
   },
   "baseline": [
     "PJ_DATA_PROCESSOR_FLAG_EPHEMERAL",
     "PJ_DESCRIPTOR_IMPORT_START_FLAGS_V1_MASK",
     "PJ_DESCRIPTOR_IMPORT_START_FLAG_NONE",
-    "PJ_MODULE_PARSE_INPUT_FLAG_HAS_TIMESTAMP",
     "PJ_PARSER_ROUTE_FLAG_OBJECT_V1",
     "PJ_PARSER_ROUTE_FLAG_SCALAR_V1",
-    "PJ_colormap_registry_vtable_t::register_map",
-    "PJ_colormap_registry_vtable_t::unregister_map",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_CAMERA_INFO",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_COMPRESSED_POINTCLOUD",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_DEPTH_IMAGE",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_FRAME_TRANSFORMS",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_GRID_MAP",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_IMAGE",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_IMAGE_ANNOTATIONS",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_LOG",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_MESH3D",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_NONE",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID_UPDATE",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_PLOT_MARKERS",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_POSES_IN_FRAME",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_ROBOT_DESCRIPTION",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_SCENE_ENTITIES",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_VIDEO_FRAME",
+    "PJ_builtin_object_type_t::PJ_BUILTIN_OBJECT_TYPE_VOXEL_GRID",
     "PJ_data_processors_host_vtable_t::create_data_processor",
     "PJ_data_processors_host_vtable_t::data_processor_config",
     "PJ_data_processors_host_vtable_t::list_data_processor_ids",
@@ -152,7 +180,6 @@
     "PJ_toolbox_runtime_host_vtable_t::report_message",
     "PJ_viewport_host_vtable_t::zoom_reset",
     "PJ_viewport_host_vtable_t::zoom_to_time_range",
-    "pj.colormap.v1",
     "pj.data_processors.v1",
     "pj.parser_object_write.v1",
     "pj.parser_runtime.v1",

@@ -4,7 +4,7 @@
 > write-host supports per-record writes and an optional Arrow stream
 > batch path for parser-shaped formats that naturally decode batches.
 > SchemaHandler-based parsers additionally expose
-> `pj.parser_functional.v1`, `pj.parser_functional.v2`, and
+> `pj.parser_functional.v2` and
 > `pj.parser_route_claims.v1`; no C++ result object crosses the plugin boundary.
 > For ABI evolution rules, error semantics, and noexcept discipline see
 > `ARCHITECTURE.md`.
@@ -25,11 +25,6 @@ If your input is a complete file/container or source-owned stream
 has selected a topic/encoding and supplies payloads to decode. If one `parse()`
 call naturally yields a batch, the parser write host can accept it through
 `writeHost().appendArrowStream(...)`.
-
-If a supported encoding already exists and you only need one or a few exact
-custom message types rendered as canonical objects or scalars, use a native
-**functional parser module** instead of owning or forking the whole encoding.
-See `.claude/skills/plotjuggler-plugin/references/parser-module.md`.
 
 A MessageParser is the right choice when:
 - Each message is independently decodable (JSON line, single Protobuf message,
@@ -298,19 +293,17 @@ if (!status) {
 
 ## Optional Features
 
-### Route claims and functional v1/v2
+### Route claims and functional v2
 
-Registering at least one `SchemaHandler` automatically exposes three extension
+Registering at least one `SchemaHandler` automatically exposes two extension
 tables; parser authors do not implement them by hand:
 
 - `pj.parser_route_claims.v1` classifies exact handler-table coverage. It never
   reports wildcard claims. The host synthesizes the universal wildcard scalar
   claim from each manifest encoding.
-- `pj.parser_functional.v1` delivers scalar records and complete canonical-wire
-  objects through synchronous caller-owned sinks.
-- `pj.parser_functional.v2` keeps the scalar contract and adds a sink for one
-  splice-eligible object field. `MessageParserHandle` queries v2 first and falls
-  back to v1 when it is absent.
+- `pj.parser_functional.v2` delivers scalar records and canonical-wire objects
+  through synchronous caller-owned sinks, including one splice-eligible object
+  field.
 
 The host resolves scalar and object routes independently. A parser may keep the
 scalar route for a type it flattens while another provider owns that type's
@@ -435,25 +428,20 @@ placeholder in the source dialog. The host detects it and resolves the parser
 library for the selected encoding. It creates an owned parser dialog and renders
 it in the slot.
 
-Both dialogs share a window but persist config independently:
-`ConfigEnvelope.source_config` for the source and `ConfigEnvelope.parser_binding`
-for the parser.
-
 **Standalone:** The host shows the parser dialog as a modal from a settings
 panel or parser-selection UI. This is host-application logic, not protocol.
 
 #### Config flow for delegated sources
 
-1. User configures the parser in the dialog → `parser_dialog.save_config()` →
-   host stores the JSON in `ConfigEnvelope.parser_binding`.
-2. Source calls `runtimeHost().ensureParserBinding(request)` — the source may
+The host stores the JSON string returned by `saveConfig()` and passes it back to
+`loadConfig()`. When the source dialog embeds a parser dialog, the host adds a
+`_parser_config` key to that JSON, which `PJ::sdk::parserConfigOverride()`
+(`pj_plugins/sdk/streaming_source.hpp`) reads.
+
+1. Source calls `runtimeHost().ensureParserBinding(request)` — the source may
    leave `parser_config_json` empty in the request.
-3. Host intercepts, injects the stored parser config into
+2. Host intercepts, injects the stored parser config into
    `parser.load_config()` before calling `parse()`.
-4. On layout save, the host persists the full `ConfigEnvelope`.
-5. On headless restart, the host loads the envelope →
-   `source.loadConfig(source_config)` + restores parser bindings from
-   `parser_binding` → `source.start()`.
 
 #### Protobuf example sketch
 
@@ -663,8 +651,8 @@ handler.parse_object =
   matching viewer.
 
 The types above are plugin-author C++ conveniences, not the binary boundary.
-After `bindSchema`, `MessageParserPluginBase` advertises functional v1 and v2
-when at least one handler exists. Their trampolines:
+After `bindSchema`, `MessageParserPluginBase` advertises functional v2
+when at least one handler exists. Its trampolines:
 
 1. invokes `parseScalars` / `parseObject` inside the plugin DSO;
 2. delivers scalar fields through one synchronous caller-owned C sink, or
@@ -676,7 +664,7 @@ when at least one handler exists. Their trampolines:
 `MessageParserHandle::parseScalarsFunctional()` copies or consumes scalar views
 only during the callback.
 
-`parseObjectFunctional()` negotiates v2 first and reconstructs a valid splice
+`parseObjectFunctional()` uses the v2 extension and reconstructs a valid splice
 when present. It checks that the emitted type matches the binding's expected
 object type, then decodes synchronously into a host-owned `ObjectRecord`.
 That value remains safe after the parser instance and shared library are gone.
@@ -693,11 +681,11 @@ This avoids exporting plugin allocators, destructors, RTTI, STL layout or
 type-erasure internals. Measure this path for image/point-cloud workloads.
 Do not bypass it with direct C++ calls.
 
-Parsers built before SDK 0.21 expose no functional extension, and handler-based
-0.21 parsers may expose v1 without v2. New host code uses v2-first/v1-fallback
-negotiation and may use a deprecated, isolated direct-C++ bridge only when both
-extensions are absent. It must not otherwise cast an opaque parser context; SDK
-1.0 removes the bridge.
+Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
+builds expose none, and 0.21 builds expose only the retired v1. New host code
+negotiates v2 and may use a deprecated, isolated direct-C++ bridge only when v2
+is absent. It must not otherwise cast an opaque parser context; SDK 1.0 removes
+the bridge.
 
 Builtin types and their canonical codecs live under `pj_base/builtin/`, one
 header per type. `serializeBuiltinObject()` / `deserializeBuiltinObject()`

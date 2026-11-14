@@ -6,8 +6,8 @@ Seven rules the loader and every plugin author rely on. Breaking any of
 these is an ABI break and requires a future `PJ_ABI_VERSION` bump.
 
 One classification obligation rides alongside these rules: **a new host
-surface — a host-vtable tail slot, a versioned service/extension id, or a
-wire-contract flag — must be classified in `pj_base/feature_floors.json` in
+surface — a host-vtable tail slot, a versioned service/extension id, a
+wire-contract flag, or a builtin object type — must be classified in `pj_base/feature_floors.json` in
 the same PR.** CI enforces it (`tools/feature_floors/check_feature_floors.py`
 diffs the extracted host-surface inventory against the checked-in snapshot),
 and the installed copy of the table is what downstream plugin repositories
@@ -62,7 +62,7 @@ validate `min_sdk_required` against.
    - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
      `PJ_service_registry_vtable_t`, `PJ_dialog_host_info_t`,
      `PJ_widget_build_info_t`, the
-     `pj.parser_functional.v1`/v2 extension and sink tables, and
+     `pj.parser_functional.v2` extension and sink tables, and
      `pj.parser_route_claims.v1`. New fields or slots go at the tail; readers
      honor the caller-provided size, and vtable slots are read with
      `PJ_HAS_TAIL_SLOT`.
@@ -137,68 +137,24 @@ Stop/completion ordering and delegated-ingest fixtures. The
 [toolbox walkthrough](toolbox-guide.md#descriptor-import-and-source-promotion-0200)
 covers the extension wiring.
 
-Stable MessageParser-specific examples are `"pj.parser_functional.v1"` and
-`"pj.parser_functional.v2"` (`PJ_parser_functional_v1_t` and
-`PJ_parser_functional_v2_t` in `pj_base/parser_functional_protocol.h`) plus the
+Stable MessageParser-specific examples are `"pj.parser_functional.v2"`
+(`PJ_parser_functional_v2_t` in `pj_base/parser_functional_protocol.h`) plus the
 exact route classifier `"pj.parser_route_claims.v1"`. A handler-registering
-`MessageParserPluginBase` exposes all three automatically. The host queries v2
-first and falls back to v1; v2 adds one eligible object-field splice while
-leaving scalar parsing unchanged. Route classification reports exact handler
+`MessageParserPluginBase` exposes both automatically. Functional v2 may carry
+one eligible object-field splice. The id `"pj.parser_functional.v1"` is retired
+and never negotiated. Route classification reports exact handler
 coverage only, and the host synthesizes the universal wildcard scalar claim.
 Hosts must query after `bind_schema` and must not cache an earlier absence
 because schema-generic plugins may register their handler while binding. A
 parser that still implements only legacy `parse()` does not advertise the
 functional extensions merely because it was rebuilt.
 
-### Functional parser modules
+### Functional parser modules (experimental)
 
-Functional parser modules use the family-independent export ABI in
-`pj_base/parser_module_abi.h`, not a plugin-family vtable. The host-side
-`NativeParserModule` loader opens each artifact with local, immediate symbol
-resolution, resolves every operational and native metadata export, gates ABI
-version 1, and copies the embedded manifest for subsequent
-`ParserClaimCatalog` admission. Native module mappings have process-session
-lifetime in v1 and are never unloaded.
-
-`NativeParserModuleInstance` owns one create/bind/parse/destroy lifecycle. It
-uses the frozen little-endian codecs for input and output, consumes all
-module-owned descriptor views before returning, validates output route and
-expected object type, and checks a splice against both the canonical object's
-eligible field and the original payload bounds. A valid splice is materialized
-into that field, so the returned canonical object is complete; its sidecar
-retains the original offset and bytes for future zero-copy integration.
-Malformed returned descriptors, ineligible/out-of-bounds returned splices,
-type/route mismatch, and bad tokens are contract violations; other
-module-reported per-message failures are data errors. The separate
-non-thread-safe `ParserModuleStrikeTracker` quarantines a module claim on its
-third contract violation, permits one same-descriptor recreation, and disables
-the claim after a repeated three-strike cycle. Executor placement, generation
-ownership, folder scanning, and rescan policy remain application concerns.
-
-Module authors use the standalone C++17 headers under
-`pj_base/include/pj_base/parser_module/` through the zero-linkage
-`plotjuggler_sdk::parser_module` target. The readers compile ROS 2 concatenated
-`.msg` bundles or protobuf `FileDescriptorSet` field paths at bind time; the
-CDR locator supports fixed arrays, bounded and unbounded sequences, bounded
-strings, and string arrays/sequences, while cyclic or over-depth schemas fail at
-bind. The typed `ObjectWriter` emits Image, PointCloud, DepthImage,
-OccupancyGrid, CompressedPointCloud, Mesh3D, VideoFrame, OccupancyGridUpdate,
-and VoxelGrid descriptors, including each type's eligible single-splice form.
-Module parse callbacks receive the per-message `pj::Timestamp` alongside the
-payload. `BindingInfo` views expire when `bind()` returns; `owningCopy()` is the
-fallible retention path. Bulk storage uses nothrow allocation, and protobuf
-matching is bounded, so allocation failure is returned as data error rather
-than escaping as a trap. `PJ_FUNCTIONAL_PARSER` supplies the complete native
-export set, uses synchronized index+generation instance tokens to reject stale
-handles, and catches user exceptions at the C boundary.
-`pj_add_parser_module(... TARGETS native)` builds a hidden-visibility module and
-embeds its JSON manifest behind the native metadata exports. `TARGETS wasm` is
-not available in SDK 0.22. The shared host codec can append and read the exact
-JSON bytes in a wasm `pj_parser_module_manifest` custom section; the conditional
-wasi-sdk 27 compile gate builds the toy source with C++17 and exceptions
-disabled, then statically audits the reactor model and every operational export
-signature. This is structural conformance only: no wasm loader or execution
-runtime ships in this release.
+A lighter extension shape, one C++17 source exporting a family-independent ABI,
+lives under [`experimental/parser_module/`](../../experimental/parser_module/README.md).
+It is built and tested in this repository but is not installed, not packaged and
+not covered by the compatibility promise; no host loads modules yet.
 
 ## 0. C protocol v4 (current under ABI v5)
 
@@ -218,7 +174,10 @@ previously-circulated pre-v4 design included):
   enforced at compile time. Trampolines catch and translate internally.
 - **Thread-class tags on every slot.** Every function-pointer field in
   the ABI headers carries a `[main-thread]` / `[stream-thread]` /
-  `[thread-safe]` comment. Host-side runtime checking is optional
+  `[thread-safe]` comment (DataSource `start`/`stop` state their rule in
+  words). Each family's plugin vtable also carries a normative per-slot
+  threading table (`data_source_protocol.h`, `toolbox_protocol.h`).
+  Host-side runtime checking is optional
   (reserved for a future `"pj.thread_check.v1"` service).
 - **Embedded-manifest plugin discovery.** Each DSO exports a
   family-specific protocol vtable with embedded metadata (`manifest_json`
@@ -250,9 +209,9 @@ service registry, error out-params, and typed borrowed-dialog patterns):
 
 - **Service registry as the sole binding mechanism.** Plugin vtables expose
   a single `bind(ctx, registry, err)` slot. The host registers all services
-  (write hosts, runtime hosts, colormap, settings, etc.) under canonical
+  (write hosts, runtime hosts, settings, etc.) under canonical
   reverse-DNS-style names (e.g. `"pj.source_write.v1"`,
-  `"pj.runtime.v1"`, `"pj.parser_runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`,
+  `"pj.runtime.v1"`, `"pj.parser_runtime.v1"`, `"pj.toolbox_runtime.v1"`,
   `"pj.settings.v1"`, `"pj.data_processors.v1"`, `"pj.source_promotion.v1"`).
   Plugins acquire only the services they use. `"pj.source_promotion.v1"`
   (optional, bound per plugin instance) lets a descriptor-import provider hand
@@ -392,17 +351,8 @@ pj_base/
   include/pj_base/
     data_source_protocol.h        ← C ABI
     message_parser_protocol.h     ← C ABI
-    parser_functional_protocol.h  ← C ABI: pj.parser_functional.v1/v2 sinks
+    parser_functional_protocol.h  ← C ABI: pj.parser_functional.v2 sinks
     parser_route_claims_protocol.h ← C ABI: exact parser route classification
-    parser_module_abi.h           ← native/wasm module exports + byte codecs
-    parser_module_manifest.hpp    ← wasm manifest custom-section embed/read codec
-    parser_module/                ← standalone C++17 header-only module authoring kit
-      module.hpp                  ← umbrella API + PJ_FUNCTIONAL_PARSER exports
-      cdr_reader.hpp              ← bounded XCDR1 reader
-      cdr_field_locator.hpp       ← ROS 2 .msg field-path compiler/cache
-      proto_reader.hpp            ← bounded protobuf wire reader
-      proto_field_locator.hpp     ← FileDescriptorSet field-path compiler
-      object_writer.hpp           ← ten splice-eligible canonical object builders (including gridMap)
     toolbox_protocol.h            ← C ABI
     plugin_data_api.h             ← shared data-plane ABI (write hosts)
     descriptor_import_protocol.h  ← C ABI: pj.descriptor_import.v1 extension +
@@ -455,12 +405,9 @@ pj_plugins/
     toolbox_library.hpp
     toolbox_handle.hpp
     plugin_catalog.hpp              ← embedded-manifest DSO scanner (scanPluginDsos / inspectPluginDso)
-    parser_claim_catalog.hpp        ← parser claims, manifest admission, plugin-claim synthesis
+    parser_claim_catalog.hpp        ← parser claims, admission, plugin-claim synthesis
     parser_route_resolver.hpp       ← ordered per-route selection + probe cache
-    native_parser_module.hpp        ← session-lifetime native module loader
-    parser_module_runtime.hpp       ← module instances, outputs, fault tracking
     service_registry_builder.hpp    ← service wiring into bind()
-    config_envelope.hpp             ← versioned config wrapper
   include/pj_plugins/sdk/
     message_parser_plugin_base.hpp  ← C++ SDK (parser base lives here, NOT pj_base)
     object_ingest_policy.hpp        ← ObjectIngestPolicyResolver
@@ -473,12 +420,7 @@ pj_plugins/
     message_parser_library.cpp
     parser_claim_catalog.cpp
     parser_route_resolver.cpp
-    native_parser_module.cpp
-    parser_module_runtime.cpp
     toolbox_library.cpp
-
-cmake/
-  PjParserModule.cmake             ← pj_add_parser_module native target helper
 
 (PlotJuggler application repo — not part of this SDK submodule)
 pj_datastore/
@@ -490,8 +432,7 @@ pj_datastore/
 
 **Dependency direction:** Installed plugin authors consume
 `plotjuggler_sdk::plugin_sdk`, which combines `pj_base` with the MessageParser,
-dialog and widget authoring headers from `pj_plugins`. Functional parser modules depend
-only on the zero-linkage `plotjuggler_sdk::parser_module` header target. Host
+dialog and widget authoring headers from `pj_plugins`. Host
 libraries in `pj_plugins` depend on `pj_base`. `pj_datastore` — now a module in
 the PlotJuggler application repo, not part of this SDK — provides the concrete
 data-host implementations that bridge plugin writes to the columnar storage
@@ -580,10 +521,6 @@ plugin `.so` that exports both a family vtable and a dialog vtable (e.g. a
 DataSource with an embedded dialog). These deferred lookups use the recorded
 load-time paths, so they remain valid after the candidate file is removed, the
 process working directory changes, or dyld reports a symlink-resolved filename.
-
-Native functional parser modules use the same absolute-path normalization,
-package-scoped platform open, and defining-module provenance checks for every
-required ABI export. Their narrow path API is explicitly UTF-8 on Windows.
 
 ### 5.1 Host-side diagnostic propagation
 
@@ -712,20 +649,6 @@ A plugin can request the host to close the dialog with OK by setting
 `__request_accept` in `widget_data()`. The engine checks this flag after
 applying widget state and calls `dialog->accept()` if set.
 
-## 8. Config Envelope
-
-`ConfigEnvelope` (`config_envelope.hpp`) wraps a DataSource's plugin-owned
-config alongside host-owned parser binding state:
-
-```json
-{"version": 1, "source_config": "...", "parser_binding": "..."}
-```
-
-- `pack(source_config, parser_binding)` → envelope JSON string.
-- `unpack(envelope_json)` → `Expected<Unpacked>` with both fields.
-- The source plugin never sees `parser_binding` — the host manages it.
-- Used for layout save/restore of delegated-ingest sources.
-
 ## 9. Plugin Data Host Bridge
 
 The data-plane bridge lives in `pj_datastore` and connects plugin write
@@ -825,7 +748,7 @@ out_array, err)`:
 | `data_source_library_test.cpp` | Library loading, vtable validation |
 | `file_source_integration_test.cpp` | FileSourceBase end-to-end |
 | `delegated_ingest_integration_test.cpp` | _Disabled (pending v3-port: uses removed `bindWriteHost`/`bindRuntimeHost`/`get_last_error`; CMake target commented out). Coverage currently provided by `data_source_library_test.cpp` + `message_parser_library_test.cpp`._ |
-| `source_dialog_integration_test.cpp` | DataSource dialog + config envelope |
+| `source_dialog_integration_test.cpp` | DataSource dialog |
 | `message_parser_library_test.cpp` | Parser library loading |
 | `toolbox_plugin_test.cpp` | Toolbox loading, host binding, read+write flow |
 | `dialog_handle_test.cpp` | Owned and borrowed handle lifecycle |
@@ -874,8 +797,8 @@ that cascades `topic > source > type > default`:
 Parsers participate through `classifySchema`, `parseScalars`, and
 `parseObject`, backed by the per-schema `SchemaHandler` table. Those C++
 methods and their `ScalarRecord` / `ObjectRecord` / `BuiltinObject` values stay
-inside the plugin DSO. The base exposes both `pj.parser_functional.v1` and v2;
-`MessageParserHandle` negotiates v2 first and falls back to v1:
+inside the plugin DSO. The base exposes `pj.parser_functional.v2`, which
+`MessageParserHandle` negotiates:
 
 - `parse_scalars` calls one caller-owned sink exactly once. Field/name/string
   views are borrowed only for that callback; the host copies anything it
@@ -913,10 +836,10 @@ zero-length canonical payload is accepted as the valid proto3 default message
 when the separate type tag is known. Concrete builtins and codecs live under
 `pj_base/builtin/`; see `docs/builtin_type.md` for the catalog.
 
-Pre-0.21 parsers expose no functional extension, and handler-based 0.21 parsers
-may expose v1 without v2. The host keeps a clearly isolated, deprecated
-direct-C++ bridge for binaries with neither extension. New plugins and new host
-code use v2-first negotiation; SDK 1.0 can remove the bridge and the frozen
+Parsers built before SDK 0.22 expose no usable functional extension: pre-0.21
+builds expose none, and 0.21 builds expose only the retired v1. The host keeps a
+clearly isolated, deprecated direct-C++ bridge for those binaries. New plugins
+and new host code use v2; SDK 1.0 can remove the bridge and the frozen
 `MessageParserPluginBase` layout constraint.
 
 ## Per-topic pause (demand-driven subscription)

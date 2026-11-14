@@ -14,7 +14,7 @@
 #include "pj_base/builtin_object_abi.h"
 #include "pj_base/parser_module_abi.h"
 #include "pj_plugins/host/native_parser_module.hpp"
-#include "pj_plugins/host/parser_claim_catalog.hpp"
+#include "pj_plugins/host/parser_module_claims.hpp"
 #include "pj_plugins/host/parser_module_runtime.hpp"
 
 namespace PJ {
@@ -62,7 +62,7 @@ TEST(ParserModuleAuthoringE2E, LoadsAdmitsBindsAndParsesFullAndSplicedPointCloud
   auto module = NativeParserModule::load(PJ_TOY_CDR_POINTCLOUD_MODULE_PATH);
   ASSERT_TRUE(module.has_value()) << module.error();
   ParserClaimCatalog catalog;
-  auto manifest = catalog.ingestModuleManifest(module->manifestJson(), ParserClaimProvenance::kFolderDrop, 12);
+  auto manifest = ingestParserModuleManifest(catalog, module->manifestJson(), ParserClaimProvenance::kFolderDrop, 12);
   ASSERT_TRUE(manifest.has_value()) << manifest.error();
   ASSERT_EQ(manifest->claims.size(), 2U);
 

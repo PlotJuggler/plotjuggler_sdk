@@ -49,7 +49,7 @@ extern "C" {
  * pre-v5 parser DSOs because the C++ MessageParserPluginBase
  * pure-functional contract changed parseScalars()/parseObject() return
  * types to ScalarRecord/ObjectRecord. SDK 0.21 subsequently placed those
- * results behind the additive `pj.parser_functional.v1` C extension; direct
+ * results behind an additive C extension, now `pj.parser_functional.v2`; direct
  * host calls on the C++ base remain only as a temporary old-plugin bridge.
  *
  * The C data-plane layout remains the v4 layout:
@@ -442,7 +442,9 @@ typedef struct {
  *                    object carries a SHARED error buffer whose pointer is
  *                    handed back through PJ_error_t*, so two threads must not
  *                    be inside slots of the SAME host object concurrently.
- *                    Serialise with your own mutex if you fan out.
+ *                    Serialise with your own mutex if you fan out. A
+ *                    DataSource narrows this further: only while a host
+ *                    start/poll/stop call is in progress (data_source_protocol.h).
  *   [thread-safe]    Any thread, concurrently.
  * ========================================================================== */
 
@@ -611,9 +613,10 @@ typedef struct {
  * for exactly this).
  *
  * The two ABI-appended tail slots (register_object_topic_on_dataset,
- * set_object_topic_retention) deliberately keep a conservative [main-thread]
- * tag: no host implements them yet — every known vtable leaves them NULL — so
- * there is no implementation to audit. Re-tag when the first one lands.
+ * set_object_topic_retention) follow the same rule. In the reference host the
+ * first takes the engine lock only for its dataset lookup; both otherwise go
+ * through ObjectStore's locks, like register_object_topic, and share its
+ * error buffer.
  *
  * read_series_arrow: caller zero-initialises both out structs. Host fills
  * them (allocates buffers, sets release callbacks). On success the caller
@@ -686,7 +689,7 @@ typedef struct PJ_toolbox_host_vtable_t {
       void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, uint64_t size,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Register an object topic on an EXISTING dataset, addressed by
+  /* [stream-thread] Register an object topic on an EXISTING dataset, addressed by
    * its DatasetId, rather than under a data source the toolbox created. This is
    * the ANNOTATION path: a toolbox attaches objects (e.g. plot markers) to data
    * loaded by another source. Idempotent — if a topic with this name already
@@ -701,7 +704,7 @@ typedef struct PJ_toolbox_host_vtable_t {
       void* ctx, uint32_t dataset_id, PJ_string_view_t topic_name, PJ_string_view_t metadata_json,
       PJ_object_topic_handle_t* out_handle, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* [main-thread] Bound an object topic's retention to keep at most `max_entries`
+  /* [stream-thread] Bound an object topic's retention to keep at most `max_entries`
    * of the most recent snapshots (0 = unlimited). Generic capability: a producer
    * that republishes a whole set under one topic at a sentinel timestamp (e.g.
    * plot markers) sets max_entries=1 so superseded snapshots are evicted instead
@@ -938,30 +941,11 @@ typedef struct {
   const PJ_object_read_host_vtable_t* vtable;
 } PJ_object_read_host_t;
 
-/**
- * Colormap registry service ("pj.colormap.v1", protocol_version 1).
- *
- * Independent host-provided service for toolbox plugins that want to
- * publish named colormap callbacks.
+/*
+ * Service id "pj.colormap.v1" is RETIRED as of 1.0.0 and must never be reused:
+ * toolbox binaries built against earlier SDKs request it with the old layout.
+ * A future colormap service would be "pj.colormap.v2".
  */
-typedef struct PJ_colormap_registry_vtable_t {
-  uint32_t protocol_version;
-  uint32_t struct_size;
-
-  /* [main-thread] Register a named colormap. eval_fn is invoked later from
-   * the main GUI thread when rendering. */
-  bool (*register_map)(
-      void* ctx, PJ_string_view_t name, const char* (*eval_fn)(double value, void* user_ctx), void* user_ctx,
-      PJ_error_t* out_error) PJ_NOEXCEPT;
-
-  /* [main-thread] Unregister a previously registered colormap. */
-  bool (*unregister_map)(void* ctx, PJ_string_view_t name, PJ_error_t* out_error) PJ_NOEXCEPT;
-} PJ_colormap_registry_vtable_t;
-
-typedef struct {
-  void* ctx;
-  const PJ_colormap_registry_vtable_t* vtable;
-} PJ_colormap_registry_t;
 
 /**
  * Data-processor host service ("pj.data_processors.v1", protocol_version 1).

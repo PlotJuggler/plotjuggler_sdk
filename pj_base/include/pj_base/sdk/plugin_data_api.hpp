@@ -320,8 +320,12 @@ namespace detail {
 
 }  // namespace detail
 
+/// Null data reads as empty whatever the size: a malformed {nullptr, size > 0} view is never dereferenced.
 [[nodiscard]] inline std::string_view toStringView(PJ_string_view_t view) {
-  return std::string_view(view.data == nullptr ? "" : view.data, view.size);
+  if (view.data == nullptr) {
+    return "";
+  }
+  return std::string_view(view.data, view.size);
 }
 
 [[nodiscard]] inline PJ_string_view_t toAbiString(std::string_view view) {
@@ -1626,54 +1630,6 @@ class ToolboxHostView {
   [[nodiscard]] bool hasTailSlot(std::size_t field_offset, Fn fn) const noexcept {
     return host_.vtable != nullptr && host_.vtable->struct_size >= field_offset + sizeof(Fn) && fn != nullptr;
   }
-};
-
-// ---------------------------------------------------------------------------
-// ColorMapRegistryView — typed C++ view over PJ_colormap_registry_t
-// ---------------------------------------------------------------------------
-
-/// Signature of a color evaluation callback — mirrors the C ABI.
-using ColorMapEvalFn = const char* (*)(double value, void* user_ctx);
-
-/// C++ wrapper around PJ_colormap_registry_t for plugins that publish
-/// colormaps. Constructed from the fat pointer delivered via
-/// `bind_colormap_registry`. Empty-constructible; `valid()` tells whether
-/// the host exposed a registry.
-class ColorMapRegistryView {
- public:
-  ColorMapRegistryView() = default;
-  explicit ColorMapRegistryView(PJ_colormap_registry_t registry) : registry_(registry) {}
-
-  [[nodiscard]] bool valid() const noexcept {
-    return registry_.vtable != nullptr && registry_.ctx != nullptr;
-  }
-
-  /// Register (or replace) a named colormap. The new entry becomes active.
-  [[nodiscard]] Status registerMap(std::string_view name, ColorMapEvalFn eval_fn, void* user_ctx) const {
-    if (!valid() || registry_.vtable->register_map == nullptr) {
-      return unexpected("colormap registry is not bound");
-    }
-    PJ_error_t err{};
-    if (!registry_.vtable->register_map(registry_.ctx, toAbiString(name), eval_fn, user_ctx, &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
-
-  /// Unregister a colormap by name. Clears the active selection if it matched.
-  [[nodiscard]] Status unregisterMap(std::string_view name) const {
-    if (!valid() || registry_.vtable->unregister_map == nullptr) {
-      return unexpected("colormap registry is not bound");
-    }
-    PJ_error_t err{};
-    if (!registry_.vtable->unregister_map(registry_.ctx, toAbiString(name), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
-  }
-
- private:
-  PJ_colormap_registry_t registry_{};
 };
 
 // ---------------------------------------------------------------------------

@@ -60,8 +60,8 @@ class PlotjugglerSdkConan(ConanFile):
         cmake_layout(self, src_folder="src")
 
     def requirements(self):
-        # nlohmann_json is in PUBLIC installed headers (config_envelope.hpp,
-        # widget_data, plugin_catalog) and is find_dependency()'d by the
+        # nlohmann_json is in PUBLIC installed headers (streaming_source.hpp,
+        # widget_data.hpp) and is find_dependency()'d by the
         # installed CMake usage, so it must propagate to consumers.
         self.requires("nlohmann_json/3.12.0", transitive_headers=True)
 

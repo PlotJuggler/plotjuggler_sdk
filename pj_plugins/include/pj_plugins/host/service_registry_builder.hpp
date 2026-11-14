@@ -37,7 +37,7 @@ class ServiceRegistryBuilder {
   /// Register a service under @p name. Rejects null pointers and duplicate
   /// names (silent overwrite would mask configuration bugs).
   ///
-  /// @param name              Canonical service name (e.g. "pj.colormap.v1").
+  /// @param name              Canonical service name (e.g. "pj.source_write.v1").
   /// @param protocol_version  The version of the service as implemented here.
   ///                          Consumers may request any version <= this value.
   /// @param service           Fat pointer to the service. The builder does
@@ -112,7 +112,8 @@ class ServiceRegistryBuilder {
       }
       return false;
     }
-    std::string key(name.data == nullptr ? "" : name.data, name.size);
+    // A null view is empty whatever its size: never read `size` bytes from a literal.
+    const std::string key = name.data == nullptr ? std::string() : std::string(name.data, name.size);
     auto it = self->entries_.find(key);
     if (it == self->entries_.end()) {
       if (out_error != nullptr) {

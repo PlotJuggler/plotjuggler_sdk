@@ -138,7 +138,6 @@ class ToolboxPluginBase {
   /// Default implementation pulls:
   ///   - "pj.toolbox_write.v1"       → ToolboxHost          (mandatory)
   ///   - "pj.toolbox_runtime.v1"     → RuntimeHost          (mandatory)
-  ///   - "pj.colormap.v1"            → ColorMap             (optional)
   ///   - "pj.toolbox_object_read.v1" → ObjectReadHost       (optional)
   ///
   /// Override to acquire additional services or relax defaults.
@@ -159,7 +158,8 @@ class ToolboxPluginBase {
     return PJ_borrowed_dialog_t{nullptr, nullptr};
   }
 
-  /// React to data appended to the datastore. Default is no-op.
+  /// React to data appended to the datastore. Default is no-op. Advisory: a
+  /// host may never call it, so do not depend on it for correctness.
   virtual void onDataChanged() {}
 
   /// Return a pointer to a static plugin-exposed extension for @p id, or
@@ -205,10 +205,6 @@ class ToolboxPluginBase {
     return runtime_host_view_;
   }
 
-  [[nodiscard]] const sdk::ColorMapRegistryView& colorMapRegistry() const {
-    return colormap_view_;
-  }
-
   /// Optional — returns nullptr when the host does not register
   /// `pj.toolbox_object_read.v1`. Transformer-style toolboxes check this
   /// before touching ObjectStore; scalar-only toolboxes never call it.
@@ -222,15 +218,11 @@ class ToolboxPluginBase {
   [[nodiscard]] bool runtimeHostBound() const {
     return runtime_host_view_.valid();
   }
-  [[nodiscard]] bool colorMapRegistryBound() const {
-    return colormap_view_.valid();
-  }
 
  private:
   sdk::ServiceRegistry service_registry_{};
   sdk::ToolboxHostView toolbox_host_view_{PJ_toolbox_host_t{}};
   ToolboxRuntimeHostView runtime_host_view_{};
-  sdk::ColorMapRegistryView colormap_view_{};
   sdk::ToolboxObjectReadHostView object_read_host_view_{};
   std::string config_buf_;
 

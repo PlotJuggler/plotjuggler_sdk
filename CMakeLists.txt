@@ -22,7 +22,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(GNUInstallDirs)  # CMAKE_INSTALL_LIBDIR, etc. used by PjPlugin
 include(PjPlugin)
-include(PjParserModule)
 include(PjSdkTestFixtures)
 
 # ---------------------------------------------------------------------------
@@ -35,6 +34,8 @@ option(PJ_ENABLE_TSAN "Enable ThreadSanitizer for Debug builds" OFF)
 option(PJ_INSTALL_SDK "Install plotjuggler_sdk CMake package (base/plugin_sdk/plugin_host)" OFF)
 option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
 option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
+# experimental/ is never installed or packaged and carries no compatibility promise.
+option(PJ_BUILD_EXPERIMENTAL "Build experimental components (functional parser modules)" ${PJ_BUILD_TESTS})
 option(PJ_ENABLE_ABI_CHECK "Enable abidiff-based ABI drift gate (requires libabigail)" OFF)
 # -Werror is on for our own builds/CI, but must be off for third-party
 # packaging (Conan Center, distro builds) where an unpredicted compiler version
@@ -133,6 +134,9 @@ endif()
 
 add_subdirectory(pj_base)
 add_subdirectory(pj_plugins)
+if(PJ_BUILD_EXPERIMENTAL)
+  add_subdirectory(experimental/parser_module)
+endif()
 
 if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
   set(PJ_HAS_PORTED_PLUGINS TRUE)
@@ -145,9 +149,8 @@ endif()
 # Exported CMake namespace: plotjuggler_sdk::
 # Components:
 #   base         — vocabulary types (always available)
-#   parser_module — standalone header-only functional module authoring kit
 #   plugin_sdk   — plugin-author surface: base + dialog SDK + parser SDK
-#   source       — compiled provider helpers (descriptor_import_support is an alias)
+#   source       — compiled provider helpers
 #   plugin_host  — host-side loaders (data_source, message_parser, toolbox,
 #                  dialog, catalogs)
 # ---------------------------------------------------------------------------
@@ -196,7 +199,6 @@ if(PJ_INSTALL_SDK)
     "${CMAKE_CURRENT_BINARY_DIR}/plotjuggler_sdkConfigVersion.cmake"
     cmake/PjPlugin.cmake
     cmake/PjCheckElfPluginExports.cmake
-    cmake/PjParserModule.cmake
     cmake/PjSdkTestFixtures.cmake
     DESTINATION ${PJ_PACKAGE_CMAKE_DIR}
   )

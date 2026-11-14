@@ -5,9 +5,7 @@ Exposes CMake components under the `plotjuggler_sdk::` namespace:
   base         — pj_base, vocabulary types (always available)
   plugin_sdk   — umbrella for plugin authors (base + dialog SDK + parser SDK)
   plugin_host  — umbrella for host loaders (data_source/parser/toolbox/dialog)
-  parser_module — standalone functional parser-module authoring headers
   source       — compiled source-provider support
-  descriptor_import_support — compatibility alias for source
 
 A consuming Conan recipe declares `plotjuggler_sdk/<version>` and then:
 
@@ -70,6 +68,7 @@ class PlotjugglerSdkConan(ConanFile):
         "pj_base/*",
         "tools/feature_floors/*",
         "pj_plugins/*",
+        "experimental/*",  # built only with_tests=True; never packaged
         "examples/*",
         "!*/__pycache__/*",
     )
@@ -150,12 +149,11 @@ class PlotjugglerSdkConan(ConanFile):
         # the package level (self.cpp_info), not at component level — declaring
         # it on the `sdk` component below silently produced an empty
         # plotjuggler_sdk_BUILD_MODULES_PATHS_RELEASE in the generated data
-        # file. Ship the plugin-authoring helpers (PjPlugin.cmake) and the
-        # parser-module helper from the package root so CMakeDeps actually
-        # include()s them after find_package() returns.
+        # file. Ship the plugin-authoring helpers (PjPlugin.cmake) from the
+        # package root so CMakeDeps actually include()s them after
+        # find_package() returns.
         self.cpp_info.set_property("cmake_build_modules", [
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjPlugin.cmake"),
-            os.path.join("lib", "cmake", "plotjuggler_sdk", "PjParserModule.cmake"),
             os.path.join("lib", "cmake", "plotjuggler_sdk", "PjSdkTestFixtures.cmake"),
         ])
 
@@ -164,6 +162,10 @@ class PlotjugglerSdkConan(ConanFile):
         base.set_property("cmake_target_name", "plotjuggler_sdk::base")
         base.libs = ["pj_base"]
         base.includedirs = ["include"]
+        # PUBLIC on pj_base in CMake, but CMakeDeps ignores the installed targets file:
+        # consumers must compile PJ_ASSERT the way the archives were built (ODR).
+        if self.options.assert_throws:
+            base.defines = ["PJ_ASSERT_THROWS"]
 
         # --- plugin_sdk (umbrella INTERFACE: pj_base + pj_dialog_sdk) ---
         sdk = self.cpp_info.components["plugin_sdk"]
@@ -172,24 +174,12 @@ class PlotjugglerSdkConan(ConanFile):
         sdk.includedirs = ["include"]
         sdk.requires = ["base", "nlohmann_json::nlohmann_json"]
 
-        # --- parser_module (header-only functional parser-module authoring kit;
-        # pj_add_parser_module() comes from the PjParserModule build module) ---
-        kit = self.cpp_info.components["parser_module"]
-        kit.set_property("cmake_target_name", "plotjuggler_sdk::parser_module")
-        kit.libs = []  # INTERFACE only: authored modules link no SDK library
-        kit.includedirs = ["include"]
-
         # --- source (descriptor-import provider support) ---
         source = self.cpp_info.components["source"]
         source.set_property("cmake_target_name", "plotjuggler_sdk::source")
         source.libs = ["pj_source"]
         source.includedirs = ["include"]
         source.requires = ["base", "nlohmann_json::nlohmann_json"]
-
-        support = self.cpp_info.components["descriptor_import_support"]
-        support.set_property("cmake_target_name", "plotjuggler_sdk::descriptor_import_support")
-        support.libs = []
-        support.requires = ["source"]
 
 
         # --- plugin_host (umbrella linking every host-side loader) ---
@@ -204,7 +194,6 @@ class PlotjugglerSdkConan(ConanFile):
                 "pj_dialog_library",
                 "pj_widget_host",
                 "pj_plugin_catalog",
-                "pj_parser_module_host",
                 "pj_parser_claim_catalog",
                 "pj_plugin_loader_detail",
             ]

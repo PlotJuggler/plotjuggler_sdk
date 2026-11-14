@@ -4,7 +4,7 @@
 """Inventory the SDK's HOST-CONTRACT surfaces from the protocol headers.
 
 The inventory is what feature_floors.json must classify: every surface a
-plugin can require from the HOST at runtime. Three kinds are extracted:
+plugin can require from the HOST at runtime. Five kinds are extracted:
 
   1. Callable members of host-side vtables (top-level function-pointer
      members, including typedef'd callable types) — emitted as
@@ -20,6 +20,10 @@ plugin can require from the HOST at runtime. Three kinds are extracted:
   4. Members of the dialog host capability enum, emitted as
      "PJ_dialog_host_capability_t::<member>": a bit the host announces and a
      dialog plugin gates on.
+  5. Members of the builtin object type enum, emitted as
+     "PJ_builtin_object_type_t::<member>": a wire contract the host must
+     decode when a plugin emits that type. Every enumerator is emitted (NONE
+     included); reserved values are comments, not enumerators.
 
 Plugin-side vtables (PJ_data_source_vtable_t, ...) are deliberately absent:
 the HOST calls those, so an old host not calling a new plugin slot degrades
@@ -40,7 +44,6 @@ from pathlib import Path
 # Host-side vtables beyond the PJ_*host_vtable_t naming convention.
 EXTRA_HOST_VTABLES = {
     "PJ_service_registry_vtable_t",
-    "PJ_colormap_registry_vtable_t",
     "PJ_settings_store_vtable_t",
     "PJ_feature_catalog_vtable_t",
 }
@@ -54,7 +57,6 @@ PLUGIN_SIDE_VTABLES = {
 }
 # Versioned ids the HOST serves through the service registry (host surfaces).
 HOST_SERVICE_IDS = {
-    "pj.colormap.v1",
     "pj.data_processors.v1",
     "pj.feature_catalog.v1",
     "pj.mcp_endpoint.v1",
@@ -77,7 +79,6 @@ HOST_SERVICE_IDS = {
 # Versioned ids of PLUGIN-provided extensions (the host queries the plugin).
 PLUGIN_EXTENSION_IDS = {
     "pj.descriptor_import.v1",
-    "pj.parser_functional.v1",
     "pj.parser_functional.v2",
     "pj.parser_route_claims.v1",
     "pj.topic_subscription.v1",
@@ -98,6 +99,8 @@ DIALOG_PROTOCOL_HEADER = "pj_plugins/dialog_protocol/include/pj_plugins/dialog_p
 DIALOG_CAPABILITY_ENUM = "PJ_dialog_host_capability_t"
 # Pads the enum to a stable width; not a capability.
 DIALOG_CAPABILITY_PADDING = "PJ_DIALOG_HOST_CAPABILITY_FORCE_INT32"
+BUILTIN_OBJECT_ABI_HEADER = "pj_base/include/pj_base/builtin_object_abi.h"
+BUILTIN_OBJECT_TYPE_ENUM = "PJ_builtin_object_type_t"
 SERVICE_ID_GLOBS = [
     ("pj_base/include/pj_base", "**/*.h*"),
     ("pj_plugins/include", "**/*.h*"),
@@ -177,8 +180,18 @@ def _dialog_capabilities(repo: Path) -> set[str]:
     }
 
 
+def _builtin_object_types(repo: Path) -> set[str]:
+    header = repo / BUILTIN_OBJECT_ABI_HEADER
+    text = strip_comments(header.read_text(encoding="utf-8"))
+    match = re.search(r"typedef\s+enum\s+" + BUILTIN_OBJECT_TYPE_ENUM + r"\s*\{(.*?)\}", text, flags=re.S)
+    if match is None:
+        raise SystemExit(f"{BUILTIN_OBJECT_TYPE_ENUM} not found in {header}")
+    members = re.findall(r"^\s*(PJ_BUILTIN_OBJECT_TYPE_\w+)\s*=", match.group(1), flags=re.M)
+    return {f"{BUILTIN_OBJECT_TYPE_ENUM}::{member}" for member in members}
+
+
 def extract(repo: Path) -> list[str]:
-    surfaces: set[str] = _dialog_capabilities(repo)
+    surfaces: set[str] = _dialog_capabilities(repo) | _builtin_object_types(repo)
     header_texts: list[tuple[Path, str]] = []
     for rel, glob in PROTOCOL_HEADER_GLOBS:
         for header in sorted((repo / rel).glob(glob)):

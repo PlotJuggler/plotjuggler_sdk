@@ -34,7 +34,6 @@
 #include "pj_base/descriptor_import_protocol.h"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/parser_functional_protocol.h"
-#include "pj_base/parser_module_abi.h"
 #include "pj_base/parser_route_claims_protocol.h"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/toolbox_protocol.h"
@@ -167,7 +166,7 @@ static_assert(offsetof(PJ_builtin_object_splice_field_v1_t, reserved) == 2, "bui
 static_assert(
     offsetof(PJ_builtin_object_splice_field_v1_t, field_number) == 4, "builtin splice field_number offset pinned");
 
-// Parser functional extension v1. These caller-owned sink tables are the
+// Parser functional extension. These caller-owned sink tables are the
 // only values crossing the new parser result boundary; freeze their first
 // published layout independently of the C++ convenience wrappers.
 #if INTPTR_MAX == INT64_MAX
@@ -175,14 +174,6 @@ static_assert(offsetof(PJ_parser_scalar_sink_v1_t, struct_size) == 0, "scalar si
 static_assert(offsetof(PJ_parser_scalar_sink_v1_t, ctx) == 8, "scalar sink context pinned");
 static_assert(offsetof(PJ_parser_scalar_sink_v1_t, accept_record) == 16, "scalar sink callback pinned");
 static_assert(sizeof(PJ_parser_scalar_sink_v1_t) == 24, "scalar sink size pinned");
-static_assert(offsetof(PJ_parser_object_sink_v1_t, struct_size) == 0, "object sink prefix pinned");
-static_assert(offsetof(PJ_parser_object_sink_v1_t, ctx) == 8, "object sink context pinned");
-static_assert(offsetof(PJ_parser_object_sink_v1_t, accept_object) == 16, "object sink callback pinned");
-static_assert(sizeof(PJ_parser_object_sink_v1_t) == 24, "object sink size pinned");
-static_assert(offsetof(PJ_parser_functional_v1_t, struct_size) == 0, "functional extension prefix pinned");
-static_assert(offsetof(PJ_parser_functional_v1_t, parse_scalars) == 8, "functional scalar slot pinned");
-static_assert(offsetof(PJ_parser_functional_v1_t, parse_object) == 16, "functional object slot pinned");
-static_assert(sizeof(PJ_parser_functional_v1_t) == 24, "functional extension size pinned");
 
 static_assert(offsetof(PJ_parser_object_sink_v2_t, struct_size) == 0, "v2 object sink prefix pinned");
 static_assert(offsetof(PJ_parser_object_sink_v2_t, ctx) == 8, "v2 object sink context pinned");
@@ -206,43 +197,6 @@ static_assert(offsetof(PJ_parser_route_claims_v1_t, classify_routes) == 8, "rout
 static_assert(sizeof(PJ_parser_route_claims_v1_t) == 16, "route claims extension size pinned");
 static_assert(PJ_PARSER_ROUTE_CLAIMS_V1_MIN_SIZE == 16, "route claims minimum size pinned");
 #endif
-
-static_assert(PJ_PARSER_MODULE_ABI_VERSION == 1, "parser module ABI version pinned");
-static_assert(PJ_MODULE_OK == 0, "parser module OK result pinned");
-static_assert(PJ_MODULE_DECLINE == 1, "parser module DECLINE result pinned");
-static_assert(PJ_MODULE_ERR_GENERIC == -1, "parser module generic error pinned");
-static_assert(PJ_MODULE_ERR_BAD_TOKEN == -2, "parser module bad-token error pinned");
-static_assert(PJ_MODULE_ERR_MALFORMED_INPUT == -3, "parser module malformed-input error pinned");
-static_assert(PJ_MODULE_ERR_BAD_CLAIM_INDEX == -4, "parser module bad-claim-index error pinned");
-static_assert(PJ_MODULE_ERR_ALLOCATION_FAILURE == -5, "parser module allocation error pinned");
-static_assert(PJ_MODULE_CREATION_ERROR_TOKEN == 0, "parser module creation-error token pinned");
-static_assert(PJ_MODULE_ERROR_BUFFER_SIZE == 512, "parser module error buffer size pinned");
-static_assert(std::string_view(PJ_MODULE_ABI_EXPORT_NAME) == "pj_module_abi", "parser module ABI export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_CREATE_EXPORT_NAME) == "pj_module_create", "parser module create export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_DESTROY_EXPORT_NAME) == "pj_module_destroy", "parser module destroy export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_BIND_EXPORT_NAME) == "pj_module_bind", "parser module bind export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_PARSE_EXPORT_NAME) == "pj_module_parse", "parser module parse export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_LAST_ERROR_EXPORT_NAME) == "pj_module_last_error",
-    "parser module last-error export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_ALLOC_EXPORT_NAME) == "pj_module_alloc", "parser module alloc export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_FREE_EXPORT_NAME) == "pj_module_free", "parser module free export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_MANIFEST_ADDR_EXPORT_NAME) == "pj_module_manifest_addr",
-    "native parser module manifest-address export name pinned");
-static_assert(
-    std::string_view(PJ_MODULE_MANIFEST_LEN_EXPORT_NAME) == "pj_module_manifest_len",
-    "native parser module manifest-length export name pinned");
-static_assert(
-    std::string_view(PJ_PARSER_MODULE_MANIFEST_SECTION_NAME) == "pj_parser_module_manifest",
-    "wasm parser module manifest section name pinned");
-static_assert(sizeof(PJ_module_parse_fn_t) == sizeof(void*), "parser module function pointer width pinned");
 
 static_assert(sizeof(PJ_payload_anchor_t) == 16, "PJ_payload_anchor_t pinned (ctx + release fn ptr)");
 static_assert(offsetof(PJ_payload_anchor_t, ctx) == 0, "ctx at offset 0");

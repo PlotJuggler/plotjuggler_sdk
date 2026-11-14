@@ -71,6 +71,28 @@ TEST_F(DialogHandleTest, ConstructAndDestroy) {
   EXPECT_NE(h.context(), nullptr);
 }
 
+TEST_F(DialogHandleTest, FailedCreateIsInvalidAndNeverCallsThePlugin) {
+  // The plugin macro's create() returns nullptr when the plugin constructor throws.
+  // Every other slot is null: calling any of them with the null context would crash.
+  PJ_dialog_vtable_t vtable{};
+  vtable.protocol_version = PJ_DIALOG_PROTOCOL_VERSION;
+  vtable.struct_size = sizeof(PJ_dialog_vtable_t);
+  vtable.create = []() noexcept -> void* { return nullptr; };
+  PJ::DialogHandle h(&vtable);
+
+  EXPECT_FALSE(h.valid());
+  EXPECT_EQ(h.manifest(), "");
+  EXPECT_EQ(h.ui_content(), "");
+  EXPECT_EQ(h.widget_data(), "");
+  EXPECT_FALSE(h.sendEvent("w", "{}"));
+  EXPECT_FALSE(h.tick());
+  h.accept("{}");
+  h.reject();
+  EXPECT_EQ(h.save_config(), "");
+  EXPECT_FALSE(h.load_config("{}"));
+  EXPECT_EQ(h.setHostInfo(testHostInfo()), PJ::SetHostInfoResult::Unsupported);
+}
+
 TEST_F(DialogHandleTest, NullVtable) {
   // Null vtable should be safe — no crash
   PJ::DialogHandle h(nullptr);

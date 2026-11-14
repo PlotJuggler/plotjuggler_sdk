@@ -1,5 +1,7 @@
 # Functional parser module
 
+> Experimental: see [README.md](README.md). Not part of the installed SDK.
+
 A functional parser module maps one or a few message types from an existing
 encoding to canonical PlotJuggler objects or scalar fields. It is a single C++17
 source compiled as a native shared library, with no plugin-family vtable or
@@ -110,9 +112,11 @@ embedded bytes; catalog ingestion validates the complete JSON transactionally.
 
 ## Build
 
-```cmake
-find_package(plotjuggler_sdk 0.22 REQUIRED COMPONENTS parser_module)
+`pj_add_parser_module()` exists only inside this repository's build (this
+directory's `CMakeLists.txt` includes `cmake/PjParserModule.cmake`); there is no
+installed component to `find_package`.
 
+```cmake
 pj_add_parser_module(raw_mono_image_parser
   SOURCE raw_mono_image_parser.cpp
   MANIFEST raw_mono_image_parser.module.json
@@ -121,9 +125,9 @@ pj_add_parser_module(raw_mono_image_parser
 ```
 
 The helper embeds the manifest, hides every non-ABI symbol, and exports the
-complete native `pj_module_*` set. SDK 0.22 accepts only `TARGETS native`;
+complete native `pj_module_*` set. Only `TARGETS native` is accepted;
 requesting `TARGETS wasm` stops configuration with “wasm support arrives with
-the SDK wasm loader milestone”. The shipped WASI check is structural
+the SDK wasm loader milestone”. The WASI check is structural
 conformance testing, not a wasm authoring or execution target.
 
 ## Choose a schema-compatibility strategy
@@ -171,8 +175,8 @@ selection before it can emit an invalid descriptor.
 ## Traps
 
 - The kit is header-only and WASI-clean: no threads, filesystem, iostream, host
-  SDK linkage, or exceptions across its API. In SDK 0.22 the supported build
-  product is nevertheless native-only.
+  SDK linkage, or exceptions across its API. The supported build product is
+  nevertheless native-only.
 - Return `pj::Status` / `pj::Expected<T>`; do not throw. `Blob` uses nothrow
   allocation and protobuf matching is bounded, so allocation failure is a
   reported data error rather than a process abort or contract strike.

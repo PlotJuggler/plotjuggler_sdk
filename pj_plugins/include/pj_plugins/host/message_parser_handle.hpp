@@ -112,7 +112,7 @@ class MessageParserHandle {
     if (!vt_->save_config(ctx_, &sv, &err)) {
       return unexpected(errorToString(err));
     }
-    out_json.assign(sv.data == nullptr ? "" : sv.data, sv.size);
+    out_json.assign(sv.data == nullptr ? std::string_view() : std::string_view(sv.data, sv.size));
     return okStatus();
   }
 
@@ -134,23 +134,20 @@ class MessageParserHandle {
     return okStatus();
   }
 
-  /// True when this parser exposes the 0.21 pure-functional C extension.
-  /// Older parsers return false and can be handled through the deprecated
+  /// True when this parser exposes the pure-functional C extension (v2, SDK
+  /// 0.22 and later). Older parsers return false and can be handled through the deprecated
   /// in-process C++ compatibility bridge until the next SDK major version.
   [[nodiscard]] bool supportsFunctionalParsing() const {
-    const auto extensions = functionalExtensions();
-    return extensions.v2 != nullptr || extensions.v1 != nullptr;
+    return functionalExtension() != nullptr;
   }
 
   /// Parse one scalar record and synchronously deliver borrowed C ABI values
   /// to @p sink. The sink must copy names/string values it retains.
   [[nodiscard]] Status parseScalarsFunctional(
       Timestamp timestamp_ns, Span<const uint8_t> payload, const ScalarRecordSink& sink) const {
-    const auto extensions = functionalExtensions();
-    if (extensions.v2 == nullptr && extensions.v1 == nullptr) {
-      return unexpected(
-          std::string("message parser does not expose ") + PJ_PARSER_FUNCTIONAL_EXTENSION_V2 + " or " +
-          PJ_PARSER_FUNCTIONAL_EXTENSION_V1);
+    const auto* extension = functionalExtension();
+    if (extension == nullptr) {
+      return unexpected(std::string("message parser does not expose ") + PJ_PARSER_FUNCTIONAL_EXTENSION_V2);
     }
     if (!sink) {
       return unexpected(std::string("scalar record sink is empty"));
@@ -164,8 +161,7 @@ class MessageParserHandle {
     };
     PJ_error_t error{};
     const PJ_bytes_view_t bytes{payload.data(), payload.size()};
-    const auto parse_scalars = extensions.v2 != nullptr ? extensions.v2->parse_scalars : extensions.v1->parse_scalars;
-    if (!parse_scalars(ctx_, timestamp_ns, bytes, &abi_sink, &error)) {
+    if (!extension->parse_scalars(ctx_, timestamp_ns, bytes, &abi_sink, &error)) {
       return unexpected(sdk::errorToString(error));
     }
     if (state.call_count != 1) {
@@ -178,14 +174,12 @@ class MessageParserHandle {
   /// are decoded synchronously into host-owned SDK storage before returning.
   [[nodiscard]] Expected<sdk::ObjectRecord> parseObjectFunctional(
       Timestamp timestamp_ns, Span<const uint8_t> payload) const {
-    const auto extensions = functionalExtensions();
-    if (extensions.v2 == nullptr && extensions.v1 == nullptr) {
-      return unexpected(
-          std::string("message parser does not expose ") + PJ_PARSER_FUNCTIONAL_EXTENSION_V2 + " or " +
-          PJ_PARSER_FUNCTIONAL_EXTENSION_V1);
+    const auto* extension = functionalExtension();
+    if (extension == nullptr) {
+      return unexpected(std::string("message parser does not expose ") + PJ_PARSER_FUNCTIONAL_EXTENSION_V2);
     }
     return parseObjectFunctionalAbi(
-        extensions, timestamp_ns, PJ_payload_t{.data = payload.data(), .size = payload.size(), .anchor = {}}, payload,
+        extension, timestamp_ns, PJ_payload_t{.data = payload.data(), .size = payload.size(), .anchor = {}}, payload,
         {});
   }
 
@@ -194,11 +188,9 @@ class MessageParserHandle {
   /// plugin's object has been serialized, including every failure path.
   [[nodiscard]] Expected<sdk::ObjectRecord> parseObjectFunctional(
       Timestamp timestamp_ns, sdk::PayloadView payload) const {
-    const auto extensions = functionalExtensions();
-    if (extensions.v2 == nullptr && extensions.v1 == nullptr) {
-      return unexpected(
-          std::string("message parser does not expose ") + PJ_PARSER_FUNCTIONAL_EXTENSION_V2 + " or " +
-          PJ_PARSER_FUNCTIONAL_EXTENSION_V1);
+    const auto* extension = functionalExtension();
+    if (extension == nullptr) {
+      return unexpected(std::string("message parser does not expose ") + PJ_PARSER_FUNCTIONAL_EXTENSION_V2);
     }
 
     PJ_payload_t abi_payload{.data = payload.bytes.data(), .size = payload.bytes.size(), .anchor = {}};
@@ -208,7 +200,7 @@ class MessageParserHandle {
       abi_payload.anchor.ctx = held;
       abi_payload.anchor.release = [](void* ctx) noexcept { delete static_cast<sdk::BufferAnchor*>(ctx); };
     }
-    return parseObjectFunctionalAbi(extensions, timestamp_ns, abi_payload, payload.bytes, std::move(splice_anchor));
+    return parseObjectFunctionalAbi(extension, timestamp_ns, abi_payload, payload.bytes, std::move(splice_anchor));
   }
 
   /// A priori classification of the bound schema. Tail-slot gated; when
@@ -249,14 +241,9 @@ class MessageParserHandle {
   }
 
  private:
-  struct FunctionalExtensions {
-    const PJ_parser_functional_v2_t* v2 = nullptr;
-    const PJ_parser_functional_v1_t* v1 = nullptr;
-  };
-
   [[nodiscard]] Expected<sdk::ObjectRecord> parseObjectFunctionalAbi(
-      FunctionalExtensions extensions, Timestamp timestamp_ns, PJ_payload_t payload, Span<const uint8_t> input_payload,
-      sdk::BufferAnchor input_anchor) const {
+      const PJ_parser_functional_v2_t* extension, Timestamp timestamp_ns, PJ_payload_t payload,
+      Span<const uint8_t> input_payload, sdk::BufferAnchor input_anchor) const {
     ObjectSinkState state{
         .record = {},
         .input_payload = input_payload,
@@ -265,25 +252,14 @@ class MessageParserHandle {
         .call_count = 0,
     };
     PJ_error_t error{};
-    if (extensions.v2 != nullptr) {
-      PJ_parser_object_sink_v2_t abi_sink{
-          .struct_size = sizeof(PJ_parser_object_sink_v2_t),
-          .ctx = &state,
-          .accept_object = acceptObject,
-          .accept_object_spliced = acceptObjectSpliced,
-      };
-      if (!extensions.v2->parse_object(ctx_, timestamp_ns, payload, &abi_sink, &error)) {
-        return unexpected(sdk::errorToString(error));
-      }
-    } else {
-      PJ_parser_object_sink_v1_t abi_sink{
-          .struct_size = sizeof(PJ_parser_object_sink_v1_t),
-          .ctx = &state,
-          .accept_object = acceptObject,
-      };
-      if (!extensions.v1->parse_object(ctx_, timestamp_ns, payload, &abi_sink, &error)) {
-        return unexpected(sdk::errorToString(error));
-      }
+    PJ_parser_object_sink_v2_t abi_sink{
+        .struct_size = sizeof(PJ_parser_object_sink_v2_t),
+        .ctx = &state,
+        .accept_object = acceptObject,
+        .accept_object_spliced = acceptObjectSpliced,
+    };
+    if (!extension->parse_object(ctx_, timestamp_ns, payload, &abi_sink, &error)) {
+      return unexpected(sdk::errorToString(error));
     }
     if (state.call_count != 1 || !state.record.has_value()) {
       return unexpected(std::string("functional parser returned success without exactly one canonical object"));
@@ -304,20 +280,14 @@ class MessageParserHandle {
     uint32_t call_count = 0;
   };
 
-  [[nodiscard]] FunctionalExtensions functionalExtensions() const {
+  [[nodiscard]] const PJ_parser_functional_v2_t* functionalExtension() const {
     const auto* v2 =
         static_cast<const PJ_parser_functional_v2_t*>(getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V2));
     if (v2 == nullptr || v2->struct_size < PJ_PARSER_FUNCTIONAL_V2_MIN_SIZE || v2->parse_scalars == nullptr ||
         v2->parse_object == nullptr) {
-      v2 = nullptr;
+      return nullptr;
     }
-    const auto* v1 =
-        static_cast<const PJ_parser_functional_v1_t*>(getPluginExtension(PJ_PARSER_FUNCTIONAL_EXTENSION_V1));
-    if (v1 == nullptr || v1->struct_size < PJ_PARSER_FUNCTIONAL_V1_MIN_SIZE || v1->parse_scalars == nullptr ||
-        v1->parse_object == nullptr) {
-      v1 = nullptr;
-    }
-    return {.v2 = v2, .v1 = v1};
+    return v2;
   }
 
   static bool acceptScalarRecord(

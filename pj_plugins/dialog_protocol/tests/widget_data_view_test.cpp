@@ -6,10 +6,12 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <pj_plugins/host/widget_data_view.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
 #include <utility>
 #include <variant>
+#include <vector>
 
 TEST(WidgetDataViewTest, TimeSpansPreserveSignedNanosecondLimits) {
   constexpr auto minimum = std::numeric_limits<std::int64_t>::min();
@@ -1011,4 +1013,26 @@ TEST(WidgetDataViewSceneViewTest, MalformedDocumentsAreErrorsNotAbsent) {
 TEST(WidgetDataViewSceneViewTest, TrailingJunkAfterTheDocumentIsNotAWidgetUpdate) {
   const PJ::WidgetDataView view(R"({"preview":{"scene_view":{"kind":"3d","topics":[]}}} trailing)");
   EXPECT_FALSE(view.sceneView("preview").has_value());
+}
+
+TEST(WidgetDataViewTest, MalformedMarkerEntriesAreSkippedWithoutThrowing) {
+  const PJ::WidgetDataView view(R"({
+    "chart": {"chart_markers": [5, {"kind": 1}, {"kind": "event", "x0": "1"}, {"kind": "region", "x0": 1, "x1": 2.5}]},
+    "timeline": {"marker_timeline_marks": [5, {"id": "a"}, {"id": 1, "start": 4294967296},
+                                           {"id": 2, "region": false, "start": 3, "end": 4}]}
+  })");
+  std::optional<std::vector<PJ::WidgetDataView::ChartMarkerView>> markers;
+  ASSERT_NO_THROW(markers = view.chartMarkers("chart"));
+  ASSERT_TRUE(markers.has_value());
+  ASSERT_EQ(markers->size(), 1U);
+  EXPECT_EQ(markers->front().kind, "region");
+  EXPECT_EQ(markers->front().x1, 2.5);
+
+  std::optional<std::vector<PJ::TimelineMark>> marks;
+  ASSERT_NO_THROW(marks = view.markerTimelineMarks("timeline"));
+  ASSERT_TRUE(marks.has_value());
+  ASSERT_EQ(marks->size(), 1U);
+  EXPECT_EQ(marks->front().id, 2);
+  EXPECT_FALSE(marks->front().region);
+  EXPECT_EQ(marks->front().end, 4);
 }

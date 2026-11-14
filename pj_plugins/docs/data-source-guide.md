@@ -58,11 +58,12 @@ prevent runtime failures and confusing host behaviour.
 **MUST**
 - Return `PJ::okStatus()` on success and `PJ::unexpected("reason")` on failure
   from every fallible method.
-- Call `runtimeHost().notifyState(...)` on every state transition you trigger.
-- Call host methods (`writeHost()`, `runtimeHost()`) only from the host's
-  callback thread — the same thread that invoked `onStart`/`onPoll`/`onStop`/
-  `importData`/`pause`/`resume`.
-- Make `onStop()` idempotent.
+- Call `[stream-thread]` host methods (`writeHost()`, and `runtimeHost()`
+  except `reportMessage`/`requestStop`/`isStopRequested`/`notifyState`) only
+  while the host is inside `start()`/`poll()`/`stop()` — i.e. from
+  `onStart`/`onPoll`/`onStop`/`importData`, one thread at a time.
+- Make `onStop()` idempotent, and release what a failed `onStart()` acquired:
+  the host may destroy the instance without calling `stop()`.
 - Persist all state needed for headless restart in `saveConfig()`. The host
   must be able to `loadConfig(saved) → start()` without showing a dialog.
 
@@ -70,8 +71,9 @@ prevent runtime failures and confusing host behaviour.
 - Throw exceptions across virtual overrides — the SDK trampolines catch them,
   but the host receives a generic error and the plugin loses the chance to
   report a useful reason.
-- Call host methods from a background thread you spawned. Buffer in plugin
-  memory and flush from `onPoll()`. `PJ::sdk::DrainQueue` / `LatestValueSlot`
+- Call `[stream-thread]` host methods from a thread you spawned, unless the
+  host's `start()`/`poll()`/`stop()` call is blocked waiting for that thread.
+  Buffer in plugin memory and flush from `onPoll()`. `PJ::sdk::DrainQueue` / `LatestValueSlot`
   in `pj_plugins/sdk/streaming_source.hpp` provide swap-drain containers for
   this handoff. `DelegatedIngestCache` in the same header wraps
   `ensureParserBinding` + `pushMessage` for delegated-ingest sources.
@@ -186,7 +188,7 @@ class CsvFileLoader : public PJ::FileSourceBase {
 
   PJ::Status loadConfig(std::string_view json) override {
     config_ = std::string(json);
-    // Extract "filepath" from the JSON config envelope.
+    // Extract "filepath" from the JSON config.
     // Use whatever JSON library your plugin links.
     // path_ = parse(json)["filepath"];
     return PJ::okStatus();
@@ -351,7 +353,7 @@ class UdpReceiver : public PJ::StreamSourceBase {
 
   PJ::Status onPoll() override {
     // Flush buffered data into the host. Called periodically from the
-    // host's thread — this is the only place we may call host methods.
+    // host's polling thread — call host methods here, never from recvLoop().
     auto batch = buffer_.drain();
     while (!batch.empty()) {
       const auto& msg = batch.front();
@@ -425,18 +427,20 @@ changes, only a different config value.
 **Threading and `onPoll()` semantics.** The host calls `onPoll()` periodically
 on its thread to flush buffered data. Asynchronous I/O sources (sockets,
 hardware) must manage their own receive thread and hand off buffered data in
-`onPoll()`. Host methods (`pushMessage`, `appendRecord`, etc.) must only be called
-from `onPoll()` / the host's thread, never from the background thread.
+`onPoll()`. `[stream-thread]` host methods (`pushMessage`, `appendRecord`, etc.)
+must only be called from `onStart()`/`onPoll()`/`onStop()`, never from the
+background thread: between polls the host flushes the same host objects on its
+polling thread.
 
 Key traits of `StreamSourceBase`:
 - `capabilities()` automatically includes `kCapabilityContinuousStream`; you
   provide additional flags via `extraCapabilities()`.
 - `onStart()` opens connections and creates topics or parser bindings.
 - `onPoll()` flushes buffered data into the host — drain what your plugin
-  has accumulated and return immediately. Must not block. Host methods
-  (`pushMessage`, `appendRecord`, etc.) may only be called from this
-  callback.
-- `onStop()` tears down connections. Must be idempotent.
+  has accumulated and return immediately. Must not block.
+- `onStop()` tears down connections. Must be idempotent. It may run on the
+  polling thread, not the thread that ran `onStart()`, and is skipped when
+  `onStart()` fails.
 - `stop()`, `start()`, `poll()`, and `currentState()` are managed by the
   base class.
 - **Pause/resume** are NOT wired by `StreamSourceBase`. To support pause,
@@ -470,7 +474,7 @@ Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
 | `progressStart(label, total, cancellable)` | Begin a progress bar. |
 | `progressUpdate(step)` | Advance progress. Returns false if cancelled. |
 | `progressFinish()` | End the progress sequence. |
-| `notifyState(state)` | Tell the host your state changed. |
+| `notifyState(state)` | Tell the host your state changed. Advisory: a host may ignore it. |
 | `requestStop(terminal_state, reason)` | Ask the host to stop you (self-terminate). |
 | `isStopRequested()` | Check if the host wants you to stop. |
 | `ensureParserBinding(request)` | Bind a parser for delegated ingest (see below). |
@@ -483,8 +487,10 @@ Access via `runtimeHost()`. Use this for lifecycle coordination and diagnostics.
 
 ### Pause and resume
 
-Override `pause()` and `resume()`, and declare `kCapabilitySupportsPause` in
-your capabilities:
+`pause()`/`resume()` are advisory: a host may never call them (the reference
+host pauses a stream host-side, by redirecting its writes), so a source must
+work without them. To offer them anyway, override `pause()` and `resume()`, and
+declare `kCapabilitySupportsPause` in your capabilities:
 
 ```cpp
 uint64_t extraCapabilities() const override {
@@ -545,9 +551,9 @@ const void* pluginExtension(std::string_view id) override {
 }
 // topic_subscription_ext_ is a PJ_topic_subscription_v1_t{sizeof(...), &setActiveTopicsThunk};
 // setActiveTopicsThunk receives the PLUGIN INSTANCE as ctx (not the extension
-// pointer). It is entered on the host thread — marshal the desired set to your
-// stream thread (e.g. a command queue drained in onPoll), do not touch your
-// subscription state directly here.
+// pointer). It is entered on the GUI thread, concurrently with onPoll — store
+// the desired set in a PJ::sdk::LatestValueSlot drained in onPoll (latest
+// wins; not a command queue), do not touch your subscription state here.
 ```
 
 ### Periodic polling
@@ -567,6 +573,27 @@ PJ::Status loadConfig(std::string_view json) override {
   return PJ::okStatus();
 }
 ```
+
+The config is a UTF-8 JSON object. The rules (normative text on
+`save_config`/`load_config` in `data_source_protocol.h`):
+
+- `loadConfig("")` means "no saved config" and is still called (a stream's
+  first run does). Keep your defaults; do not fail.
+- `loadConfig()` may be called several times before `start()`. After an
+  accepted dialog the host passes your **embedded dialog's** `saveConfig()`
+  output (plus the host keys below), so source and dialog must share one format.
+- Accept configs written by older versions of your plugin: layouts and saved
+  settings are replayed verbatim, apart from the host keys.
+- Top-level keys starting with `_` belong to the host; do not define your own.
+  The reference host writes `"filepath"` (file sources: the file to import),
+  `"_parser_config"` (a string: the embedded parser dialog's config; pass it as
+  `parser_config_json` to `ensureParserBinding`, read it with
+  `PJ::sdk::parserConfigOverride`) and `"__pj_saved_filepath"` (layout replay
+  only, see below). `"__pj_fanout"` is the one host-defined key a plugin
+  writes, to ask for one instance per child config.
+- `saveConfig()` may return `"filepath"` and `"_parser_config"` (a file layout
+  replays `saveConfig()` output, so that is how its parser config survives),
+  never `"__pj_saved_filepath"` (the reference host strips it).
 
 ### Progress reporting
 
@@ -613,26 +640,28 @@ evolution automatically.
 
 **Integrated parser dialog:** Add a `pj_parser_slot` placeholder to render the
 selected parser's configuration dialog inline. The host detects the placeholder.
-Both dialogs share a window but persist config independently:
-`ConfigEnvelope.source_config` for the source and `ConfigEnvelope.parser_binding`
-for the parser. See `pj_plugins/docs/message-parser-guide.md` § "Dialog integration".
+See `pj_plugins/docs/message-parser-guide.md` § "Dialog integration".
 
-## State Machine
+## Lifecycle Signals
 
-```
-idle --> configuring --> starting --> running --> stopping --> stopped
-                                       |  ^
-                                 pause |  | resume
-                                       v  |
-                                     paused
+The host acts on these signals only:
 
-Any state --> failed
-```
+- **`start()` return.** For a finite import, returning from `start()` ends the
+  import; an error fails it. For a stream, an error aborts the launch.
+- **`poll()` return.** An error ends the stream.
+- **`runtimeHost().requestStop(kStopped | kFailed, reason)`** ends the stream
+  from the plugin side. `kStopped` is an orderly end; any other state reports
+  `reason` as the failure.
+- **`runtimeHost().isStopRequested()`** tells you the host (user stop, cancel)
+  wants you to stop. Check it during long operations.
+- **`completeIngest()`** reports a finite ingest's terminal outcome for
+  caching (see *Ingest completion and rollback* in ARCHITECTURE.md).
 
-- **stopped** and **failed** are terminal — create a new instance to restart.
-- Always call `runtimeHost().notifyState()` when you transition.
-- Use `runtimeHost().requestStop(kStopped, reason)` to self-terminate.
-- Check `runtimeHost().isStopRequested()` during long operations.
+`notifyState()`, `currentState()` and the `PJ_data_source_state_t` states
+(`idle`, `starting`, `running`, `paused`, `stopped`, `failed`, ...) are
+advisory: a host may ignore them, so report them if you like but do not
+depend on them. An instance is started at most once — the host creates a new
+instance to restart.
 
 ## Capability Flags Reference
 
@@ -741,18 +770,26 @@ remains an ABI escape hatch. The rvalue-reference form is the documented default
 
 ## Threading Model
 
-All plugin callbacks — `start()`, `stop()`, `poll()`, `pause()`, `resume()`,
-`loadConfig()`, `saveConfig()` — are called **on the host's thread**. The host
-guarantees single-threaded access per plugin instance: no two callbacks will
-overlap for the same instance.
+The normative per-slot table is on `PJ_data_source_vtable_t` in
+`pj_base/include/pj_base/data_source_protocol.h`. In short:
 
-Write host and runtime host methods (`appendRecord()`, `ensureParserBinding()`,
-etc.) must be called from the same thread that invoked the callback. Do not
-cache host views and call them from a background thread.
+- `create`, `bind`, `loadConfig()`, `saveConfig()`, `getDialog()`,
+  `capabilities()` and `destroy` run on the GUI thread, never while
+  `start()`/`poll()`/`stop()` runs.
+- `start()` may run on a worker (a finite import's `importData()` blocks there
+  for the whole import) or on the GUI thread (a stream's `onStart()`, which
+  must return promptly). `poll()` runs on one host polling thread; `stop()` may
+  run on that polling thread. These never overlap each other.
+- `setActiveTopics` (`pj.topic_subscription.v1`) runs on the GUI thread
+  **concurrently with `poll()`**; `getPluginExtension` may run on any thread.
+- `[stream-thread]` host methods (`appendRecord()`, `ensureParserBinding()`,
+  `pushMessage()`, progress, ...) only while a `start()`/`poll()`/`stop()` call
+  is in progress, one thread at a time. `[thread-safe]` ones
+  (`reportMessage()`, `requestStop()`, `isStopRequested()`, `notifyState()`)
+  from any thread.
 
 If your plugin needs internal threading (e.g. a network receive thread), you
-must synchronize access to shared state yourself and only call host methods
-from the callback thread.
+must synchronize access to shared state yourself and hand data to `onPoll()`.
 
 ## Lifecycle Invariants
 
@@ -761,16 +798,17 @@ The host guarantees the following call ordering:
 1. `create()` — always first.
 2. `bind(registry)` — before `start()`. The SDK default bind resolves
    `"pj.source_write.v1"` and `"pj.runtime.v1"` from the service registry.
-3. `load_config()` — before `start()`, may be called multiple times.
-4. `start()` — transitions from idle/configuring to starting.
-5. `poll()` — only while running (after `start()` returns success).
-6. `pause()`/`resume()` — only while running/paused.
-7. `stop()` — may be called at any time after `start()`.
+3. `load_config()` — before `start()`, may be called multiple times, possibly
+   with an empty string.
+4. `start()` — at most once.
+5. `poll()` — continuous streams only, after `start()` returns success.
+6. `pause()`/`resume()` — advisory; a host may never call them.
+7. `stop()` — after `start()` and the last `poll()` have returned; may be
+   skipped when `start()` failed or a finite import finished.
 8. `destroy()` — always last.
 
-The host will never call `poll()` before `start()`, nor `start()` after
-`stop()`. Terminal states (`stopped`, `failed`) are final — the host creates
-a new instance to restart.
+The host will never call `poll()` before `start()`, nor `start()` twice. To
+restart, the host creates a new instance.
 
 ## Error Handling
 
@@ -928,14 +966,9 @@ because the source owns the dialog object itself.
 `loadConfig()` restores it. Headless restart: `loadConfig(saved) → start()` —
 no dialog needed.
 
-The host wraps the source config in a versioned envelope (`ConfigEnvelope`)
-that also holds host-owned parser binding state:
-
-```json
-{"version": 1, "source_config": "...", "parser_binding": "..."}
-```
-
-The source never sees `parser_binding` — the host manages it.
+When the source dialog embeds a parser dialog, the host adds a
+`_parser_config` key to that JSON, which `PJ::sdk::parserConfigOverride()`
+(`pj_plugins/sdk/streaming_source.hpp`) reads.
 
 A complete example lives at `pj_plugins/examples/mock_source_with_dialog.cpp`.
 See `pj_plugins/docs/dialog-plugin-guide.md` for the dialog protocol itself.

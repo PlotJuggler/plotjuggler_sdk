@@ -11,7 +11,7 @@
  *   if (auto s = handle.bind(registry.view()); !s) { ... }
  *   if (auto s = handle.loadConfig(json); !s) { ... }
  *   if (auto s = handle.start(); !s) { ... }
- *   while (handle.currentState() == PJ::DataSourceState::kRunning) {
+ *   while (!stop_requested) {  // the host's own flag, set via request_stop
  *     if (auto s = handle.poll(); !s) { ... }
  *   }
  *   handle.stop();
@@ -111,7 +111,7 @@ class DataSourceHandle {
     if (!vt_->save_config(ctx_, &sv, &err)) {
       return unexpected(errorToString(err));
     }
-    out_json.assign(sv.data == nullptr ? "" : sv.data, sv.size);
+    out_json.assign(sv.data == nullptr ? std::string_view() : std::string_view(sv.data, sv.size));
     return okStatus();
   }
 

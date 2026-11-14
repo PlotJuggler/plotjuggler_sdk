@@ -91,7 +91,7 @@ are small enough that the zero-copy anchor pattern is unnecessary.
 **Serialize only at an explicit boundary.** Large byte-backed types remain
 views over source-native payload bytes while they are inside one component and
 an ownership anchor is available. Every stable builtin also has a canonical
-codec for storage/replay and for the `pj.parser_functional.v1`/v2 DSO boundary.
+codec for storage/replay and for the `pj.parser_functional.v2` DSO boundary.
 That boundary deliberately serializes the value rather than sharing C++ class,
 allocator, RTTI, or destructor state with the host. Functional v2 may carry one
 frozen eligible bulk field as a splice into the input payload; the host still
@@ -162,7 +162,7 @@ For example, an image topic uses
 produce this field without a free-form type string.
 
 `object_type` and `media_class` are not renderer-discovery aliases.
-`MediaMetadataBuilder` remains available for supplemental fields such as media
+`ObjectTopicMetadataBuilder::string()` adds supplemental fields such as media
 classification, encoding, and schema, and custom untyped object topics remain
 valid.
 
