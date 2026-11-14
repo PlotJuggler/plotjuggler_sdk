@@ -6,6 +6,8 @@
 #include <system_error>
 #include <utility>
 
+#include "source/path_utf8.hpp"
+
 #if defined(_WIN32)
 // windows.h min/max macros break std::max / numeric_limits<>::max.
 #ifndef NOMINMAX
@@ -46,7 +48,7 @@ std::optional<std::intptr_t> tryAcquireHandle(
       FILE_ATTRIBUTE_NORMAL, nullptr);
   if (handle == INVALID_HANDLE_VALUE) {
     if (error != nullptr) {
-      *error = "could not open lock file " + path.string() + " (error " + std::to_string(::GetLastError()) + ")";
+      *error = "could not open lock file " + pathUtf8(path) + " (error " + std::to_string(::GetLastError()) + ")";
     }
     return std::nullopt;
   }
@@ -58,7 +60,7 @@ std::optional<std::intptr_t> tryAcquireHandle(
       *contended = true;  // FAIL_IMMEDIATELY: the region is held elsewhere
     }
     if (error != nullptr) {
-      *error = "lock is held elsewhere: " + path.string();
+      *error = "lock is held elsewhere: " + pathUtf8(path);
     }
     return std::nullopt;
   }
@@ -67,7 +69,7 @@ std::optional<std::intptr_t> tryAcquireHandle(
   const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
   if (fd < 0) {
     if (error != nullptr) {
-      *error = "could not open lock file " + path.string() + ": " +
+      *error = "could not open lock file " + pathUtf8(path) + ": " +
                std::error_code(errno, std::generic_category()).message();
     }
     return std::nullopt;
@@ -80,8 +82,8 @@ std::optional<std::intptr_t> tryAcquireHandle(
       *contended = held_elsewhere;
     }
     if (error != nullptr) {
-      *error = held_elsewhere ? "lock is held elsewhere: " + path.string()
-                              : "flock failed on " + path.string() + ": " +
+      *error = held_elsewhere ? "lock is held elsewhere: " + pathUtf8(path)
+                              : "flock failed on " + pathUtf8(path) + ": " +
                                     std::error_code(flock_errno, std::generic_category()).message();
     }
     return std::nullopt;

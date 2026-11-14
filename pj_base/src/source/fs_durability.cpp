@@ -6,6 +6,8 @@
 #include <cerrno>
 #include <system_error>
 
+#include "source/path_utf8.hpp"
+
 #if defined(_WIN32)
 // windows.h min/max macros break std::max / numeric_limits<>::max.
 #ifndef NOMINMAX
@@ -44,21 +46,21 @@ bool syncFile(const fs::path& file, std::string* error) {
       file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (handle == INVALID_HANDLE_VALUE) {
     if (error != nullptr) {
-      *error = "could not reopen for flush: " + file.string();
+      *error = "could not reopen for flush: " + pathUtf8(file);
     }
     return false;
   }
   const bool ok = ::FlushFileBuffers(handle) != 0;
   ::CloseHandle(handle);
   if (!ok && error != nullptr) {
-    *error = "FlushFileBuffers failed: " + file.string();
+    *error = "FlushFileBuffers failed: " + pathUtf8(file);
   }
   return ok;
 #else
   const int fd = ::open(file.c_str(), O_RDONLY | O_CLOEXEC);
   if (fd < 0) {
     if (error != nullptr) {
-      *error = "could not reopen for fsync: " + file.string() + ": " +
+      *error = "could not reopen for fsync: " + pathUtf8(file) + ": " +
                std::error_code(errno, std::generic_category()).message();
     }
     return false;
@@ -67,7 +69,7 @@ bool syncFile(const fs::path& file, std::string* error) {
   const int fsync_errno = errno;
   ::close(fd);
   if (!ok && error != nullptr) {
-    *error = "fsync failed: " + file.string() + ": " + std::error_code(fsync_errno, std::generic_category()).message();
+    *error = "fsync failed: " + pathUtf8(file) + ": " + std::error_code(fsync_errno, std::generic_category()).message();
   }
   return ok;
 #endif
