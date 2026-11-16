@@ -262,7 +262,8 @@ TEST(PlaybackApiTest, SourceConversionIsOptionalOnLegacyHosts) {
   // vtable: one cut short there is too small for the type the view reads it
   // through, which UBSan's object-size check reports at the struct_size read.
   constexpr auto legacy_size = offsetof(PJ_playback_host_vtable_t, to_display_time_for_source);
-  auto legacy = std::make_unique<PJ_playback_host_vtable_t>(vtable);
+  auto legacy =
+      std::make_unique<PJ_playback_host_vtable_t>(makePlaybackVtable());  // slot set: only struct_size hides it
   legacy->struct_size = legacy_size;
   ASAN_POISON_MEMORY_REGION(reinterpret_cast<char*>(legacy.get()) + legacy_size, sizeof(*legacy) - legacy_size);
   const sdk::PlaybackHostView old_view(PJ_playback_host_t{.ctx = &host, .vtable = legacy.get()});
