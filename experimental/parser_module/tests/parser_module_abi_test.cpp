@@ -289,7 +289,7 @@ std::vector<uint8_t> aliasedScalarOutput(size_t field_count, size_t name_bytes) 
   std::vector<uint8_t> block(name_offset + name_bytes, uint8_t{'n'});
   const auto put = [&block](size_t at, uint64_t value, size_t width) {
     for (size_t index = 0; index < width; ++index) {
-      block[at + index] = static_cast<uint8_t>(value >> (8U * index));
+      block[at + index] = static_cast<uint8_t>(index < sizeof(value) ? value >> (8U * index) : 0U);
     }
   };
   put(0, PJ_MODULE_OUTPUT_DESCRIPTOR_VERSION_V1, 2);

@@ -108,7 +108,7 @@ void writeAliasedScalarNames(std::vector<uint8_t>& output) {
   output.assign(kNameOffset + kNameBytes, uint8_t{'n'});
   const auto put = [&output](size_t at, uint64_t value, size_t width) {
     for (size_t index = 0; index < width; ++index) {
-      output[at + index] = static_cast<uint8_t>(value >> (8U * index));
+      output[at + index] = static_cast<uint8_t>(index < sizeof(value) ? value >> (8U * index) : 0U);
     }
   };
   put(0, PJ_MODULE_OUTPUT_DESCRIPTOR_VERSION_V1, 2);
