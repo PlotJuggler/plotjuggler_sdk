@@ -4,12 +4,17 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <string>
 
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/plugin_data_api.hpp"
+
+#if __has_include(<sanitizer/asan_interface.h>)
+#include <sanitizer/asan_interface.h>  // ASAN_POISON_MEMORY_REGION, a no-op without ASan
+#else
+#define ASAN_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
+#endif
 
 namespace PJ {
 namespace {
@@ -252,14 +257,15 @@ TEST(PlaybackApiTest, SourceConversionIsOptionalOnLegacyHosts) {
   EXPECT_FALSE(view.toDisplayTimeForSource({42}, 0));
   EXPECT_TRUE(view.toDisplayTime("topic", 0));
 
-  // The allocation ends at the legacy vtable boundary, so ASAN detects a tail
-  // read performed before checking struct_size.
+  // Everything past the legacy vtable boundary is poisoned, so ASAN detects a
+  // tail read performed before checking struct_size. The allocation stays a whole
+  // vtable: one cut short there is too small for the type the view reads it
+  // through, which UBSan's object-size check reports at the struct_size read.
   constexpr auto legacy_size = offsetof(PJ_playback_host_vtable_t, to_display_time_for_source);
-  vtable.struct_size = legacy_size;
-  auto legacy = std::make_unique<unsigned char[]>(legacy_size);
-  std::memcpy(legacy.get(), &vtable, legacy_size);
-  const sdk::PlaybackHostView old_view(
-      PJ_playback_host_t{.ctx = &host, .vtable = reinterpret_cast<const PJ_playback_host_vtable_t*>(legacy.get())});
+  auto legacy = std::make_unique<PJ_playback_host_vtable_t>(vtable);
+  legacy->struct_size = legacy_size;
+  ASAN_POISON_MEMORY_REGION(reinterpret_cast<char*>(legacy.get()) + legacy_size, sizeof(*legacy) - legacy_size);
+  const sdk::PlaybackHostView old_view(PJ_playback_host_t{.ctx = &host, .vtable = legacy.get()});
   const auto result = old_view.toDisplayTimeForSource({42}, 0);
   ASSERT_FALSE(result);
   EXPECT_NE(result.error().find("not supported"), std::string::npos);
