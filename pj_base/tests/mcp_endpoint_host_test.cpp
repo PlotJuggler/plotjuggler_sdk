@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -14,6 +13,12 @@
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
 #include "pj_base/sdk/testing/fake_mcp_endpoint_host.hpp"
+
+#if __has_include(<sanitizer/asan_interface.h>)
+#include <sanitizer/asan_interface.h>  // ASAN_POISON_MEMORY_REGION, a no-op without ASan
+#else
+#define ASAN_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
+#endif
 
 namespace PJ {
 namespace {
@@ -131,15 +136,15 @@ TEST(McpEndpointHostView, TooSmallStructSizeIsUnbound) {
   FakeMcpEndpointHost host;
   const PJ_mcp_endpoint_host_t full = host.makeHost();
 
-  // The allocation ends where release_endpoint would start, so ASAN catches a
-  // slot read made before checking struct_size.
+  // Everything from release_endpoint on is poisoned, so ASAN catches a slot read
+  // made before checking struct_size. The allocation stays a whole vtable: one cut
+  // short there is too small for the type the view reads it through, which
+  // UBSan's object-size check reports at the struct_size read itself.
   constexpr auto short_size = offsetof(PJ_mcp_endpoint_host_vtable_t, release_endpoint);
-  PJ_mcp_endpoint_host_vtable_t declared = *full.vtable;
-  declared.struct_size = short_size;
-  auto truncated = std::make_unique<unsigned char[]>(short_size);
-  std::memcpy(truncated.get(), &declared, short_size);
-  const sdk::McpEndpointHostView view(
-      PJ_mcp_endpoint_host_t{&host, reinterpret_cast<const PJ_mcp_endpoint_host_vtable_t*>(truncated.get())});
+  auto truncated = std::make_unique<PJ_mcp_endpoint_host_vtable_t>(*full.vtable);
+  truncated->struct_size = short_size;
+  ASAN_POISON_MEMORY_REGION(reinterpret_cast<char*>(truncated.get()) + short_size, sizeof(*truncated) - short_size);
+  const sdk::McpEndpointHostView view(PJ_mcp_endpoint_host_t{&host, truncated.get()});
 
   EXPECT_FALSE(view.valid());
   EXPECT_FALSE(view.acquire());
