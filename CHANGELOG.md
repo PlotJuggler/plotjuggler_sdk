@@ -3,6 +3,16 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [1.0.1]
+
+Host contract: unchanged (no floor impact).
+Test-only release: the SDK's own tests no longer have undefined behaviour under UBSan, so
+PlotJuggler's ASan + UBSan lane, which builds them from the release sources, can run them. The
+byte writers of `parser_module_abi_test` and the native parser module fixture no longer shift a
+`uint64_t` by 64, and `mcp_endpoint_host_test` and `PlaybackApiTest` build truncated vtables as
+whole objects with an ASan-poisoned tail instead of reading through a too-small allocation.
+Libraries and headers are unchanged from 1.0.0.
+
 ## [1.0.0]
 
 Host contract: extended: builtin object types kMeshMap (21) and kMeshMapUpdate (22) (floor 1.0.0).
