@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [1.1.0] — Unreleased
+## [1.1.0]
 
 Host contract: extended: PJ_widget_host_vtable_t::notify_config_changed (floor 1.1.0). The slot is
 runtime-negotiated: on an older host the call does nothing, so a plugin that uses it keeps its
