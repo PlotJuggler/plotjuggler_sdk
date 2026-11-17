@@ -135,6 +135,7 @@ PJ_toolbox_runtime_host_vtable_t::release_parser_ingest
 PJ_toolbox_runtime_host_vtable_t::report_message
 PJ_viewport_host_vtable_t::zoom_reset
 PJ_viewport_host_vtable_t::zoom_to_time_range
+PJ_widget_host_vtable_t::notify_config_changed
 PJ_widget_host_vtable_t::notify_inputs_changed
 PJ_widget_host_vtable_t::query_history
 PJ_widget_host_vtable_t::report_widget_message

@@ -616,8 +616,8 @@ includes Qt and no SDK library links it; a Widget plugin is the one library
 that links Qt, and the host compares the Qt version recorded in
 `PJ_widget_vtable_t::build_info` with its own before `create_qwidget`. The
 host builds `pj.widget_host.v1` (history on demand, `inputs_changed`,
-diagnostics) with `WidgetHostBridge`, one service instance per open panel.
-Every vtable and service call is main-thread, except the constant
+`config_changed`, diagnostics) with `WidgetHostBridge`, one service instance per
+open panel. Every vtable and service call is main-thread, except the constant
 `build_info` and `get_plugin_extension`. `inputs` has an error channel: a
 failure is reported as such and the previous array stays valid, so a host never
 mistakes it for "no inputs" and drops the wiring. `WidgetHandle::inputs()`

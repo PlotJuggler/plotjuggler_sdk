@@ -36,7 +36,8 @@ Local traps not visible from the headers:
   deliberately not reused: `tools/feature_floors/feature_floor_check.py`
   matches the vtable member name as a bare token in plugin sources, so a
   generic name would raise floors of unrelated plugins. The widget host slots
-  are `query_history`, `notify_inputs_changed`, `report_widget_message`.
+  are `query_history`, `notify_inputs_changed`, `notify_config_changed`,
+  `report_widget_message`.
 - The Qt module list is generated into `share/plotjuggler_sdk/widget_qt_modules.json`
   at CMake configure time from `widget_qt_modules.h` (one `X(Name, "since")` per
   line, nothing else on the line). Edit only the header.

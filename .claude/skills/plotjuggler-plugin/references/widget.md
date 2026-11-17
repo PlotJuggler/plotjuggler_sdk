@@ -96,7 +96,12 @@ pj_configure_plugin(my_widgets FAMILIES widget
 - **Configuration:** `loadConfig(json)` receives every key declared in
   `settings` (the host fills in the manifest defaults) with whatever
   `saveConfig()` last returned laid over it. Do not reuse a setting key for
-  internal state.
+  internal state. A widget whose own state `saveConfig()` persists calls
+  `widgetHost().notifyConfigChanged()` from its Qt slots when the user changes
+  it, so undo and the layout's modified state see it; never from `saveConfig`,
+  `loadConfig` or `onUpdate`, so block the controls' signals while `loadConfig`
+  fills them. A no-op on a host older than SDK 1.1.0: declare
+  `suggested_sdk_version` 1.1.0 if you use it.
 - **Playback:** the optional `pj.playback.v1` service in the registry passed to
   `bind` reads the play state and seeks. Treat it as absent until the lookup succeeds.
 

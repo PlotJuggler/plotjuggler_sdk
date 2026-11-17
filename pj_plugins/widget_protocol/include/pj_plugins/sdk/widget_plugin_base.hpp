@@ -121,6 +121,17 @@ class WidgetHostView {
     }
   }
 
+  /// Tell the host the state saveConfig() returns changed through the widget's UI, so it can snapshot
+  /// it for undo or mark the layout modified. Not for what loadConfig applied, and never from inside
+  /// saveConfig, loadConfig or onUpdate; block the controls' change signals while loadConfig fills
+  /// them. Does nothing on a host that predates the slot.
+  /// @since 1.1.0
+  void notifyConfigChanged() const {
+    if (valid() && PJ_HAS_TAIL_SLOT(PJ_widget_host_vtable_t, host_.vtable, notify_config_changed)) {
+      host_.vtable->notify_config_changed(host_.ctx);
+    }
+  }
+
   /// Send a diagnostic to the host's message list.
   void reportWidgetMessage(WidgetMessageLevel level, std::string_view message) const noexcept {
     if (valid() && host_.vtable->report_widget_message != nullptr) {

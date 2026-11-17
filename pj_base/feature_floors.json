@@ -65,6 +65,9 @@
         "negotiated": false,
         "aliases": ["MeshMapUpdate", "serializeMeshMapUpdate"]
       }
+    },
+    "1.1.0": {
+      "notifyConfigChanged": "PJ_widget_host_vtable_t::notify_config_changed"
     }
   },
   "baseline": [
