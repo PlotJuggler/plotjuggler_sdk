@@ -205,4 +205,14 @@ TEST(FakeWidgetHost, RecordsMessagesAndInputsChanged) {
   EXPECT_EQ(fake.inputs_changed_calls, 1);
 }
 
+TEST(FakeWidgetHost, CountsConfigChanged) {
+  FakeWidgetHost fake;
+  const PJ_widget_host_t host = fake.makeHost();
+  EXPECT_EQ(fake.config_changed_calls, 0);
+  host.vtable->notify_config_changed(host.ctx);
+  host.vtable->notify_config_changed(host.ctx);
+  EXPECT_EQ(fake.config_changed_calls, 2);
+  EXPECT_EQ(fake.inputs_changed_calls, 0);
+}
+
 }  // namespace

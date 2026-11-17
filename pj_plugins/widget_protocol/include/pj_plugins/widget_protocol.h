@@ -240,6 +240,23 @@ typedef struct PJ_widget_host_vtable_t {
 
   /** [main-thread] Diagnostic text for the host's message list; copied before return. */
   void (*report_widget_message)(void* ctx, PJ_widget_message_level_t level, PJ_string_view_t message) PJ_NOEXCEPT;
+
+  /**
+   * [main-thread] The state `save_config` returns changed because the user changed it through the
+   * widget's own UI (a filter, a splitter position). The host may then call `save_config`, possibly
+   * deferred and coalesced, to snapshot the state for undo or mark the layout modified; without this
+   * call it never learns of such a change.
+   *
+   * Not for a change `load_config` applied, which the host already knows about, nor for view state
+   * `save_config` does not return. Never call it from inside `save_config`, `load_config` or
+   * `on_update`: a host that reacts at once calls `save_config` back into the plugin. A toolkit widget
+   * re-emits its change signals when `load_config` writes its controls, so block them while it does.
+   *
+   * ABI-APPENDED slot: gate with PJ_HAS_TAIL_SLOT; a host built before it does not have it and the
+   * plugin-side wrapper then does nothing.
+   * @since 1.1.0
+   */
+  void (*notify_config_changed)(void* ctx) PJ_NOEXCEPT;
 } PJ_widget_host_vtable_t;
 /* ABI-APPENDABLE: new slots go at the tail; plugin-side reads guard with PJ_HAS_TAIL_SLOT. */
 

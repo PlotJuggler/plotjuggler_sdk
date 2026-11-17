@@ -3,6 +3,24 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [1.1.0] — Unreleased
+
+Host contract: extended: PJ_widget_host_vtable_t::notify_config_changed (floor 1.1.0). The slot is
+runtime-negotiated: on an older host the call does nothing, so a plugin that uses it keeps its
+`min_sdk_required` and declares `suggested_sdk_version` 1.1.0 (with a `floor_test`).
+
+Widget protocol:
+
+- `PJ_widget_host_vtable_t::notify_config_changed` and `WidgetHostView::notifyConfigChanged()`: a
+  widget whose own state `save_config` persists (a filter, a splitter position) tells the host that the
+  user changed it through the widget's UI. The host may then call `save_config` (deferred) to
+  snapshot the state for undo or mark the layout modified; before, it only read that state when saving
+  a layout. Not for what `load_config` applied, and never from inside `save_config`, `load_config` or
+  `on_update`. A tail slot: `PJ_widget_host_vtable_t` grows from 32 to 40 bytes and `WidgetHostView`
+  reads the slot behind `PJ_HAS_TAIL_SLOT`.
+- `WidgetHostBridge::config_changed` serves the slot (unset: ignored), and
+  `FakeWidgetHost::config_changed_calls` counts it.
+
 ## [1.0.1]
 
 Host contract: unchanged (no floor impact).

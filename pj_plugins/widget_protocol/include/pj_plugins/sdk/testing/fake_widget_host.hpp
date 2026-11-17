@@ -69,12 +69,15 @@ class FakeWidgetHost {
   /// Every report_widget_message, in call order.
   std::vector<std::pair<WidgetMessageLevel, std::string>> messages;
   int inputs_changed_calls = 0;
+  /// Every notify_config_changed. @since 1.1.0
+  int config_changed_calls = 0;
 
   FakeWidgetHost() {
     bridge_.history = [this](const WidgetHistoryQuery& query, const WidgetValueSink& sink) {
       return history(query, sink);
     };
     bridge_.inputs_changed = [this] { ++inputs_changed_calls; };
+    bridge_.config_changed = [this] { ++config_changed_calls; };
     bridge_.report_message = [this](WidgetMessageLevel level, std::string_view message) {
       messages.emplace_back(level, std::string(message));
     };

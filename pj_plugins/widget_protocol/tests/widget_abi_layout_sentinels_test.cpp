@@ -76,7 +76,8 @@ static_assert(offsetof(PJ_widget_host_vtable_t, struct_size) == 4, "prefix pinne
 static_assert(offsetof(PJ_widget_host_vtable_t, query_history) == 8, "slot pinned");
 static_assert(offsetof(PJ_widget_host_vtable_t, notify_inputs_changed) == 16, "slot pinned");
 static_assert(offsetof(PJ_widget_host_vtable_t, report_widget_message) == 24, "slot pinned");
-static_assert(sizeof(PJ_widget_host_vtable_t) == 32, "size (update deliberately on append)");
+static_assert(offsetof(PJ_widget_host_vtable_t, notify_config_changed) == 32, "tail slot pinned (1.1.0)");
+static_assert(sizeof(PJ_widget_host_vtable_t) == 40, "size (update deliberately on append)");
 static_assert(sizeof(PJ_widget_host_t) == 16, "fat pointer pinned");
 
 // --- PJ_widget_vtable_t (ABI-APPENDABLE) -------------------------------------

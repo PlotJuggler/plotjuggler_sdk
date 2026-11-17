@@ -191,7 +191,7 @@ widget's own Qt slots, on the main thread, never from `paintEvent`, and keep you
 own copy. Off the main thread and inside a paint handler are the only cases the
 host may refuse.
 
-`widgetHost()` also offers `notifyInputsChanged()` and
+`widgetHost()` also offers `notifyInputsChanged()`, `notifyConfigChanged()` and
 `reportWidgetMessage(level, text)`. Read them after `bind` succeeds
 (`widgetHostBound()`); the default `bind` requires `pj.widget_host.v1`.
 
@@ -219,6 +219,18 @@ there is one path in. `loadConfig` rereads the keys it knows, ignores the rest,
 and repaints; return an error `Status` for a value it cannot accept.
 `saveConfig()` returns extra internal state to persist (default `"{}"`); a
 widget that only has settings does not override it.
+
+The host reads that state only when it saves, so a widget whose `saveConfig()`
+state the user changes through its own UI (filters, a splitter position) calls
+`widgetHost().notifyConfigChanged()` after each change. The host may then call
+`saveConfig()` (deferred, possibly coalesced) to snapshot the state for undo or
+mark the layout modified; without the call, closing the panel and pressing Undo
+brings it back with the defaults. Call it from the widget's Qt slots only: never
+from inside `saveConfig`, `loadConfig` or `onUpdate`, and not for what
+`loadConfig` applied. Writing the controls in `loadConfig` re-emits their change
+signals, so block them (`QSignalBlocker`) while it does. On a host older than
+SDK 1.1.0 the call does nothing; a plugin that uses it declares
+`suggested_sdk_version` 1.1.0.
 
 What `loadConfig` receives is a JSON object holding every key declared in the
 widget's `settings` (the host fills in the manifest `default` for a key the user
@@ -283,8 +295,8 @@ is an in-memory `pj.widget_host.v1` host for unit tests, served through the real
 ascending order, `max_samples == 0` meaning `default_cap`, `out_total` before
 any cap). Samples are stored at integer nanoseconds as a real host stores them,
 so put them at epoch nanoseconds to test history reads at epoch-scale display
-times. `queries`, `messages` and `inputs_changed_calls` record what the widget
-asked for and reported. The fake must outlive the handle made from it.
+times. `queries`, `messages`, `inputs_changed_calls` and `config_changed_calls`
+record what the widget asked for and reported. The fake must outlive the handle made from it.
 
 ## Host side
 
@@ -293,8 +305,8 @@ statically linked plugin), read `buildInfo()` before any instance, compare it
 with the running Qt, then `createHandle(type)` per panel. The loader validates
 `build_info` (non-null, at least the v1 size, sane string views) together with
 the vtable, and pins a library only once it passed. `WidgetHostBridge` turns
-three `std::function` callbacks (`history`, `inputs_changed`, `report_message`)
-into the `pj.widget_host.v1` service (`PJ_WIDGET_HOST_SERVICE_V1`) to register
+four `std::function` callbacks (`history`, `inputs_changed`, `config_changed`,
+`report_message`) into the `pj.widget_host.v1` service (`PJ_WIDGET_HOST_SERVICE_V1`) to register
 before `bind`; `history` returns the range's total (`Expected<uint32_t>`) and
 stops when its sink returns `false`. `WidgetHandle` exposes `inputs()`
 (`Expected`, failing on a plugin error or on an invalid list, so a failure never

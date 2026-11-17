@@ -2,7 +2,7 @@
  * @file widget_host_bridge.hpp
  * @brief Host-side builder of the "pj.widget_host.v1" service from C++ callbacks.
  *
- * The host fills three std::function members and registers bridge.host() in
+ * The host fills its std::function members and registers bridge.host() in
  * the ServiceRegistryBuilder it passes to WidgetHandle::bind, so it never
  * hand-writes the C vtable. One bridge per open panel; it must outlive the
  * handle bound to it.
@@ -51,6 +51,11 @@ class WidgetHostBridge {
   std::function<Expected<uint32_t>(const WidgetHistoryQuery& query, const WidgetValueSink& sink)> history;
   /// Unset = ignored.
   std::function<void()> inputs_changed;
+  /// The widget's persisted state changed through its UI: the place to schedule a save_config for an
+  /// undo snapshot or the layout's modified flag. Runs inside the widget's call, which may not have
+  /// finished updating its state: defer the save_config (a queued signal) rather than make it here.
+  /// Unset = ignored.
+  std::function<void()> config_changed;
   /// Unset = dropped. A message view no valid plugin produces (null data with a size, or longer than
   /// WidgetHandle::kMaxInputTextBytes) arrives as a warning naming it, never read.
   std::function<void(WidgetMessageLevel level, std::string_view message)> report_message;
@@ -72,6 +77,7 @@ class WidgetHostBridge {
         &queryHistory,
         &notifyInputsChanged,
         &reportWidgetMessage,
+        &notifyConfigChanged,
     };
     return vt;
   }
@@ -123,6 +129,15 @@ class WidgetHostBridge {
     try {
       if (self->inputs_changed) {
         self->inputs_changed();
+      }
+    } catch (...) {}
+  }
+
+  static void notifyConfigChanged(void* ctx) noexcept {
+    auto* self = static_cast<WidgetHostBridge*>(ctx);
+    try {
+      if (self->config_changed) {
+        self->config_changed();
       }
     } catch (...) {}
   }

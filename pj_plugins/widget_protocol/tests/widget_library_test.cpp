@@ -5,9 +5,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -16,6 +18,12 @@
 #include "pj_plugins/host/service_registry_builder.hpp"
 #include "pj_plugins/host/widget_host_bridge.hpp"
 #include "pj_plugins/sdk/widget_plugin_base.hpp"
+
+#if __has_include(<sanitizer/asan_interface.h>)
+#include <sanitizer/asan_interface.h>  // ASAN_POISON_MEMORY_REGION, a no-op without ASan
+#else
+#define ASAN_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
+#endif
 
 #ifndef PJ_MOCK_WIDGET_PLUGIN_PATH
 #error "PJ_MOCK_WIDGET_PLUGIN_PATH must be defined"
@@ -261,6 +269,51 @@ TEST(WidgetLibraryTest, SettingChangeReconcilesInputsThroughHostService) {
   EXPECT_EQ((*inputs)[0].name, "value");  // a surviving name keeps its identity
   EXPECT_EQ((*inputs)[1].name, "state");
   EXPECT_EQ((*inputs)[1].kind, PJ::WidgetInputKind::kText);
+}
+
+TEST(WidgetHostBridgeTest, ConfigChangedReachesTheHostCallback) {
+  PJ::WidgetHostBridge bridge;
+  const PJ::WidgetHostView view(bridge.host());
+  view.notifyConfigChanged();  // callback unset: ignored
+
+  int calls = 0;
+  bridge.config_changed = [&] { ++calls; };
+  view.notifyConfigChanged();
+  EXPECT_EQ(calls, 1);
+
+  bridge.config_changed = [] { throw std::runtime_error("host callback failed"); };
+  view.notifyConfigChanged();  // must not unwind through the plugin
+}
+
+TEST(WidgetHostBridgeTest, ConfigChangedIsANoOpOnAHostWithoutTheSlot) {
+  int config_calls = 0;
+  int inputs_calls = 0;
+  PJ::WidgetHostBridge bridge;
+  bridge.config_changed = [&] { ++config_calls; };
+  bridge.inputs_changed = [&] { ++inputs_calls; };
+  const PJ_widget_host_t full = bridge.host();
+
+  // The slot is set and only struct_size hides it; everything from the slot on is poisoned, so ASAN
+  // catches a read made before checking struct_size. The allocation stays a whole vtable: one cut
+  // short there is too small for the type the view reads it through, which UBSan reports at the
+  // struct_size read itself.
+  constexpr auto old_size = offsetof(PJ_widget_host_vtable_t, notify_config_changed);
+  auto old_vtable = std::make_unique<PJ_widget_host_vtable_t>(*full.vtable);
+  old_vtable->struct_size = old_size;
+  ASAN_POISON_MEMORY_REGION(reinterpret_cast<char*>(old_vtable.get()) + old_size, sizeof(*old_vtable) - old_size);
+  const PJ::WidgetHostView old_host(PJ_widget_host_t{full.ctx, old_vtable.get()});
+  old_host.notifyConfigChanged();
+  EXPECT_EQ(config_calls, 0);
+  old_host.notifyInputsChanged();  // the slots the host does have keep working
+  EXPECT_EQ(inputs_calls, 1);
+
+  PJ_widget_host_vtable_t null_slot = *full.vtable;  // full size, slot null
+  null_slot.notify_config_changed = nullptr;
+  PJ::WidgetHostView(PJ_widget_host_t{full.ctx, &null_slot}).notifyConfigChanged();
+  EXPECT_EQ(config_calls, 0);
+
+  PJ::WidgetHostView(full).notifyConfigChanged();
+  EXPECT_EQ(config_calls, 1);
 }
 
 TEST(WidgetLibraryTest, HistoryDeliversThroughSinkInsideTheCall) {
