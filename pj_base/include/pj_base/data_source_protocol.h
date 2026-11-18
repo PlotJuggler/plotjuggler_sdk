@@ -572,6 +572,11 @@ typedef struct PJ_data_source_vtable_t {
    *                       FINITE_IMPORT SHOULD include this so the host
    *                       can build file-dialog filters without
    *                       instantiating the plugin.
+   *   "per_file_config_keys" — array of JSON Pointers (RFC 6901) to the
+   *                       config members that describe one particular
+   *                       file. A host pre-filling the dialog with the
+   *                       config saved for another file drops them first.
+   *                       Since 1.2.0; older hosts ignore it.
    */
   const char* manifest_json;
   /** [main-thread] Return capability bitmask (PJ_DATA_SOURCE_CAPABILITY_* flags). */

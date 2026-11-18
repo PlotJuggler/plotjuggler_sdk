@@ -186,7 +186,9 @@ The host routes payloads by these case-sensitive names, and admits only the
 registered ones: `PJ::registeredParserEncodings()` in
 `pj_plugins/host/parser_claim_catalog.hpp` is the list. A parser claiming any
 other name is refused when its claims are admitted.
-DataSource may add `"file_extensions": [".csv"]`. A Widget manifest needs
+DataSource may add `"file_extensions": [".csv"]`, and `"per_file_config_keys":
+["/time_column"]` for config members chosen for one file (see the data-source
+guide's config rules). A Widget manifest needs
 `widgets` and `qt_modules` (see `references/widget.md`).
 `pj_emit_plugin_manifest` (the pre-0.25 name) still works but is deprecated.
 

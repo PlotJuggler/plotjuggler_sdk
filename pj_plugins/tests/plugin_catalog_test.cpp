@@ -407,6 +407,29 @@ TEST_F(PluginCatalogTest, BadgeRejectsNonString) {
   EXPECT_NE(descriptor.error().find("badge"), std::string::npos);
 }
 
+TEST_F(PluginCatalogTest, PerFileConfigKeysDecodeAndDefaultToEmpty) {
+  auto declared = decodeManifest(
+      "static:csv", PluginFamily::kDataSource,
+      R"({"id":"csv","name":"CSV","version":"1.0.0","per_file_config_keys":["/time_column","/a~1b/c"]})");
+  ASSERT_TRUE(declared.has_value()) << declared.error();
+  EXPECT_EQ(declared->per_file_config_keys, (std::vector<std::string>{"/time_column", "/a~1b/c"}));
+
+  auto absent =
+      decodeManifest("static:csv", PluginFamily::kDataSource, R"({"id":"csv","name":"CSV","version":"1.0.0"})");
+  ASSERT_TRUE(absent.has_value()) << absent.error();
+  EXPECT_TRUE(absent->per_file_config_keys.empty());
+}
+
+TEST_F(PluginCatalogTest, PerFileConfigKeysRejectWhatIsNotAMemberPointer) {
+  for (const char* keys : {R"("time_column")", R"(["time_column"])", R"([""])", R"(["/a~2"])", R"([3])"}) {
+    const std::string manifest =
+        std::string(R"({"id":"csv","name":"CSV","version":"1.0.0","per_file_config_keys":)") + keys + "}";
+    auto descriptor = decodeManifest("static:csv", PluginFamily::kDataSource, manifest);
+    ASSERT_FALSE(descriptor.has_value()) << keys;
+    EXPECT_NE(descriptor.error().find("per_file_config_keys"), std::string::npos) << descriptor.error();
+  }
+}
+
 TEST_F(PluginCatalogTest, CapabilityTagsAreDeclarativeWithEmptyFallback) {
   auto editor = decodeManifest(
       "static:editor", PluginFamily::kToolbox,

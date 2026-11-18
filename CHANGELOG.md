@@ -3,6 +3,19 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [1.2.0] — Unreleased
+
+Host contract: unchanged (no floor impact).
+Declarative, like `badge`: no ABI, vtable or capability change. A plugin declares the key in its
+manifest without a new `min_sdk_required`; a host built before 1.2.0 ignores it.
+
+- Manifest: optional `per_file_config_keys`, an array of JSON Pointers (RFC 6901) to the config
+  members that describe one particular file, e.g. `["/time_column_index"]`. Decoded into
+  `PluginDescriptor::per_file_config_keys` (empty when absent); a non-array, a non-string entry or
+  an entry that is not a pointer to a member invalidates the manifest. A host that pre-fills the
+  loader dialog with the config saved for another file drops these members.
+- Data-source guide: the pre-fill rule next to the other config rules, and the manifest table row.
+
 ## [1.1.0]
 
 Host contract: extended: PJ_widget_host_vtable_t::notify_config_changed (floor 1.1.0). The slot is

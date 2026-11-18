@@ -349,6 +349,24 @@ Expected<PluginDescriptor> decodeManifest(
   if (!capabilities) {
     return unexpected(capabilities.error());
   }
+  auto per_file_config_keys = readStringArray(j, "per_file_config_keys");
+  if (!per_file_config_keys) {
+    return unexpected(per_file_config_keys.error());
+  }
+  for (const auto& key : *per_file_config_keys) {
+    // "" is the whole config, not a member a host could drop.
+    bool member_pointer = !key.empty();
+    try {
+      (void)nlohmann::json::json_pointer(key);
+    } catch (const nlohmann::json::exception&) {
+      member_pointer = false;
+    }
+    if (!member_pointer) {
+      return unexpected(
+          fmt::format(
+              "plugin embedded manifest per_file_config_keys entry is not a JSON pointer to a member: \"{}\"", key));
+    }
+  }
 
   d.description = *description;
   d.category = *category;
@@ -358,6 +376,7 @@ Expected<PluginDescriptor> decodeManifest(
   d.badge = *badge;
   d.file_extensions = *file_extensions;
   d.capabilities = *capabilities;
+  d.per_file_config_keys = std::move(*per_file_config_keys);
 
   auto encoding = readStringArray(j, "encoding");
   if (!encoding) {

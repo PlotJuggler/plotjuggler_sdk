@@ -77,6 +77,14 @@ struct PluginDescriptor {
   /// nothing) is host policy. At most 8 characters are advised; a host may truncate.
   /// @since 0.38.0
   std::string badge;
+  /// Data sources: JSON Pointers (RFC 6901, e.g. "/time_column") to the members of the
+  /// plugin's config that describe one particular file, such as a column picked from its
+  /// header or a mode forced for its data; empty when undeclared. A host that pre-fills the
+  /// loader dialog with the config saved for another file drops these members first, so the
+  /// plugin falls back to its defaults; reopening the same file keeps them. Declarative: a
+  /// host built before 1.2.0 ignores it.
+  /// @since 1.2.0
+  std::vector<std::string> per_file_config_keys;
   /// Widget plugins only: the widget types the library offers (non-empty for kWidget).
   /// @since 0.39.0
   std::vector<WidgetTypeDescriptor> widgets;

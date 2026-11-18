@@ -607,6 +607,17 @@ The config is a UTF-8 JSON object. The rules (normative text on
 - `saveConfig()` may return `"filepath"` and `"_parser_config"` (a file layout
   replays `saveConfig()` output, so that is how its parser config survives),
   never `"__pj_saved_filepath"` (the reference host strips it).
+- The host pre-fills a file loader's dialog with the config its dialog saved
+  last, with `"filepath"` set to the new file. Members that only make sense for
+  the file they were chosen for (a time column picked by index from its header,
+  a mode forced for its data) would then apply to a different file. List them
+  in the manifest's `per_file_config_keys` as JSON Pointers
+  (`["/time_column_index"]`): the reference host drops them when the saved
+  `"filepath"` names another file (or none), and keeps them when the same file
+  is opened again. `loadConfig()` must accept the config without them and fall
+  back to its defaults. Layout replay and the Reload action apply the config
+  recorded for that file and drop nothing. A host older than 1.2.0 ignores the
+  key and pre-fills the whole config.
 
 ### Progress reporting
 
@@ -702,6 +713,7 @@ it without instantiating the plugin.
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
 | `file_extensions` | string[] | no | File extensions this source handles, e.g. `[".csv", ".tsv"]`. Plugins declaring `kCapabilityFiniteImport` SHOULD include this so the host can build file-dialog filters. |
+| `per_file_config_keys` | string[] | no | JSON Pointers to the config members that describe one particular file, e.g. `["/time_column_index"]` (1.2.0). A host pre-filling the dialog for a different file drops them; see the config rules above. A malformed pointer invalidates the manifest. Read as `PluginDescriptor::per_file_config_keys`. |
 
 `min_sdk_required`, `suggested_sdk_version` (with a `floor_test`) and the
 deprecated `min_plotjuggler_version` are optional compatibility keys common to
