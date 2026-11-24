@@ -12,6 +12,7 @@
 #include <string>
 #include <type_traits>
 
+#include "pj_base/sdk/field_metadata.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 
 namespace PJ {
@@ -142,6 +143,69 @@ TEST(PluginDataApiTest, SourceWriteHostViewRejectsMissingAppendArrowStreamTailSl
   EXPECT_FALSE(status);
   EXPECT_FALSE(recorder.called);
   EXPECT_NE(status.error().find("append_arrow_stream"), std::string::npos);
+}
+
+namespace {
+struct MetadataRecorder {
+  uint32_t field_id = 0;
+  std::string metadata_json;
+  int calls = 0;
+};
+
+bool sourceEnsureFieldStub(
+    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field,
+    PJ_error_t*) noexcept {
+  *out_field = PJ_field_handle_t{.topic = topic, .id = 7};
+  return true;
+}
+
+bool sourceSetFieldMetadataStub(
+    void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
+  auto* recorder = static_cast<MetadataRecorder*>(ctx);
+  recorder->field_id = field.id;
+  recorder->metadata_json = std::string(sdk::toStringView(metadata_json));
+  ++recorder->calls;
+  return true;
+}
+}  // namespace
+
+TEST(PluginDataApiTest, SourceWriteHostViewForwardsFieldMetadata) {
+  MetadataRecorder recorder;
+  const PJ_source_write_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_source_write_host_vtable_t),
+      .ensure_field = sourceEnsureFieldStub,
+      .set_field_metadata = sourceSetFieldMetadataStub,
+  };
+  sdk::SourceWriteHostView view(PJ_source_write_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  auto field = view.ensureField(PJ_topic_handle_t{1}, "speed", PrimitiveType::kFloat64);
+  ASSERT_TRUE(field);
+  EXPECT_TRUE(view.supportsFieldMetadata());
+  EXPECT_EQ(recorder.calls, 0);  // ensureField never touches metadata
+
+  const std::string json = sdk::FieldMetadataBuilder().description("Vehicle speed [m/s]").build();
+  ASSERT_TRUE(view.setFieldMetadata(*field, json));
+
+  EXPECT_EQ(recorder.calls, 1);
+  EXPECT_EQ(recorder.field_id, 7U);
+  EXPECT_EQ(recorder.metadata_json, R"({"description":"Vehicle speed [m/s]"})");
+}
+
+TEST(PluginDataApiTest, SourceWriteHostViewRejectsFieldMetadataOnOlderHost) {
+  MetadataRecorder recorder;
+  const PJ_source_write_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = offsetof(PJ_source_write_host_vtable_t, set_field_metadata),
+      .ensure_field = sourceEnsureFieldStub,
+  };
+  sdk::SourceWriteHostView view(PJ_source_write_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  EXPECT_FALSE(view.supportsFieldMetadata());
+  auto status = view.setFieldMetadata(PJ_field_handle_t{}, "{}");
+  EXPECT_FALSE(status);
+  EXPECT_NE(status.error().find("set_field_metadata"), std::string::npos);
+  EXPECT_EQ(recorder.calls, 0);
 }
 
 TEST(PluginDataApiTest, ParserWriteHostViewCurrentBaselineStillWorks) {

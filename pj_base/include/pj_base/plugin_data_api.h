@@ -492,6 +492,19 @@ typedef struct PJ_source_write_host_vtable_t {
   bool (*append_arrow_stream)(
       void* ctx, PJ_topic_handle_t topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
       PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Attach a metadata document to a field created by
+   * ensure_field (or by an earlier append). `metadata_json` is a UTF-8 JSON
+   * object that REPLACES the field's previous document; an empty string or
+   * "{}" clears it. The host rejects text that is not a JSON object, or that
+   * exceeds its byte, nesting-depth or node-count bounds (host policy), and
+   * keeps keys it does not know. Canonical key: "description"
+   * (string), shown by the host as a tooltip on the field's row in the dataset
+   * list. Returns false (with out_error populated) if the field handle is
+   * unknown or the document is rejected. Tail slot — readers MUST gate access
+   * with PJ_HAS_TAIL_SLOT. */
+  bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 } PJ_source_write_host_vtable_t;
 
 typedef struct {

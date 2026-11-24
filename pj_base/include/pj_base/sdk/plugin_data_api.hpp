@@ -554,6 +554,28 @@ class SourceWriteHostView {
     return handle;
   }
 
+  /// Replace a field's metadata with `metadata_json`: build it with FieldMetadataBuilder or write the JSON object
+  /// yourself; empty or "{}" clears it. The whole document is replaced, so send every key each time. Fails if the
+  /// host lacks support (supportsFieldMetadata()) or rejects the document; see set_field_metadata in
+  /// plugin_data_api.h.
+  [[nodiscard]] Status setFieldMetadata(FieldHandle field, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("source write host is not bound");
+    }
+    if (!supportsFieldMetadata()) {
+      return unexpected("source write host does not support set_field_metadata");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_field_metadata(host_.ctx, field, toAbiString(metadata_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] bool supportsFieldMetadata() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_source_write_host_vtable_t, host_.vtable, set_field_metadata);
+  }
+
   [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
     if (!valid()) {
       return unexpected("source write host is not bound");

@@ -249,7 +249,9 @@ static_assert(offsetof(PJ_source_write_host_vtable_t, abi_version) == 0, "source
 static_assert(offsetof(PJ_source_write_host_vtable_t, struct_size) == 4, "source write host prefix pinned");
 static_assert(offsetof(PJ_source_write_host_vtable_t, append_bound_record) == 32, "source write host baseline pinned");
 static_assert(offsetof(PJ_source_write_host_vtable_t, append_arrow_stream) == 40, "source write host bulk slot pinned");
-static_assert(sizeof(PJ_source_write_host_vtable_t) == 48, "Source write host size");
+static_assert(
+    offsetof(PJ_source_write_host_vtable_t, set_field_metadata) == 48, "source write host metadata tail slot pinned");
+static_assert(sizeof(PJ_source_write_host_vtable_t) == 56, "Source write host size");
 
 static_assert(offsetof(PJ_parser_write_host_vtable_t, abi_version) == 0, "parser write host prefix pinned");
 static_assert(offsetof(PJ_parser_write_host_vtable_t, struct_size) == 4, "parser write host prefix pinned");

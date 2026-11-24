@@ -3,6 +3,22 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [1.2.0] — Unreleased
+
+Host contract: extended: PJ_source_write_host_vtable_t::set_field_metadata (floor 1.2.0). The slot is
+runtime-negotiated: on an older host `SourceWriteHostView::setFieldMetadata()` returns an error, so a plugin that
+uses it keeps its `min_sdk_required` and ignores the error or checks `supportsFieldMetadata()`.
+
+DataSource protocol:
+
+- `PJ_source_write_host_vtable_t::set_field_metadata` and `SourceWriteHostView::setFieldMetadata()`: a source attaches
+  a JSON object to a field, replacing the previous one (an empty string or "{}" clears it). The host rejects a
+  document that is not an object or exceeds its size, depth or node bounds, and keeps keys it does not know; the
+  canonical key `description` is shown as a tooltip on the field's row in the dataset list. A tail slot: the vtable
+  grows from 48 to 56 bytes and the view reads the slot behind `PJ_HAS_TAIL_SLOT` (`supportsFieldMetadata()`).
+- `FieldMetadataBuilder` (`pj_base/sdk/field_metadata.hpp`) builds the document, and `kFieldDescriptionMetadataKey`
+  names the canonical key.
+
 ## [1.1.1]
 
 Host contract: unchanged (no floor impact).
