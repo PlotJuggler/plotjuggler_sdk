@@ -71,7 +71,10 @@
     },
     "1.2.0": {
       "setFieldMetadata": "PJ_source_write_host_vtable_t::set_field_metadata",
-      "setTopicMetadata": "PJ_source_write_host_vtable_t::set_topic_metadata"
+      "setTopicMetadata": "PJ_source_write_host_vtable_t::set_topic_metadata",
+      "parserSetFieldMetadata": "PJ_parser_write_host_vtable_t::set_field_metadata",
+      "toolboxSetFieldMetadata": "PJ_toolbox_host_vtable_t::set_field_metadata",
+      "toolboxSetTopicMetadata": "PJ_toolbox_host_vtable_t::set_topic_metadata"
     }
   },
   "baseline": [

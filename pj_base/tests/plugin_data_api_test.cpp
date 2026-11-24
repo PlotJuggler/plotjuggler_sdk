@@ -252,6 +252,78 @@ TEST(PluginDataApiTest, SourceWriteHostViewRejectsFieldMetadataOnOlderHost) {
   EXPECT_EQ(recorder.calls, 0);
 }
 
+TEST(PluginDataApiTest, ParserWriteHostViewForwardsFieldMetadata) {
+  MetadataRecorder recorder;
+  const PJ_parser_write_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_parser_write_host_vtable_t),
+      .set_field_metadata = sourceSetFieldMetadataStub,
+  };
+  sdk::ParserWriteHostView view(PJ_parser_write_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  EXPECT_TRUE(view.supportsFieldMetadata());
+  const std::string json = sdk::FieldMetadataBuilder().description("Vehicle speed [m/s]").build();
+  ASSERT_TRUE(view.setFieldMetadata(PJ_field_handle_t{.topic = {1}, .id = 7}, json));
+  EXPECT_EQ(recorder.calls, 1);
+  EXPECT_EQ(recorder.field_id, 7U);
+  EXPECT_EQ(recorder.metadata_json, R"({"description":"Vehicle speed [m/s]"})");
+}
+
+TEST(PluginDataApiTest, ParserWriteHostViewRejectsFieldMetadataOnOlderHost) {
+  MetadataRecorder recorder;
+  const PJ_parser_write_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = offsetof(PJ_parser_write_host_vtable_t, set_field_metadata),
+  };
+  sdk::ParserWriteHostView view(PJ_parser_write_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  EXPECT_FALSE(view.supportsFieldMetadata());
+  auto status = view.setFieldMetadata(PJ_field_handle_t{}, "{}");
+  EXPECT_FALSE(status);
+  EXPECT_NE(status.error().find("set_field_metadata"), std::string::npos);
+  EXPECT_EQ(recorder.calls, 0);
+}
+
+TEST(PluginDataApiTest, ToolboxHostViewForwardsFieldAndTopicMetadata) {
+  MetadataRecorder recorder;
+  const PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_toolbox_host_vtable_t),
+      .set_field_metadata = sourceSetFieldMetadataStub,
+      .set_topic_metadata = sourceSetTopicMetadataStub,
+  };
+  sdk::ToolboxHostView view(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  EXPECT_TRUE(view.supportsFieldMetadata());
+  EXPECT_TRUE(view.supportsTopicMetadata());
+  const std::string json = sdk::FieldMetadataBuilder().description("Filtered").build();
+  ASSERT_TRUE(view.setFieldMetadata(PJ_field_handle_t{.topic = {1}, .id = 7}, json));
+  EXPECT_EQ(recorder.calls, 1);
+  EXPECT_EQ(recorder.field_id, 7U);
+  EXPECT_EQ(recorder.metadata_json, R"({"description":"Filtered"})");
+  ASSERT_TRUE(view.setTopicMetadata(PJ_topic_handle_t{3}, json));
+  EXPECT_EQ(recorder.calls, 2);
+}
+
+TEST(PluginDataApiTest, ToolboxHostViewRejectsMetadataOnOlderHost) {
+  MetadataRecorder recorder;
+  const PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = offsetof(PJ_toolbox_host_vtable_t, set_field_metadata),
+  };
+  sdk::ToolboxHostView view(PJ_toolbox_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  EXPECT_FALSE(view.supportsFieldMetadata());
+  EXPECT_FALSE(view.supportsTopicMetadata());
+  auto field_status = view.setFieldMetadata(PJ_field_handle_t{}, "{}");
+  EXPECT_FALSE(field_status);
+  EXPECT_NE(field_status.error().find("set_field_metadata"), std::string::npos);
+  auto topic_status = view.setTopicMetadata(PJ_topic_handle_t{3}, "{}");
+  EXPECT_FALSE(topic_status);
+  EXPECT_NE(topic_status.error().find("set_topic_metadata"), std::string::npos);
+  EXPECT_EQ(recorder.calls, 0);
+}
+
 TEST(PluginDataApiTest, ParserWriteHostViewCurrentBaselineStillWorks) {
   TailSlotRecorder recorder;
   const PJ_parser_write_host_vtable_t vtable = {

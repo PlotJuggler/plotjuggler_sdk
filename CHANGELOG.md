@@ -5,10 +5,12 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [1.2.0] — Unreleased
 
-Host contract: extended: PJ_source_write_host_vtable_t::set_field_metadata, PJ_source_write_host_vtable_t::set_topic_metadata
-(floor 1.2.0). The slots are runtime-negotiated: on an older host `SourceWriteHostView::setFieldMetadata()` and
-`setTopicMetadata()` return an error, so a plugin that uses them keeps its `min_sdk_required` and ignores the error or
-checks `supportsFieldMetadata()` / `supportsTopicMetadata()`.
+Host contract: extended: PJ_source_write_host_vtable_t::set_field_metadata, PJ_source_write_host_vtable_t::set_topic_metadata,
+PJ_parser_write_host_vtable_t::set_field_metadata, PJ_toolbox_host_vtable_t::set_field_metadata,
+PJ_toolbox_host_vtable_t::set_topic_metadata (floor 1.2.0). The slots are runtime-negotiated: on an older host the
+`setFieldMetadata()` / `setTopicMetadata()` of `SourceWriteHostView`, `ParserWriteHostView` and `ToolboxHostView`
+return an error, so a plugin that uses them keeps its `min_sdk_required` and ignores the error or checks
+`supportsFieldMetadata()` / `supportsTopicMetadata()`.
 
 DataSource protocol:
 
@@ -20,6 +22,12 @@ DataSource protocol:
 - `PJ_source_write_host_vtable_t::set_topic_metadata` and `SourceWriteHostView::setTopicMetadata()`: the same for a
   topic (same document rules); the canonical key `description` is shown as a tooltip on the topic's row. A second tail
   slot, after `set_field_metadata`: the vtable grows from 56 to 64 bytes (`supportsTopicMetadata()`).
+- `PJ_parser_write_host_vtable_t::set_field_metadata` and `ParserWriteHostView::setFieldMetadata()`: a parser attaches
+  a metadata document to a field of its bound topic (same rules as the source slot). The parser vtable grows from 40 to
+  48 bytes. There is no topic-level slot: the topic belongs to the source that created it.
+- `PJ_toolbox_host_vtable_t::set_field_metadata` / `set_topic_metadata` and `ToolboxHostView::setFieldMetadata()` /
+  `setTopicMetadata()`: the same for a toolbox. Two tail slots after `acquire_catalog_snapshot_v2`: the vtable grows
+  from 112 to 128 bytes.
 - `FieldMetadataBuilder` (`pj_base/sdk/field_metadata.hpp`) builds the document, and `kFieldDescriptionMetadataKey`
   names the canonical key.
 

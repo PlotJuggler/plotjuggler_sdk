@@ -261,7 +261,9 @@ static_assert(offsetof(PJ_parser_write_host_vtable_t, struct_size) == 4, "parser
 static_assert(offsetof(PJ_parser_write_host_vtable_t, append_bound_record) == 24, "parser write host baseline pinned");
 static_assert(
     offsetof(PJ_parser_write_host_vtable_t, append_arrow_stream) == 32, "parser write host bulk tail slot pinned");
-static_assert(sizeof(PJ_parser_write_host_vtable_t) == 40, "Parser write host size updated deliberately on append");
+static_assert(
+    offsetof(PJ_parser_write_host_vtable_t, set_field_metadata) == 40, "parser write host metadata tail slot pinned");
+static_assert(sizeof(PJ_parser_write_host_vtable_t) == 48, "Parser write host size updated deliberately on append");
 static_assert(PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE == 32, "Parser write host min size remains v4.0 baseline");
 static_assert(
     PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE <= sizeof(PJ_parser_write_host_vtable_t), "MIN must never exceed current");
@@ -289,7 +291,11 @@ static_assert(
 static_assert(
     offsetof(PJ_toolbox_host_vtable_t, acquire_catalog_snapshot_v2) == 104,
     "toolbox host catalog-snapshot-v2 tail slot pinned");
-static_assert(sizeof(PJ_toolbox_host_vtable_t) == 112, "Toolbox host size (update deliberately on append)");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, set_field_metadata) == 112, "toolbox host field-metadata tail slot pinned");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, set_topic_metadata) == 120, "toolbox host topic-metadata tail slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 128, "Toolbox host size (update deliberately on append)");
 
 // --- Catalog snapshot v2 (introduced 0.38.0) ----------------------------------
 // The object-topic info is a fixed-stride array element; the snapshot grows only by
