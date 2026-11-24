@@ -5,9 +5,10 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 ## [1.2.0] — Unreleased
 
-Host contract: extended: PJ_source_write_host_vtable_t::set_field_metadata (floor 1.2.0). The slot is
-runtime-negotiated: on an older host `SourceWriteHostView::setFieldMetadata()` returns an error, so a plugin that
-uses it keeps its `min_sdk_required` and ignores the error or checks `supportsFieldMetadata()`.
+Host contract: extended: PJ_source_write_host_vtable_t::set_field_metadata, PJ_source_write_host_vtable_t::set_topic_metadata
+(floor 1.2.0). The slots are runtime-negotiated: on an older host `SourceWriteHostView::setFieldMetadata()` and
+`setTopicMetadata()` return an error, so a plugin that uses them keeps its `min_sdk_required` and ignores the error or
+checks `supportsFieldMetadata()` / `supportsTopicMetadata()`.
 
 DataSource protocol:
 
@@ -16,6 +17,9 @@ DataSource protocol:
   document that is not an object or exceeds its size, depth or node bounds, and keeps keys it does not know; the
   canonical key `description` is shown as a tooltip on the field's row in the dataset list. A tail slot: the vtable
   grows from 48 to 56 bytes and the view reads the slot behind `PJ_HAS_TAIL_SLOT` (`supportsFieldMetadata()`).
+- `PJ_source_write_host_vtable_t::set_topic_metadata` and `SourceWriteHostView::setTopicMetadata()`: the same for a
+  topic (same document rules); the canonical key `description` is shown as a tooltip on the topic's row. A second tail
+  slot, after `set_field_metadata`: the vtable grows from 56 to 64 bytes (`supportsTopicMetadata()`).
 - `FieldMetadataBuilder` (`pj_base/sdk/field_metadata.hpp`) builds the document, and `kFieldDescriptionMetadataKey`
   names the canonical key.
 

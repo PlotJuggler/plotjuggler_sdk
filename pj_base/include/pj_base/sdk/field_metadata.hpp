@@ -10,15 +10,16 @@
 
 namespace PJ::sdk {
 
-/// Canonical field-metadata key: plain text the host shows as a tooltip on the field's row in the dataset list.
+/// Canonical field- and topic-metadata key: plain text the host shows as a tooltip on the field's or topic's row in the
+/// dataset list.
 /// @since 1.2.0
 inline constexpr std::string_view kFieldDescriptionMetadataKey = "description";
 
-/// Builds the JSON object `SourceWriteHostView::setFieldMetadata()` takes.
+/// Builds the JSON object `SourceWriteHostView::setFieldMetadata()` and `setTopicMetadata()` take.
 ///
-/// The host replaces a field's whole document on every call, so set every key before `build()`. Keys are emitted in
+/// The host replaces the whole document on every call, so set every key before `build()`. Keys are emitted in
 /// lexicographic order; setting a key again replaces its value. An empty builder yields "{}", which clears the
-/// field's metadata.
+/// metadata.
 ///
 /// @since 1.2.0
 class FieldMetadataBuilder {

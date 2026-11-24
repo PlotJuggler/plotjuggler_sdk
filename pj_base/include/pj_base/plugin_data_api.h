@@ -505,6 +505,17 @@ typedef struct PJ_source_write_host_vtable_t {
    * with PJ_HAS_TAIL_SLOT. */
   bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
       PJ_NOEXCEPT;
+
+  /* [stream-thread] Attach a metadata document to a topic created by
+   * ensure_topic. Same document rules as set_field_metadata: a UTF-8 JSON
+   * object that REPLACES the topic's previous document, "" or "{}" clears it,
+   * unknown keys are kept, and text that is not an object or exceeds the host's
+   * bounds is rejected. Canonical key: "description" (string), shown by the
+   * host as a tooltip on the topic's row in the dataset list. Returns false
+   * (with out_error populated) if the topic handle is unknown or the document
+   * is rejected. Tail slot — readers MUST gate access with PJ_HAS_TAIL_SLOT. */
+  bool (*set_topic_metadata)(void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 } PJ_source_write_host_vtable_t;
 
 typedef struct {

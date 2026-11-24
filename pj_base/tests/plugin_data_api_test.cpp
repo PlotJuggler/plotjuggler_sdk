@@ -167,7 +167,51 @@ bool sourceSetFieldMetadataStub(
   ++recorder->calls;
   return true;
 }
+
+bool sourceSetTopicMetadataStub(
+    void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
+  auto* recorder = static_cast<MetadataRecorder*>(ctx);
+  recorder->field_id = topic.id;
+  recorder->metadata_json = std::string(sdk::toStringView(metadata_json));
+  ++recorder->calls;
+  return true;
+}
 }  // namespace
+
+TEST(PluginDataApiTest, SourceWriteHostViewForwardsTopicMetadata) {
+  MetadataRecorder recorder;
+  const PJ_source_write_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_source_write_host_vtable_t),
+      .set_topic_metadata = sourceSetTopicMetadataStub,
+  };
+  sdk::SourceWriteHostView view(PJ_source_write_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  EXPECT_TRUE(view.supportsTopicMetadata());
+  ASSERT_TRUE(view.setTopicMetadata(PJ_topic_handle_t{3}, sdk::FieldMetadataBuilder().description("IMU").build()));
+
+  EXPECT_EQ(recorder.calls, 1);
+  EXPECT_EQ(recorder.field_id, 3U);
+  EXPECT_EQ(recorder.metadata_json, R"({"description":"IMU"})");
+}
+
+TEST(PluginDataApiTest, SourceWriteHostViewRejectsTopicMetadataOnOlderHost) {
+  MetadataRecorder recorder;
+  // A host that has the field slot but predates the topic slot.
+  const PJ_source_write_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = offsetof(PJ_source_write_host_vtable_t, set_topic_metadata),
+      .set_field_metadata = sourceSetFieldMetadataStub,
+  };
+  sdk::SourceWriteHostView view(PJ_source_write_host_t{.ctx = &recorder, .vtable = &vtable});
+
+  EXPECT_TRUE(view.supportsFieldMetadata());
+  EXPECT_FALSE(view.supportsTopicMetadata());
+  auto status = view.setTopicMetadata(PJ_topic_handle_t{3}, "{}");
+  EXPECT_FALSE(status);
+  EXPECT_NE(status.error().find("set_topic_metadata"), std::string::npos);
+  EXPECT_EQ(recorder.calls, 0);
+}
 
 TEST(PluginDataApiTest, SourceWriteHostViewForwardsFieldMetadata) {
   MetadataRecorder recorder;

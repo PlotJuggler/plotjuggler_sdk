@@ -70,7 +70,8 @@
       "notifyConfigChanged": "PJ_widget_host_vtable_t::notify_config_changed"
     },
     "1.2.0": {
-      "setFieldMetadata": "PJ_source_write_host_vtable_t::set_field_metadata"
+      "setFieldMetadata": "PJ_source_write_host_vtable_t::set_field_metadata",
+      "setTopicMetadata": "PJ_source_write_host_vtable_t::set_topic_metadata"
     }
   },
   "baseline": [
