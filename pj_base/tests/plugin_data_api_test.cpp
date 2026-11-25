@@ -31,9 +31,14 @@ static_assert(
             sizeof(static_cast<PJ_parser_write_host_vtable_t*>(nullptr)->append_bound_record),
     "Parser append_arrow_stream must stay appended after the v4.0 baseline");
 static_assert(
-    sizeof(PJ_parser_write_host_vtable_t) ==
+    offsetof(PJ_parser_write_host_vtable_t, set_field_metadata) ==
         offsetof(PJ_parser_write_host_vtable_t, append_arrow_stream) +
             sizeof(static_cast<PJ_parser_write_host_vtable_t*>(nullptr)->append_arrow_stream),
+    "Parser set_field_metadata must stay appended after append_arrow_stream");
+static_assert(
+    sizeof(PJ_parser_write_host_vtable_t) ==
+        offsetof(PJ_parser_write_host_vtable_t, set_field_metadata) +
+            sizeof(static_cast<PJ_parser_write_host_vtable_t*>(nullptr)->set_field_metadata),
     "Parser write host size should only grow by tail appends");
 
 struct TailSlotRecorder {

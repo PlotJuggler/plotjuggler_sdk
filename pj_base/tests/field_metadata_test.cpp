@@ -25,7 +25,8 @@ TEST(FieldMetadataBuilderTest, KeysAreLexicographicAndLaterValueReplaces) {
 
 TEST(FieldMetadataBuilderTest, EscapesKeysAndValues) {
   const std::string json = FieldMetadataBuilder().string("a\"b", "c\\d\ne\tf\x01").build();
-  EXPECT_EQ(json, R"({"a\"b":"c\\d\ne\tf\u0001"})");
+  // Not a raw string: MSVC reads a "\u0001" inside one as a (forbidden) universal-character-name.
+  EXPECT_EQ(json, "{\"a\\\"b\":\"c\\\\d\\ne\\tf\\u0001\"}");
 }
 
 }  // namespace
