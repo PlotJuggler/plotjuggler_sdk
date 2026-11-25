@@ -61,6 +61,8 @@ PJ_source_write_host_t makeSourceWriteHost() {
       .append_record = fwsAppendRecord,
       .append_bound_record = fwsAppendBoundRecord,
       .append_arrow_stream = fwsAppendArrowStream,
+      .set_field_metadata = nullptr,
+      .set_topic_metadata = nullptr,
   };
   return PJ_source_write_host_t{.ctx = reinterpret_cast<void*>(0x1), .vtable = &vtable};
 }

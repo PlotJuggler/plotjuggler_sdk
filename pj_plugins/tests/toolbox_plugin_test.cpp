@@ -91,6 +91,8 @@ PJ_toolbox_host_t makeToolboxHost(ToolboxState* state) {
       .register_object_topic_on_dataset = nullptr,
       .set_object_topic_retention = nullptr,
       .acquire_catalog_snapshot_v2 = nullptr,
+      .set_field_metadata = nullptr,
+      .set_topic_metadata = nullptr,
   };
   return PJ_toolbox_host_t{.ctx = state, .vtable = &vtable};
 }

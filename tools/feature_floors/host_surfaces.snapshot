@@ -84,6 +84,7 @@ PJ_parser_write_host_vtable_t::append_arrow_stream
 PJ_parser_write_host_vtable_t::append_bound_record
 PJ_parser_write_host_vtable_t::append_record
 PJ_parser_write_host_vtable_t::ensure_field
+PJ_parser_write_host_vtable_t::set_field_metadata
 PJ_playback_host_vtable_t::get_state
 PJ_playback_host_vtable_t::pause
 PJ_playback_host_vtable_t::play
@@ -115,6 +116,8 @@ PJ_source_write_host_vtable_t::append_bound_record
 PJ_source_write_host_vtable_t::append_record
 PJ_source_write_host_vtable_t::ensure_field
 PJ_source_write_host_vtable_t::ensure_topic
+PJ_source_write_host_vtable_t::set_field_metadata
+PJ_source_write_host_vtable_t::set_topic_metadata
 PJ_toolbox_host_vtable_t::acquire_catalog_snapshot
 PJ_toolbox_host_vtable_t::acquire_catalog_snapshot_v2
 PJ_toolbox_host_vtable_t::append_arrow_stream
@@ -127,7 +130,9 @@ PJ_toolbox_host_vtable_t::push_owned_object
 PJ_toolbox_host_vtable_t::read_series_arrow
 PJ_toolbox_host_vtable_t::register_object_topic
 PJ_toolbox_host_vtable_t::register_object_topic_on_dataset
+PJ_toolbox_host_vtable_t::set_field_metadata
 PJ_toolbox_host_vtable_t::set_object_topic_retention
+PJ_toolbox_host_vtable_t::set_topic_metadata
 PJ_toolbox_runtime_host_vtable_t::create_parser_ingest
 PJ_toolbox_runtime_host_vtable_t::discard_parser_ingest
 PJ_toolbox_runtime_host_vtable_t::notify_data_changed
