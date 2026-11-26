@@ -3,18 +3,9 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [1.2.0] — Unreleased
+## [1.1.1] — Unreleased
 
 Host contract: unchanged (no floor impact).
-
-Added:
-
-- `PJ::sdk::pathFromUtf8` and `pathToUtf8` (`pj_base/sdk/platform.hpp`, header-only): decode a UTF-8
-  string as a `std::filesystem::path`, and encode a path as UTF-8. A plugin opens a path the host
-  passes as a narrow string (a config `"filepath"`, `local_path_utf8`) with `pathFromUtf8`, and
-  prints or stores a path with `pathToUtf8`. On Windows the narrow `std::filesystem::path(std::string)`,
-  `ifstream(std::string)` and `fopen` read those bytes in the ANSI code page, and `path.string()`
-  throws for a character the code page cannot represent.
 
 Fixed (Windows, paths with characters outside the ANSI code page, such as a Cyrillic user name in
 `%LOCALAPPDATA%`):
@@ -28,9 +19,10 @@ Fixed (Windows, paths with characters outside the ANSI code page, such as a Cyri
   `WidgetLibrary` `load(std::string_view)` (and the `const char*` and `std::string` forwarders)
   decode the string as UTF-8, as `NativeParserModule::load` already did. They read it in the code
   page before. The `std::filesystem::path` overloads are unchanged.
-
-The docs (`data_source_patterns.hpp`, the data-source guide, the plugin skill) state that every path in
-a plugin config is UTF-8 and open it with `pathFromUtf8`.
+- The SDK's own path handling (request cache, file lock, durable writes, plugin catalog errors) goes
+  through two header-only helpers in `pj_base/sdk/platform.hpp`, `PJ::sdk::pathFromUtf8` and
+  `pathToUtf8`. The docs (`data_source_patterns.hpp`, the data-source guide, the plugin skill) state
+  that every path in a plugin config is UTF-8 and show opening it with `pathFromUtf8`.
 
 ## [1.1.0]
 
