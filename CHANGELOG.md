@@ -30,6 +30,8 @@ DataSource protocol:
   from 112 to 128 bytes.
 - `MetadataDocumentBuilder` (`pj_base/sdk/metadata_document.hpp`) builds the document for a field or a topic, and
   `kDescriptionMetadataKey` names the canonical key.
+- `ToolboxTestStore` implements `set_field_metadata` / `set_topic_metadata` and reads them back through
+  `fieldMetadata()` / `topicMetadata()`, so a toolbox can test its metadata writes.
 
 ## [1.1.1]
 
