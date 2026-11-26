@@ -12,7 +12,7 @@
 #include <string>
 #include <type_traits>
 
-#include "pj_base/sdk/field_metadata.hpp"
+#include "pj_base/sdk/metadata_document.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 
 namespace PJ {
@@ -152,7 +152,7 @@ TEST(PluginDataApiTest, SourceWriteHostViewRejectsMissingAppendArrowStreamTailSl
 
 namespace {
 struct MetadataRecorder {
-  uint32_t field_id = 0;
+  uint32_t handle_id = 0;
   std::string metadata_json;
   int calls = 0;
 };
@@ -167,7 +167,7 @@ bool sourceEnsureFieldStub(
 bool sourceSetFieldMetadataStub(
     void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
   auto* recorder = static_cast<MetadataRecorder*>(ctx);
-  recorder->field_id = field.id;
+  recorder->handle_id = field.id;
   recorder->metadata_json = std::string(sdk::toStringView(metadata_json));
   ++recorder->calls;
   return true;
@@ -176,7 +176,7 @@ bool sourceSetFieldMetadataStub(
 bool sourceSetTopicMetadataStub(
     void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
   auto* recorder = static_cast<MetadataRecorder*>(ctx);
-  recorder->field_id = topic.id;
+  recorder->handle_id = topic.id;
   recorder->metadata_json = std::string(sdk::toStringView(metadata_json));
   ++recorder->calls;
   return true;
@@ -193,10 +193,10 @@ TEST(PluginDataApiTest, SourceWriteHostViewForwardsTopicMetadata) {
   sdk::SourceWriteHostView view(PJ_source_write_host_t{.ctx = &recorder, .vtable = &vtable});
 
   EXPECT_TRUE(view.supportsTopicMetadata());
-  ASSERT_TRUE(view.setTopicMetadata(PJ_topic_handle_t{3}, sdk::FieldMetadataBuilder().description("IMU").build()));
+  ASSERT_TRUE(view.setTopicMetadata(PJ_topic_handle_t{3}, sdk::MetadataDocumentBuilder().description("IMU").build()));
 
   EXPECT_EQ(recorder.calls, 1);
-  EXPECT_EQ(recorder.field_id, 3U);
+  EXPECT_EQ(recorder.handle_id, 3U);
   EXPECT_EQ(recorder.metadata_json, R"({"description":"IMU"})");
 }
 
@@ -233,11 +233,11 @@ TEST(PluginDataApiTest, SourceWriteHostViewForwardsFieldMetadata) {
   EXPECT_TRUE(view.supportsFieldMetadata());
   EXPECT_EQ(recorder.calls, 0);  // ensureField never touches metadata
 
-  const std::string json = sdk::FieldMetadataBuilder().description("Vehicle speed [m/s]").build();
+  const std::string json = sdk::MetadataDocumentBuilder().description("Vehicle speed [m/s]").build();
   ASSERT_TRUE(view.setFieldMetadata(*field, json));
 
   EXPECT_EQ(recorder.calls, 1);
-  EXPECT_EQ(recorder.field_id, 7U);
+  EXPECT_EQ(recorder.handle_id, 7U);
   EXPECT_EQ(recorder.metadata_json, R"({"description":"Vehicle speed [m/s]"})");
 }
 
@@ -267,10 +267,10 @@ TEST(PluginDataApiTest, ParserWriteHostViewForwardsFieldMetadata) {
   sdk::ParserWriteHostView view(PJ_parser_write_host_t{.ctx = &recorder, .vtable = &vtable});
 
   EXPECT_TRUE(view.supportsFieldMetadata());
-  const std::string json = sdk::FieldMetadataBuilder().description("Vehicle speed [m/s]").build();
+  const std::string json = sdk::MetadataDocumentBuilder().description("Vehicle speed [m/s]").build();
   ASSERT_TRUE(view.setFieldMetadata(PJ_field_handle_t{.topic = {1}, .id = 7}, json));
   EXPECT_EQ(recorder.calls, 1);
-  EXPECT_EQ(recorder.field_id, 7U);
+  EXPECT_EQ(recorder.handle_id, 7U);
   EXPECT_EQ(recorder.metadata_json, R"({"description":"Vehicle speed [m/s]"})");
 }
 
@@ -301,10 +301,10 @@ TEST(PluginDataApiTest, ToolboxHostViewForwardsFieldAndTopicMetadata) {
 
   EXPECT_TRUE(view.supportsFieldMetadata());
   EXPECT_TRUE(view.supportsTopicMetadata());
-  const std::string json = sdk::FieldMetadataBuilder().description("Filtered").build();
+  const std::string json = sdk::MetadataDocumentBuilder().description("Filtered").build();
   ASSERT_TRUE(view.setFieldMetadata(PJ_field_handle_t{.topic = {1}, .id = 7}, json));
   EXPECT_EQ(recorder.calls, 1);
-  EXPECT_EQ(recorder.field_id, 7U);
+  EXPECT_EQ(recorder.handle_id, 7U);
   EXPECT_EQ(recorder.metadata_json, R"({"description":"Filtered"})");
   ASSERT_TRUE(view.setTopicMetadata(PJ_topic_handle_t{3}, json));
   EXPECT_EQ(recorder.calls, 2);

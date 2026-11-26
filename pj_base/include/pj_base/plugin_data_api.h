@@ -502,7 +502,8 @@ typedef struct PJ_source_write_host_vtable_t {
    * (string), shown by the host as a tooltip on the field's row in the dataset
    * list. Returns false (with out_error populated) if the field handle is
    * unknown or the document is rejected. Tail slot — readers MUST gate access
-   * with PJ_HAS_TAIL_SLOT. */
+   * with PJ_HAS_TAIL_SLOT.
+   * @since 1.2.0 */
   bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 
@@ -513,7 +514,8 @@ typedef struct PJ_source_write_host_vtable_t {
    * bounds is rejected. Canonical key: "description" (string), shown by the
    * host as a tooltip on the topic's row in the dataset list. Returns false
    * (with out_error populated) if the topic handle is unknown or the document
-   * is rejected. Tail slot — readers MUST gate access with PJ_HAS_TAIL_SLOT. */
+   * is rejected. Tail slot — readers MUST gate access with PJ_HAS_TAIL_SLOT.
+   * @since 1.2.0 */
   bool (*set_topic_metadata)(void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 } PJ_source_write_host_vtable_t;
@@ -563,7 +565,8 @@ typedef struct PJ_parser_write_host_vtable_t {
    * (UTF-8 JSON object that REPLACES the previous one, "" or "{}" clears it,
    * unknown keys kept, canonical key "description"). There is no topic-level
    * counterpart: the topic belongs to the data source that created it. Tail
-   * slot — readers MUST gate access with PJ_HAS_TAIL_SLOT. */
+   * slot — readers MUST gate access with PJ_HAS_TAIL_SLOT.
+   * @since 1.2.0 */
   bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 } PJ_parser_write_host_vtable_t;
@@ -761,13 +764,15 @@ typedef struct PJ_toolbox_host_vtable_t {
 
   /* [stream-thread] Attach a metadata document to a field created by ensure_field.
    * Same document rules as PJ_source_write_host_vtable_t::set_field_metadata.
-   * ABI-APPENDED slot: gate via struct_size before calling. */
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 1.2.0 */
   bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 
   /* [stream-thread] Attach a metadata document to a topic created by ensure_topic.
    * Same document rules as PJ_source_write_host_vtable_t::set_topic_metadata.
-   * ABI-APPENDED slot: gate via struct_size before calling. */
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 1.2.0 */
   bool (*set_topic_metadata)(void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;

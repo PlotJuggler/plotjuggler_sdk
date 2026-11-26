@@ -554,10 +554,11 @@ class SourceWriteHostView {
     return handle;
   }
 
-  /// Replace a field's metadata with `metadata_json`: build it with FieldMetadataBuilder or write the JSON object
+  /// Replace a field's metadata with `metadata_json`: build it with MetadataDocumentBuilder or write the JSON object
   /// yourself; empty or "{}" clears it. The whole document is replaced, so send every key each time. Fails if the
   /// host lacks support (supportsFieldMetadata()) or rejects the document; see set_field_metadata in
   /// plugin_data_api.h.
+  /// @since 1.2.0
   [[nodiscard]] Status setFieldMetadata(FieldHandle field, std::string_view metadata_json) const {
     if (!valid()) {
       return unexpected("source write host is not bound");
@@ -572,11 +573,13 @@ class SourceWriteHostView {
     return okStatus();
   }
 
+  /// Whether the host provides set_field_metadata.
+  /// @since 1.2.0
   [[nodiscard]] bool supportsFieldMetadata() const {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_source_write_host_vtable_t, host_.vtable, set_field_metadata);
   }
 
-  /// Replace a topic's metadata with `metadata_json`: build it with FieldMetadataBuilder (same document rules as
+  /// Replace a topic's metadata with `metadata_json`: build it with MetadataDocumentBuilder (same document rules as
   /// setFieldMetadata()); empty or "{}" clears it. Fails if the host lacks support (supportsTopicMetadata()) or
   /// rejects the document; see set_topic_metadata in plugin_data_api.h.
   /// @since 1.2.0
@@ -594,6 +597,8 @@ class SourceWriteHostView {
     return okStatus();
   }
 
+  /// Whether the host provides set_topic_metadata.
+  /// @since 1.2.0
   [[nodiscard]] bool supportsTopicMetadata() const {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_source_write_host_vtable_t, host_.vtable, set_topic_metadata);
   }
@@ -790,6 +795,8 @@ class ParserWriteHostView {
     return okStatus();
   }
 
+  /// Whether the host provides set_field_metadata.
+  /// @since 1.2.0
   [[nodiscard]] bool supportsFieldMetadata() const {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_parser_write_host_vtable_t, host_.vtable, set_field_metadata);
   }
@@ -1460,6 +1467,8 @@ class ToolboxHostView {
     return okStatus();
   }
 
+  /// Whether the host provides set_field_metadata.
+  /// @since 1.2.0
   [[nodiscard]] bool supportsFieldMetadata() const {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, set_field_metadata);
   }
@@ -1482,6 +1491,8 @@ class ToolboxHostView {
     return okStatus();
   }
 
+  /// Whether the host provides set_topic_metadata.
+  /// @since 1.2.0
   [[nodiscard]] bool supportsTopicMetadata() const {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, set_topic_metadata);
   }

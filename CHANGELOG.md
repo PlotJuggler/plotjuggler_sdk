@@ -28,8 +28,8 @@ DataSource protocol:
 - `PJ_toolbox_host_vtable_t::set_field_metadata` / `set_topic_metadata` and `ToolboxHostView::setFieldMetadata()` /
   `setTopicMetadata()`: the same for a toolbox. Two tail slots after `acquire_catalog_snapshot_v2`: the vtable grows
   from 112 to 128 bytes.
-- `FieldMetadataBuilder` (`pj_base/sdk/field_metadata.hpp`) builds the document, and `kFieldDescriptionMetadataKey`
-  names the canonical key.
+- `MetadataDocumentBuilder` (`pj_base/sdk/metadata_document.hpp`) builds the document for a field or a topic, and
+  `kDescriptionMetadataKey` names the canonical key.
 
 ## [1.1.1]
 
