@@ -34,7 +34,7 @@ DialogLibrary& DialogLibrary::operator=(DialogLibrary&& other) noexcept {
 }
 
 Expected<DialogLibrary> DialogLibrary::load(std::string_view path) {
-  return load(std::filesystem::path(path));
+  return detail::loadFromUtf8<DialogLibrary>(path);
 }
 
 Expected<DialogLibrary> DialogLibrary::load(const std::filesystem::path& path) {
@@ -79,7 +79,7 @@ Expected<DialogLibrary> DialogLibrary::loadFromHandle(
     return unexpected(status.error());
   }
 
-  return DialogLibrary(std::move(handle), vtable, detail::pathForLegacyAccessor(recorded_path->load_path));
+  return DialogLibrary(std::move(handle), vtable, sdk::pathToUtf8(recorded_path->load_path));
 }
 
 void DialogLibrary::reset() {

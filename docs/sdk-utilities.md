@@ -61,7 +61,8 @@ CMake helpers become available through `find_package(plotjuggler_sdk)`.
 | `PJ::sdk::mergeVisibleSelection, passesSelectionFilter` | Preserve hidden selections when the host reports only visible rows | `pj_plugins/sdk/streaming_dialog.hpp` |
 | `PJ::sdk::composeEndpoint, composeHostPort, authorityHost` | Compose an IPv6-safe transport endpoint from dialog fields | `pj_plugins/sdk/endpoint.hpp` |
 | `PJ::sdk::parsePort, lowerAscii` | Strict port validation and ASCII token normalization | `pj_base/sdk/text_utils.hpp` |
-| `PJ::sdk::getEnv, getSharedLibDir, userDataDir` | Portable environment, plugin directory and per-user data paths | `pj_base/sdk/platform.hpp` |
+| `PJ::sdk::getEnv, getSharedLibDir, userDataDir` | Portable environment (UTF-8 on every platform), plugin directory and per-user data paths | `pj_base/sdk/platform.hpp` |
+| `PJ::sdk::pathFromUtf8, pathToUtf8` | UTF-8 string to and from `std::filesystem::path`, for every host-supplied path (narrow paths are read in the ANSI code page on Windows) | `pj_base/sdk/platform.hpp` |
 | `PJ::SemVer::parse, PJ::SemVer::isValid, PJ::SemVer::operator<=>; PJ::sdkVersion` | Parse/compare SDK and manifest versions | `pj_base/sdk/semver.hpp; pj_base/sdk/version.hpp` |
 | `PJ::WidgetEvent` | Decode raw widget events; DialogPluginTyped already dispatches typed handlers | `pj_plugins/sdk/widget_event.hpp` |
 | `PJ::FilePickerOptions, FilePickerResult, TreeItem, TreeCell` | Canonical picker/tree payloads and wire-value spellings | `pj_plugins/sdk/file_picker_types.hpp; pj_plugins/sdk/tree_types.hpp` |

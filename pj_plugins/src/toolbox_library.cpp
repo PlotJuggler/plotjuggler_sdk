@@ -48,7 +48,7 @@ ToolboxLibrary& ToolboxLibrary::operator=(ToolboxLibrary&& other) noexcept {
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
-  return load(std::filesystem::path(path));
+  return detail::loadFromUtf8<ToolboxLibrary>(path);
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::load(const std::filesystem::path& path) {
@@ -99,8 +99,8 @@ Expected<ToolboxLibrary> ToolboxLibrary::loadFromHandleWithIdentity(
   }
 
   return ToolboxLibrary(
-      std::move(handle), vtable, detail::pathForLegacyAccessor(recorded_path.load_path),
-      detail::pathForLegacyAccessor(recorded_path.resolved_path));
+      std::move(handle), vtable, sdk::pathToUtf8(recorded_path.load_path),
+      sdk::pathToUtf8(recorded_path.resolved_path));
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::loadStatic(

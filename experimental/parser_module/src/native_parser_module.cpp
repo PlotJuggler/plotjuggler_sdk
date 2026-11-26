@@ -13,6 +13,7 @@
 
 #include "detail/native_parser_module_state.hpp"
 #include "pj_base/parser_module_abi.h"
+#include "pj_base/sdk/platform.hpp"
 #include "pj_plugins/host/parser_module_claims.hpp"
 
 namespace PJ {
@@ -141,7 +142,7 @@ Expected<NativeParserModule> NativeParserModule::load(
           path, sink, diagnostic_source, "invalid native parser-module manifest: " + decoded_manifest.error());
     }
     std::error_code file_error;
-    const uintmax_t artifact_size = std::filesystem::file_size(std::filesystem::path(path), file_error);
+    const uintmax_t artifact_size = std::filesystem::file_size(sdk::pathFromUtf8(path), file_error);
     if (file_error || artifact_size > std::numeric_limits<uint64_t>::max()) {
       return rejectLoad(path, sink, diagnostic_source, "native parser-module artifact file size is unreadable");
     }

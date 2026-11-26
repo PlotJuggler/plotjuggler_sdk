@@ -51,12 +51,15 @@ class WidgetLibrary {
   WidgetLibrary(const WidgetLibrary&) = delete;
   WidgetLibrary& operator=(const WidgetLibrary&) = delete;
 
+  /// Load a widget plugin from @p path, UTF-8 on every platform. Returns an error string on failure.
   [[nodiscard]] static Expected<WidgetLibrary> load(std::string_view path);
 
+  /// Preserve an unambiguous load call for narrow paths (UTF-8).
   [[nodiscard]] static Expected<WidgetLibrary> load(const char* path) {
     return load(std::string_view(path));
   }
 
+  /// Preserve an unambiguous load call for narrow paths (UTF-8).
   [[nodiscard]] static Expected<WidgetLibrary> load(const std::string& path) {
     return load(std::string_view(path));
   }

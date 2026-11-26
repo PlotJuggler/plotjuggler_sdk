@@ -8,10 +8,10 @@
 #include <system_error>
 #include <vector>
 
+#include "pj_base/sdk/platform.hpp"
 #include "pj_base/sdk/testing/request_cache_probe.hpp"
 #include "source/file_lock.hpp"
 #include "source/fs_durability.hpp"
-#include "source/path_utf8.hpp"
 
 #if defined(_WIN32)
 // windows.h min/max macros break std::max / numeric_limits<>::max.
@@ -86,9 +86,9 @@ class CacheLayout {
   /// Managed names only: "<digest><suffix>" and "<digest><suffix>.partial.<pid>";
   /// sidecars, foreign files and malformed digests are kOther.
   [[nodiscard]] Classified classify(const fs::path& file) const {
-    // pathUtf8(): a foreign Unicode name classifies as kOther instead of
+    // pathToUtf8(): a foreign Unicode name classifies as kOther instead of
     // throwing through .string() on a non-ACP Windows code page.
-    const std::string name = detail::pathUtf8(file.filename());
+    const std::string name = pathToUtf8(file.filename());
     const std::size_t hex = spec_.identity.hexChars();
     const auto digestOk = [&name, hex] {
       return name.size() >= hex && std::all_of(
@@ -238,7 +238,7 @@ Expected<RequestArtifactCache::Hit, CacheError> RequestArtifactCache::WriteTrans
     impl.lock.reset();
     return unexpected(CacheError{std::move(reason)});
   };
-  const std::string what = "cache commit rejected " + detail::pathUtf8(impl.partial.filename()) + ": ";
+  const std::string what = "cache commit rejected " + pathToUtf8(impl.partial.filename()) + ": ";
   if (!impl.validator) {
     return fail(what + "no artifact validator configured");
   }

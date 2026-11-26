@@ -122,6 +122,7 @@ enum class FilePickerStatus { Selected, Cancelled, Unsupported, Error };
 struct FilePickerResult {
   FilePickerStatus status = FilePickerStatus::Cancelled;
   FilePickerMode mode = FilePickerMode::OpenFile;
+  /// UTF-8; open with `PJ::sdk::pathFromUtf8`.
   std::vector<std::string> paths;
   std::vector<std::string> display_names;
   std::string selected_filter_id;

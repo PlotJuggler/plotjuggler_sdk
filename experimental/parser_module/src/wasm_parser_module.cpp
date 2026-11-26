@@ -15,16 +15,22 @@
 #include <utility>
 #include <vector>
 
+#include "detail/library_loader.hpp"
 #include "detail/wasm_parser_module_state.hpp"
 #include "pj_base/parser_module_manifest.hpp"
 #include "pj_base/parser_module_wasm.hpp"
+#include "pj_base/sdk/platform.hpp"
 #include "pj_plugins/host/parser_module_claims.hpp"
 
 namespace PJ {
 namespace {
 
 Expected<std::vector<uint8_t>> readFile(std::string_view path, uint64_t maximum_bytes) {
-  std::ifstream input(std::string(path), std::ios::binary | std::ios::ate);
+  auto native = detail::pathFromUtf8Argument(path);
+  if (!native) {
+    return unexpected("wasm parser-module path is not valid UTF-8");
+  }
+  std::ifstream input(*native, std::ios::binary | std::ios::ate);
   if (!input) {
     return unexpected(std::string("cannot open wasm parser module: ") + std::string(path));
   }

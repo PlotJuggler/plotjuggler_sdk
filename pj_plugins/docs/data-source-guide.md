@@ -181,6 +181,8 @@ state transitions, host notifications, and `requestStop()` automatically.
 ```cpp
 #include <pj_base/sdk/data_source_patterns.hpp>
 
+#include <pj_base/sdk/platform.hpp>
+
 // File I/O and JSON parsing — use whatever libraries you prefer.
 // #include <fstream>
 // #include <my_json_lib.h>
@@ -211,8 +213,8 @@ class CsvFileLoader : public PJ::FileSourceBase {
   std::optional<double> parseToDouble(const std::string& value_str);
 
   PJ::Status importData() override {
-    // Open the file at path_.
-    std::ifstream file(path_);
+    // Open the file at path_ (UTF-8, as the host passes it).
+    std::ifstream file(PJ::sdk::pathFromUtf8(path_));
     if (!file) {
       return PJ::unexpected("cannot open " + path_);
     }
@@ -284,7 +286,12 @@ Key traits of `FileSourceBase`:
 - `progressFinish()` is called automatically after `importData()` returns —
   plugins should NOT call it themselves.
 - **Filepath contract**: the host passes `{"filepath":"/path/to/file", ...}`
-  via `loadConfig()`. Extract and preserve the `"filepath"` key.
+  via `loadConfig()`. Extract and preserve the `"filepath"` key. Every path in a
+  plugin config is UTF-8: open it with `PJ::sdk::pathFromUtf8()`
+  (`pj_base/sdk/platform.hpp`), never a narrow `std::ifstream(std::string)` or
+  `fopen`, which read the bytes in the ANSI code page on Windows. Turn a path back
+  into a string for config, text or a host call with `PJ::sdk::pathToUtf8()`, never
+  `path.string()`, which throws on Windows for a character the code page lacks.
 - **Layout replay**: when PlotJuggler replays a saved layout it rewrites `"filepath"` (and the
   `"filepath"` of each `__pj_fanout` child config) to the file it actually opens, so a moved or
   copied layout folder loads the data beside it. When that replaces a different absolute path with

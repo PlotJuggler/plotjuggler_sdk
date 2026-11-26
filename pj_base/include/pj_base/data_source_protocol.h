@@ -618,8 +618,9 @@ typedef struct PJ_data_source_vtable_t {
    * OLDER version of the plugin, which load_config must still accept. Top-level
    * keys starting with "_" belong to the host; the plugin must not define
    * its own. Keys the reference host writes:
-   *   "filepath"            — file sources: the file to import, rewritten
-   *                           on layout replay to the file actually opened.
+   *   "filepath"            — file sources: the file to import (UTF-8),
+   *                           rewritten on layout replay to the file
+   *                           actually opened.
    *   "_parser_config"      — string: the embedded parser dialog's config;
    *                           forward it as parser_config_json in
    *                           ensure_parser_binding (the host does not).

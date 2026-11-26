@@ -61,13 +61,21 @@ namespace PJ {
  * ## Config convention
  *
  * The host passes configuration via loadConfig() as a JSON string.
- * By convention, file importers receive an object containing a `"filepath"` key:
+ * By convention, file importers receive an object containing a `"filepath"` key.
+ * Every path the host puts in a plugin config is UTF-8. Open it with
+ * `PJ::sdk::pathFromUtf8()` (`pj_base/sdk/platform.hpp`), never with a narrow
+ * `std::ifstream(std::string)` or `fopen`: on Windows those read the bytes in the
+ * ANSI code page and miss a file whose path has non-ASCII characters.
  *
  * @code
  *   // In loadConfig():
  *   auto cfg = nlohmann::json::parse(config_json, nullptr, false);
  *   if (cfg.is_discarded()) return PJ::unexpected("invalid config JSON");
  *   filepath_ = cfg.value("filepath", std::string{});
+ *
+ *   // In importData():
+ *   std::ifstream file(PJ::sdk::pathFromUtf8(filepath_), std::ios::binary);
+ *   if (!file) return PJ::unexpected("cannot open " + filepath_);
  *
  *   // In saveConfig():
  *   return nlohmann::json{{"filepath", filepath_}}.dump();

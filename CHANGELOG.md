@@ -3,6 +3,27 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
+## [1.1.1]
+
+Host contract: unchanged (no floor impact).
+
+Fixed (Windows, paths with characters outside the ANSI code page, such as a Cyrillic user name in
+`%LOCALAPPDATA%`):
+
+- `getEnv` reads the variable as UTF-16 and returns UTF-8, and `userDataDir` builds its path from
+  the UTF-16 value. Both narrowed through the code page before, so the profile directory resolved
+  to a different, non-existent path. Non-Windows behaviour is unchanged. A path read with `getEnv`
+  must now be opened with `pathFromUtf8`: passed to a narrow API, a non-ASCII value opens the wrong
+  file on Windows.
+- `DataSourceLibrary`, `MessageParserLibrary`, `ToolboxLibrary`, `DialogLibrary` and
+  `WidgetLibrary` `load(std::string_view)` (and the `const char*` and `std::string` forwarders)
+  decode the string as UTF-8, as `NativeParserModule::load` already did. They read it in the code
+  page before. The `std::filesystem::path` overloads are unchanged.
+- The SDK's own path handling (request cache, file lock, durable writes, plugin catalog errors) goes
+  through two header-only helpers in `pj_base/sdk/platform.hpp`, `PJ::sdk::pathFromUtf8` and
+  `pathToUtf8`. The docs (`data_source_patterns.hpp`, the data-source guide, the plugin skill) state
+  that every path in a plugin config is UTF-8 and show opening it with `pathFromUtf8`.
+
 ## [1.1.0]
 
 Host contract: extended: PJ_widget_host_vtable_t::notify_config_changed (floor 1.1.0). The slot is

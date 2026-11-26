@@ -48,7 +48,7 @@ MessageParserLibrary& MessageParserLibrary::operator=(MessageParserLibrary&& oth
 }
 
 Expected<MessageParserLibrary> MessageParserLibrary::load(std::string_view path) {
-  return load(std::filesystem::path(path));
+  return detail::loadFromUtf8<MessageParserLibrary>(path);
 }
 
 Expected<MessageParserLibrary> MessageParserLibrary::load(const std::filesystem::path& path) {
@@ -99,8 +99,8 @@ Expected<MessageParserLibrary> MessageParserLibrary::loadFromHandleWithIdentity(
   }
 
   return MessageParserLibrary(
-      std::move(handle), vtable, detail::pathForLegacyAccessor(recorded_path.load_path),
-      detail::pathForLegacyAccessor(recorded_path.resolved_path));
+      std::move(handle), vtable, sdk::pathToUtf8(recorded_path.load_path),
+      sdk::pathToUtf8(recorded_path.resolved_path));
 }
 
 Expected<MessageParserLibrary> MessageParserLibrary::loadStatic(

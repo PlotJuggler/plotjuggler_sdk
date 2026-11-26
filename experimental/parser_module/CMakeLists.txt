@@ -107,6 +107,7 @@ else()
     PUBLIC
       pj_parser_module_host
     PRIVATE
+      pj_plugin_loader_detail  # detail/library_loader.hpp: pathFromUtf8Argument
       pj_wasmer_static
       Threads::Threads
       ${CMAKE_DL_LIBS}

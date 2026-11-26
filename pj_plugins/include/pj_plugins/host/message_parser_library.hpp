@@ -53,15 +53,15 @@ class MessageParserLibrary {
   MessageParserLibrary(const MessageParserLibrary&) = delete;
   MessageParserLibrary& operator=(const MessageParserLibrary&) = delete;
 
-  /// Load a plugin from @p path. Returns an error string on failure.
+  /// Load a plugin from @p path, UTF-8 on every platform. Returns an error string on failure.
   [[nodiscard]] static Expected<MessageParserLibrary> load(std::string_view path);
 
-  /// Preserve an unambiguous load call for existing narrow string paths.
+  /// Preserve an unambiguous load call for narrow paths (UTF-8).
   [[nodiscard]] static Expected<MessageParserLibrary> load(const char* path) {
     return load(std::string_view(path));
   }
 
-  /// Preserve an unambiguous load call for existing `std::string` paths.
+  /// Preserve an unambiguous load call for narrow paths (UTF-8).
   [[nodiscard]] static Expected<MessageParserLibrary> load(const std::string& path) {
     return load(std::string_view(path));
   }

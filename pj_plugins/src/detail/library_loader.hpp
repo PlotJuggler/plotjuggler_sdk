@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -23,17 +24,28 @@
 
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
+#include "pj_base/sdk/platform.hpp"
 
 namespace PJ::detail {
 
-/// Encode a native path for the legacy narrow `Library::path()` accessor.
-inline std::string pathForLegacyAccessor(const std::filesystem::path& path) {
-#if defined(_WIN32)
-  const auto utf8 = path.u8string();
-  return std::string(utf8.begin(), utf8.end());
-#else
-  return path.string();
-#endif
+/// Decode a UTF-8 path argument of a narrow `load()` overload. On Windows, bytes that are not valid UTF-8 make the
+/// conversion throw; `load()` reports them as an error instead.
+inline Expected<std::filesystem::path> pathFromUtf8Argument(std::string_view utf8) {
+  try {
+    return sdk::pathFromUtf8(utf8);
+  } catch (const std::system_error&) {
+    return unexpected(std::string("plugin path is not valid UTF-8"));
+  }
+}
+
+/// The body of every family's narrow `Library::load(std::string_view)`.
+template <class Library>
+Expected<Library> loadFromUtf8(std::string_view utf8) {
+  auto path = pathFromUtf8Argument(utf8);
+  if (!path) {
+    return unexpected(path.error());
+  }
+  return Library::load(*path);
 }
 
 /// The two immutable path spellings captured while a candidate still exists.
@@ -167,10 +179,10 @@ inline Expected<void> verifySymbolProvenance(
         return std::string("<unknown module>");
       }
       buffer.resize(length);
-      return pathForLegacyAccessor(std::filesystem::path(buffer));
+      return sdk::pathToUtf8(std::filesystem::path(buffer));
     };
     const std::string candidate_name =
-        candidate_path.load_path.empty() ? module_path(candidate) : pathForLegacyAccessor(candidate_path.load_path);
+        candidate_path.load_path.empty() ? module_path(candidate) : sdk::pathToUtf8(candidate_path.load_path);
     return unexpected(
         "symbol '" + std::string(symbol_name) + "' resolved from dependency '" + module_path(owner) +
         "', not candidate '" + candidate_name + "'");
