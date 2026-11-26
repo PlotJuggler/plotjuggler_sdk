@@ -165,6 +165,14 @@ the base class derives these extensions.
   through a parse; don't rebuild descriptor pools per message.
 - **Return diagnostic-quality errors.** `PJ::unexpected("line 5: unexpected token
   at offset 42")` beats `"parse failed"`.
+- **Field descriptions: bound topic only, set once (SDK 1.2.0).**
+  `writeHost().setFieldMetadata(field, json)` attaches a document (build it with
+  `PJ::sdk::MetadataDocumentBuilder`; its `description` is the field's tooltip)
+  and replaces the previous one. Call it after `ensureField()`, not per message,
+  and keep it short (PlotJuggler caps a document at 64 KB). A field of another
+  topic is rejected, and there is no topic-level call: the topic belongs to the
+  source. An older host returns an error: ignore it or check
+  `supportsFieldMetadata()`.
 
 ## Configuration dialog
 

@@ -136,6 +136,13 @@ than row-by-row `appendRecord`.
 - **Object writes are tail-slot-gated.** `registerObjectTopic()` /
   `pushOwnedObject()` may be absent on an older host; check the returned
   `Expected`/`Status` and degrade gracefully.
+- **Descriptions replace, they don't merge (SDK 1.2.0).**
+  `toolboxHost().setFieldMetadata(field, json)` / `setTopicMetadata(topic, json)`
+  replace the whole document; build it with `PJ::sdk::MetadataDocumentBuilder`
+  and its `description` shows as the row's tooltip. Keep it short (PlotJuggler
+  caps a document at 64 KB). Also tail-slot-gated: ignore the error or check
+  `supportsFieldMetadata()` / `supportsTopicMetadata()`. `ToolboxTestStore`
+  reads them back with `fieldMetadata()` / `topicMetadata()`.
 
 ## Emitting objects (images, clouds, …)
 

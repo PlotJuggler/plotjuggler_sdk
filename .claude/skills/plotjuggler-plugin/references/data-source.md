@@ -193,6 +193,13 @@ extension (`pluginExtension(PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1)` returning a liv
   `PJ::TypedNull` to create the column on its first row) as the field value.
 - **Timestamps: ns since epoch** (see SKILL.md rule 3). A row counter is not a
   timestamp.
+- **Descriptions replace, they don't merge (SDK 1.2.0).**
+  `writeHost().setFieldMetadata(field, json)` / `setTopicMetadata(topic, json)`
+  replace the whole document; build it with `PJ::sdk::MetadataDocumentBuilder`
+  (`pj_base/sdk/metadata_document.hpp`) and its `description` shows as the row's
+  tooltip. Set it once after `ensureField()`/`ensureTopic()`, not per record, and
+  keep it short (PlotJuggler caps a document at 64 KB). An older host returns an
+  error: ignore it or check `supportsFieldMetadata()` / `supportsTopicMetadata()`.
 
 ## Embedding a configuration dialog
 
