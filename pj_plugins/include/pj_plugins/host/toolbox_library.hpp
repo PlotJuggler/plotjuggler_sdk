@@ -53,15 +53,16 @@ class ToolboxLibrary {
   ToolboxLibrary(const ToolboxLibrary&) = delete;
   ToolboxLibrary& operator=(const ToolboxLibrary&) = delete;
 
-  /// Load a plugin from @p path. Returns an error string on failure.
+  /// Load a plugin from the UTF-8 @p path (decoded as UTF-8 on every platform, including
+  /// Windows). Returns an error string on failure.
   [[nodiscard]] static Expected<ToolboxLibrary> load(std::string_view path);
 
-  /// Preserve an unambiguous load call for existing narrow string paths.
+  /// Preserve an unambiguous load call for existing narrow string paths (UTF-8).
   [[nodiscard]] static Expected<ToolboxLibrary> load(const char* path) {
     return load(std::string_view(path));
   }
 
-  /// Preserve an unambiguous load call for existing `std::string` paths.
+  /// Preserve an unambiguous load call for existing `std::string` paths (UTF-8).
   [[nodiscard]] static Expected<ToolboxLibrary> load(const std::string& path) {
     return load(std::string_view(path));
   }

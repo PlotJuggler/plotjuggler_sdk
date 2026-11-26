@@ -30,15 +30,16 @@ class DialogLibrary {
   DialogLibrary(const DialogLibrary&) = delete;
   DialogLibrary& operator=(const DialogLibrary&) = delete;
 
-  /// Load a dialog plugin from @p path. Returns an error string on failure.
+  /// Load a dialog plugin from the UTF-8 @p path (decoded as UTF-8 on every platform, including
+  /// Windows). Returns an error string on failure.
   [[nodiscard]] static Expected<DialogLibrary> load(std::string_view path);
 
-  /// Preserve an unambiguous load call for existing narrow string paths.
+  /// Preserve an unambiguous load call for existing narrow string paths (UTF-8).
   [[nodiscard]] static Expected<DialogLibrary> load(const char* path) {
     return load(std::string_view(path));
   }
 
-  /// Preserve an unambiguous load call for existing `std::string` paths.
+  /// Preserve an unambiguous load call for existing `std::string` paths (UTF-8).
   [[nodiscard]] static Expected<DialogLibrary> load(const std::string& path) {
     return load(std::string_view(path));
   }

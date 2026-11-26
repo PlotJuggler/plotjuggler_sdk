@@ -3,9 +3,9 @@
  * @brief Qt-free, header-only platform helpers for plugins and core.
  *
  * Provides small cross-platform utilities that plugins would otherwise need
- * to reimplement (and sometimes do incorrectly): reading environment
- * variables without tripping MSVC's C4996 deprecation warning, and locating
- * the per-user data directory that mirrors Qt's
+ * to reimplement (and sometimes do incorrectly): converting between UTF-8
+ * strings and std::filesystem::path, reading environment variables, and
+ * locating the per-user data directory that mirrors Qt's
  * QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation).
  *
  * Header-only so plugins linked against pj_base pick it up via CPM without
@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <dlfcn.h>
@@ -35,24 +36,84 @@
 
 namespace PJ::sdk {
 
-/// Read an environment variable.
+/// Decode @p utf8 as a filesystem path.
 ///
-/// Returns std::nullopt if the variable is unset or empty. Wraps std::getenv
-/// with a local MSVC C4996 suppression so the call compiles under /W4 /WX
-/// without forcing _CRT_SECURE_NO_WARNINGS project-wide.
+/// Use this for every path that reaches a plugin as a narrow string (host config
+/// such as `"filepath"`, a descriptor's `local_path_utf8`, a dialog field). On
+/// Windows, `std::filesystem::path(std::string)`, `std::ifstream(std::string)` and
+/// `fopen` read those bytes in the active ANSI code page, so a name with
+/// non-ASCII characters (a Cyrillic user name in `%LOCALAPPDATA%`) opens a
+/// different file or none. On Windows, bytes that are not valid UTF-8 make this
+/// throw `std::system_error`. POSIX paths are bytes, so the result is identical to
+/// `std::filesystem::path(utf8)`.
+[[nodiscard]] inline std::filesystem::path pathFromUtf8(std::string_view utf8) {
+  return std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(utf8.data()), utf8.size()));
+}
+
+/// Encode @p path as UTF-8, for error text, config values and host calls.
+///
+/// Use this instead of `path.string()`: on Windows that narrows through the
+/// active ANSI code page and throws `std::system_error` for a character the code
+/// page cannot represent. On POSIX the result is the bytes `string()` returns.
+[[nodiscard]] inline std::string pathToUtf8(const std::filesystem::path& path) {
+  const std::u8string utf8 = path.u8string();
+  return {utf8.begin(), utf8.end()};
+}
+
+#if defined(_WIN32)
+namespace detail {
+
+/// An environment variable as UTF-16, read through the Win32 API so no code page
+/// is involved. std::nullopt when unset or empty.
+inline std::optional<std::wstring> getEnvWide(const char* name) {
+  const std::wstring wide_name = pathFromUtf8(name).native();
+  std::wstring value(256, L'\0');
+  for (;;) {
+    const DWORD size = ::GetEnvironmentVariableW(wide_name.c_str(), value.data(), static_cast<DWORD>(value.size()));
+    if (size == 0) {
+      return std::nullopt;
+    }
+    if (size < value.size()) {
+      value.resize(size);
+      return value;
+    }
+    value.resize(size);  // buffer too small: size is the length needed, terminator included
+  }
+}
+
+/// UTF-16 to UTF-8; an unpaired surrogate becomes U+FFFD instead of an error.
+inline std::string wideToUtf8(const std::wstring& wide) {
+  const int size =
+      ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+  if (size <= 0) {
+    return {};
+  }
+  std::string utf8(static_cast<std::size_t>(size), '\0');
+  ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), utf8.data(), size, nullptr, nullptr);
+  return utf8;
+}
+
+}  // namespace detail
+#endif
+
+/// Read an environment variable; the value is UTF-8 on every platform.
+///
+/// Returns std::nullopt if the variable is unset or empty. On Windows the value
+/// is read as UTF-16 (GetEnvironmentVariableW) and converted, so non-ASCII
+/// characters survive; open a path taken from it with pathFromUtf8().
 inline std::optional<std::string> getEnv(const char* name) {
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#endif
+#if defined(_WIN32)
+  if (auto wide = detail::getEnvWide(name)) {
+    return detail::wideToUtf8(*wide);
+  }
+  return std::nullopt;
+#else
   const char* value = std::getenv(name);
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif
   if (value == nullptr || *value == '\0') {
     return std::nullopt;
   }
   return std::string{value};
+#endif
 }
 
 /// Return the per-user data directory used by PlotJuggler and its plugins.
@@ -61,7 +122,8 @@ inline std::optional<std::string> getEnv(const char* name) {
 /// so plugins that need on-disk state (script libraries, cached downloads,
 /// etc.) share the same root as the Qt-linked host. Falls back to the
 /// system temp directory when no suitable environment variable is set, so
-/// the returned path is never empty.
+/// the returned path is never empty. A non-ASCII profile path survives on
+/// Windows: the variables are read as UTF-16, never through a narrow string.
 ///
 /// Platform resolution:
 /// - Windows: `%LOCALAPPDATA%/plotjuggler`, then `%USERPROFILE%/AppData/Local/plotjuggler`
@@ -70,10 +132,11 @@ inline std::optional<std::string> getEnv(const char* name) {
 inline std::filesystem::path userDataDir() {
   namespace fs = std::filesystem;
 #if defined(_WIN32)
-  if (auto v = getEnv("LOCALAPPDATA")) {
+  // Built from the UTF-16 value: no narrow string, so a non-ASCII profile path survives.
+  if (auto v = detail::getEnvWide("LOCALAPPDATA")) {
     return fs::path(*v) / "plotjuggler";
   }
-  if (auto v = getEnv("USERPROFILE")) {
+  if (auto v = detail::getEnvWide("USERPROFILE")) {
     return fs::path(*v) / "AppData" / "Local" / "plotjuggler";
   }
 #elif defined(__APPLE__)

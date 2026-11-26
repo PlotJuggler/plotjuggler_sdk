@@ -31,7 +31,8 @@ class MyCsvSource : public PJ::FileSourceBase {
 
   std::string saveConfig() const override { return config_; }
   PJ::Status  loadConfig(std::string_view json) override {
-    config_ = std::string(json);       // host injects {"filepath":"/path", ...} here
+    // The host injects {"filepath":"/path", ...} here. Paths are UTF-8: open them with PJ::sdk::pathFromUtf8.
+    config_ = std::string(json);
     return PJ::okStatus();
   }
 

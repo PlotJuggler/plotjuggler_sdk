@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -23,17 +24,23 @@
 
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
+#include "pj_base/sdk/platform.hpp"
 
 namespace PJ::detail {
 
-/// Encode a native path for the legacy narrow `Library::path()` accessor.
+/// Encode a native path for the legacy narrow `Library::path()` accessor (UTF-8).
 inline std::string pathForLegacyAccessor(const std::filesystem::path& path) {
-#if defined(_WIN32)
-  const auto utf8 = path.u8string();
-  return std::string(utf8.begin(), utf8.end());
-#else
-  return path.string();
-#endif
+  return sdk::pathToUtf8(path);
+}
+
+/// Decode a UTF-8 path argument of a narrow `load()` overload. On Windows, bytes that are not valid UTF-8 make the
+/// conversion throw; `load()` reports them as an error instead.
+inline Expected<std::filesystem::path> pathFromUtf8Argument(std::string_view utf8) {
+  try {
+    return sdk::pathFromUtf8(utf8);
+  } catch (const std::system_error&) {
+    return unexpected(std::string("plugin path is not valid UTF-8"));
+  }
 }
 
 /// The two immutable path spellings captured while a candidate still exists.

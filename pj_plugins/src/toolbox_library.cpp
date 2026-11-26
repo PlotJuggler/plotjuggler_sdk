@@ -48,7 +48,11 @@ ToolboxLibrary& ToolboxLibrary::operator=(ToolboxLibrary&& other) noexcept {
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::load(std::string_view path) {
-  return load(std::filesystem::path(path));
+  auto native = detail::pathFromUtf8Argument(path);
+  if (!native) {
+    return unexpected(native.error());
+  }
+  return load(*native);
 }
 
 Expected<ToolboxLibrary> ToolboxLibrary::load(const std::filesystem::path& path) {

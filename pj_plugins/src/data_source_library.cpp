@@ -48,7 +48,11 @@ DataSourceLibrary& DataSourceLibrary::operator=(DataSourceLibrary&& other) noexc
 }
 
 Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
-  return load(std::filesystem::path(path));
+  auto native = detail::pathFromUtf8Argument(path);
+  if (!native) {
+    return unexpected(native.error());
+  }
+  return load(*native);
 }
 
 Expected<DataSourceLibrary> DataSourceLibrary::load(const std::filesystem::path& path) {

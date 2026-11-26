@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <pj_base/sdk/platform.hpp>
 #include <pj_base/sdk/source/origin.hpp>
 #include <pj_base/sdk/source/provider_job.hpp>
 #include <pj_base/sdk/source/request_cache.hpp>
@@ -36,8 +37,10 @@ int main() {
   di::SettlementLatch latch;
   latch.settle(true, "probe");
 
+  const std::string cache_path = descriptor ? PJ::sdk::pathToUtf8(cache.pathFor(identity)) : "-";
+
   std::printf(
       "origin=%s identity=%s path=%s settled=%d\n", origin ? di::originKey(*origin).c_str() : "-", identity.c_str(),
-      descriptor ? cache.pathFor(identity).string().c_str() : "-", latch.settled() ? 1 : 0);
+      cache_path.c_str(), latch.settled() ? 1 : 0);
   return 0;
 }
