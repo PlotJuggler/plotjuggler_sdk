@@ -21,7 +21,9 @@ Fixed (Windows, paths with characters outside the ANSI code page, such as a Cyri
 
 - `getEnv` reads the variable as UTF-16 and returns UTF-8, and `userDataDir` builds its path from
   the UTF-16 value. Both narrowed through the code page before, so the profile directory resolved
-  to a different, non-existent path. Non-Windows behaviour is unchanged.
+  to a different, non-existent path. Non-Windows behaviour is unchanged. A path read with `getEnv`
+  must now be opened with `pathFromUtf8`: passed to a narrow API, a non-ASCII value opens the wrong
+  file on Windows.
 - `DataSourceLibrary`, `MessageParserLibrary`, `ToolboxLibrary`, `DialogLibrary` and
   `WidgetLibrary` `load(std::string_view)` (and the `const char*` and `std::string` forwarders)
   decode the string as UTF-8, as `NativeParserModule::load` already did. They read it in the code

@@ -50,14 +50,36 @@ namespace PJ::sdk {
   return std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(utf8.data()), utf8.size()));
 }
 
+#if defined(_WIN32)
+namespace detail {
+
+/// UTF-16 to UTF-8; an unpaired surrogate becomes U+FFFD instead of an error.
+inline std::string wideToUtf8(const std::wstring& wide) {
+  const int size =
+      ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+  if (size <= 0) {
+    return {};
+  }
+  std::string utf8(static_cast<std::size_t>(size), '\0');
+  ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), utf8.data(), size, nullptr, nullptr);
+  return utf8;
+}
+
+}  // namespace detail
+#endif
+
 /// Encode @p path as UTF-8, for error text, config values and host calls.
 ///
 /// Use this instead of `path.string()`: on Windows that narrows through the
 /// active ANSI code page and throws `std::system_error` for a character the code
-/// page cannot represent. On POSIX the result is the bytes `string()` returns.
+/// page cannot represent. An unpaired UTF-16 surrogate (NTFS allows one in a name)
+/// becomes U+FFFD. On POSIX the result is the bytes `string()` returns.
 [[nodiscard]] inline std::string pathToUtf8(const std::filesystem::path& path) {
-  const std::u8string utf8 = path.u8string();
-  return {utf8.begin(), utf8.end()};
+#if defined(_WIN32)
+  return detail::wideToUtf8(path.native());  // never throws, unlike path.u8string() on a lone surrogate
+#else
+  return path.string();
+#endif
 }
 
 #if defined(_WIN32)
@@ -81,26 +103,13 @@ inline std::optional<std::wstring> getEnvWide(const char* name) {
   }
 }
 
-/// UTF-16 to UTF-8; an unpaired surrogate becomes U+FFFD instead of an error.
-inline std::string wideToUtf8(const std::wstring& wide) {
-  const int size =
-      ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
-  if (size <= 0) {
-    return {};
-  }
-  std::string utf8(static_cast<std::size_t>(size), '\0');
-  ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), utf8.data(), size, nullptr, nullptr);
-  return utf8;
-}
-
 }  // namespace detail
 #endif
 
 /// Read an environment variable; the value is UTF-8 on every platform.
 ///
-/// Returns std::nullopt if the variable is unset or empty. On Windows the value
-/// is read as UTF-16 (GetEnvironmentVariableW) and converted, so non-ASCII
-/// characters survive; open a path taken from it with pathFromUtf8().
+/// Returns std::nullopt if the variable is unset or empty. Open a path taken from
+/// it with pathFromUtf8().
 inline std::optional<std::string> getEnv(const char* name) {
 #if defined(_WIN32)
   if (auto wide = detail::getEnvWide(name)) {
@@ -132,7 +141,6 @@ inline std::optional<std::string> getEnv(const char* name) {
 inline std::filesystem::path userDataDir() {
   namespace fs = std::filesystem;
 #if defined(_WIN32)
-  // Built from the UTF-16 value: no narrow string, so a non-ASCII profile path survives.
   if (auto v = detail::getEnvWide("LOCALAPPDATA")) {
     return fs::path(*v) / "plotjuggler";
   }

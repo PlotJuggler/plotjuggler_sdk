@@ -404,13 +404,13 @@ std::string_view toString(PluginFamily family) noexcept {
 
 Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
-    return unexpected(fmt::format("not a platform plugin DSO: {}", detail::pathForLegacyAccessor(dso_path)));
+    return unexpected(fmt::format("not a platform plugin DSO: {}", sdk::pathToUtf8(dso_path)));
   }
 
   detail::LibraryPathIdentity recorded_path;
   auto raw_handle = detail::loadLibraryHandle(dso_path, &recorded_path);
   if (!raw_handle) {
-    return unexpected(fmt::format("{}: {}", detail::pathForLegacyAccessor(dso_path), raw_handle.error()));
+    return unexpected(fmt::format("{}: {}", sdk::pathToUtf8(dso_path), raw_handle.error()));
   }
   return inspectPluginDso(detail::adoptLibraryHandle(*raw_handle), recorded_path.load_path);
 }
@@ -418,11 +418,9 @@ Expected<PluginDescriptor> inspectPluginDso(const std::filesystem::path& dso_pat
 Expected<PluginDescriptor> inspectPluginDso(
     const std::shared_ptr<void>& handle, const std::filesystem::path& dso_path) {
   if (!hasDsoSuffix(dso_path)) {
-    return unexpected(fmt::format("not a platform plugin DSO: {}", detail::pathForLegacyAccessor(dso_path)));
+    return unexpected(fmt::format("not a platform plugin DSO: {}", sdk::pathToUtf8(dso_path)));
   }
-  auto with_path = [&](const std::string& error) {
-    return fmt::format("{}: {}", detail::pathForLegacyAccessor(dso_path), error);
-  };
+  auto with_path = [&](const std::string& error) { return fmt::format("{}: {}", sdk::pathToUtf8(dso_path), error); };
   if (handle == nullptr) {
     return unexpected(with_path("library not loaded"));
   }
@@ -491,10 +489,10 @@ Expected<std::vector<PluginFamily>> exportedPluginFamilies(
 Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory) {
   std::error_code ec;
   if (!std::filesystem::exists(directory, ec)) {
-    return unexpected(fmt::format("plugin directory not found: {}", detail::pathForLegacyAccessor(directory)));
+    return unexpected(fmt::format("plugin directory not found: {}", sdk::pathToUtf8(directory)));
   }
   if (!std::filesystem::is_directory(directory, ec)) {
-    return unexpected(fmt::format("plugin path is not a directory: {}", detail::pathForLegacyAccessor(directory)));
+    return unexpected(fmt::format("plugin path is not a directory: {}", sdk::pathToUtf8(directory)));
   }
 
   PluginScanResult result;

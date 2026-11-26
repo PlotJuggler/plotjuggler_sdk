@@ -90,11 +90,7 @@ WidgetLibrary& WidgetLibrary::operator=(WidgetLibrary&& other) noexcept {
 }
 
 Expected<WidgetLibrary> WidgetLibrary::load(std::string_view path) {
-  auto native = detail::pathFromUtf8Argument(path);
-  if (!native) {
-    return unexpected(native.error());
-  }
-  return load(*native);
+  return detail::loadFromUtf8<WidgetLibrary>(path);
 }
 
 Expected<WidgetLibrary> WidgetLibrary::load(const std::filesystem::path& path) {
@@ -138,7 +134,7 @@ Expected<WidgetLibrary> WidgetLibrary::loadFromHandleWithIdentity(
     return unexpected(status.error());
   }
   pinForProcessLifetime(handle);
-  return WidgetLibrary(std::move(handle), vtable, detail::pathForLegacyAccessor(recorded_path.load_path));
+  return WidgetLibrary(std::move(handle), vtable, sdk::pathToUtf8(recorded_path.load_path));
 }
 
 Expected<WidgetLibrary> WidgetLibrary::loadStatic(const PJ_widget_vtable_t* vtable) {

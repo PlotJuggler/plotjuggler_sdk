@@ -48,11 +48,7 @@ DataSourceLibrary& DataSourceLibrary::operator=(DataSourceLibrary&& other) noexc
 }
 
 Expected<DataSourceLibrary> DataSourceLibrary::load(std::string_view path) {
-  auto native = detail::pathFromUtf8Argument(path);
-  if (!native) {
-    return unexpected(native.error());
-  }
-  return load(*native);
+  return detail::loadFromUtf8<DataSourceLibrary>(path);
 }
 
 Expected<DataSourceLibrary> DataSourceLibrary::load(const std::filesystem::path& path) {
@@ -105,8 +101,8 @@ Expected<DataSourceLibrary> DataSourceLibrary::loadFromHandleWithIdentity(
   }
 
   return DataSourceLibrary(
-      std::move(handle), vtable, detail::pathForLegacyAccessor(recorded_path.load_path),
-      detail::pathForLegacyAccessor(recorded_path.resolved_path));
+      std::move(handle), vtable, sdk::pathToUtf8(recorded_path.load_path),
+      sdk::pathToUtf8(recorded_path.resolved_path));
 }
 
 Expected<DataSourceLibrary> DataSourceLibrary::loadStatic(

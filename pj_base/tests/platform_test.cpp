@@ -112,6 +112,14 @@ TEST(PathUtf8Test, AsciiAndEmptyAreUnchanged) {
   EXPECT_EQ(pathToUtf8(std::filesystem::path{}), "");
 }
 
+#if defined(_WIN32)
+TEST(PathUtf8Test, UnpairedSurrogateBecomesReplacementCharacter) {
+  // NTFS allows a name that is not valid UTF-16; encoding it must not throw.
+  const std::filesystem::path path(std::wstring{L'a', static_cast<wchar_t>(0xD800)});
+  EXPECT_EQ(pathToUtf8(path), "a\xEF\xBF\xBD");
+}
+#endif
+
 TEST(UserDataDirTest, EndsWithPlotjuggler) {
   auto dir = userDataDir();
   EXPECT_EQ(dir.filename(), "plotjuggler");

@@ -288,7 +288,20 @@ TEST_F(PluginCatalogTest, UnicodeExtensionPathLoadsOnWindows) {
   auto library = DataSourceLibrary::load(plugin_path);
   ASSERT_TRUE(library.has_value()) << library.error();
   EXPECT_TRUE(library->valid());
+
+  // The narrow overloads take UTF-8, not the ANSI code page.
+  auto narrow = DataSourceLibrary::load(sdk::pathToUtf8(plugin_path));
+  ASSERT_TRUE(narrow.has_value()) << narrow.error();
+  EXPECT_TRUE(narrow->valid());
 }
+
+#if defined(_WIN32)
+TEST_F(PluginCatalogTest, NarrowLoadReportsInvalidUtf8AsAnError) {
+  auto library = DataSourceLibrary::load(std::string_view("plugin-\xff.dll"));
+  ASSERT_FALSE(library.has_value());
+  EXPECT_NE(library.error().find("not valid UTF-8"), std::string::npos) << library.error();
+}
+#endif
 
 TEST_F(PluginCatalogTest, AlreadyOpenHandleSupportsInspectionLoadingAndFamilyQuery) {
   const std::filesystem::path plugin_path = PJ_MOCK_DATA_SOURCE_PLUGIN_PATH;
