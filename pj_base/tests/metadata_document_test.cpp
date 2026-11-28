@@ -17,6 +17,13 @@ TEST(MetadataDocumentBuilderTest, DescriptionUsesCanonicalKey) {
   EXPECT_EQ(MetadataDocumentBuilder().description("Vehicle speed").build(), R"({"description":"Vehicle speed"})");
 }
 
+TEST(MetadataDocumentBuilderTest, UnitUsesCanonicalKey) {
+  EXPECT_EQ(kUnitMetadataKey, "unit");
+  EXPECT_EQ(
+      MetadataDocumentBuilder().description("Vehicle speed").unit("m/s").build(),
+      R"({"description":"Vehicle speed","unit":"m/s"})");
+}
+
 TEST(MetadataDocumentBuilderTest, KeysAreLexicographicAndLaterValueReplaces) {
   const std::string json =
       MetadataDocumentBuilder().string("unit", "m/s").description("first").description("second").build();

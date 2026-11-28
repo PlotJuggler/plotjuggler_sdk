@@ -93,6 +93,8 @@ PJ_toolbox_host_t makeToolboxHost(ToolboxState* state) {
       .acquire_catalog_snapshot_v2 = nullptr,
       .set_field_metadata = nullptr,
       .set_topic_metadata = nullptr,
+      .get_field_metadata = nullptr,
+      .get_topic_metadata = nullptr,
   };
   return PJ_toolbox_host_t{.ctx = state, .vtable = &vtable};
 }

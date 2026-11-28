@@ -15,8 +15,13 @@ namespace PJ::sdk {
 /// @since 1.2.0
 inline constexpr std::string_view kDescriptionMetadataKey = "description";
 
+/// Canonical field-metadata key: the unit of the field's values, such as "m/s" or "degC".
+/// @since 1.2.0
+inline constexpr std::string_view kUnitMetadataKey = "unit";
+
 /// Builds the JSON object that the `setFieldMetadata()` and `setTopicMetadata()` of `SourceWriteHostView`,
-/// `ParserWriteHostView` and `ToolboxHostView` take, for a field or a topic alike.
+/// `ParserWriteHostView` and `ToolboxHostView` take, for a field or a topic alike: a flat object of string values,
+/// the only shape the host accepts.
 ///
 /// The host replaces the whole document on every call, so set every key before `build()`. Keys are emitted in
 /// lexicographic order; setting a key again replaces its value. An empty builder yields "{}", which clears the
@@ -29,6 +34,12 @@ class MetadataDocumentBuilder {
   /// @since 1.2.0
   MetadataDocumentBuilder& description(std::string_view text) {
     return string(kDescriptionMetadataKey, text);
+  }
+
+  /// Set the canonical `unit` key.
+  /// @since 1.2.0
+  MetadataDocumentBuilder& unit(std::string_view unit) {
+    return string(kUnitMetadataKey, unit);
   }
 
   /// Add or replace a custom string field. The host keeps keys it does not display.

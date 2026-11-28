@@ -29,6 +29,21 @@ TEST(ToolboxTestStoreTest, KeepsFieldAndTopicMetadataPerHandle) {
   EXPECT_TRUE(store.topicMetadata(PJ_topic_handle_t{2}).empty());
 }
 
+TEST(ToolboxTestStoreTest, ReadsMetadataBackThroughTheHostView) {
+  ToolboxTestStore store;
+  const sdk::ToolboxHostView view(store.makeHost());
+  ASSERT_TRUE(view.supportsMetadataRead());
+
+  const PJ_field_handle_t field{.topic = {1}, .id = 3};
+  const std::string doc = sdk::MetadataDocumentBuilder().description("Vehicle speed").unit("m/s").build();
+  ASSERT_TRUE(view.setFieldMetadata(field, doc));
+  ASSERT_TRUE(view.setTopicMetadata(PJ_topic_handle_t{1}, R"({"description":"IMU"})"));
+
+  EXPECT_EQ(view.fieldMetadata(field).value(), doc);
+  EXPECT_EQ(view.topicMetadata(PJ_topic_handle_t{1}).value(), R"({"description":"IMU"})");
+  EXPECT_EQ(view.fieldMetadata(PJ_field_handle_t{.topic = {1}, .id = 4}).value(), "");
+}
+
 TEST(ToolboxTestStoreTest, SetReplacesAndEmptyTextClears) {
   ToolboxTestStore store;
   const sdk::ToolboxHostView view(store.makeHost());

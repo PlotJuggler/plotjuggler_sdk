@@ -329,6 +329,68 @@ TEST(PluginDataApiTest, ToolboxHostViewRejectsMetadataOnOlderHost) {
   EXPECT_EQ(recorder.calls, 0);
 }
 
+namespace {
+struct MetadataSource {
+  std::string field_doc;
+  std::string topic_doc;
+  uint32_t last_field_id = 0;
+};
+
+bool toolboxGetFieldMetadataStub(void* ctx, PJ_field_handle_t field, PJ_string_view_t* out, PJ_error_t*) noexcept {
+  auto* source = static_cast<MetadataSource*>(ctx);
+  source->last_field_id = field.id;
+  *out = PJ_string_view_t{source->field_doc.data(), source->field_doc.size()};
+  return true;
+}
+
+bool toolboxGetTopicMetadataStub(void* ctx, PJ_topic_handle_t, PJ_string_view_t* out, PJ_error_t*) noexcept {
+  auto* source = static_cast<MetadataSource*>(ctx);
+  *out = PJ_string_view_t{source->topic_doc.data(), source->topic_doc.size()};
+  return true;
+}
+}  // namespace
+
+TEST(PluginDataApiTest, ToolboxHostViewReadsMetadataIntoAnOwnedCopy) {
+  MetadataSource source{.field_doc = R"({"unit":"m/s"})", .topic_doc = R"({"description":"IMU"})"};
+  const PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_toolbox_host_vtable_t),
+      .get_field_metadata = toolboxGetFieldMetadataStub,
+      .get_topic_metadata = toolboxGetTopicMetadataStub,
+  };
+  sdk::ToolboxHostView view(PJ_toolbox_host_t{.ctx = &source, .vtable = &vtable});
+
+  ASSERT_TRUE(view.supportsMetadataRead());
+  auto field_doc = view.fieldMetadata(PJ_field_handle_t{.topic = {1}, .id = 7});
+  ASSERT_TRUE(field_doc);
+  EXPECT_EQ(source.last_field_id, 7U);
+  source.field_doc = "overwritten by the next read";  // the host's view dies; the copy must not
+  EXPECT_EQ(*field_doc, R"({"unit":"m/s"})");
+  auto topic_doc = view.topicMetadata(PJ_topic_handle_t{3});
+  ASSERT_TRUE(topic_doc);
+  EXPECT_EQ(*topic_doc, R"({"description":"IMU"})");
+}
+
+TEST(PluginDataApiTest, ToolboxHostViewRejectsMetadataReadOnOlderHost) {
+  MetadataSource source;
+  const PJ_toolbox_host_vtable_t vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = offsetof(PJ_toolbox_host_vtable_t, get_field_metadata),
+      .set_field_metadata = sourceSetFieldMetadataStub,
+      .set_topic_metadata = sourceSetTopicMetadataStub,
+  };
+  sdk::ToolboxHostView view(PJ_toolbox_host_t{.ctx = &source, .vtable = &vtable});
+
+  EXPECT_TRUE(view.supportsFieldMetadata());
+  EXPECT_FALSE(view.supportsMetadataRead());
+  auto field_doc = view.fieldMetadata(PJ_field_handle_t{});
+  EXPECT_FALSE(field_doc);
+  EXPECT_NE(field_doc.error().find("get_field_metadata"), std::string::npos);
+  auto topic_doc = view.topicMetadata(PJ_topic_handle_t{3});
+  EXPECT_FALSE(topic_doc);
+  EXPECT_NE(topic_doc.error().find("get_topic_metadata"), std::string::npos);
+}
+
 TEST(PluginDataApiTest, ParserWriteHostViewCurrentBaselineStillWorks) {
   TailSlotRecorder recorder;
   const PJ_parser_write_host_vtable_t vtable = {

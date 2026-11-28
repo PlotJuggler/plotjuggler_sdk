@@ -295,9 +295,10 @@ if (!status) {
 ### Field descriptions
 
 A parser can explain what a field means. `setFieldMetadata()` (SDK 1.2.0)
-attaches a JSON object to a field of the bound topic, and the host shows its
-`description` key as a tooltip on the field's row in the dataset list. Set it
-once, after `ensureField()`, not on every parse:
+attaches a metadata document to a field of the bound topic: a flat JSON object
+of string values. Two keys are canonical: `description`, which the host shows
+as a tooltip on the field's row in the dataset list, and `unit`. Set it once
+per load, after `ensureField()`, not on every parse:
 
 ```cpp
 #include <pj_base/sdk/metadata_document.hpp>
@@ -306,23 +307,25 @@ auto temp_field = writeHost().ensureField("temperature", PJ::PrimitiveType::kFlo
 if (temp_field) {
   // Optional: an older host returns an error, which the parser can ignore.
   (void)writeHost().setFieldMetadata(
-      *temp_field, PJ::sdk::MetadataDocumentBuilder().description("Air temperature [°C]").build());
+      *temp_field, PJ::sdk::MetadataDocumentBuilder().description("Air temperature").unit("degC").build());
 }
 ```
 
+- A reload starts without any document, and the parser sets them again as it
+  meets the fields. A reload that fails keeps the previous ones.
 - Each call replaces the whole document, so send every key each time. An
-  empty string or `{}` clears it.
-- The host keeps keys it does not know. Only `description` is shown.
-- The host rejects text that is not a JSON object, or that is too large.
-  PlotJuggler currently accepts at most 64 KB, nesting depth 32 and 16384
-  values per document. Keep a description to a sentence or two: it is shown
-  as a tooltip.
+  empty string or an object with no key clears it.
+- The host keeps keys it does not know.
+- The host rejects a value that is not a string and a document above its size
+  bound (PlotJuggler accepts 4 KiB). Keep a description to a sentence or two:
+  it is shown as a tooltip.
 - Only fields of the bound topic: a handle of another topic is rejected.
   There is no topic-level call, because the topic belongs to the data source
   that created it.
 - On a host older than 1.2.0 the call returns an error. Check
   `supportsFieldMetadata()` first, or ignore the error; the plugin keeps its
   `min_sdk_required`.
+
 
 ## Optional Features
 

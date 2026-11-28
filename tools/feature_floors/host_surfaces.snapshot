@@ -126,6 +126,8 @@ PJ_toolbox_host_vtable_t::append_record
 PJ_toolbox_host_vtable_t::create_data_source
 PJ_toolbox_host_vtable_t::ensure_field
 PJ_toolbox_host_vtable_t::ensure_topic
+PJ_toolbox_host_vtable_t::get_field_metadata
+PJ_toolbox_host_vtable_t::get_topic_metadata
 PJ_toolbox_host_vtable_t::push_owned_object
 PJ_toolbox_host_vtable_t::read_series_arrow
 PJ_toolbox_host_vtable_t::register_object_topic

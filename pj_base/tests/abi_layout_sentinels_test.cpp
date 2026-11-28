@@ -295,7 +295,11 @@ static_assert(
     offsetof(PJ_toolbox_host_vtable_t, set_field_metadata) == 112, "toolbox host field-metadata tail slot pinned");
 static_assert(
     offsetof(PJ_toolbox_host_vtable_t, set_topic_metadata) == 120, "toolbox host topic-metadata tail slot pinned");
-static_assert(sizeof(PJ_toolbox_host_vtable_t) == 128, "Toolbox host size (update deliberately on append)");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, get_field_metadata) == 128, "toolbox host field-metadata read slot pinned");
+static_assert(
+    offsetof(PJ_toolbox_host_vtable_t, get_topic_metadata) == 136, "toolbox host topic-metadata read slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 144, "Toolbox host size (update deliberately on append)");
 
 // --- Catalog snapshot v2 (introduced 0.38.0) ----------------------------------
 // The object-topic info is a fixed-stride array element; the snapshot grows only by

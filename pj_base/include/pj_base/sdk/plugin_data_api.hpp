@@ -1497,6 +1497,42 @@ class ToolboxHostView {
     return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, set_topic_metadata);
   }
 
+  /// The metadata document of any scalar field in the catalog, whoever set it; empty when it has none. Fails for an
+  /// unknown field or if the host lacks support (supportsMetadataRead()).
+  /// @since 1.2.0
+  [[nodiscard]] Expected<std::string> fieldMetadata(FieldHandle field) const {
+    if (!supportsMetadataRead()) {
+      return unexpected("toolbox host does not support get_field_metadata");
+    }
+    PJ_string_view_t out{};
+    PJ_error_t err{};
+    if (!host_.vtable->get_field_metadata(host_.ctx, field, &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(out));  // copied now: the host's view dies with the next read
+  }
+
+  /// The metadata document of any scalar topic in the catalog; same rules as fieldMetadata().
+  /// @since 1.2.0
+  [[nodiscard]] Expected<std::string> topicMetadata(TopicHandle topic) const {
+    if (!supportsMetadataRead()) {
+      return unexpected("toolbox host does not support get_topic_metadata");
+    }
+    PJ_string_view_t out{};
+    PJ_error_t err{};
+    if (!host_.vtable->get_topic_metadata(host_.ctx, topic, &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(out));
+  }
+
+  /// Whether the host provides get_field_metadata and get_topic_metadata, appended together.
+  /// @since 1.2.0
+  [[nodiscard]] bool supportsMetadataRead() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, get_topic_metadata) &&
+           host_.vtable->get_field_metadata != nullptr;
+  }
+
   [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
     if (!valid()) {
       return unexpected("toolbox host is not bound");
