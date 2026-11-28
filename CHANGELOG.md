@@ -7,31 +7,34 @@ All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is
 
 Host contract: extended: PJ_source_write_host_vtable_t::set_field_metadata, PJ_source_write_host_vtable_t::set_topic_metadata,
 PJ_parser_write_host_vtable_t::set_field_metadata, PJ_toolbox_host_vtable_t::set_field_metadata,
-PJ_toolbox_host_vtable_t::set_topic_metadata (floor 1.2.0). The slots are runtime-negotiated: on an older host the
-`setFieldMetadata()` / `setTopicMetadata()` of `SourceWriteHostView`, `ParserWriteHostView` and `ToolboxHostView`
-return an error, so a plugin that uses them keeps its `min_sdk_required` and ignores the error or checks
-`supportsFieldMetadata()` / `supportsTopicMetadata()`.
+PJ_toolbox_host_vtable_t::set_topic_metadata, PJ_toolbox_host_vtable_t::get_field_metadata,
+PJ_toolbox_host_vtable_t::get_topic_metadata (floor 1.2.0). The slots are runtime-negotiated: on an older host the
+metadata calls of `SourceWriteHostView`, `ParserWriteHostView` and `ToolboxHostView` return an error, so a plugin that
+uses them keeps its `min_sdk_required` and ignores the error or checks `supportsFieldMetadata()` /
+`supportsTopicMetadata()` / `supportsMetadataRead()`.
 
-DataSource protocol:
+Field and topic metadata: a plugin attaches a document to a field or a topic, a flat JSON object of string values.
+Each call replaces the previous document, and an empty string or an object with no key clears it. The host rejects any
+other document, one above its byte bound (PlotJuggler accepts 4 KiB) and a handle outside the caller's own topics, and
+keeps keys it does not know. Canonical keys: `description`, shown as a tooltip on the row in the dataset list, and
+`unit`. A reload starts without documents, so a plugin sets them on every load; a reload that fails keeps the previous
+ones.
 
-- `PJ_source_write_host_vtable_t::set_field_metadata` and `SourceWriteHostView::setFieldMetadata()`: a source attaches
-  a JSON object to a field, replacing the previous one (an empty string or "{}" clears it). The host rejects a
-  document that is not an object or exceeds its size, depth or node bounds, and keeps keys it does not know; the
-  canonical key `description` is shown as a tooltip on the field's row in the dataset list. A tail slot: the vtable
-  grows from 48 to 56 bytes and the view reads the slot behind `PJ_HAS_TAIL_SLOT` (`supportsFieldMetadata()`).
-- `PJ_source_write_host_vtable_t::set_topic_metadata` and `SourceWriteHostView::setTopicMetadata()`: the same for a
-  topic (same document rules); the canonical key `description` is shown as a tooltip on the topic's row. A second tail
-  slot, after `set_field_metadata`: the vtable grows from 56 to 64 bytes (`supportsTopicMetadata()`).
-- `PJ_parser_write_host_vtable_t::set_field_metadata` and `ParserWriteHostView::setFieldMetadata()`: a parser attaches
-  a metadata document to a field of its bound topic (same rules as the source slot). The parser vtable grows from 40 to
-  48 bytes. There is no topic-level slot: the topic belongs to the source that created it.
+- `PJ_source_write_host_vtable_t::set_field_metadata` / `set_topic_metadata` and `SourceWriteHostView::setFieldMetadata()`
+  / `setTopicMetadata()`: a source describes the fields and topics of its dataset. Two tail slots: the vtable grows
+  from 48 to 64 bytes.
+- `PJ_parser_write_host_vtable_t::set_field_metadata` and `ParserWriteHostView::setFieldMetadata()`: a parser describes
+  the fields of its bound topic. The vtable grows from 40 to 48 bytes. There is no topic-level slot: the topic belongs
+  to the source that created it.
 - `PJ_toolbox_host_vtable_t::set_field_metadata` / `set_topic_metadata` and `ToolboxHostView::setFieldMetadata()` /
-  `setTopicMetadata()`: the same for a toolbox. Two tail slots after `acquire_catalog_snapshot_v2`: the vtable grows
-  from 112 to 128 bytes.
-- `MetadataDocumentBuilder` (`pj_base/sdk/metadata_document.hpp`) builds the document for a field or a topic, and
-  `kDescriptionMetadataKey` names the canonical key.
-- `ToolboxTestStore` implements `set_field_metadata` / `set_topic_metadata` and reads them back through
-  `fieldMetadata()` / `topicMetadata()`, so a toolbox can test its metadata writes.
+  `setTopicMetadata()`: a toolbox describes the topics under the data sources it created.
+- `PJ_toolbox_host_vtable_t::get_field_metadata` / `get_topic_metadata` and `ToolboxHostView::fieldMetadata()` /
+  `topicMetadata()`: a toolbox reads the document of any scalar field or topic in the catalog, whoever set it. With the
+  two write slots, the toolbox vtable grows from 112 to 144 bytes.
+- `MetadataDocumentBuilder` (`pj_base/sdk/metadata_document.hpp`) builds the document, and `kDescriptionMetadataKey` /
+  `kUnitMetadataKey` name the canonical keys.
+- `ToolboxTestStore` implements the four toolbox slots, and reads documents back through `fieldMetadata()` /
+  `topicMetadata()`, so a toolbox can test its metadata writes and reads.
 
 ## [1.1.1]
 

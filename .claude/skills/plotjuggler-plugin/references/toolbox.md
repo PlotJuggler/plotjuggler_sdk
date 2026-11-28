@@ -136,13 +136,16 @@ than row-by-row `appendRecord`.
 - **Object writes are tail-slot-gated.** `registerObjectTopic()` /
   `pushOwnedObject()` may be absent on an older host; check the returned
   `Expected`/`Status` and degrade gracefully.
-- **Descriptions replace, they don't merge (SDK 1.2.0).**
+- **Descriptions and units replace, they don't merge (SDK 1.2.0).**
   `toolboxHost().setFieldMetadata(field, json)` / `setTopicMetadata(topic, json)`
-  replace the whole document; build it with `PJ::sdk::MetadataDocumentBuilder`
-  and its `description` shows as the row's tooltip. Keep it short (PlotJuggler
-  caps a document at 64 KB). Also tail-slot-gated: ignore the error or check
-  `supportsFieldMetadata()` / `supportsTopicMetadata()`. `ToolboxTestStore`
-  reads them back with `fieldMetadata()` / `topicMetadata()`.
+  replace the whole document, a flat object of string values, on topics under a
+  data source the toolbox created; build it with `PJ::sdk::MetadataDocumentBuilder`
+  (`.description()` is the row's tooltip, `.unit()` the unit). Keep it short
+  (PlotJuggler caps a document at 4 KiB). `fieldMetadata(field)` /
+  `topicMetadata(topic)` read any scalar field's or topic's document, whoever
+  set it. All tail-slot-gated: ignore the error or check `supportsFieldMetadata()`
+  / `supportsTopicMetadata()` / `supportsMetadataRead()`. `ToolboxTestStore`
+  implements both directions.
 
 ## Emitting objects (images, clouds, …)
 
