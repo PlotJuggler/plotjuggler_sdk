@@ -193,6 +193,15 @@ extension (`pluginExtension(PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1)` returning a liv
   `PJ::TypedNull` to create the column on its first row) as the field value.
 - **Timestamps: ns since epoch** (see SKILL.md rule 3). A row counter is not a
   timestamp.
+- **Descriptions and units: set on every load, replace, don't merge (SDK 1.2.0).**
+  `writeHost().setFieldMetadata(field, json)` / `setTopicMetadata(topic, json)`
+  replace the whole document, a flat object of string values; build it with
+  `PJ::sdk::MetadataDocumentBuilder` (`pj_base/sdk/metadata_document.hpp`):
+  `.description()` shows as the row's tooltip, `.unit()` names the unit (never
+  put it in the description). A reload starts without documents, so set them
+  after `ensureField()`/`ensureTopic()` on every load, not per record. Keep them
+  short (UTF-8 text; PlotJuggler caps a document at 4 KiB). An older host returns an error:
+  ignore it or check `supportsFieldMetadata()` / `supportsTopicMetadata()`.
 
 ## Embedding a configuration dialog
 

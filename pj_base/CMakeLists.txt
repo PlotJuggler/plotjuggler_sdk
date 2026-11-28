@@ -171,6 +171,7 @@ if(PJ_BUILD_TESTS)
     tests/image_annotations_decoder_test.cpp
     tests/field_table_test.cpp
     tests/object_topic_metadata_test.cpp
+    tests/metadata_document_test.cpp
     tests/push_message_test.cpp
     tests/attach_source_record_test.cpp
     tests/ingest_completion_test.cpp

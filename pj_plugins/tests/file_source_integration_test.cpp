@@ -135,6 +135,8 @@ PJ_source_write_host_t makeWriteHost(WriteHostState* state) {
       .append_record = whAppendRecord,
       .append_bound_record = whAppendBoundRecord,
       .append_arrow_stream = whAppendArrowStream,
+      .set_field_metadata = nullptr,
+      .set_topic_metadata = nullptr,
   };
   return PJ_source_write_host_t{.ctx = state, .vtable = &vtable};
 }

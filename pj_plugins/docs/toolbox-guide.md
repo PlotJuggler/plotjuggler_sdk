@@ -210,6 +210,8 @@ data store.
 | `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
+| `setFieldMetadata(field, json)` / `setTopicMetadata(topic, json)` (1.2.0) | Attach a metadata document to a field or a topic the toolbox writes; its `description` shows as a tooltip. See [Field and topic descriptions](#field-and-topic-descriptions). |
+| `fieldMetadata(field)` / `topicMetadata(topic)`, `supportsMetadataRead()` (1.2.0) | Read the metadata document of any scalar field or topic in the catalog, whoever set it. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
 | `hasCatalogSnapshotV2()`, `catalogSnapshotV2()` (0.38.0) | Like `catalogSnapshot()`, plus every object topic (`objectTopics()`: dataset, builtin type, metadata JSON, and the entry count and raw time range the store retains now). The two halves are not read atomically: a topic created between the reads may appear in one half only. Derived and marker topics are included; tell them apart by metadata (`kDerivedMetadataKey`, the marker keys in `object_topic_metadata.hpp`), never by name. |
 | `readSeries(field)` | Read one field's full time series as a `MaterializedSeriesView`: `rowCount()`, `timestamps()`, typed `valuesAs*()` pointers, `nullCount()` / `isNull(row)`. The normal read path; see *Reading a series*. |
@@ -447,6 +449,44 @@ auto status = toolboxHost().appendArrowStream(
 // release() dance required.
 ```
 
+### Field and topic descriptions
+
+A toolbox can explain what an output field or topic means.
+`setFieldMetadata()` and `setTopicMetadata()` (SDK 1.2.0) attach a metadata
+document to a field or a topic under a data source the toolbox created, and
+the host shows its `description` key as a tooltip on the row in the dataset
+list:
+
+```cpp
+#include <pj_base/sdk/metadata_document.hpp>
+
+auto field = toolboxHost().ensureField(out_topic, "filtered", PJ::PrimitiveType::kFloat64);
+if (field) {
+  // Optional: an older host returns an error, which the toolbox can ignore.
+  (void)toolboxHost().setFieldMetadata(
+      *field,
+      PJ::sdk::MetadataDocumentBuilder().description("Low-pass filtered speed, 5 Hz cutoff").unit("m/s").build());
+}
+```
+
+The document rules are those of the DataSource write host: a flat JSON object
+of string values, with the canonical keys `description` and `unit`; each call
+replaces the whole document (an empty string or an object with no key clears
+it); unknown keys are kept. The host rejects any other document, one above its
+size bound (PlotJuggler accepts 4 KiB), and a field or topic the toolbox did
+not create. Text is UTF-8: convert text read in another encoding first, or the
+host rejects the whole document.
+
+`fieldMetadata(field)` and `topicMetadata(topic)` read the document of any
+scalar field or topic in the catalog, whoever set it, as an owned string
+(empty when there is none). They are how a toolbox learns what a source said
+about its signals, a unit for example.
+
+On a host older than 1.2.0 these calls return an error: check
+`supportsFieldMetadata()` / `supportsTopicMetadata()` /
+`supportsMetadataRead()` first, or ignore it.
+
+
 ### Writing object payloads (images, point clouds, annotations)
 
 `readSeries` / `appendArrowStream` cover *scalar* columns.
@@ -606,7 +646,9 @@ TEST(MyToolboxTest, Basic) {
 
 The store captures `appendRecord` writes and counts `createDataSource` and
 `notifyDataChanged` calls. `flatRecords()` gives a flat (timestamp, name, value)
-view. `writtenRecords()` preserves nested rows of fields.
+view. `writtenRecords()` preserves nested rows of fields. `fieldMetadata(field)`
+and `topicMetadata(topic)` return the last document the toolbox set, as sent
+(the store does not apply the host's validation).
 See `pj_plugins/include/pj_plugins/testing/toolbox_test_store.hpp` for the full API.
 
 ## Examples

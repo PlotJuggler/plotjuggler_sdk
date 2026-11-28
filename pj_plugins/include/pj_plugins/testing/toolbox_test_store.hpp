@@ -30,6 +30,9 @@
  * The store captures `append_record` / `append_bound_record` writes as
  * `PJ::sdk::testing::RecordedRow` (reusing the parser-write recorder shape)
  * and counts `create_data_source` / `notify_data_changed` invocations.
+ * `set_field_metadata` / `set_topic_metadata` documents are kept per handle
+ * and read back through `fieldMetadata()` / `topicMetadata()`, and by the
+ * plugin through `get_field_metadata` / `get_topic_metadata`.
  *
  * Internally the read path emits the two-column Arrow struct layout
  * expected by `ToolboxHostView::readSeries()`: children[0] = int64
@@ -150,6 +153,10 @@ class ToolboxTestStore {
         .register_object_topic_on_dataset = nullptr,
         .set_object_topic_retention = nullptr,
         .acquire_catalog_snapshot_v2 = nullptr,
+        .set_field_metadata = &ToolboxTestStore::trampolineSetFieldMetadata,
+        .set_topic_metadata = &ToolboxTestStore::trampolineSetTopicMetadata,
+        .get_field_metadata = &ToolboxTestStore::trampolineGetFieldMetadata,
+        .get_topic_metadata = &ToolboxTestStore::trampolineGetTopicMetadata,
     };
     return PJ_toolbox_host_t{.ctx = this, .vtable = &vtable};
   }
@@ -199,6 +206,20 @@ class ToolboxTestStore {
 
   [[nodiscard]] int notifyDataChangedCalls() const noexcept {
     return notify_data_changed_calls_;
+  }
+
+  /// The last document set_field_metadata stored for `field`; empty when none, or after "" or "{}" cleared it. Kept as
+  /// sent: unlike PlotJuggler, the store neither validates the document nor checks who owns the handle. Valid until the
+  /// next write to the same field.
+  [[nodiscard]] std::string_view fieldMetadata(PJ_field_handle_t field) const noexcept {
+    const auto it = field_metadata_.find(fieldKey(field));
+    return it != field_metadata_.end() ? std::string_view(it->second) : std::string_view();
+  }
+
+  /// Same as fieldMetadata(), for set_topic_metadata.
+  [[nodiscard]] std::string_view topicMetadata(PJ_topic_handle_t topic) const noexcept {
+    const auto it = topic_metadata_.find(topic.id);
+    return it != topic_metadata_.end() ? std::string_view(it->second) : std::string_view();
   }
 
  private:
@@ -535,6 +556,65 @@ class ToolboxTestStore {
     return true;
   }
 
+  static uint64_t fieldKey(PJ_field_handle_t field) noexcept {
+    return (static_cast<uint64_t>(field.topic.id) << 32) | field.id;
+  }
+
+  // "" and "{}" (whitespace aside) clear, as the contract says; any other document is kept as sent.
+  static bool clearsMetadata(PJ_string_view_t json) noexcept {
+    std::string compact;
+    for (std::size_t i = 0; i < json.size; ++i) {
+      if (json.data[i] != ' ' && json.data[i] != '\t' && json.data[i] != '\n' && json.data[i] != '\r') {
+        compact += json.data[i];
+      }
+    }
+    return compact.empty() || compact == "{}";
+  }
+
+  static bool trampolineSetFieldMetadata(
+      void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
+    auto* self = static_cast<ToolboxTestStore*>(ctx);
+    if (clearsMetadata(metadata_json)) {
+      self->field_metadata_.erase(fieldKey(field));
+    } else {
+      self->field_metadata_[fieldKey(field)].assign(metadata_json.data, metadata_json.size);
+    }
+    return true;
+  }
+
+  static bool trampolineSetTopicMetadata(
+      void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
+    auto* self = static_cast<ToolboxTestStore*>(ctx);
+    if (clearsMetadata(metadata_json)) {
+      self->topic_metadata_.erase(topic.id);
+    } else {
+      self->topic_metadata_[topic.id].assign(metadata_json.data, metadata_json.size);
+    }
+    return true;
+  }
+
+  static PJ_string_view_t toAbiView(std::string_view text) noexcept {
+    return PJ_string_view_t{text.data(), text.size()};
+  }
+
+  // Any handle reads back: the store has no catalog check, so an unknown field is one with no document. The view is
+  // into read_buffer_, so it stays valid until the next get_*, as the contract says, whatever is written meanwhile.
+  static bool trampolineGetFieldMetadata(
+      void* ctx, PJ_field_handle_t field, PJ_string_view_t* out_json, PJ_error_t*) noexcept {
+    auto* self = static_cast<ToolboxTestStore*>(ctx);
+    self->read_buffer_.assign(self->fieldMetadata(field));
+    *out_json = toAbiView(self->read_buffer_);
+    return true;
+  }
+
+  static bool trampolineGetTopicMetadata(
+      void* ctx, PJ_topic_handle_t topic, PJ_string_view_t* out_json, PJ_error_t*) noexcept {
+    auto* self = static_cast<ToolboxTestStore*>(ctx);
+    self->read_buffer_.assign(self->topicMetadata(topic));
+    *out_json = toAbiView(self->read_buffer_);
+    return true;
+  }
+
   // ------------------------------------------------------------------
   // Runtime host vtable trampolines.
   // ------------------------------------------------------------------
@@ -558,6 +638,9 @@ class ToolboxTestStore {
   std::vector<RecordedRow> written_;
   int create_data_source_calls_ = 0;
   int notify_data_changed_calls_ = 0;
+  std::unordered_map<uint64_t, std::string> field_metadata_;  // keyed by fieldKey()
+  std::unordered_map<uint32_t, std::string> topic_metadata_;
+  std::string read_buffer_;  // what the last get_field_metadata / get_topic_metadata returned a view of
 };
 
 }  // namespace PJ::testing

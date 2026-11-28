@@ -203,6 +203,7 @@ topic.
 | `appendRecord(timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowStream(stream, ts_col)` | Optional batch path. Hand an `ArrowArrayStream*` to the host for the parser's bound topic. Success transfers ownership to the host; failure leaves ownership with the plugin. |
+| `setFieldMetadata(field, json)` | Optional (SDK 1.2.0): attach a metadata document to a field of the bound topic; its `description` shows as a tooltip. See [Field descriptions](#field-descriptions). |
 
 Most parsers should use `appendRecord()` or `appendBoundRecord()`; one `parse()`
 call normally decodes one logical message. Use `appendArrowStream()` when one
@@ -290,6 +291,43 @@ if (!status) {
   return status;
 }
 ```
+
+### Field descriptions
+
+A parser can explain what a field means. `setFieldMetadata()` (SDK 1.2.0)
+attaches a metadata document to a field of the bound topic: a flat JSON object
+of string values. Two keys are canonical: `description`, which the host shows
+as a tooltip on the field's row in the dataset list, and `unit`. Set it once
+per load, after `ensureField()`, not on every parse:
+
+```cpp
+#include <pj_base/sdk/metadata_document.hpp>
+
+auto temp_field = writeHost().ensureField("temperature", PJ::PrimitiveType::kFloat64);
+if (temp_field) {
+  // Optional: an older host returns an error, which the parser can ignore.
+  (void)writeHost().setFieldMetadata(
+      *temp_field, PJ::sdk::MetadataDocumentBuilder().description("Air temperature").unit("degC").build());
+}
+```
+
+- A reload starts without any document, and the parser sets them again as it
+  meets the fields. A reload that fails keeps the previous ones.
+- Each call replaces the whole document, so send every key each time. An
+  empty string or an object with no key clears it.
+- The host keeps keys it does not know.
+- Text is UTF-8: convert text read in another encoding (a Latin-1 `°C` in a DBC
+  file) first, or the host rejects the whole document.
+- The host rejects a value that is not a string and a document above its size
+  bound (PlotJuggler accepts 4 KiB). Keep a description to a sentence or two:
+  it is shown as a tooltip.
+- Only fields of the bound topic: a handle of another topic is rejected.
+  There is no topic-level call, because the topic belongs to the data source
+  that created it.
+- On a host older than 1.2.0 the call returns an error. Check
+  `supportsFieldMetadata()` first, or ignore the error; the plugin keeps its
+  `min_sdk_required`.
+
 
 ## Optional Features
 

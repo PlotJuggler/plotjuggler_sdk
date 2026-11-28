@@ -492,6 +492,37 @@ typedef struct PJ_source_write_host_vtable_t {
   bool (*append_arrow_stream)(
       void* ctx, PJ_topic_handle_t topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
       PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Attach a metadata document to a field of this source's
+   * dataset, created by ensure_field or by an earlier append.
+   *
+   * Document rules, shared by every set_field_metadata / set_topic_metadata:
+   * - `metadata_json` is a UTF-8 JSON object whose values are all strings. It
+   *   REPLACES the previous document; an empty string or an object with no key
+   *   clears it. The host keeps keys it does not know.
+   * - Canonical keys: "description" (plain text, shown on the row's tooltip in
+   *   the dataset list) and "unit" (the unit of the values, e.g. "m/s").
+   * - The host rejects any other document, one above its byte bound (host
+   *   policy; PlotJuggler accepts 4 KiB), and a handle outside the caller's own
+   *   topics.
+   * - A document lives with the field or topic it describes. A reload starts
+   *   without any, so set them on every load, after ensure_field/ensure_topic;
+   *   a reload that fails keeps the previous ones.
+   *
+   * Returns false (with out_error populated) if the handle is unknown or not
+   * the caller's, or the document is rejected. Tail slot — readers MUST gate
+   * access with PJ_HAS_TAIL_SLOT.
+   * @since 1.2.0 */
+  bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+
+  /* [stream-thread] Attach a metadata document to a topic of this source's
+   * dataset, created by ensure_topic. Same document rules as
+   * set_field_metadata. Tail slot — readers MUST gate access with
+   * PJ_HAS_TAIL_SLOT.
+   * @since 1.2.0 */
+  bool (*set_topic_metadata)(void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 } PJ_source_write_host_vtable_t;
 
 typedef struct {
@@ -533,6 +564,15 @@ typedef struct PJ_parser_write_host_vtable_t {
    * PJ_source_write_host_vtable_t::append_arrow_stream. */
   bool (*append_arrow_stream)(
       void* ctx, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Attach a metadata document to a field of the bound topic.
+   * Same document rules as PJ_source_write_host_vtable_t::set_field_metadata;
+   * a field of another topic is rejected. There is no topic-level
+   * counterpart: the topic belongs to the data source that created it. Tail
+   * slot — readers MUST gate access with PJ_HAS_TAIL_SLOT.
+   * @since 1.2.0 */
+  bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 } PJ_parser_write_host_vtable_t;
 
 /*
@@ -724,6 +764,40 @@ typedef struct PJ_toolbox_host_vtable_t {
    * ABI-APPENDED slot: gate via struct_size before calling.
    * @since 0.38.0 */
   bool (*acquire_catalog_snapshot_v2)(void* ctx, PJ_catalog_snapshot_v2_t* out_snapshot, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+
+  /* [stream-thread] Attach a metadata document to a field of a topic under a
+   * data source this toolbox created (create_data_source). Same document rules
+   * as PJ_source_write_host_vtable_t::set_field_metadata.
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 1.2.0 */
+  bool (*set_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+
+  /* [stream-thread] Attach a metadata document to a topic under a data source
+   * this toolbox created. Same document rules as
+   * PJ_source_write_host_vtable_t::set_field_metadata.
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 1.2.0 */
+  bool (*set_topic_metadata)(void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+
+  /* [stream-thread] Read the metadata document of any scalar field in the
+   * catalog, whoever set it. Writes to `out_json` a view over a host-owned
+   * document (the rules of PJ_source_write_host_vtable_t::set_field_metadata),
+   * empty when the field has none. The view stays valid until the next
+   * get_field_metadata or get_topic_metadata call on the same thread. Returns
+   * false (with out_error populated) if the field handle is unknown.
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 1.2.0 */
+  bool (*get_field_metadata)(void* ctx, PJ_field_handle_t field, PJ_string_view_t* out_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+
+  /* [stream-thread] Read the metadata document of any scalar topic in the
+   * catalog. Same output and lifetime rules as get_field_metadata.
+   * ABI-APPENDED slot: gate via struct_size before calling.
+   * @since 1.2.0 */
+  bool (*get_topic_metadata)(void* ctx, PJ_topic_handle_t topic, PJ_string_view_t* out_json, PJ_error_t* out_error)
       PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 

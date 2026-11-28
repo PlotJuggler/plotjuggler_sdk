@@ -479,6 +479,7 @@ engine.
 | `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
 | `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Success transfers ownership to the host; failure leaves ownership with the plugin. |
+| `setFieldMetadata(field, json)` / `setTopicMetadata(topic, json)` | Optional (SDK 1.2.0): attach a metadata document to a field or a topic; its `description` shows as a tooltip and `unit` names the unit. See [Field and topic descriptions](#field-and-topic-descriptions). |
 
 ### Runtime host — control plane
 
@@ -791,6 +792,42 @@ slot.
 
 The raw-pointer overload (`appendArrowStream(topic, ArrowArrayStream*, ...)`)
 remains an ABI escape hatch. The rvalue-reference form is the documented default.
+
+### Field and topic descriptions
+
+A source can explain what a field or a topic means. `setFieldMetadata()` and
+`setTopicMetadata()` (SDK 1.2.0) attach a metadata document: a flat JSON object
+of string values. Two keys are canonical: `description`, which the host shows
+as a tooltip on the row in the dataset list, and `unit`. Build the document
+with `PJ::sdk::MetadataDocumentBuilder`:
+
+```cpp
+#include <pj_base/sdk/metadata_document.hpp>
+
+auto speed = writeHost().ensureField(*topic, "speed", PJ::PrimitiveType::kFloat64);
+if (speed) {
+  // Optional: an older host returns an error, which the plugin can ignore.
+  (void)writeHost().setFieldMetadata(
+      *speed, PJ::sdk::MetadataDocumentBuilder().description("Vehicle speed").unit("m/s").build());
+}
+(void)writeHost().setTopicMetadata(*topic, PJ::sdk::MetadataDocumentBuilder().description("Wheel odometry").build());
+```
+
+- Set the documents on every load, after `ensureField()` / `ensureTopic()`,
+  not per record: a reload starts without any. A reload that fails keeps the
+  previous ones.
+- Each call replaces the whole document, so send every key each time. An
+  empty string or an object with no key clears it.
+- The host keeps keys it does not know.
+- Text is UTF-8: convert text read in another encoding (a Latin-1 `°C` in a DBC
+  file) first, or the host rejects the whole document.
+- The host rejects a value that is not a string, a document above its size
+  bound (PlotJuggler accepts 4 KiB) and a field or topic of another dataset.
+  Keep a description to a sentence or two: it is shown as a tooltip.
+- On a host older than 1.2.0 both calls return an error. Check
+  `supportsFieldMetadata()` / `supportsTopicMetadata()` first, or ignore the
+  error; the plugin keeps its `min_sdk_required`.
+
 
 ## Threading Model
 

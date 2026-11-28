@@ -554,6 +554,55 @@ class SourceWriteHostView {
     return handle;
   }
 
+  /// Replace a field's metadata with `metadata_json`: build it with MetadataDocumentBuilder or write the JSON object
+  /// yourself; empty or "{}" clears it. The whole document is replaced, so send every key each time. Fails if the
+  /// host lacks support (supportsFieldMetadata()) or rejects the document; see set_field_metadata in
+  /// plugin_data_api.h.
+  /// @since 1.2.0
+  [[nodiscard]] Status setFieldMetadata(FieldHandle field, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("source write host is not bound");
+    }
+    if (!supportsFieldMetadata()) {
+      return unexpected("source write host does not support set_field_metadata");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_field_metadata(host_.ctx, field, toAbiString(metadata_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Whether the host provides set_field_metadata.
+  /// @since 1.2.0
+  [[nodiscard]] bool supportsFieldMetadata() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_source_write_host_vtable_t, host_.vtable, set_field_metadata);
+  }
+
+  /// Replace a topic's metadata with `metadata_json`: build it with MetadataDocumentBuilder (same document rules as
+  /// setFieldMetadata()); empty or "{}" clears it. Fails if the host lacks support (supportsTopicMetadata()) or
+  /// rejects the document; see set_topic_metadata in plugin_data_api.h.
+  /// @since 1.2.0
+  [[nodiscard]] Status setTopicMetadata(TopicHandle topic, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("source write host is not bound");
+    }
+    if (!supportsTopicMetadata()) {
+      return unexpected("source write host does not support set_topic_metadata");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_topic_metadata(host_.ctx, topic, toAbiString(metadata_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Whether the host provides set_topic_metadata.
+  /// @since 1.2.0
+  [[nodiscard]] bool supportsTopicMetadata() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_source_write_host_vtable_t, host_.vtable, set_topic_metadata);
+  }
+
   [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
     if (!valid()) {
       return unexpected("source write host is not bound");
@@ -726,6 +775,30 @@ class ParserWriteHostView {
       return unexpected(errorToString(err));
     }
     return okStatus();
+  }
+
+  /// Replace a field's metadata of the bound topic with `metadata_json` (same document rules as
+  /// SourceWriteHostView::setFieldMetadata()). Fails if the host lacks support (supportsFieldMetadata()) or rejects
+  /// the document. There is no topic-level counterpart: the topic belongs to the data source that created it.
+  /// @since 1.2.0
+  [[nodiscard]] Status setFieldMetadata(FieldHandle field, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("parser write host is not bound");
+    }
+    if (!supportsFieldMetadata()) {
+      return unexpected("parser write host does not support set_field_metadata");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_field_metadata(host_.ctx, field, toAbiString(metadata_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Whether the host provides set_field_metadata.
+  /// @since 1.2.0
+  [[nodiscard]] bool supportsFieldMetadata() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_parser_write_host_vtable_t, host_.vtable, set_field_metadata);
   }
 
   [[nodiscard]] const PJ_parser_write_host_t& raw() const noexcept {
@@ -1374,6 +1447,90 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return handle;
+  }
+
+  /// Replace a field's metadata with `metadata_json` (same document rules as
+  /// SourceWriteHostView::setFieldMetadata()). Fails if the host lacks support (supportsFieldMetadata()) or rejects
+  /// the document.
+  /// @since 1.2.0
+  [[nodiscard]] Status setFieldMetadata(FieldHandle field, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!supportsFieldMetadata()) {
+      return unexpected("toolbox host does not support set_field_metadata");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_field_metadata(host_.ctx, field, toAbiString(metadata_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Whether the host provides set_field_metadata.
+  /// @since 1.2.0
+  [[nodiscard]] bool supportsFieldMetadata() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, set_field_metadata);
+  }
+
+  /// Replace a topic's metadata with `metadata_json` (same document rules as
+  /// SourceWriteHostView::setTopicMetadata()). Fails if the host lacks support (supportsTopicMetadata()) or rejects
+  /// the document.
+  /// @since 1.2.0
+  [[nodiscard]] Status setTopicMetadata(TopicHandle topic, std::string_view metadata_json) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    if (!supportsTopicMetadata()) {
+      return unexpected("toolbox host does not support set_topic_metadata");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->set_topic_metadata(host_.ctx, topic, toAbiString(metadata_json), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Whether the host provides set_topic_metadata.
+  /// @since 1.2.0
+  [[nodiscard]] bool supportsTopicMetadata() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, set_topic_metadata);
+  }
+
+  /// The metadata document of any scalar field in the catalog, whoever set it; empty when it has none. Fails for an
+  /// unknown field or if the host lacks support (supportsMetadataRead()).
+  /// @since 1.2.0
+  [[nodiscard]] Expected<std::string> fieldMetadata(FieldHandle field) const {
+    if (!supportsMetadataRead()) {
+      return unexpected("toolbox host does not support get_field_metadata");
+    }
+    PJ_string_view_t out{};
+    PJ_error_t err{};
+    if (!host_.vtable->get_field_metadata(host_.ctx, field, &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(out));  // copied now: the host's view dies with the next read
+  }
+
+  /// The metadata document of any scalar topic in the catalog; same rules as fieldMetadata().
+  /// @since 1.2.0
+  [[nodiscard]] Expected<std::string> topicMetadata(TopicHandle topic) const {
+    if (!supportsMetadataRead()) {
+      return unexpected("toolbox host does not support get_topic_metadata");
+    }
+    PJ_string_view_t out{};
+    PJ_error_t err{};
+    if (!host_.vtable->get_topic_metadata(host_.ctx, topic, &out, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return std::string(toStringView(out));
+  }
+
+  /// Whether the host provides get_field_metadata and get_topic_metadata, appended together.
+  /// @since 1.2.0
+  [[nodiscard]] bool supportsMetadataRead() const {
+    return valid() && PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, get_topic_metadata) &&
+           host_.vtable->get_field_metadata != nullptr;
   }
 
   [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
