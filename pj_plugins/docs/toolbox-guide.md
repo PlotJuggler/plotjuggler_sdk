@@ -474,7 +474,8 @@ of string values, with the canonical keys `description` and `unit`; each call
 replaces the whole document (an empty string or an object with no key clears
 it); unknown keys are kept. The host rejects any other document, one above its
 size bound (PlotJuggler accepts 4 KiB), and a field or topic the toolbox did
-not create.
+not create. Text is UTF-8: convert text read in another encoding first, or the
+host rejects the whole document.
 
 `fieldMetadata(field)` and `topicMetadata(topic)` read the document of any
 scalar field or topic in the catalog, whoever set it, as an owned string

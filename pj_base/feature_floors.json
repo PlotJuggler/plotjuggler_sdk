@@ -75,8 +75,14 @@
       "parserSetFieldMetadata": "PJ_parser_write_host_vtable_t::set_field_metadata",
       "toolboxSetFieldMetadata": "PJ_toolbox_host_vtable_t::set_field_metadata",
       "toolboxSetTopicMetadata": "PJ_toolbox_host_vtable_t::set_topic_metadata",
-      "toolboxFieldMetadata": "PJ_toolbox_host_vtable_t::get_field_metadata",
-      "toolboxTopicMetadata": "PJ_toolbox_host_vtable_t::get_topic_metadata"
+      "toolboxFieldMetadata": {
+        "declaration": "PJ_toolbox_host_vtable_t::get_field_metadata",
+        "aliases": ["fieldMetadata"]
+      },
+      "toolboxTopicMetadata": {
+        "declaration": "PJ_toolbox_host_vtable_t::get_topic_metadata",
+        "aliases": ["topicMetadata"]
+      }
     }
   },
   "baseline": [

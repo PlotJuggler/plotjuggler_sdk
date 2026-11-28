@@ -208,9 +208,9 @@ class ToolboxTestStore {
     return notify_data_changed_calls_;
   }
 
-  /// The last document set_field_metadata stored for `field`; empty when none, or after "" cleared it. Kept as sent:
-  /// unlike PlotJuggler, the store neither validates the document nor checks who owns the handle, and "{}" is kept as
-  /// "{}". Valid until the next write to the same field.
+  /// The last document set_field_metadata stored for `field`; empty when none, or after "" or "{}" cleared it. Kept as
+  /// sent: unlike PlotJuggler, the store neither validates the document nor checks who owns the handle. Valid until the
+  /// next write to the same field.
   [[nodiscard]] std::string_view fieldMetadata(PJ_field_handle_t field) const noexcept {
     const auto it = field_metadata_.find(fieldKey(field));
     return it != field_metadata_.end() ? std::string_view(it->second) : std::string_view();
@@ -560,10 +560,21 @@ class ToolboxTestStore {
     return (static_cast<uint64_t>(field.topic.id) << 32) | field.id;
   }
 
+  // "" and "{}" (whitespace aside) clear, as the contract says; any other document is kept as sent.
+  static bool clearsMetadata(PJ_string_view_t json) noexcept {
+    std::string compact;
+    for (std::size_t i = 0; i < json.size; ++i) {
+      if (json.data[i] != ' ' && json.data[i] != '\t' && json.data[i] != '\n' && json.data[i] != '\r') {
+        compact += json.data[i];
+      }
+    }
+    return compact.empty() || compact == "{}";
+  }
+
   static bool trampolineSetFieldMetadata(
       void* ctx, PJ_field_handle_t field, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
     auto* self = static_cast<ToolboxTestStore*>(ctx);
-    if (metadata_json.size == 0) {
+    if (clearsMetadata(metadata_json)) {
       self->field_metadata_.erase(fieldKey(field));
     } else {
       self->field_metadata_[fieldKey(field)].assign(metadata_json.data, metadata_json.size);
@@ -574,7 +585,7 @@ class ToolboxTestStore {
   static bool trampolineSetTopicMetadata(
       void* ctx, PJ_topic_handle_t topic, PJ_string_view_t metadata_json, PJ_error_t*) noexcept {
     auto* self = static_cast<ToolboxTestStore*>(ctx);
-    if (metadata_json.size == 0) {
+    if (clearsMetadata(metadata_json)) {
       self->topic_metadata_.erase(topic.id);
     } else {
       self->topic_metadata_[topic.id].assign(metadata_json.data, metadata_json.size);
@@ -586,16 +597,21 @@ class ToolboxTestStore {
     return PJ_string_view_t{text.data(), text.size()};
   }
 
-  // Any handle reads back: the store has no catalog check, so an unknown field is one with no document.
+  // Any handle reads back: the store has no catalog check, so an unknown field is one with no document. The view is
+  // into read_buffer_, so it stays valid until the next get_*, as the contract says, whatever is written meanwhile.
   static bool trampolineGetFieldMetadata(
       void* ctx, PJ_field_handle_t field, PJ_string_view_t* out_json, PJ_error_t*) noexcept {
-    *out_json = toAbiView(static_cast<const ToolboxTestStore*>(ctx)->fieldMetadata(field));
+    auto* self = static_cast<ToolboxTestStore*>(ctx);
+    self->read_buffer_.assign(self->fieldMetadata(field));
+    *out_json = toAbiView(self->read_buffer_);
     return true;
   }
 
   static bool trampolineGetTopicMetadata(
       void* ctx, PJ_topic_handle_t topic, PJ_string_view_t* out_json, PJ_error_t*) noexcept {
-    *out_json = toAbiView(static_cast<const ToolboxTestStore*>(ctx)->topicMetadata(topic));
+    auto* self = static_cast<ToolboxTestStore*>(ctx);
+    self->read_buffer_.assign(self->topicMetadata(topic));
+    *out_json = toAbiView(self->read_buffer_);
     return true;
   }
 
@@ -624,6 +640,7 @@ class ToolboxTestStore {
   int notify_data_changed_calls_ = 0;
   std::unordered_map<uint64_t, std::string> field_metadata_;  // keyed by fieldKey()
   std::unordered_map<uint32_t, std::string> topic_metadata_;
+  std::string read_buffer_;  // what the last get_field_metadata / get_topic_metadata returned a view of
 };
 
 }  // namespace PJ::testing

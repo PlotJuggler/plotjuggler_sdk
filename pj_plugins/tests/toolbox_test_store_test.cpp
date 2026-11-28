@@ -61,5 +61,36 @@ TEST(ToolboxTestStoreTest, SetReplacesAndEmptyTextClears) {
   EXPECT_TRUE(store.topicMetadata(topic).empty());
 }
 
+TEST(ToolboxTestStoreTest, AnObjectWithNoKeyClears) {
+  ToolboxTestStore store;
+  const sdk::ToolboxHostView view(store.makeHost());
+  const PJ_field_handle_t field{.topic = {1}, .id = 3};
+  const PJ_topic_handle_t topic{1};
+
+  ASSERT_TRUE(view.setFieldMetadata(field, R"({"description":"x"})"));
+  ASSERT_TRUE(view.setFieldMetadata(field, sdk::MetadataDocumentBuilder().build()));
+  EXPECT_TRUE(store.fieldMetadata(field).empty());
+  EXPECT_EQ(view.fieldMetadata(field).value(), "");
+
+  ASSERT_TRUE(view.setTopicMetadata(topic, R"({"description":"x"})"));
+  ASSERT_TRUE(view.setTopicMetadata(topic, " {\n} "));
+  EXPECT_TRUE(store.topicMetadata(topic).empty());
+}
+
+// The C contract: the view a get_* slot returns stays valid until the next get_* call, even across a write.
+TEST(ToolboxTestStoreTest, RawReadViewOutlivesAWriteToTheSameField) {
+  ToolboxTestStore store;
+  const PJ_toolbox_host_t host = store.makeHost();
+  const sdk::ToolboxHostView view(host);
+  const PJ_field_handle_t field{.topic = {1}, .id = 3};
+  ASSERT_TRUE(view.setFieldMetadata(field, R"({"description":"first"})"));
+
+  PJ_string_view_t out{};
+  ASSERT_TRUE(host.vtable->get_field_metadata(host.ctx, field, &out, nullptr));
+  ASSERT_TRUE(view.setFieldMetadata(field, R"({"description":"a longer second document"})"));
+
+  EXPECT_EQ(std::string(out.data, out.size), R"({"description":"first"})");
+}
+
 }  // namespace
 }  // namespace PJ::testing

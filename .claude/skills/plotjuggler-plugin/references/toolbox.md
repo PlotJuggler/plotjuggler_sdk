@@ -141,7 +141,7 @@ than row-by-row `appendRecord`.
   replace the whole document, a flat object of string values, on topics under a
   data source the toolbox created; build it with `PJ::sdk::MetadataDocumentBuilder`
   (`.description()` is the row's tooltip, `.unit()` the unit). Keep it short
-  (PlotJuggler caps a document at 4 KiB). `fieldMetadata(field)` /
+  (UTF-8 text; PlotJuggler caps a document at 4 KiB). `fieldMetadata(field)` /
   `topicMetadata(topic)` read any scalar field's or topic's document, whoever
   set it. All tail-slot-gated: ignore the error or check `supportsFieldMetadata()`
   / `supportsTopicMetadata()` / `supportsMetadataRead()`. `ToolboxTestStore`

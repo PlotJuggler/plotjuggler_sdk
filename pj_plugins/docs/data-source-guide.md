@@ -819,6 +819,8 @@ if (speed) {
 - Each call replaces the whole document, so send every key each time. An
   empty string or an object with no key clears it.
 - The host keeps keys it does not know.
+- Text is UTF-8: convert text read in another encoding (a Latin-1 `°C` in a DBC
+  file) first, or the host rejects the whole document.
 - The host rejects a value that is not a string, a document above its size
   bound (PlotJuggler accepts 4 KiB) and a field or topic of another dataset.
   Keep a description to a sentence or two: it is shown as a tooltip.

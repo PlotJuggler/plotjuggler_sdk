@@ -200,7 +200,7 @@ extension (`pluginExtension(PJ_TOPIC_SUBSCRIPTION_EXTENSION_V1)` returning a liv
   `.description()` shows as the row's tooltip, `.unit()` names the unit (never
   put it in the description). A reload starts without documents, so set them
   after `ensureField()`/`ensureTopic()` on every load, not per record. Keep them
-  short (PlotJuggler caps a document at 4 KiB). An older host returns an error:
+  short (UTF-8 text; PlotJuggler caps a document at 4 KiB). An older host returns an error:
   ignore it or check `supportsFieldMetadata()` / `supportsTopicMetadata()`.
 
 ## Embedding a configuration dialog

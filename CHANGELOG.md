@@ -3,7 +3,7 @@
 All notable changes to `plotjuggler_sdk` are recorded here. Versioning policy is in
 [`CLAUDE.md`](./CLAUDE.md) → "Release Versioning".
 
-## [1.2.0] — Unreleased
+## [1.2.0]
 
 Host contract: extended: PJ_source_write_host_vtable_t::set_field_metadata, PJ_source_write_host_vtable_t::set_topic_metadata,
 PJ_parser_write_host_vtable_t::set_field_metadata, PJ_toolbox_host_vtable_t::set_field_metadata,
@@ -13,7 +13,7 @@ metadata calls of `SourceWriteHostView`, `ParserWriteHostView` and `ToolboxHostV
 uses them keeps its `min_sdk_required` and ignores the error or checks `supportsFieldMetadata()` /
 `supportsTopicMetadata()` / `supportsMetadataRead()`.
 
-Field and topic metadata: a plugin attaches a document to a field or a topic, a flat JSON object of string values.
+Field and topic metadata: a plugin attaches a document to a field or a topic, a flat JSON object of UTF-8 string values.
 Each call replaces the previous document, and an empty string or an object with no key clears it. The host rejects any
 other document, one above its byte bound (PlotJuggler accepts 4 KiB) and a handle outside the caller's own topics, and
 keeps keys it does not know. Canonical keys: `description`, shown as a tooltip on the row in the dataset list, and

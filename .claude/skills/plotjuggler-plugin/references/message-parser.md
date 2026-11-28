@@ -170,7 +170,7 @@ the base class derives these extensions.
   of string values (build it with `PJ::sdk::MetadataDocumentBuilder`:
   `.description()` is the field's tooltip, `.unit()` its unit), and replaces the
   previous one. Call it after `ensureField()`, not per message, and keep it
-  short (PlotJuggler caps a document at 4 KiB). A field of another topic is
+  short (UTF-8 text; PlotJuggler caps a document at 4 KiB). A field of another topic is
   rejected, and there is no topic-level call: the topic belongs to the source.
   An older host returns an error: ignore it or check `supportsFieldMetadata()`.
 
